@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "https://123.207.179.150"
+      "url": "https://your-host.example"
     }
   ],
   "security": [
@@ -210,7 +210,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           }
         ],
@@ -252,7 +252,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -430,7 +430,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -507,7 +507,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -584,7 +584,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -676,7 +676,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -761,7 +761,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -838,7 +838,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -915,7 +915,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -1106,7 +1106,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -1198,7 +1198,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -1287,7 +1287,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -1392,7 +1392,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -2451,7 +2451,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -2535,7 +2535,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -2629,7 +2629,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -2910,7 +2910,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           }
         ],
@@ -2952,7 +2952,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -3130,7 +3130,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -3207,7 +3207,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -3284,7 +3284,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -3376,7 +3376,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -3461,7 +3461,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -3538,7 +3538,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -3615,7 +3615,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -3806,7 +3806,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -3898,7 +3898,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -3987,7 +3987,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -4092,7 +4092,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -5151,7 +5151,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -5235,7 +5235,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -5329,7 +5329,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             }
           },
           {
@@ -5477,7 +5477,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },
@@ -5603,7 +5603,7 @@
             "schema": {
               "type": "string",
               "description": "Must exactly match the configured application origin.",
-              "example": "https://123.207.179.150"
+              "example": "https://your-host.example"
             },
             "description": "Required for browser POST, omitted for native Bearer clients."
           },

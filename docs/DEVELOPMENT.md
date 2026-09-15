@@ -43,7 +43,7 @@ node packages/host/dist/main.js
 - pnpm exec playwright install chromium：仅本地缺浏览器时，不在共享主机装重型浏览器。
 
 ~~~sh
-/srv/arclattice/admin/run-limited.sh /srv/arclattice/toolchain/pnpm/node_modules/.bin/pnpm check:server-safe
+./scripts/check-boundaries.mjs
 ~~~
 
 必须绝对pnpm路径，systemd-run不会使用子进程PATH替管理shell找可执行文件。服务器资源与原站边界见DEPLOYMENT。
