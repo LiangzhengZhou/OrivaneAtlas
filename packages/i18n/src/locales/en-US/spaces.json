@@ -8,6 +8,7 @@
   "libraryHint": "A home for each subject — lectures, Markdown and illustrations.",
   "username": "Username",
   "password": "Password",
+  "server": "Server address",
   "login": "Sign in",
   "register": "Create account",
   "legacy": "Use existing access key",

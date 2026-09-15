@@ -8,6 +8,7 @@
   "libraryHint": "每个学科独立整理：讲义、Markdown 与插图。",
   "username": "用户名",
   "password": "密码",
+  "server": "服务器地址",
   "login": "账号登录",
   "register": "注册账号",
   "legacy": "使用现有访问密钥",

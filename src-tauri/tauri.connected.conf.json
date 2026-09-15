@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Orivane Atlas",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../apps/web/dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "security": {
+      "capabilities": ["main-window"],
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost http: https:; img-src 'self' data: https: http:; object-src 'none'; base-uri 'self'"
+    }
+  },
+  "bundle": { "active": true, "targets": ["nsis"], "icon": ["icons/icon.ico"] }
+}

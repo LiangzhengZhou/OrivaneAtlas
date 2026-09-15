@@ -29,6 +29,24 @@ import {
 } from "@arclattice/i18n";
 
 const localeKey = "arclattice.ui.locale";
+const serverOriginKey = "orivane.atlas.server-origin";
+function initialServerOrigin() {
+  try {
+    const saved = localStorage.getItem(serverOriginKey)?.trim();
+    if (saved) return new URL(saved).origin;
+  } catch {}
+  return location.protocol === "http:" || location.protocol === "https:"
+    ? location.origin
+    : "";
+}
+function normalizeServerOrigin(value: string) {
+  const url = new URL(value.trim());
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && url.hostname === "127.0.0.1"))
+    throw new Error("HTTPS server origin required");
+  if (url.pathname !== "/" || url.search || url.hash || url.username || url.password)
+    throw new Error("Exact server origin required");
+  return url.origin;
+}
 export function readPreference(): LocalePreference {
   try {
     const value = localStorage.getItem(localeKey);
@@ -56,6 +74,7 @@ export async function bootstrap() {
   );
   document.documentElement.lang = i18n.resolvedLanguage ?? "en-US";
   let csrf = "";
+  let serverOrigin = initialServerOrigin();
   // Retain the SAME key for an uncertain network retry. Never auto-repeat with a new key.
   const pending = new Map<string, string>();
   async function request<T>(path: string, value?: unknown): Promise<T> {
@@ -73,7 +92,8 @@ export async function bootstrap() {
       ].includes(path)
     )
       pending.set(signature, key);
-    const response = await fetch(path, {
+    if (!serverOrigin) throw new DomainError("VALIDATION_ERROR");
+    const response = await fetch(serverOrigin + path, {
       credentials: "same-origin",
       ...(payload === undefined
         ? {}
@@ -124,12 +144,14 @@ export async function bootstrap() {
   let current: Snapshot | null = null;
   let context: ActorContext | null = null;
   let unavailable = false;
-  try {
-    context = await session();
-  } catch (error) {
-    unavailable = !(
-      error instanceof DomainError && String(error.code) === "UNAUTHORIZED"
-    );
+  if (serverOrigin) {
+    try {
+      context = await session();
+    } catch (error) {
+      unavailable = !(
+        error instanceof DomainError && String(error.code) === "UNAUTHORIZED"
+      );
+    }
   }
   const service: Pick<
     WorkService,
@@ -163,6 +185,23 @@ export async function bootstrap() {
     i18n,
     context,
     unavailable,
+    get serverOrigin() {
+      return serverOrigin;
+    },
+    setServerOrigin(value: string) {
+      serverOrigin = normalizeServerOrigin(value);
+      try {
+        localStorage.setItem(serverOriginKey, serverOrigin);
+      } catch {
+        // Native WebViews may deny storage; the current session can still use the value.
+      }
+      csrf = "";
+      context = null;
+      account = null;
+      cursor = "";
+      current = null;
+      return Promise.resolve();
+    },
     session,
     get account() {
       return account;
@@ -249,7 +288,7 @@ export async function bootstrap() {
       request("/api/link/delete", { id, version }),
     activity: () => request<ActivityEvent[]>("/api/activity"),
     async backup() {
-      const response = await fetch("/api/backup", {
+      const response = await fetch(serverOrigin + "/api/backup", {
         method: "POST",
         credentials: "same-origin",
         body: "{}",

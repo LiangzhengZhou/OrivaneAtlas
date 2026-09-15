@@ -13,6 +13,7 @@ export function Login({
   const { t: a } = useTranslation("spaces");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
+  const [server, setServer] = useState(runtime.serverOrigin);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(runtime.unavailable);
   return (
@@ -24,7 +25,8 @@ export function Login({
           setBusy(true);
           setError(false);
           void runtime
-            .session({ username, password })
+            .setServerOrigin(server)
+            .then(() => runtime.session({ username, password }))
             .then((context) => {
               runtime.context = context;
               setPassword("");
@@ -36,6 +38,18 @@ export function Login({
       >
         <LockKeyhole size={28} />
         <h2>{a("login")}</h2>
+        <label className="field">
+          <span>{a("server")}</span>
+          <input
+            type="url"
+            inputMode="url"
+            autoComplete="url"
+            required
+            placeholder="https://your-server.example"
+            value={server}
+            onChange={(event) => setServer(event.target.value)}
+          />
+        </label>
         <label className="field">
           <span>{a("username")}</span>
           <input
@@ -57,7 +71,7 @@ export function Login({
         )}
         <button
           className="button primary"
-          disabled={busy || !username.trim() || !password}
+          disabled={busy || !server.trim() || !username.trim() || !password}
           type="submit"
         >
           {busy
