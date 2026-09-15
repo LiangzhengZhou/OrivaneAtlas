@@ -20,7 +20,7 @@
       "post": {
         "operationId": "downloadBackup",
         "summary": "Admin-only full SQLite backup including verifiers and images",
-        "description": "Owner and CSRF required; no idempotency key. Empty JSON object only. One backup at a time and per minute, maximum 64 MiB. No client paths. Restore requires administrator and new target file. All accounts/workspaces included; encrypt and protect. Ordinary accounts and Bearer forbidden. Provider vault (providers.enc) and master.key are NOT in this SQLite download; back them up separately with restrictive permissions, keeping the key separately protected.",
+        "description": "Owner and CSRF required; no idempotency key. Empty JSON object only. One backup at a time and per minute, maximum 64 MiB. No client paths. Restore requires administrator and new target file. All accounts/workspaces included; encrypt and protect. Provider credentials and encryption keys are NOT in this SQLite download; keep them separately protected.",
         "parameters": [
           {
             "name": "X-CSRF-Token",
@@ -2720,7 +2720,7 @@
       "post": {
         "operationId": "downloadBackupV1",
         "summary": "Admin-only full SQLite backup including verifiers and images",
-        "description": "Owner and CSRF required; no idempotency key. Empty JSON object only. One backup at a time and per minute, maximum 64 MiB. No client paths. Restore requires administrator and new target file. All accounts/workspaces included; encrypt and protect. Ordinary accounts and Bearer forbidden. Provider vault (providers.enc) and master.key are NOT in this SQLite download; back them up separately with restrictive permissions, keeping the key separately protected.",
+        "description": "Owner and CSRF required; no idempotency key. Empty JSON object only. One backup at a time and per minute, maximum 64 MiB. No client paths. Restore requires administrator and new target file. All accounts/workspaces included; encrypt and protect. Provider credentials and encryption keys are NOT in this SQLite download; keep them separately protected.",
         "parameters": [
           {
             "name": "X-CSRF-Token",
