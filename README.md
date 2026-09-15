@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.svg" alt="Orivane Atlas icon" width="128" height="128">
+  <img src="apps/web/public/orivane-atlas.png" alt="Orivane Atlas logo" width="320">
 </p>
 
 <h1 align="center">Orivane Atlas</h1>
