@@ -1059,6 +1059,140 @@ describe("private HTTP host", () => {
     ).toBe(401);
     await signIn("owner", "Changed-password-123");
   }, 15000);
+  it("chunked images exceed old size and quota, remain private, and survive backup", async () => {
+    const verifier = await passwordHash(password);
+    await host.db.accounts((store) => store.register("owner", verifier, true));
+    await signIn();
+    const uploadId = randomUUID();
+    const bytes = Buffer.alloc(21 * 1024 * 1024 + 3, 42);
+    Buffer.from(png, "base64").copy(bytes);
+    const metadata = {
+      uploadId,
+      spaceId: null,
+      name: "large.png",
+      mime: "image/png",
+    };
+    const url = "/api/library/asset?id=" + uploadId;
+    let lastValue = {},
+      lastHeaders = {};
+    for (
+      let offset = 0, index = 0;
+      offset < bytes.length;
+      offset += 262144, index++
+    ) {
+      const value = {
+        ...metadata,
+        index,
+        final: offset + 262144 >= bytes.length,
+        base64: bytes.subarray(offset, offset + 262144).toString("base64"),
+      };
+      const headers = { "Idempotency-Key": randomUUID() };
+      const response = await call(
+        "/api/v1/library/upload-chunk",
+        value,
+        headers,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        id: uploadId,
+        url: value.final ? url : null,
+      });
+      if (index === 0) {
+        expect((await call(url)).status).toBe(404);
+        expect(
+          (await call("/api/v1/library/upload-chunk", value, headers)).status,
+        ).toBe(200);
+        expect(
+          (await call("/api/library/upload-chunk", { ...value, index: 2 }))
+            .status,
+        ).toBe(409);
+        expect(
+          (
+            await call("/api/library/upload-chunk", {
+              ...value,
+              index: 1,
+              name: "changed.png",
+            })
+          ).status,
+        ).toBe(409);
+      }
+      lastValue = value;
+      lastHeaders = headers;
+    }
+    expect(
+      (await call("/api/v1/library/upload-chunk", lastValue, lastHeaders))
+        .status,
+    ).toBe(200);
+    expect((await call("/api/library/upload-chunk", lastValue)).status).toBe(
+      409,
+    );
+    expect(
+      Buffer.from(await (await call(url)).arrayBuffer()).equals(bytes),
+    ).toBe(true);
+    expect((await call(url, undefined, { Cookie: "" })).status).toBe(401);
+    for (const invalid of [
+      { base64: Buffer.alloc(262145).toString("base64") },
+      { base64: Buffer.alloc(12).toString("base64") },
+      { mime: "image/svg+xml" },
+      { index: -1 },
+      { final: "yes" },
+    ])
+      expect(
+        (
+          await call("/api/library/upload-chunk", {
+            ...metadata,
+            uploadId: randomUUID(),
+            index: 0,
+            final: true,
+            base64: png,
+            ...invalid,
+          })
+        ).status,
+      ).toBe(400);
+    const backup = join(directory, "large-image.sqlite"),
+      restoredPath = join(directory, "large-image-restored.sqlite");
+    await host.db.backup(backup);
+    await restoreDatabase(backup, restoredPath);
+    const restored = new DatabaseSync(restoredPath, { readOnly: true });
+    try {
+      const rows = restored
+        .prepare(
+          "SELECT base64 FROM library_asset_chunk WHERE upload_id=? ORDER BY chunk_index",
+        )
+        .all(uploadId);
+      expect(
+        Buffer.concat(
+          rows.map((row) => Buffer.from(String(row.base64), "base64")),
+        ).equals(bytes),
+      ).toBe(true);
+      expect(
+        restored
+          .prepare(
+            "SELECT count(*) n FROM connected_activity WHERE entity_id=? AND type='ASSET_UPLOADED'",
+          )
+          .get(uploadId)?.n,
+      ).toBe(1);
+      expect(restored.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    } finally {
+      restored.close();
+    }
+    await host.db.accounts((store) => {
+      const user = store.register("reader", verifier, false);
+      store.status(user.id, user.version, "ACTIVE");
+    });
+    await signIn("reader");
+    expect((await call(url)).status).toBe(404);
+    expect(
+      (
+        await call("/api/library/upload-chunk", {
+          ...metadata,
+          index: 1,
+          final: true,
+          base64: png,
+        })
+      ).status,
+    ).toBe(409);
+  }, 30000);
   it("workspace images are authenticated, isolated, idempotent and included in backups", async () => {
     const verifier = await passwordHash(password);
     await host.db.accounts((store) => store.register("owner", verifier, true));
@@ -1232,7 +1366,7 @@ describe("private HTTP host", () => {
     await restoreDatabase(backup, restored);
     const raw = new DatabaseSync(restored, { readOnly: true });
     try {
-      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(8);
+      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(9);
       expect(
         raw.prepare("SELECT base64 FROM library_asset").get()?.base64,
       ).toBe(png);
@@ -1575,7 +1709,7 @@ describe("private HTTP host", () => {
       expect(raw.prepare("SELECT count(*) AS n FROM notebook").get()?.n).toBe(
         1,
       );
-      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(8);
+      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(9);
     } finally {
       raw.close();
     }

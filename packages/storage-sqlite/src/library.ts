@@ -114,15 +114,6 @@ export function libraryStore(
         if (space.kind !== "SPACE" || space.deletedAt)
           throw new DomainError("NOT_FOUND");
       }
-      const size = Number(
-        db
-          .prepare(
-            "SELECT coalesce(sum(length(base64)),0) n FROM library_asset WHERE workspace_id=?",
-          )
-          .get(context.workspaceId)?.n,
-      );
-      if (size + asset.base64.length > 26_666_664)
-        throw new DomainError("FORBIDDEN");
       db.prepare("INSERT INTO library_asset VALUES (?,?,?,?,?,?)").run(
         context.workspaceId,
         asset.id,
@@ -132,6 +123,139 @@ export function libraryStore(
         asset.base64,
       );
       event(asset.id, 1, "ASSET_UPLOADED");
+    },
+    async putAssetChunk(asset, index, final) {
+      guard();
+      if (
+        !Number.isSafeInteger(index) ||
+        index < 0 ||
+        index >= Number.MAX_SAFE_INTEGER ||
+        typeof final !== "boolean" ||
+        !/^[a-zA-Z0-9-]{16,80}$/.test(asset.id) ||
+        !asset.name ||
+        asset.name.length > 120 ||
+        !["image/png", "image/jpeg", "image/webp"].includes(asset.mime) ||
+        asset.base64.length > 349528
+      )
+        throw new DomainError("VALIDATION_ERROR");
+      const bytes = Buffer.from(asset.base64, "base64");
+      if (
+        !bytes.length ||
+        bytes.length > 262144 ||
+        bytes.toString("base64") !== asset.base64
+      )
+        throw new DomainError("VALIDATION_ERROR");
+      if (index === 0) {
+        const valid =
+          bytes.length >= 12 &&
+          (asset.mime === "image/png"
+            ? bytes
+                .subarray(0, 8)
+                .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+            : asset.mime === "image/jpeg"
+              ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+              : bytes.toString("ascii", 0, 4) === "RIFF" &&
+                bytes.toString("ascii", 8, 12) === "WEBP");
+        if (!valid) throw new DomainError("VALIDATION_ERROR");
+      }
+      if (asset.spaceId !== null) {
+        const space = await get(asset.spaceId);
+        if (space.kind !== "SPACE" || space.deletedAt)
+          throw new DomainError("NOT_FOUND");
+      }
+      const expired = db
+        .prepare(
+          "SELECT id,next_index FROM library_asset_upload WHERE workspace_id=? AND complete=0 AND updated_at<?",
+        )
+        .all(context.workspaceId, Date.now() - 86400000);
+      for (const row of expired) {
+        db.prepare(
+          "DELETE FROM library_asset_upload WHERE workspace_id=? AND id=?",
+        ).run(context.workspaceId, String(row.id));
+        event(
+          String(row.id),
+          Number(row.next_index) + 1,
+          "ASSET_UPLOAD_EXPIRED",
+        );
+      }
+      const upload = db
+        .prepare(
+          "SELECT * FROM library_asset_upload WHERE workspace_id=? AND id=?",
+        )
+        .get(context.workspaceId, asset.id);
+      if (!upload) {
+        if (
+          index !== 0 ||
+          db
+            .prepare(
+              "SELECT id FROM library_asset WHERE workspace_id=? AND id=?",
+            )
+            .get(context.workspaceId, asset.id)
+        )
+          throw new DomainError("VERSION_CONFLICT");
+        db.prepare(
+          "INSERT INTO library_asset_upload VALUES (?,?,?,?,?,?,0,0,?)",
+        ).run(
+          context.workspaceId,
+          asset.id,
+          context.principalId,
+          asset.spaceId,
+          asset.name,
+          asset.mime,
+          Date.now(),
+        );
+      } else {
+        if (upload.principal_id !== context.principalId)
+          throw new DomainError("FORBIDDEN");
+        if (
+          upload.complete ||
+          upload.next_index !== index ||
+          upload.space_id !== asset.spaceId ||
+          upload.name !== asset.name ||
+          upload.mime !== asset.mime
+        )
+          throw new DomainError("VERSION_CONFLICT");
+      }
+      db.prepare("INSERT INTO library_asset_chunk VALUES (?,?,?,?)").run(
+        context.workspaceId,
+        asset.id,
+        index,
+        asset.base64,
+      );
+      db.prepare(
+        "UPDATE library_asset_upload SET next_index=?,complete=?,updated_at=? WHERE workspace_id=? AND id=?",
+      ).run(
+        index + 1,
+        final ? 1 : 0,
+        Date.now(),
+        context.workspaceId,
+        asset.id,
+      );
+      if (final) {
+        db.prepare("INSERT INTO library_asset VALUES (?,?,?,?,?,?)").run(
+          context.workspaceId,
+          asset.id,
+          asset.spaceId,
+          asset.name,
+          asset.mime,
+          "",
+        );
+      }
+      event(
+        asset.id,
+        index + 1,
+        final ? "ASSET_UPLOADED" : "ASSET_CHUNK_UPLOADED",
+      );
+    },
+    async assetChunk(id, index) {
+      await this.asset(id);
+      const row = db
+        .prepare(
+          "SELECT base64 FROM library_asset_chunk WHERE workspace_id=? AND upload_id=? AND chunk_index=?",
+        )
+        .get(context.workspaceId, id, index);
+      if (!row) throw new DomainError("NOT_FOUND");
+      return String(row.base64);
     },
     async asset(id) {
       guard();
@@ -145,7 +269,15 @@ export function libraryStore(
         const space = await get(String(row.spaceId));
         if (space.deletedAt) throw new DomainError("NOT_FOUND");
       }
-      return row as unknown as Awaited<ReturnType<LibraryStore["asset"]>>;
+      const upload = db
+        .prepare(
+          "SELECT next_index FROM library_asset_upload WHERE workspace_id=? AND id=? AND complete=1",
+        )
+        .get(context.workspaceId, id);
+      return {
+        ...row,
+        ...(upload ? { chunkCount: Number(upload.next_index) } : {}),
+      } as unknown as Awaited<ReturnType<LibraryStore["asset"]>>;
     },
   };
 }

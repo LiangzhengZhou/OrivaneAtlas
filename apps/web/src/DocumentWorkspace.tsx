@@ -350,13 +350,13 @@ function DocumentPane({
     if (
       files.length !== 1 ||
       !file ||
-      file.size > 500000 ||
+      file.size === 0 ||
       !["image/png", "image/jpeg", "image/webp"].includes(file.type)
     ) {
       setImageError(
         zh
-          ? "请每次选择或粘贴一张 PNG、JPEG 或 WebP 图片，大小不超过 500 KB。"
-          : "Select or paste one PNG, JPEG or WebP image at a time, up to 500 KB.",
+          ? "请每次选择或粘贴一张非空的 PNG、JPEG 或 WebP 图片。"
+          : "Select or paste one non-empty PNG, JPEG or WebP image at a time.",
       );
       return;
     }
@@ -686,7 +686,11 @@ function DocumentPane({
           />
           <FilePicker
             label={s("image")}
-            hint="PNG / JPEG / WebP · ≤ 500 KB"
+            hint={
+              zh
+                ? "PNG / JPEG / WebP · 不限文件大小"
+                : "PNG / JPEG / WebP · No file-size cap"
+            }
             disabled={busy || !!base?.deletedAt}
             accept="image/png,image/jpeg,image/webp"
             onFile={(file) => insertImages([file])}

@@ -80,6 +80,14 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 9,
+    name: "image-chunks",
+    sql: readFileSync(
+      new URL("./migrations/0009-image-chunks.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string): string {
   return createHash("sha256")
@@ -183,6 +191,13 @@ export function inspectSchema(
       "library_revision",
       "library_asset",
     ].some((name) => !objects.some((row) => row.name === name))
+  )
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (
+    version >= 9 &&
+    ["library_asset_upload", "library_asset_chunk"].some(
+      (name) => !objects.some((row) => row.name === name),
+    )
   )
     throw new StorageError("SCHEMA_OBJECT_MISSING");
   return version;

@@ -71,7 +71,7 @@ export function validateSnapshot(path: string): number {
       db.prepare("PRAGMA application_id").get()?.application_id !==
         0x4152434c ||
       version < 1 ||
-      version > 8
+      version > 9
     )
       throw new Error("Unsupported snapshot");
     const integrity = db.prepare("PRAGMA integrity_check").all();

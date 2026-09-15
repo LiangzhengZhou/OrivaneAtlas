@@ -32,6 +32,7 @@ export interface LibraryAsset {
   name: string;
   mime: string;
   base64: string;
+  chunkCount?: number;
 }
 export interface LibraryStore {
   list(): Promise<LibraryEntry[]>;
@@ -39,6 +40,12 @@ export interface LibraryStore {
   save(entry: LibraryEntry, expected: number): Promise<void>;
   revisions(id: string): Promise<LibraryEntry[]>;
   putAsset(asset: LibraryAsset): Promise<void>;
+  putAssetChunk(
+    asset: LibraryAsset,
+    index: number,
+    final: boolean,
+  ): Promise<void>;
+  assetChunk(id: string, index: number): Promise<string>;
   asset(id: string): Promise<LibraryAsset>;
 }
 export class LibraryService {

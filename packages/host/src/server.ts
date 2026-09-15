@@ -6,6 +6,8 @@ import {
   type ServerResponse,
 } from "node:http";
 import { dirname, extname, join, resolve, sep } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import {
   type Account,
   type AccountStore,
@@ -428,6 +430,7 @@ export async function createHost(options: HostOptions) {
             "/api/library/save",
             "/api/library/delete",
             "/api/library/upload",
+            "/api/library/upload-chunk",
           ];
           if (
             mutation
@@ -741,14 +744,31 @@ export async function createHost(options: HostOptions) {
           return;
         }
         if (path === "/api/library/asset" && req.method === "GET") {
-          const asset = await db.request(context, null, (_u, _n, _c, s) =>
-            s.asset(string(url.searchParams.get("id"))),
+          const asset = await db.request(
+            context,
+            null,
+            (_u, _n, _c, s) => s.asset(string(url.searchParams.get("id"))),
+            requireAccess,
           );
           res.writeHead(200, {
             "Content-Type": asset.mime,
             "Content-Disposition": "inline",
           });
-          res.end(Buffer.from(asset.base64, "base64"));
+          if (asset.chunkCount) {
+            async function* chunks() {
+              for (let index = 0; index < asset.chunkCount!; index++) {
+                if (res.destroyed) return;
+                const base64 = await db.request(
+                  context,
+                  null,
+                  (_u, _n, _c, s) => s.assetChunk(asset.id, index),
+                  requireAccess,
+                );
+                yield Buffer.from(base64, "base64");
+              }
+            }
+            await pipeline(Readable.from(chunks()), res);
+          } else res.end(Buffer.from(asset.base64, "base64"));
           return;
         }
         if (path === "/api/logout" && mutation) {
@@ -1018,6 +1038,31 @@ export async function createHost(options: HostOptions) {
                   version(value.version),
                   boolean(value.deleted),
                 );
+              case "/api/library/upload-chunk": {
+                keys(value, [
+                  "uploadId",
+                  "spaceId",
+                  "name",
+                  "mime",
+                  "base64",
+                  "index",
+                  "final",
+                ]);
+                const asset = {
+                  id: string(value.uploadId, 80),
+                  spaceId:
+                    value.spaceId === null ? null : string(value.spaceId),
+                  name: string(value.name, 120),
+                  mime: string(value.mime),
+                  base64: string(value.base64, 349528),
+                };
+                const final = boolean(value.final);
+                await library.putAssetChunk(asset, version(value.index), final);
+                return {
+                  id: asset.id,
+                  url: final ? "/api/library/asset?id=" + asset.id : null,
+                };
+              }
               case "/api/library/upload": {
                 keys(value, ["spaceId", "name", "mime", "base64"]);
                 const mime = string(value.mime),

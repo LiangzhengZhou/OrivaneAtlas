@@ -168,7 +168,7 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
     release = resolve;
   });
   let uploadStarted = false;
-  await page.route("**/api/library/upload", async (route) => {
+  await page.route("**/api/library/upload-chunk", async (route) => {
     uploadStarted = true;
     expect(route.request().postDataJSON().spaceId).toBeNull();
     await held;
@@ -182,23 +182,23 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
   await page.getByRole("tab", { name: /Image notebook/ }).click();
   await expect(editor).toContainText(/api\/library\/asset/);
   await expect(editor).toContainText("kept while uploading");
-  await page.unroute("**/api/library/upload");
+  await page.unroute("**/api/library/upload-chunk");
   await saveDocument(page, w);
   await paste("image/svg+xml");
-  await expect(pane(page).getByRole("alert")).toContainText("500 KB");
-  await page.route("**/api/library/upload", (route) => route.abort());
+  await expect(pane(page).getByRole("alert")).toContainText("PNG");
+  await page.route("**/api/library/upload-chunk", (route) => route.abort());
   await paste();
   await expect(pane(page).getByRole("alert").last()).toContainText(
     /上传失败|upload failed/,
   );
   await expect(editor).toContainText("kept while uploading");
-  await page.unroute("**/api/library/upload");
+  await page.unroute("**/api/library/upload-chunk");
   await pane(page)
     .getByLabel(w.spaces.image, { exact: true })
     .setInputFiles({
       name: "selected.png",
       mimeType: "image/png",
-      buffer: Buffer.from(png, "base64"),
+      buffer: Buffer.concat([Buffer.from(png, "base64"), Buffer.alloc(700000)]),
     });
   await expect
     .poll(

@@ -83,14 +83,14 @@ it("pulls, validates, encrypts, logs out and restores only to a new database", a
     return Response.json({ ok: true });
   });
   const result = await pullBackup(config, fetcher);
-  expect(result.version).toBe(8);
+  expect(result.version).toBe(9);
   expect(fetcher).toHaveBeenCalledTimes(3);
   expect(readFileSync(result.target).subarray(0, 8).toString()).toBe(
     "ARCBK001",
   );
   const restored = join(directory, "restored.sqlite");
   await restoreEncrypted(result.target, restored, config.encryptionKeyFile);
-  expect(validateSnapshot(restored)).toBe(8);
+  expect(validateSnapshot(restored)).toBe(9);
   expect(readFileSync(restored)).toEqual(source);
   await expect(
     restoreEncrypted(result.target, config.database, config.encryptionKeyFile),

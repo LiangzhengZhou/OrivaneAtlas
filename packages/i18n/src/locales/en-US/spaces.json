@@ -55,7 +55,7 @@
   "edit": "Edit",
   "importMd": "Import Markdown",
   "image": "Upload image",
-  "imageHint": "PNG / JPEG / WebP, up to 500 KB each. Images remain private and are included in backups.",
+  "imageHint": "PNG / JPEG / WebP, no file-size cap. Available storage still applies. Images remain private and are included in database backups.",
   "exportMd": "Export Markdown",
   "pdf": "Print / save PDF",
   "pdfHint": "Uses your browser’s print dialog. Choose Save as PDF; wait for images and formulas to load first.",

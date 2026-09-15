@@ -55,7 +55,7 @@
   "edit": "编辑",
   "importMd": "导入 Markdown",
   "image": "上传图片",
-  "imageHint": "PNG / JPEG / WebP，每张不超过 500 KB；图片私有保存，包含在数据库备份中。",
+  "imageHint": "PNG / JPEG / WebP，不限文件大小，仍受可用存储空间约束；图片私有保存，包含在数据库备份中。",
   "exportMd": "导出 Markdown",
   "pdf": "打印 / 导出 PDF",
   "pdfHint": "调用浏览器打印窗口，选择“另存为 PDF”；请等待图片与公式加载完毕。",

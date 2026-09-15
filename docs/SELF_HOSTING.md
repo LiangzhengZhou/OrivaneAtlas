@@ -33,11 +33,13 @@ Native clients should be configured with the server origin. A client connection 
 
 In a note, journal or knowledge document, open **Import, images and revisions** to choose a Markdown file or upload an image. You can also paste one image into the editor with Ctrl/Command+V. Ordinary text paste is unchanged.
 
-Images use your own authenticated server storage; no third-party image host is required. Supported formats are PNG, JPEG and WebP, up to 500,000 bytes per image. The existing workspace image quota is approximately 20 MB before Base64 encoding. Failed uploads leave the text intact; check your session, connection, file size or quota and retry.
+Images use your own authenticated server storage; no third-party image host is required. Supported formats are PNG, JPEG and WebP. The updated client uses sequential 256 KiB chunks with no product per-image size limit or workspace image quota. Available disk space, SQLite capacity, network conditions and browser image-decoding resources still apply. Failed uploads leave the text intact; check your session, connection and available storage, then retry. Markdown text import limits are unchanged.
 
 Images are private to their workspace, not public sharing URLs. Markdown exports contain server references, not bundled images. Uploaded assets remain stored after removing their Markdown reference; automated orphan cleanup is not implemented. Consistent database backups include the image bytes.
 
-This feature requires both the updated web client and server, including SQLite migration 8. The migration runner takes a pre-upgrade snapshot; keep it and verify restoration to a separate file before deployment. To roll back, restore that pre-upgrade database with matching old code; do not open a v8 database using an older migration plan.
+Unlimited-size image uploads require both the updated web/native client and server, including SQLite migration 9. Older clients still use the bounded legacy upload endpoint. The migration runner takes a pre-upgrade snapshot; keep it and verify restoration to a separate file before deployment. To roll back, restore that pre-upgrade database with matching old code; do not open a v9 database using an older migration plan.
+
+Unfinished uploads are inaccessible and expire after 24 hours without activity; the next successful chunk write in that workspace cleans them up. Completed assets are retained. For large databases, operators must use a consistent server-side SQLite snapshot and transfer it securely: both the existing browser backup download and encrypted HTTP offsite-backup helper are limited to 64 MiB. Do not copy a live database file without its journal as a backup. Provision disk space for the database, journal and backup copies, and monitor free space.
 
 ## AI providers
 

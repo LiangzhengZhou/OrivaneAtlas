@@ -251,19 +251,42 @@ export async function bootstrap() {
       ),
     async uploadImage(spaceId: string | null, file: File) {
       if (
-        file.size > 500000 ||
+        file.size === 0 ||
         !["image/png", "image/jpeg", "image/webp"].includes(file.type)
       )
         throw new DomainError("VALIDATION_ERROR");
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      let binary = "";
-      for (const b of bytes) binary += String.fromCharCode(b);
-      return request<{ id: string; url: string }>("/api/library/upload", {
-        spaceId,
-        name: file.name,
-        mime: file.type,
-        base64: btoa(binary),
-      });
+      const uploadId = crypto.randomUUID();
+      const origin = serverOrigin,
+        session = csrf;
+      let result: { id: string; url: string | null } | undefined;
+      for (
+        let offset = 0, index = 0;
+        offset < file.size;
+        offset += 262144, index++
+      ) {
+        const bytes = new Uint8Array(
+          await file.slice(offset, offset + 262144).arrayBuffer(),
+        );
+        let binary = "";
+        for (const b of bytes) binary += String.fromCharCode(b);
+        if (serverOrigin !== origin || csrf !== session)
+          throw new DomainError("FORBIDDEN");
+        result = await request<{ id: string; url: string | null }>(
+          "/api/library/upload-chunk",
+          {
+            uploadId,
+            spaceId,
+            name: file.name,
+            mime: file.type,
+            base64: btoa(binary),
+            index,
+            final: offset + bytes.length === file.size,
+          },
+        );
+      }
+      if (!result?.url || serverOrigin !== origin || csrf !== session)
+        throw new DomainError("FORBIDDEN");
+      return { id: result.id, url: result.url };
     },
     service,
     snapshot: sync,
