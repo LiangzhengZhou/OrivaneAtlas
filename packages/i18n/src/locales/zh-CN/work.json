@@ -1,0 +1,41 @@
+{
+  "eyebrow": "让思考与行动相连",
+  "heading": "为真正重要的事，留出空间。",
+  "subtitle": "从一个小步骤开始，让想法彼此连接，让工作持续向前。",
+  "count": "{{count}} 个任务",
+  "readyCount": "{{count}} 个可执行",
+  "doneCount": "{{count}} 个已完成",
+  "title": "标题",
+  "titlePlaceholder": "接下来，你想推进什么？",
+  "description": "描述 · Markdown 源码",
+  "descriptionPlaceholder": "写下背景、想法，或下一步行动…",
+  "priority": "优先级",
+  "status": "状态",
+  "detail": "任务详情",
+  "ready": "可执行",
+  "blocked": "受阻",
+  "addDependency": "添加依赖",
+  "prerequisite": "前置任务",
+  "dependent": "后续任务",
+  "chooseTask": "选择任务",
+  "dependencyHint": "前置任务完成后，后续任务才能开始。系统会拒绝形成循环的依赖。",
+  "noDependencies": "还没有依赖关系。有先后顺序的任务，可以在这里连接。",
+  "edge": "阻塞",
+  "trashHint": "本次会话中删除的任务可以恢复。删除带有关联的任务前，请先移除关联。",
+  "emptyTrash": "回收站是空的。",
+  "exampleA": "梳理本地存储模型",
+  "exampleB": "编写仓储契约测试",
+  "exampleC": "接入 SQLite 适配器",
+  "statuses": {
+    "TODO": "待办",
+    "IN_PROGRESS": "进行中",
+    "DONE": "已完成",
+    "CANCELED": "已取消"
+  },
+  "priorities": {
+    "LOW": "低",
+    "MEDIUM": "中",
+    "HIGH": "高",
+    "URGENT": "紧急"
+  }
+}

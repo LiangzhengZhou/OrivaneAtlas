@@ -1,0 +1,11 @@
+{
+  "work": "工作",
+  "knowledge": "知识",
+  "tasks": "任务",
+  "board": "看板",
+  "dependencies": "依赖关系",
+  "trash": "回收站",
+  "notes": "笔记",
+  "journal": "日记",
+  "settings": "设置"
+}

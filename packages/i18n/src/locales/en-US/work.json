@@ -1,0 +1,41 @@
+{
+  "eyebrow": "YOUR WORK, CONNECTED",
+  "heading": "A clear space for what matters.",
+  "subtitle": "Small steps. Connected thinking. Work that moves forward.",
+  "count": "{{count}} tasks",
+  "readyCount": "{{count}} ready",
+  "doneCount": "{{count}} completed",
+  "title": "Title",
+  "titlePlaceholder": "What would you like to move forward?",
+  "description": "Description · Markdown source",
+  "descriptionPlaceholder": "Add context, an idea, or the next small step…",
+  "priority": "Priority",
+  "status": "Status",
+  "detail": "Task details",
+  "ready": "Ready",
+  "blocked": "Blocked",
+  "addDependency": "Add dependency",
+  "prerequisite": "Prerequisite",
+  "dependent": "Dependent task",
+  "chooseTask": "Choose a task",
+  "dependencyHint": "The prerequisite must be done before its dependent can start. Cycles are rejected.",
+  "noDependencies": "No dependencies yet. Connect tasks when order matters.",
+  "edge": "blocks",
+  "trashHint": "Deleted tasks can be restored during this session. Items with relationships must be disconnected before deletion.",
+  "emptyTrash": "Your trash is empty.",
+  "exampleA": "Outline the local storage model",
+  "exampleB": "Write repository contract tests",
+  "exampleC": "Connect the SQLite adapter",
+  "statuses": {
+    "TODO": "To do",
+    "IN_PROGRESS": "In progress",
+    "DONE": "Done",
+    "CANCELED": "Canceled"
+  },
+  "priorities": {
+    "LOW": "Low",
+    "MEDIUM": "Medium",
+    "HIGH": "High",
+    "URGENT": "Urgent"
+  }
+}

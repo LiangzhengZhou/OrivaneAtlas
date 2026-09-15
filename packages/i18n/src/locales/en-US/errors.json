@@ -1,0 +1,14 @@
+{
+  "VALIDATION_ERROR": "Check your input: titles need 1–240 characters without line breaks, content is limited to 200,000 characters, and journal dates must be unique.",
+  "NOT_FOUND": "This item is unavailable in the current workspace.",
+  "FORBIDDEN": "This principal does not have permission to perform this action.",
+  "VERSION_CONFLICT": "This content changed elsewhere. Keep your draft, close the editor, refresh, and reopen the latest version.",
+  "WORK_GRAPH_CYCLE_DETECTED": "This dependency would create a cycle.",
+  "DUPLICATE_EDGE": "This dependency already exists.",
+  "WORK_ITEM_BLOCKED": "Finish the prerequisite tasks before starting or completing this task.",
+  "DEPENDENCY_EXISTS": "Remove relationships and project members before deletion, or reset started dependents before reopening.",
+  "UNAUTHORIZED": "Your session expired. Keep or export unsaved drafts, then unlock again.",
+  "UNAVAILABLE": "The server is unavailable. Keep this page open, check the SSH tunnel and retry.",
+  "RATE_LIMITED": "Too many attempts. Please try again shortly.",
+  "IDEMPOTENCY_REQUIRED": "The request is missing a retry identifier. Please reopen the page."
+}

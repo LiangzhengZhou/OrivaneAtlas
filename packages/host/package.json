@@ -1,0 +1,20 @@
+{
+  "name": "@arclattice/host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@arclattice/application": "workspace:*",
+    "@arclattice/domain": "workspace:*",
+    "@arclattice/storage-sqlite": "workspace:*",
+    "uuid": "14.0.2"
+  },
+  "devDependencies": {
+    "vite": "8.3.0"
+  }
+}

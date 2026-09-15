@@ -1,0 +1,44 @@
+{
+  "name": "@arclattice/web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
+    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json",
+    "preview": "vite preview --host 127.0.0.1 --port 1420 --strictPort"
+  },
+  "dependencies": {
+    "@arclattice/application": "workspace:*",
+    "@arclattice/domain": "workspace:*",
+    "@arclattice/i18n": "workspace:*",
+    "@arclattice/storage-memory": "workspace:*",
+    "@codemirror/commands": "^6.11.0",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.4",
+    "@codemirror/view": "^6.43.11",
+    "@dagrejs/dagre": "^3.1.1",
+    "@xyflow/react": "^12.11.6",
+    "d3-force": "^3.0.0",
+    "katex": "0.18.7",
+    "lucide-react": "^0.577.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-i18next": "17.0.13",
+    "react-markdown": "10.1.0",
+    "rehype-katex": "7.0.1",
+    "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
+    "uuid": "14.0.2"
+  },
+  "devDependencies": {
+    "@types/d3-force": "^3.0.10",
+    "@types/dagre": "^0.7.54",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "vite": "8.3.0"
+  }
+}

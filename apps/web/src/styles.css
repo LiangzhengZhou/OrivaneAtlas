@@ -1,0 +1,589 @@
+@import url("./base.css");
+/* Stable per-item tint: nearly white behind the title, stronger at the right. */
+.task-card {
+  background: linear-gradient(
+    100deg,
+    hsl(var(--task-hue, 255) 65% 98%) 0%,
+    hsl(var(--task-hue, 255) 65% 94%) 45%,
+    hsl(var(--task-hue, 255) 68% 84%) 100%
+  );
+  border-color: hsl(var(--task-hue, 255) 45% 80%);
+}
+.task-card:hover {
+  background: linear-gradient(
+    100deg,
+    hsl(var(--task-hue, 255) 65% 97%),
+    hsl(var(--task-hue, 255) 68% 81%)
+  );
+}
+.organization-toolbar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 16px 0;
+}
+.organization-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.organization-toolbar input:not([type="checkbox"]) {
+  flex: 1;
+  min-width: 180px;
+  max-width: 360px;
+}
+.organization-toolbar input,
+.organization-toolbar select {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  max-width: 100%;
+}
+input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+.selectable-note {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: white;
+  overflow: hidden;
+}
+.selectable-note:has(input:checked) {
+  outline: 2px solid var(--accent);
+}
+.note-selection {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px 0;
+  color: var(--muted);
+}
+.note-selection span {
+  overflow-wrap: anywhere;
+}
+.selectable-note .note-card {
+  width: 100%;
+  border: none;
+  border-radius: 0;
+}
+.md-live-math {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+  overflow-x: auto;
+  padding: 0 0.3em;
+}
+.md-live-math .katex-display {
+  margin: 0.4em 0;
+}
+.document-reading {
+  font-size: 18px;
+}
+/* Planning surfaces share the workbench's existing cards and controls. */
+.task-project {
+  max-width: 130px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  color: #61724e;
+}
+.task-due {
+  font-size: 14px;
+  color: #787469;
+  white-space: nowrap;
+}
+.schedule-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 20px;
+}
+.project-card {
+  padding: 24px;
+  min-width: 0;
+}
+.project-title {
+  border: 0;
+  background: none;
+  text-align: start;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  overflow-wrap: anywhere;
+}
+.project-title h2 {
+  margin: 12px 0;
+}
+.project-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #70766f;
+  max-height: 100px;
+  overflow: auto;
+  min-height: 40px;
+}
+.project-card .text-button {
+  margin-top: 20px;
+}
+.calendar-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.calendar-panel,
+.agenda-panel {
+  padding: 20px;
+  min-width: 0;
+}
+.calendar-controls,
+.agenda-tabs {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.calendar-week,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.calendar-week {
+  padding: 16px 0 12px;
+  text-align: center;
+  color: #71776e;
+  font-size: 15px;
+}
+.calendar-grid {
+  gap: 4px;
+}
+.calendar-day {
+  min-height: 90px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e9ece5;
+  background: #fff;
+  color: inherit;
+  border-radius: 8px;
+  text-align: start;
+  cursor: pointer;
+}
+.calendar-day:hover,
+.calendar-day.selected {
+  border-color: #647c45;
+  background: #eef3e8;
+}
+.calendar-day.is-today > span:first-child {
+  color: #426027;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.calendar-count {
+  float: right;
+  border-radius: 8px;
+  background: #e1e9d6;
+  font-size: 13px;
+  padding: 1px 4px;
+}
+.calendar-preview small {
+  display: block;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 6px;
+}
+.agenda-panel h2 {
+  margin-top: 24px;
+}
+.agenda-item {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-align: start;
+  width: 100%;
+  background: none;
+  color: inherit;
+  padding: 16px 0;
+  border: 0;
+  border-bottom: 1px solid #e9ece5;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.agenda-item small {
+  color: #767d70;
+}
+.import-field {
+  padding: 14px;
+  background: #f4f6ef;
+  border-radius: 10px;
+}
+@media (max-width: 1050px) {
+  .calendar-layout {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .calendar-panel {
+    padding: 12px;
+  }
+  .calendar-day {
+    min-height: 54px;
+    padding: 5px;
+  }
+  .calendar-preview {
+    display: none;
+  }
+  .calendar-count {
+    float: none;
+    display: block;
+    width: fit-content;
+    margin-top: 4px;
+  }
+  .schedule-fields {
+    grid-template-columns: 1fr;
+  }
+}
+.connected-grid {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.8fr) minmax(0, 1.3fr);
+  gap: 24px;
+  align-items: start;
+}
+.connected-panel {
+  min-width: 0;
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #e2e7dc;
+  border-radius: 16px;
+  overflow-wrap: anywhere;
+}
+.connected-panel h2 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+.connected-panel p {
+  color: #596153;
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+.connected-panel .field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-bottom: 18px;
+  font-size: 0.9rem;
+}
+.connected-panel input,
+.connected-panel select,
+.connected-panel textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 11px;
+  font: inherit;
+  border: 1px solid #ccd5c3;
+  border-radius: 8px;
+  background: #fff;
+}
+.connected-panel textarea {
+  resize: vertical;
+}
+.knowledge-list {
+  max-height: 620px;
+  overflow-y: auto;
+}
+.knowledge-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  text-align: start;
+  border: 0;
+  border-bottom: 1px solid #e9ece5;
+  padding: 18px 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.knowledge-result:hover,
+.knowledge-result.selected {
+  background: #edf3e5;
+  border-radius: 8px;
+}
+.knowledge-result strong {
+  font-size: 1rem;
+}
+.knowledge-result small,
+.knowledge-link small {
+  color: #627250;
+  font-size: 0.875rem;
+}
+.knowledge-result span {
+  color: #62695c;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.connected-heading {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.knowledge-link {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e9ece5;
+  padding: 14px 0;
+}
+.knowledge-link > button:first-child {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: start;
+  color: inherit;
+}
+.knowledge-link strong {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.knowledge-preview {
+  margin-top: 24px;
+}
+.knowledge-preview summary {
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.connected-empty {
+  padding: 36px 0;
+}
+.connected-notice {
+  padding: 16px;
+  border-left: 3px solid #668d39;
+  border-radius: 4px;
+  background: #f0f5e9;
+  margin: 20px 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+.connected-notice small,
+.ai-run small {
+  font-size: 0.875rem;
+}
+.ai-run {
+  border-top: 1px solid #dfe6d7;
+  padding: 22px 0;
+}
+.run-prompt {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  padding: 16px;
+  background: #f6f7f3;
+  max-height: 320px;
+  overflow-y: auto;
+  border-radius: 10px;
+}
+@media (max-width: 950px) {
+  .connected-grid {
+    grid-template-columns: 1fr;
+  }
+  .knowledge-list {
+    max-height: 340px;
+  }
+}
+@media (max-width: 600px) {
+  .connected-panel {
+    padding: 18px;
+  }
+}
+.action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.account-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 24px;
+  align-items: start;
+}
+.account-panel {
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.account-panel form {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+.token-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid #e2e8e5;
+  overflow-wrap: anywhere;
+}
+.token-row small {
+  display: block;
+  color: #65756e;
+  margin-top: 6px;
+}
+.secret-once {
+  margin: 20px 0;
+  padding: 18px;
+  background: #fff7df;
+  border: 1px solid #dfc982;
+  border-radius: 12px;
+}
+.secret-once textarea {
+  width: 100%;
+  min-height: 80px;
+  overflow-wrap: anywhere;
+}
+.library-toolbar {
+  margin-bottom: 24px;
+}
+.space-card {
+  min-height: 220px;
+  border-top: 4px solid #648a76;
+}
+.lecture-editor {
+  padding: 28px;
+}
+.lecture-editor form {
+  display: grid;
+  gap: 18px;
+}
+.lecture-source {
+  min-height: 380px;
+  font-family: Consolas, monospace;
+  line-height: 1.7;
+}
+.lecture-paper {
+  margin: 24px auto;
+  padding: 48px;
+  max-width: 900px;
+}
+.lecture-paper h1 {
+  font-size: 2.2rem;
+  margin-bottom: 14px;
+}
+.lecture-meta {
+  color: #758379;
+  border-bottom: 1px solid #e0e5df;
+  padding-bottom: 22px;
+}
+.markdown img {
+  max-width: 100%;
+  max-height: 700px;
+  object-fit: contain;
+}
+.markdown pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 18px;
+  background: #f3f5f2;
+  border-radius: 8px;
+}
+.markdown table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.markdown th,
+.markdown td {
+  border: 1px solid #dce3dc;
+  padding: 8px 12px;
+}
+.markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 0;
+}
+.library-view input[type="file"] {
+  max-width: 210px;
+}
+@media (max-width: 800px) {
+  .account-grid {
+    grid-template-columns: 1fr;
+  }
+  .lecture-paper,
+  .lecture-editor {
+    padding: 22px;
+  }
+  .token-row {
+    flex-wrap: wrap;
+  }
+}
+@media print {
+  @page {
+    size: A4;
+    margin: 18mm;
+  }
+  body,
+  .app-shell,
+  .workspace-main,
+  .content,
+  .library-view {
+    display: block !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .sidebar,
+  .topbar,
+  .page-heading,
+  .library-toolbar,
+  .no-print,
+  .workspace-footer,
+  .library-view > [role="status"],
+  .library-view > .error {
+    display: none !important;
+  }
+  .lecture-paper {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+  .markdown h1,
+  .markdown h2,
+  .markdown h3 {
+    break-after: avoid;
+  }
+  .markdown img,
+  .markdown tr,
+  .katex-display {
+    break-inside: avoid;
+  }
+  .markdown img {
+    max-height: 220mm;
+  }
+}

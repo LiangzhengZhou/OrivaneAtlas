@@ -1,0 +1,10 @@
+{
+  "heading": "让这里更适合你。",
+  "language": "语言",
+  "system": "跟随系统",
+  "english": "English",
+  "chinese": "简体中文",
+  "languageHint": "切换立即生效，不会翻译任务标题或 Markdown 等用户内容。",
+  "scope": "当前可用范围",
+  "scopeHint": "任务编辑、列表与看板、依赖校验，以及仅在本次会话有效的回收站。SQLite、账户、Markdown 文档和 Agent 执行尚未接入。"
+}

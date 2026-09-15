@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  '@embedded-postgres/windows-x64': false
+  '@embedded-postgres/linux-x64': false
+minimumReleaseAge: 1440
+onlyBuiltDependencies:
+  - esbuild

@@ -1,0 +1,14 @@
+{
+  "VALIDATION_ERROR": "请检查输入：标题须为 1–240 个字符且不含换行，正文不超过 20 万字符，日记日期不得重复。",
+  "NOT_FOUND": "当前工作区中无法访问此条目。",
+  "FORBIDDEN": "当前操作者没有执行此操作的权限。",
+  "VERSION_CONFLICT": "内容已被另一次操作修改。请先保留草稿，关闭编辑器并刷新，再打开最新版本。",
+  "WORK_GRAPH_CYCLE_DETECTED": "该依赖会形成循环，无法添加。",
+  "DUPLICATE_EDGE": "该依赖关系已存在。",
+  "WORK_ITEM_BLOCKED": "请先完成前置任务，再开始或完成此任务。",
+  "DEPENDENCY_EXISTS": "删除前请先移除关联与项目内任务；重新打开已完成任务前，请先重置已开始的后续任务。",
+  "UNAUTHORIZED": "会话已过期。请保留或导出未保存的草稿，重新解锁后再继续。",
+  "UNAVAILABLE": "暂时无法连接服务器。请保留页面并检查 SSH 隧道，再重试。",
+  "RATE_LIMITED": "尝试次数过多，请稍后再试。",
+  "IDEMPOTENCY_REQUIRED": "请求缺少防重复标识，请重新打开页面。"
+}

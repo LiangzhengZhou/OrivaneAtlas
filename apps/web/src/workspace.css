@@ -1,0 +1,222 @@
+[hidden] {
+  display: none !important;
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+}
+.login-mode-switch {
+  order: 10;
+  margin-top: 18px;
+}
+.brand-logo {
+  display: block;
+  width: min(100%, 260px);
+  height: auto;
+  object-fit: contain;
+  background: transparent;
+  border-radius: 0;
+  /* Light monochrome presentation on the dark shell; preserve source alpha. */
+  filter: brightness(0) invert(0.93);
+}
+.sidebar .brand-logo {
+  width: min(100%, 180px);
+}
+.login-story .brand {
+  margin-bottom: 48px;
+}
+.document-workspace {
+  min-width: 0;
+  background: #fff;
+}
+.document-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 18px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid #e3e5ee;
+  background: #f9fafc;
+}
+.document-tab {
+  display: flex;
+  flex-shrink: 0;
+  border: 1px solid #e3e5ee;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  max-width: 280px;
+}
+.document-tab button {
+  background: transparent;
+  border: 0;
+  padding: 10px;
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.document-tab button[aria-selected="true"] {
+  background: #fff;
+  color: #6756a5;
+  font-weight: 600;
+}
+.document-pane {
+  min-height: calc(100vh - 170px);
+  padding: 0 32px;
+}
+.document-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf0f5;
+  font-size: 15px;
+}
+.document-title {
+  display: block;
+  width: 100%;
+  max-width: 920px;
+  margin: 32px auto 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #222d40;
+  font-size: 32px;
+  font-weight: 650;
+  outline: none;
+}
+.document-meta,
+.document-tools,
+.document-footnote {
+  max-width: 920px;
+  margin: 12px auto;
+  font-size: 15px;
+  color: #7d8497;
+}
+.document-tools input {
+  max-width: 100%;
+}
+.live-markdown,
+.document-reading {
+  max-width: 920px;
+  margin: 24px auto;
+}
+.live-markdown .cm-editor {
+  min-height: 55vh;
+  font-size: 18px;
+  line-height: 1.85;
+}
+.live-markdown .cm-editor.cm-focused {
+  outline: none;
+}
+.live-markdown .cm-scroller {
+  font-family: ui-monospace, "Cascadia Code", monospace;
+}
+.live-markdown .cm-content {
+  padding: 12px 0 100px;
+  caret-color: #6f5aa8;
+}
+.live-markdown .cm-line {
+  padding: 0;
+}
+.md-live-atxheading1 {
+  font-size: 1.7em;
+  font-weight: 700;
+}
+.md-live-atxheading2 {
+  font-size: 1.4em;
+  font-weight: 650;
+}
+.md-live-atxheading3,
+.md-live-atxheading4,
+.md-live-atxheading5,
+.md-live-atxheading6 {
+  font-size: 1.15em;
+  font-weight: 600;
+}
+.md-live-strongemphasis {
+  font-weight: 700;
+}
+.md-live-emphasis {
+  font-style: italic;
+}
+.md-live-inlinecode {
+  background: #f1edf8;
+  border-radius: 3px;
+  color: #704f91;
+}
+.md-live-link {
+  color: #6859a3;
+  text-decoration: underline;
+}
+.md-live-widget {
+  cursor: text;
+  margin: 12px 0;
+}
+.md-live-widget .markdown {
+  min-height: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.md-live-widget img {
+  max-height: 440px;
+  object-fit: contain;
+}
+.journal-marker {
+  color: #8062b1;
+  padding: 0 3px;
+}
+.print-only {
+  display: none;
+}
+@media (max-width: 760px) {
+  .sidebar .brand-logo {
+    width: 126px;
+    height: 64px;
+  }
+  .document-pane {
+    padding: 0 16px;
+  }
+  .document-title {
+    font-size: 26px;
+  }
+  .document-toolbar .action-spacer {
+    display: none;
+  }
+  .document-tabs {
+    padding-left: 8px;
+  }
+  .document-toolbar {
+    gap: 5px;
+  }
+}
+@media print {
+  .no-print,
+  .workspace-footer,
+  .sidebar,
+  .topbar,
+  .content {
+    display: none !important;
+  }
+  .print-only {
+    display: block;
+  }
+  .document-pane,
+  .workspace-main,
+  .document-reading {
+    padding: 0;
+    margin: 0;
+    max-width: none;
+    width: 100%;
+    min-height: 0;
+  }
+  .app-shell {
+    display: block;
+  }
+  .document-reading .markdown {
+    border: 0;
+    padding: 0;
+  }
+}

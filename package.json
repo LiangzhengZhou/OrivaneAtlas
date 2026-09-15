@@ -1,0 +1,44 @@
+{
+  "name": "arclattice",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11 <12"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @arclattice/web dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck && tsc -p tsconfig.json",
+    "lint": "biome check . && node scripts/check-boundaries.mjs",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "test:server-safe": "vitest run --exclude \"packages/storage-postgres/**\" --maxWorkers=1",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "check:server-safe": "pnpm lint && turbo run typecheck --concurrency=1 && tsc -p tsconfig.json && pnpm test:server-safe && turbo run build --concurrency=1",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "desktop:doctor": "node scripts/native-doctor.mjs",
+    "desktop:connected:dev": "tauri dev --config src-tauri/tauri.connected.conf.json",
+    "desktop:connected:build": "tauri build --config src-tauri/tauri.connected.conf.json",
+    "backup:offsite": "node scripts/offsite-backup.mjs"
+  },
+  "optionalDependencies": {
+    "@embedded-postgres/windows-x64": "18.4.0-beta.17",
+    "@embedded-postgres/linux-x64": "18.4.0-beta.17"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.13",
+    "@playwright/test": "1.63.0",
+    "@tauri-apps/cli": "2.11.4",
+    "@types/node": "^24.0.0",
+    "fast-check": "4.10.0",
+    "turbo": "2.10.12",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}

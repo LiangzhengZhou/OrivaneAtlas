@@ -1,0 +1,18 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!!**/dist",
+      "!!**/node_modules",
+      "!!**/.turbo",
+      "!!**/target",
+      "!!**/test-results",
+      "!!**/playwright-report",
+      "!!pnpm-lock.yaml"
+    ]
+  },
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },
+  "linter": { "enabled": true, "rules": { "preset": "none" } },
+  "javascript": { "formatter": { "quoteStyle": "double" } }
+}
