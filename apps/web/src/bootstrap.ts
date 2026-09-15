@@ -41,9 +41,18 @@ function initialServerOrigin() {
 }
 function normalizeServerOrigin(value: string) {
   const url = new URL(value.trim());
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && url.hostname === "127.0.0.1"))
+  if (
+    url.protocol !== "https:" &&
+    !(url.protocol === "http:" && url.hostname === "127.0.0.1")
+  )
     throw new Error("HTTPS server origin required");
-  if (url.pathname !== "/" || url.search || url.hash || url.username || url.password)
+  if (
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash ||
+    url.username ||
+    url.password
+  )
     throw new Error("Exact server origin required");
   return url.origin;
 }
@@ -240,7 +249,7 @@ export async function bootstrap() {
       request<LibraryEntry[]>(
         "/api/library/revisions?id=" + encodeURIComponent(id),
       ),
-    async uploadImage(spaceId: string, file: File) {
+    async uploadImage(spaceId: string | null, file: File) {
       if (
         file.size > 500000 ||
         !["image/png", "image/jpeg", "image/webp"].includes(file.type)

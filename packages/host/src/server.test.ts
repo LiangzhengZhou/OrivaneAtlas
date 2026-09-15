@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { ModelPort, PersonalModelVault } from "@arclattice/application";
 import { restoreDatabase } from "@arclattice/storage-sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { passwordHash } from "./password";
 import { openPersonalVault } from "./personal-model";
 import { createHost } from "./server";
 
@@ -1058,7 +1059,91 @@ describe("private HTTP host", () => {
     ).toBe(401);
     await signIn("owner", "Changed-password-123");
   }, 15000);
-  it("knowledge revisions, private images and account verifiers survive a consistent v5 backup and new-file restore", async () => {
+  it("workspace images are authenticated, isolated, idempotent and included in backups", async () => {
+    const verifier = await passwordHash(password);
+    await host.db.accounts((store) => store.register("owner", verifier, true));
+    await signIn();
+    const value = {
+      spaceId: null,
+      name: "paste.png",
+      mime: "image/png",
+      base64: png,
+    };
+    const headers = { "Idempotency-Key": randomUUID() };
+    const upload = await call("/api/library/upload", value, headers);
+    expect(upload.status).toBe(200);
+    const asset = await upload.json();
+    expect(
+      await (await call("/api/library/upload", value, headers)).json(),
+    ).toEqual(asset);
+    expect(
+      Buffer.from(await (await call(asset.url)).arrayBuffer()).toString(
+        "base64",
+      ),
+    ).toBe(png);
+    expect((await call(asset.url, undefined, { Cookie: "" })).status).toBe(401);
+    for (const invalid of [
+      { mime: "image/svg+xml", base64: png },
+      { mime: "image/png", base64: Buffer.alloc(16).toString("base64") },
+      { mime: "image/png", base64: Buffer.alloc(500001).toString("base64") },
+    ])
+      expect(
+        (await call("/api/library/upload", { ...value, ...invalid })).status,
+      ).toBe(400);
+    const parent = await space();
+    const linked = await (
+      await call("/api/library/upload", { ...value, spaceId: parent.id })
+    ).json();
+    expect((await call(linked.url)).status).toBe(200);
+    expect(
+      (
+        await call("/api/library/delete", {
+          id: parent.id,
+          version: parent.version,
+          deleted: true,
+        })
+      ).status,
+    ).toBe(200);
+    expect((await call(linked.url)).status).toBe(404);
+    expect((await call(asset.url)).status).toBe(200);
+    expect(
+      (
+        await call("/api/library/upload", {
+          name: "x",
+          mime: "image/png",
+          base64: png,
+        })
+      ).status,
+    ).toBe(400);
+    const backup = join(directory, "workspace-image.sqlite");
+    const restoredPath = join(directory, "workspace-image-restored.sqlite");
+    await host.db.backup(backup);
+    await restoreDatabase(backup, restoredPath);
+    const restored = new DatabaseSync(restoredPath, { readOnly: true });
+    try {
+      expect(
+        restored
+          .prepare("SELECT space_id,base64 FROM library_asset WHERE id=?")
+          .get(asset.id),
+      ).toEqual({ space_id: null, base64: png });
+      expect(
+        restored
+          .prepare(
+            "SELECT count(*) n FROM connected_activity WHERE entity_id=?",
+          )
+          .get(asset.id)?.n,
+      ).toBe(1);
+    } finally {
+      restored.close();
+    }
+    await host.db.accounts((store) => {
+      const user = store.register("reader", verifier, false);
+      store.status(user.id, user.version, "ACTIVE");
+    });
+    await signIn("reader");
+    expect((await call(asset.url)).status).toBe(404);
+  }, 15000);
+  it("knowledge revisions, private images and account verifiers survive a consistent backup and new-file restore", async () => {
     await claim();
     const library = await space();
     const value = {
@@ -1147,7 +1232,7 @@ describe("private HTTP host", () => {
     await restoreDatabase(backup, restored);
     const raw = new DatabaseSync(restored, { readOnly: true });
     try {
-      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(7);
+      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(8);
       expect(
         raw.prepare("SELECT base64 FROM library_asset").get()?.base64,
       ).toBe(png);
@@ -1433,8 +1518,8 @@ describe("private HTTP host", () => {
     await new Promise<void>((done) => host.server.listen(0, "127.0.0.1", done));
     base = "http://127.0.0.1:" + (host.server.address() as AddressInfo).port;
     const headers = {
-        Host: "example.test",
-        Origin: "https://example.test",
+      Host: "example.test",
+      Origin: "https://example.test",
     };
     const response = await call("/api/session", { secret }, headers);
     expect(response.status).toBe(200);
@@ -1490,7 +1575,7 @@ describe("private HTTP host", () => {
       expect(raw.prepare("SELECT count(*) AS n FROM notebook").get()?.n).toBe(
         1,
       );
-      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(7);
+      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(8);
     } finally {
       raw.close();
     }

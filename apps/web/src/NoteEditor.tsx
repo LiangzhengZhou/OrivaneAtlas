@@ -3,6 +3,7 @@ import { Download, History, ShieldCheck, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime } from "./bootstrap";
+import { FilePicker } from "./FilePicker";
 import { Markdown } from "./Markdown";
 export function downloadText(
   name: string,
@@ -112,44 +113,38 @@ export function NoteEditor({
           {t("notePrivacy")}
         </p>
         {!note && kind === "NOTE" && !body && !title && (
-          <label className="field import-field">
-            <span>{t("importMarkdown")}</span>
-            <input
-              type="file"
-              aria-label={t("importMarkdown")}
-              accept=".md,.markdown,.txt"
-              disabled={busy}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                setImportError(false);
-                if (
-                  file.size > 600000 ||
-                  !/\.(md|markdown|txt)$/i.test(file.name)
-                ) {
-                  setImportError(true);
-                  return;
-                }
-                void file
-                  .arrayBuffer()
-                  .then((buffer) => {
-                    const text = new TextDecoder("utf-8", {
-                      fatal: true,
-                    }).decode(buffer);
-                    if (text.length > 200000) throw new Error("size");
-                    setBody(text);
-                    setTitle(
-                      file.name
-                        .replace(/\.(md|markdown|txt)$/i, "")
-                        .slice(0, 240),
-                    );
-                    setPreview(false);
-                  })
-                  .catch(() => setImportError(true));
-              }}
-            />
-            <small>{t("importHint")}</small>
-          </label>
+          <FilePicker
+            label={t("importMarkdown")}
+            hint={t("importHint")}
+            accept=".md,.markdown,.txt"
+            disabled={busy}
+            onFile={(file) => {
+              setImportError(false);
+              if (
+                file.size > 600000 ||
+                !/\.(md|markdown|txt)$/i.test(file.name)
+              ) {
+                setImportError(true);
+                return;
+              }
+              void file
+                .arrayBuffer()
+                .then((buffer) => {
+                  const text = new TextDecoder("utf-8", {
+                    fatal: true,
+                  }).decode(buffer);
+                  if (text.length > 200000) throw new Error("size");
+                  setBody(text);
+                  setTitle(
+                    file.name
+                      .replace(/\.(md|markdown|txt)$/i, "")
+                      .slice(0, 240),
+                  );
+                  setPreview(false);
+                })
+                .catch(() => setImportError(true));
+            }}
+          />
         )}
         {importError && (
           <p className="error" role="alert">

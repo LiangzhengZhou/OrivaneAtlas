@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
+import { snapshotToNewFile } from "./database";
 import { restoreDatabase, SqliteUnitOfWork } from "./index";
 import {
   applicationId,
@@ -13,6 +14,73 @@ import { context, service, sqliteHarness } from "./testing";
 
 const harness = sqliteHarness();
 describe("SQLite migrations and recovery", () => {
+  it("upgrades v7 images without changing bytes and independently restores v7 and v8", async () => {
+    const path = harness.file();
+    const raw = new DatabaseSync(path);
+    const image = "private-image-bytes";
+    let backup = "";
+    const after = join(dirname(path), "images-v8.sqlite");
+    try {
+      raw.exec("PRAGMA foreign_keys=ON");
+      await migrate(raw, path, 100, migrations.slice(0, 7));
+      raw.exec(
+        "INSERT INTO workspace VALUES ('w','Owner'); INSERT INTO library_entry VALUES ('w','s',1,'{}')",
+      );
+      raw
+        .prepare(
+          "INSERT INTO library_asset VALUES ('w','old','s','image.png','image/png',?)",
+        )
+        .run(image);
+      const before = raw.prepare("SELECT * FROM library_asset").all();
+      backup = (await migrate(raw, path, 100)).backupPath!;
+      expect(inspectSchema(raw)).toBe(8);
+      expect(raw.prepare("SELECT * FROM library_asset").all()).toEqual(before);
+      raw
+        .prepare(
+          "INSERT INTO library_asset VALUES ('w','new',NULL,'image.png','image/png',?)",
+        )
+        .run(image);
+      expect(() =>
+        raw.exec(
+          "INSERT INTO library_asset VALUES ('other','bad',NULL,'x','image/png','x')",
+        ),
+      ).toThrow();
+      expect(() =>
+        raw.exec(
+          "INSERT INTO library_asset VALUES ('w','bad','missing','x','image/png','x')",
+        ),
+      ).toThrow();
+      expect(raw.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+      await snapshotToNewFile(raw, after);
+    } finally {
+      raw.close();
+    }
+    for (const [source, version, count] of [
+      [backup, 7, 1],
+      [after, 8, 2],
+    ] as const) {
+      const restoredPath = join(
+        dirname(path),
+        `images-restored-${version}.sqlite`,
+      );
+      await restoreDatabase(source, restoredPath);
+      const restored = new DatabaseSync(restoredPath, { readOnly: true });
+      try {
+        expect(inspectSchema(restored, migrations.slice(0, version))).toBe(
+          version,
+        );
+        const rows = restored.prepare("SELECT base64 FROM library_asset").all();
+        expect(rows).toHaveLength(count);
+        expect(rows.every((row) => row.base64 === image)).toBe(true);
+        expect(
+          restored.prepare("PRAGMA integrity_check").get()?.integrity_check,
+        ).toBe("ok");
+        expect(restored.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+      } finally {
+        restored.close();
+      }
+    }
+  });
   it("upgrades v6 preserving notebook bytes and history and restores v6 independently", async () => {
     const path = harness.file();
     const raw = new DatabaseSync(path);
@@ -35,7 +103,7 @@ describe("SQLite migrations and recovery", () => {
       const history = raw.prepare("SELECT * FROM schema_migrations").all();
       const result = await migrate(raw, path, 100);
       backup = result.backupPath!;
-      expect(result.version).toBe(7);
+      expect(result.version).toBe(8);
       expect(raw.prepare("SELECT payload FROM notebook").get()?.payload).toBe(
         payload,
       );
@@ -84,7 +152,7 @@ describe("SQLite migrations and recovery", () => {
       const history = raw.prepare("SELECT * FROM schema_migrations").all();
       const result = await migrate(raw, path, 100);
       backup = result.backupPath!;
-      expect(result.version).toBe(7);
+      expect(result.version).toBe(8);
       expect(raw.prepare("SELECT * FROM api_credential").all()).toEqual(before);
       expect(
         raw.prepare("SELECT * FROM schema_migrations WHERE version<=5").all(),

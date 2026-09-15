@@ -28,7 +28,7 @@ export interface LibraryInput {
 }
 export interface LibraryAsset {
   id: string;
-  spaceId: string;
+  spaceId: string | null;
   name: string;
   mime: string;
   base64: string;

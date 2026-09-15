@@ -2,7 +2,6 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxTree } from "@codemirror/language";
 import {
-  Annotation,
   Compartment,
   EditorState,
   RangeSetBuilder,
@@ -18,8 +17,9 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import katex from "katex";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { externalValue, pendingImage } from "./imageInsertion";
 import { Markdown } from "./Markdown";
 
 class MathWidget extends WidgetType {
@@ -62,7 +62,6 @@ class MathWidget extends WidgetType {
   }
 }
 
-const externalValue = Annotation.define<boolean>();
 // Reuse the safe reading renderer; no raw HTML or remote image requests.
 class PreviewWidget extends WidgetType {
   private root?: Root;
@@ -229,6 +228,7 @@ export function LiveMarkdown({
   onSave,
   onComposition,
   editorRef,
+  onImages,
 }: {
   value: string;
   source: boolean;
@@ -237,10 +237,11 @@ export function LiveMarkdown({
   onSave: () => void;
   onComposition: (active: boolean) => void;
   editorRef: { current: EditorView | null };
+  onImages?: (files: File[]) => void;
 }) {
   const parent = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onChange, onSave, onComposition });
-  callbacks.current = { onChange, onSave, onComposition };
+  const callbacks = useRef({ onChange, onSave, onComposition, onImages });
+  callbacks.current = { onChange, onSave, onComposition, onImages };
   const mode = useRef(new Compartment());
   const initial = useRef({ value, source, label });
   useEffect(() => {
@@ -252,6 +253,7 @@ export function LiveMarkdown({
         extensions: [
           markdown(),
           history(),
+          pendingImage,
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({
             "aria-label": initial.current.label,
@@ -273,6 +275,15 @@ export function LiveMarkdown({
             ...historyKeymap,
           ]),
           EditorView.domEventHandlers({
+            paste: (event) => {
+              const files = Array.from(event.clipboardData?.files ?? []).filter(
+                (file) => file.type.startsWith("image/"),
+              );
+              if (!files.length || !callbacks.current.onImages) return false;
+              event.preventDefault();
+              callbacks.current.onImages(files);
+              return true;
+            },
             compositionstart: () => {
               callbacks.current.onComposition(true);
             },
@@ -306,7 +317,9 @@ export function LiveMarkdown({
       ),
     });
   }, [source, editorRef]);
-  useEffect(() => {
+  // Apply controlled replacements before another input event. A passive effect
+  // can replay stale text over fast Android typing and invalidate upload anchors.
+  useLayoutEffect(() => {
     const view = editorRef.current;
     if (view && view.state.doc.toString() !== value.replace(/\r\n?/g, "\n"))
       view.dispatch({

@@ -3,6 +3,8 @@ import type { EditorView } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "./bootstrap";
+import { FilePicker } from "./FilePicker";
+import { imageAnchor, pendingImage } from "./imageInsertion";
 import { LiveMarkdown } from "./LiveMarkdown";
 import { clearDraft, loadDraft, saveDraft } from "./localDrafts";
 import { Markdown } from "./Markdown";
@@ -333,6 +335,68 @@ function DocumentPane({
       setBusy(false);
     }
   }
+  const [imageError, setImageError] = useState("");
+  function insertImages(files: File[]) {
+    setImageError("");
+    if (gate.current) {
+      setImageError(
+        zh
+          ? "正在保存或上传，请稍后重新粘贴或选择图片。"
+          : "Saving or uploading. Please paste or select the image again shortly.",
+      );
+      return;
+    }
+    const file = files[0];
+    if (
+      files.length !== 1 ||
+      !file ||
+      file.size > 500000 ||
+      !["image/png", "image/jpeg", "image/webp"].includes(file.type)
+    ) {
+      setImageError(
+        zh
+          ? "请每次选择或粘贴一张 PNG、JPEG 或 WebP 图片，大小不超过 500 KB。"
+          : "Select or paste one PNG, JPEG or WebP image at a time, up to 500 KB.",
+      );
+      return;
+    }
+    const view = editor.current;
+    if (!view) return;
+    view.dispatch({ effects: imageAnchor.of(view.state.selection.main.head) });
+    void guarded(async () => {
+      try {
+        const asset = await runtime.uploadImage(request.spaceId ?? null, file);
+        if (editor.current !== view) return;
+        const position = view.state.field(pendingImage);
+        const insert = "\n![](" + asset.url + ")\n";
+        if (
+          position === null ||
+          view.state.doc.length + insert.length > 200000
+        ) {
+          setImageError(
+            zh
+              ? "正文已被替换或超过长度限制，未插入图片。请重新选择图片。"
+              : "The document was replaced or is too long. Image not inserted; please select it again.",
+          );
+          return;
+        }
+        view.dispatch({
+          changes: { from: position, insert },
+          effects: imageAnchor.of(null),
+        });
+      } catch (cause) {
+        setImageError(
+          zh
+            ? "图片上传失败，请检查连接、登录状态或工作区容量后重试。正文未被替换。"
+            : "Image upload failed. Check your connection, session or workspace quota and retry. Your text was not replaced.",
+        );
+        throw cause;
+      } finally {
+        if (editor.current === view)
+          view.dispatch({ effects: imageAnchor.of(null) });
+      }
+    });
+  }
   return (
     <article className="document-pane">
       <div className="document-toolbar no-print">
@@ -588,18 +652,24 @@ function DocumentPane({
         <summary>
           {zh ? "导入、图片与修订" : "Import, images and revisions"}
         </summary>
-        <label>
-          {t("importMarkdown")}
-          <input
-            type="file"
+        <div className="document-upload-grid">
+          <FilePicker
+            label={t("importMarkdown")}
+            hint={
+              zh
+                ? "选择 .md / .txt · UTF-8 · 最大 600 KB"
+                : "Choose .md / .txt · UTF-8 · up to 600 KB"
+            }
+            disabled={busy}
             accept=".md,.markdown,.txt"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (!file) return;
+            onFile={(file) => {
               if (dirty && !window.confirm(s("leave"))) return;
               void guarded(async () => {
-                if (file.size > 600000) throw new Error("size");
+                if (
+                  file.size > 600000 ||
+                  !/\.(md|markdown|txt)$/i.test(file.name)
+                )
+                  throw new Error("size");
                 const value = new TextDecoder("utf-8", { fatal: true }).decode(
                   await file.arrayBuffer(),
                 );
@@ -614,32 +684,19 @@ function DocumentPane({
               });
             }}
           />
-        </label>
-        {request.spaceId && (
-          <label>
-            {s("image")}
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (!file) return;
-                void guarded(async () => {
-                  const asset = await runtime.uploadImage(
-                    request.spaceId!,
-                    file,
-                  );
-                  const view = editor.current;
-                  if (view)
-                    view.dispatch(
-                      view.state.replaceSelection("\n![](" + asset.url + ")\n"),
-                    );
-                });
-              }}
-            />
-          </label>
-        )}
+          <FilePicker
+            label={s("image")}
+            hint="PNG / JPEG / WebP · ≤ 500 KB"
+            disabled={busy || !!base?.deletedAt}
+            accept="image/png,image/jpeg,image/webp"
+            onFile={(file) => insertImages([file])}
+          />
+        </div>
+        <p className="upload-hint">
+          {zh
+            ? "也可在编辑器内直接粘贴图片（Ctrl/⌘ V）。图片保存在自己的服务器，仅当前工作区可访问；导出的 Markdown 不包含图片文件。"
+            : "Or paste an image into the editor (Ctrl/⌘ V). Images stay on your server, accessible only within this workspace; Markdown exports do not include image files."}
+        </p>
         {history.map((revision) => (
           <details key={revision.version}>
             <summary>
@@ -660,6 +717,11 @@ function DocumentPane({
           </details>
         ))}
       </details>
+      {imageError && (
+        <p className="error" role="alert">
+          {imageError}
+        </p>
+      )}
       <div hidden={mode === "read"} className="no-print">
         <LiveMarkdown
           value={body}
@@ -669,6 +731,7 @@ function DocumentPane({
           onSave={() => void save(true)}
           onComposition={setComposing}
           editorRef={editor}
+          onImages={insertImages}
         />
       </div>
       <div

@@ -2248,7 +2248,8 @@
                 "additionalProperties": false,
                 "properties": {
                   "spaceId": {
-                    "type": "string"
+                    "type": ["string", "null"],
+                    "description": "Null for a private workspace image; otherwise a live knowledge space ID."
                   },
                   "name": {
                     "type": "string",
@@ -4948,7 +4949,8 @@
                 "additionalProperties": false,
                 "properties": {
                   "spaceId": {
-                    "type": "string"
+                    "type": ["string", "null"],
+                    "description": "Null for a private workspace image; otherwise a live knowledge space ID."
                   },
                   "name": {
                     "type": "string",

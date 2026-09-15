@@ -1044,7 +1044,8 @@ export async function createHost(options: HostOptions) {
                 if (!valid) fail(400, "VALIDATION_ERROR");
                 const asset = {
                   id: v7(),
-                  spaceId: string(value.spaceId),
+                  spaceId:
+                    value.spaceId === null ? null : string(value.spaceId),
                   name: string(value.name, 120),
                   mime,
                   base64,

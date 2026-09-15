@@ -108,9 +108,12 @@ export function libraryStore(
         .map((r) => JSON.parse(String(r.payload)) as LibraryEntry);
     },
     async putAsset(asset) {
-      const space = await get(asset.spaceId);
-      if (space.kind !== "SPACE" || space.deletedAt)
-        throw new DomainError("NOT_FOUND");
+      guard();
+      if (asset.spaceId !== null) {
+        const space = await get(asset.spaceId);
+        if (space.kind !== "SPACE" || space.deletedAt)
+          throw new DomainError("NOT_FOUND");
+      }
       const size = Number(
         db
           .prepare(
@@ -138,8 +141,10 @@ export function libraryStore(
         )
         .get(context.workspaceId, id);
       if (!row) throw new DomainError("NOT_FOUND");
-      const space = await get(String(row.spaceId));
-      if (space.deletedAt) throw new DomainError("NOT_FOUND");
+      if (row.spaceId !== null) {
+        const space = await get(String(row.spaceId));
+        if (space.deletedAt) throw new DomainError("NOT_FOUND");
+      }
       return row as unknown as Awaited<ReturnType<LibraryStore["asset"]>>;
     },
   };

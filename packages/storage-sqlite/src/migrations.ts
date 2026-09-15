@@ -72,6 +72,14 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 8,
+    name: "workspace-assets",
+    sql: readFileSync(
+      new URL("./migrations/0008-workspace-assets.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string): string {
   return createHash("sha256")

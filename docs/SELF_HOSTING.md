@@ -29,6 +29,16 @@ Put a properly configured HTTPS reverse proxy in front of the host and use an ex
 
 Native clients should be configured with the server origin. A client connection does not make the server optional: the server remains responsible for authentication, authorization, persistence, and workspace isolation.
 
+## Markdown images
+
+In a note, journal or knowledge document, open **Import, images and revisions** to choose a Markdown file or upload an image. You can also paste one image into the editor with Ctrl/Command+V. Ordinary text paste is unchanged.
+
+Images use your own authenticated server storage; no third-party image host is required. Supported formats are PNG, JPEG and WebP, up to 500,000 bytes per image. The existing workspace image quota is approximately 20 MB before Base64 encoding. Failed uploads leave the text intact; check your session, connection, file size or quota and retry.
+
+Images are private to their workspace, not public sharing URLs. Markdown exports contain server references, not bundled images. Uploaded assets remain stored after removing their Markdown reference; automated orphan cleanup is not implemented. Consistent database backups include the image bytes.
+
+This feature requires both the updated web client and server, including SQLite migration 8. The migration runner takes a pre-upgrade snapshot; keep it and verify restoration to a separate file before deployment. To roll back, restore that pre-upgrade database with matching old code; do not open a v8 database using an older migration plan.
+
 ## AI providers
 
 AI providers are optional. Store provider credentials in a protected secret store or environment managed by the operator. Never place them in source code, browser localStorage, ordinary application tables, release assets, or public issue reports.

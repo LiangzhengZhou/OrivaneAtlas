@@ -29,6 +29,7 @@ const resources = Object.fromEntries(
   ]),
 ) as typeof import("../../packages/i18n/src/index").resources;
 
+import { passwordHash } from "../../packages/host/src/password";
 import { createHost } from "../../packages/host/src/server";
 
 const test = base.extend<{ workbench: { url: string; secret: string } }>({
@@ -60,6 +61,12 @@ const test = base.extend<{ workbench: { url: string; secret: string } }>({
         : {}),
     });
     try {
+      if (info.title.includes("private image editing")) {
+        const verifier = await passwordHash(secret);
+        await host.db.accounts((store) =>
+          store.register("image-editor", verifier, true),
+        );
+      }
       await new Promise<void>((done, reject) => {
         host.server.once("error", reject);
         host.server.listen(port, "127.0.0.1", done);
@@ -81,6 +88,157 @@ const test = base.extend<{ workbench: { url: string; secret: string } }>({
 function words(locale: string) {
   return resources[locale.endsWith("zh") ? "zh-CN" : "en-US"];
 }
+test("private image editing: modern picker, clipboard, concurrent typing and retry", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(workbench.url);
+  await page
+    .getByLabel(w.spaces.username, { exact: true })
+    .fill("image-editor");
+  await page
+    .getByLabel(w.spaces.password, { exact: true })
+    .fill(workbench.secret);
+  await page.getByRole("button", { name: w.desk.enter, exact: true }).click();
+  await nav(page, w.desk.notes);
+  await page.locator(".page-heading").getByRole("button").click();
+  await pane(page)
+    .getByRole("button", { name: /^(Source|源码)$/ })
+    .click();
+  await pane(page).locator(".document-tools > summary").click();
+  await pane(page)
+    .getByLabel(w.desk.importMarkdown, { exact: true })
+    .setInputFiles({
+      name: "Image notebook.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# Image notebook\n\nOriginal text"),
+    });
+  const editor = pane(page).getByLabel(w.desk.noteBody, { exact: true });
+  await expect(editor).toContainText("Original text");
+  await editor.focus();
+  await page.keyboard.press("Control+End");
+  await editor.evaluate((element) => {
+    const clipboard = new DataTransfer();
+    clipboard.setData("text/plain", " plain paste");
+    element.dispatchEvent(
+      new ClipboardEvent("paste", {
+        clipboardData: clipboard,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  await expect(editor).toContainText("plain paste");
+  await saveDocument(page, w);
+  await page.screenshot({
+    path: info.outputPath("modern-upload.png"),
+    fullPage: true,
+  });
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXs8AAAAASUVORK5CYII=";
+  async function paste(mime = "image/png") {
+    await editor.evaluate(
+      (element, data) => {
+        const clipboard = new DataTransfer();
+        clipboard.items.add(
+          new File(
+            [Uint8Array.from(atob(data.png), (c) => c.charCodeAt(0))],
+            "pasted.png",
+            { type: data.mime },
+          ),
+        );
+        element.dispatchEvent(
+          new ClipboardEvent("paste", {
+            clipboardData: clipboard,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      },
+      { png, mime },
+    );
+  }
+  await editor.focus();
+  await page.keyboard.press("Control+End");
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let uploadStarted = false;
+  await page.route("**/api/library/upload", async (route) => {
+    uploadStarted = true;
+    expect(route.request().postDataJSON().spaceId).toBeNull();
+    await held;
+    await route.continue();
+  });
+  await paste();
+  await expect.poll(() => uploadStarted).toBe(true);
+  await page.keyboard.type(" kept while uploading");
+  await nav(page, w.desk.tasks);
+  release();
+  await page.getByRole("tab", { name: /Image notebook/ }).click();
+  await expect(editor).toContainText(/api\/library\/asset/);
+  await expect(editor).toContainText("kept while uploading");
+  await page.unroute("**/api/library/upload");
+  await saveDocument(page, w);
+  await paste("image/svg+xml");
+  await expect(pane(page).getByRole("alert")).toContainText("500 KB");
+  await page.route("**/api/library/upload", (route) => route.abort());
+  await paste();
+  await expect(pane(page).getByRole("alert").last()).toContainText(
+    /上传失败|upload failed/,
+  );
+  await expect(editor).toContainText("kept while uploading");
+  await page.unroute("**/api/library/upload");
+  await pane(page)
+    .getByLabel(w.spaces.image, { exact: true })
+    .setInputFiles({
+      name: "selected.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(png, "base64"),
+    });
+  await expect
+    .poll(
+      async () =>
+        ((await editor.textContent())?.match(/api\/library\/asset/g) ?? [])
+          .length,
+    )
+    .toBe(2);
+  await saveDocument(page, w);
+  await pane(page)
+    .getByRole("button", { name: w.desk.read, exact: true })
+    .click();
+  const images = pane(page).locator(".document-reading img");
+  await expect(images).toHaveCount(2);
+  await expect
+    .poll(() =>
+      images.evaluateAll((items) =>
+        items.every((item) => (item as HTMLImageElement).naturalWidth > 0),
+      ),
+    )
+    .toBe(true);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: info.outputPath("private-images.png"),
+    fullPage: true,
+  });
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(snapshot.notes[0].bodyMd).toContain("kept while uploading");
+  expect(snapshot.notes[0].bodyMd).toContain("plain paste");
+  expect(snapshot.notes[0].bodyMd.match(/api\/library\/asset/g)).toHaveLength(
+    2,
+  );
+  expect(errors).toEqual([]);
+});
 test("organization selection archive delete gradients and readable typography", async ({
   page,
   workbench,
