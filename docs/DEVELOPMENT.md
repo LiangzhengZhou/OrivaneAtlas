@@ -31,7 +31,7 @@ node packages/host/dist/main.js
 
 默认 http://127.0.0.1:4317，首次生成 data/access.key，输入密钥解锁；不要打印进日志。Linux受限权限，Windows另需保证目录ACL。端口已占用时用ARCLATTICE_PORT指定空闲端口，不结束未知进程。不要双击index.html。pnpm dev只提供Vite前端，尚无完整API代理；稳定验收先build再启动同源宿主。
 
-服务器正式配置 ARCLATTICE_ORIGIN=https://123.207.179.150，Node仍只监听回环。HTTPS源使用Secure会话；明文源只允许127.0.0.1。精确Host/Origin，不信任转发头。公开服务不能通过旧localhost隧道登录（Host不匹配是预期），直接用HTTPS入口。
+部署环境应通过环境变量配置 ARCLATTICE_ORIGIN，Node 默认只监听回环。HTTPS 源使用 Secure 会话；明文源只允许 127.0.0.1。精确 Host/Origin，不信任转发头。公开服务不能通过旧 localhost 隧道登录（Host 不匹配是预期）。
 
 ## 验证命令
 
@@ -66,7 +66,7 @@ Markdown阅读使用安全GFM/数学公式渲染，不执行原始HTML/外部图
 
 node scripts/package-source.mjs ABSOLUTE_OUTPUT_PREFIX：仓库外生成新tar.gz和逐文件sha256清单；Git可见源文件，拒绝不安全路径、秘密/数据库文件、符号链接；拒绝覆盖旧检查点。上传前校验服务器旧清单并盘点新增文件，上传后核验hash，不将归档当业务备份。
 
-node scripts/verify-release.mjs https://123.207.179.150 C:/Users/admin/AppData/Local/ArcLattice-private/access.key：仅在安全本机运行，密钥读入内存、不打印；验收可信TLS/首页/health/匿名拒绝/登录/快照/Secure会话/全库下载/CSRF，最后登出。无业务写入。受备份每分钟门禁约束，不要快速重复执行。
+node scripts/verify-release.mjs https://your-host.example C:/path/outside-repository/access.key：仅在安全本机运行，密钥读入内存、不打印；验收可信 TLS/首页/health/匿名拒绝/登录/快照/Secure 会话/全库下载/CSRF，最后登出。无业务写入。受备份每分钟门禁约束，不要快速重复执行。
 
 ## 实际范围
 

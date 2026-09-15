@@ -1419,7 +1419,7 @@ describe("private HTTP host", () => {
       createHost({
         database: join(directory, "bad.sqlite"),
         secret,
-        origin: "http://123.207.179.150",
+        origin: "http://example.test",
         webRoot: directory,
       }),
     ).rejects.toThrow();
@@ -1427,14 +1427,14 @@ describe("private HTTP host", () => {
     host = await createHost({
       database: join(directory, "secure.sqlite"),
       secret,
-      origin: "https://123.207.179.150",
+      origin: "https://example.test",
       webRoot: directory,
     });
     await new Promise<void>((done) => host.server.listen(0, "127.0.0.1", done));
     base = "http://127.0.0.1:" + (host.server.address() as AddressInfo).port;
     const headers = {
-      Host: "123.207.179.150",
-      Origin: "https://123.207.179.150",
+        Host: "example.test",
+        Origin: "https://example.test",
     };
     const response = await call("/api/session", { secret }, headers);
     expect(response.status).toBe(200);
@@ -1444,7 +1444,7 @@ describe("private HTTP host", () => {
         await call(
           "/api/session",
           { secret },
-          { ...headers, Origin: "http://123.207.179.150" },
+          { ...headers, Origin: "http://example.test" },
         )
       ).status,
     ).toBe(403);
