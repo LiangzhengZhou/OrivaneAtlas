@@ -34,6 +34,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AccountView, AdminView } from "./AccountViews";
+import { AppUpdater } from "./AppUpdater";
 import {
   type Runtime,
   readPreference,
@@ -110,7 +111,10 @@ export function App({ runtime }: { runtime: Runtime }) {
       }}
     />
   ) : (
-    <Login runtime={runtime} onLogin={() => setContext(runtime.context)} />
+    <>
+      <Login runtime={runtime} onLogin={() => setContext(runtime.context)} />
+      <AppUpdater updates={runtime.updates} />
+    </>
   );
 }
 function Workbench({
@@ -1040,6 +1044,7 @@ function Workbench({
             />
           ) : view === "settings" ? (
             <div className="settings-panel">
+              <AppUpdater updates={runtime.updates} />
               <section>
                 <h2>{t("settings:language")}</h2>
                 <p>{t("settings:languageHint")}</p>

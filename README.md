@@ -37,7 +37,9 @@ For local development, read [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). The docu
 
 ## Downloads
 
-Debug Windows and Android builds are published on [GitHub Releases](https://github.com/LiangzhengZhou/OrivaneAtlas/releases). The current Android package is arm64 debug, and the native builds are not formal production-signed releases.
+Windows x64 and Android arm64 packages are published on [GitHub Releases](https://github.com/LiangzhengZhou/OrivaneAtlas/releases). Starting with 0.0.4, native clients include **Check for updates → Download and install**. Windows verifies signed update packages; Android uses a dedicated release key and asks the system installer for confirmation. Windows does not yet have a publicly trusted Authenticode publisher certificate and may display an unknown-publisher warning.
+
+**Upgrading an old debug APK:** first synchronize and export local drafts, verify your backups, then migrate to the new release-key APK. Different signing keys prevent an in-place upgrade. Old clients without the updater need one manual installation. See [Native signing and updates](docs/NATIVE_UPDATES.md) for migration, verification, and current test limitations.
 
 ## Security and privacy
 

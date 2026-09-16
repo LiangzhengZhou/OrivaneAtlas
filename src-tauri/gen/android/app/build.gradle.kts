@@ -16,6 +16,17 @@ val tauriProperties = Properties().apply {
 android {
     compileSdk = 36
     namespace = "dev.arclattice.app"
+    signingConfigs {
+        create("atlasRelease") {
+            val keyPath = System.getenv("ATLAS_ANDROID_KEYSTORE")
+            if (!keyPath.isNullOrBlank()) {
+                storeFile = file(keyPath)
+                storePassword = System.getenv("ATLAS_ANDROID_KEY_PASSWORD")
+                keyAlias = "atlas-release"
+                keyPassword = System.getenv("ATLAS_ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "dev.arclattice.app"
@@ -37,6 +48,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfig = signingConfigs.getByName("atlasRelease")
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }

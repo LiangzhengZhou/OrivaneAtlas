@@ -28,6 +28,9 @@ coverage/
 *.key
 *.keystore
 *.jks
+*.pfx
+*.p12
+*.dpapi
 .DS_Store
 
 # Private project operations and handoff records (never publish).

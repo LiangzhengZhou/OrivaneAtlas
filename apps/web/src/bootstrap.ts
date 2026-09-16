@@ -3,6 +3,8 @@ import type {
   ActivityEvent,
   AgentRun,
   ApiCredential,
+  AppUpdateProgress,
+  AppUpdates,
   EntityRef,
   KnowledgeLink,
   LibraryEntry,
@@ -27,6 +29,7 @@ import {
   type LocalePreference,
   resolveLocale,
 } from "@arclattice/i18n";
+import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 
 const localeKey = "arclattice.ui.locale";
 const serverOriginKey = "orivane.atlas.server-origin";
@@ -192,6 +195,15 @@ export async function bootstrap() {
   }
   return {
     i18n,
+    updates: {
+      available: isTauri(),
+      check: () => invoke("check_app_update"),
+      install: async (version, onProgress) => {
+        const progress = new Channel<AppUpdateProgress>();
+        progress.onmessage = onProgress;
+        await invoke("install_app_update", { version, progress });
+      },
+    } satisfies AppUpdates,
     context,
     unavailable,
     get serverOrigin() {

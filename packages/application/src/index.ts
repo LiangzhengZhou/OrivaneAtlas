@@ -371,3 +371,4 @@ export type {
   PersonalModelVault,
 } from "./personal-ai";
 export { type AiTextEdit, parseAiTextEdits } from "./personal-ai";
+export type { AppUpdateInfo, AppUpdateProgress, AppUpdates } from "./updates";

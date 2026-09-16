@@ -88,6 +88,98 @@ const test = base.extend<{ workbench: { url: string; secret: string } }>({
 function words(locale: string) {
   return resources[locale.endsWith("zh") ? "zh-CN" : "en-US"];
 }
+test("native updater UI: check, consent, progress, failure and retry", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    let attempts = 0;
+    let installs = 0;
+    Object.assign(window, {
+      isTauri: true,
+      __TAURI_INTERNALS__: {
+        transformCallback: () => 1,
+        unregisterCallback: () => {},
+        invoke: async (
+          command: string,
+          args: { progress: { onmessage: (value: unknown) => void } },
+        ) => {
+          if (command === "check_app_update") {
+            attempts++;
+            if (attempts === 1) throw new Error("offline");
+            return {
+              currentVersion: "0.0.4",
+              version: attempts === 2 ? "0.0.5" : null,
+              notes: "Verified release <script>not executed</script>",
+              channel: "stable",
+            };
+          }
+          if (command === "install_app_update") {
+            installs++;
+            args.progress.onmessage({ downloaded: 50, total: 100 });
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            if (installs === 1) throw new Error("signature invalid");
+            return;
+          }
+          throw new Error("unexpected native command");
+        },
+      },
+    });
+  });
+  await page.goto(workbench.url);
+  const panel = page.getByRole("region", { name: w.settings.updateTitle });
+  await panel.getByRole("button", { name: w.settings.updateCheck }).click();
+  await expect(panel.getByRole("status")).toHaveText(
+    w.settings.updateState_error,
+  );
+  await panel.getByRole("button", { name: w.settings.updateCheck }).click();
+  await expect(panel.getByRole("status")).toHaveText(
+    w.settings.updateState_ready,
+  );
+  await panel.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: info.outputPath("native-updater.png"),
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await panel.getByRole("button", { name: w.settings.updateInstall }).click();
+  await expect(panel.getByRole("status")).toHaveText(
+    w.settings.updateState_ready,
+  );
+  page.once("dialog", (dialog) => dialog.accept());
+  await panel.getByRole("button", { name: w.settings.updateInstall }).click();
+  await expect(panel.getByRole("progressbar")).toHaveAttribute("value", "50");
+  await expect(panel.getByRole("status")).toHaveText(
+    w.settings.updateState_error,
+  );
+  page.once("dialog", (dialog) => dialog.accept());
+  await panel.getByRole("button", { name: w.settings.updateInstall }).click();
+  await expect(panel.getByRole("status")).toHaveText(
+    w.settings.updateState_installer,
+  );
+  await panel.getByRole("button", { name: w.settings.updateCheck }).click();
+  await expect(panel.getByRole("status")).toHaveText(
+    w.settings.updateState_current,
+  );
+  expect(errors).toEqual([]);
+});
+
+test("web browser has no native updater", async ({ page, workbench }, info) => {
+  await page.goto(workbench.url);
+  await expect(
+    page.getByRole("region", {
+      name: words(info.project.name).settings.updateTitle,
+    }),
+  ).toHaveCount(0);
+});
 test("private image editing: modern picker, clipboard, concurrent typing and retry", async ({
   page,
   workbench,

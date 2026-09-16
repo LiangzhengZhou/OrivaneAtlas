@@ -47,7 +47,7 @@ AI providers are optional. Store provider credentials in a protected secret stor
 
 ## Updates
 
-Use published release artifacts only after verifying their source, version, and integrity. Production automatic-update channels require platform-appropriate signing and protected update metadata. The debug Windows and Android packages currently published by this project are for evaluation and are not production-signed releases.
+Use published release artifacts only after verifying their source, version, and integrity. From 0.0.4, native clients use the official GitHub update channel: Windows verifies updater signatures and Android verifies the APK's release signing identity before asking the system installer for confirmation. Windows Authenticode publisher trust is not yet configured. Older debug APKs require a backed-up migration to the new release key; see [Native signing and updates](NATIVE_UPDATES.md). Read each release's validation limitations before deployment.
 
 ## Troubleshooting
 

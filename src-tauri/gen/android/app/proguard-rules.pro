@@ -1,4 +1,5 @@
 # Add project specific ProGuard rules here.
+-keep class dev.arclattice.app.AtlasUpdatePlugin { *; }
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 #
