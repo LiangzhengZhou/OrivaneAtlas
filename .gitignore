@@ -18,6 +18,7 @@ ZProjectBuild/
 test-results/
 playwright-report/
 coverage/
+.artifacts/
 .env
 .env.*
 !.env.example
@@ -38,6 +39,10 @@ AGENTS.md
 docs/HANDOFF.md
 docs/PROJECT_STATUS.md
 docs/HANDOFF_TEMPLATE.md
+CURRENT_IMPLEMENTATION_AUDIT.md
+GAP_ANALYSIS.md
+MOBILE_ICON_ISSUE.md
+.refactor-backup-*/
 docs/sessions/
 docs/DEPLOYMENT.md
 docs/ACCOUNTS_LIBRARY.md

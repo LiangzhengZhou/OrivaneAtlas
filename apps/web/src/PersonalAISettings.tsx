@@ -5,14 +5,19 @@ import type { Runtime } from "./bootstrap";
 export function PersonalAISettings({
   runtime,
   scope,
+  profileId,
+  onProfileChange,
   onChange,
 }: {
   runtime: Runtime;
   scope: string;
+  profileId: string;
+  onProfileChange: (profileId: string) => void;
   onChange: () => void;
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
+  const [nextProfile, setNextProfile] = useState(profileId);
   const [saved, setSaved] = useState<PersonalModelSummary | null>(null),
     [endpoint, setEndpoint] = useState(""),
     [model, setModel] = useState(""),
@@ -29,7 +34,11 @@ export function PersonalAISettings({
       .providers()
       .then((list) => {
         if (!active) return;
-        const item = list.find((p) => p.scope === scope) ?? null;
+        const item =
+          list.find(
+            (p) =>
+              p.scope === scope && (p.profileId ?? "default") === profileId,
+          ) ?? null;
         setSaved(item);
         setEndpoint(item?.endpoint ?? "");
         setModel(item?.model ?? "");
@@ -45,7 +54,7 @@ export function PersonalAISettings({
     return () => {
       active = false;
     };
-  }, [runtime, scope]);
+  }, [runtime, scope, profileId]);
   return (
     <details className="connected-panel personal-ai-settings">
       <summary>{zh ? "我的 AI 接入配置" : "My AI connection"}</summary>
@@ -54,6 +63,32 @@ export function PersonalAISettings({
           ? "配置只属于当前用户及所选项目，不使用管理员全局配置。密钥在服务器独立加密保存，不返回浏览器；移除配置可停止后续调用。"
           : "Configuration belongs only to you and the selected project. No administrator defaults. Keys are encrypted separately on the server and never returned to the browser."}
       </p>
+      <div className="field">
+        <label htmlFor="ai-profile-id">
+          {zh
+            ? "配置标识（字母、数字、下划线、短横线）"
+            : "Profile ID (letters, numbers, underscore, hyphen)"}
+        </label>
+        <input
+          id="ai-profile-id"
+          value={nextProfile}
+          maxLength={64}
+          disabled={busy}
+          onChange={(e) => setNextProfile(e.target.value)}
+        />
+        <button
+          className="button secondary"
+          type="button"
+          disabled={
+            busy ||
+            !/^[a-zA-Z0-9_-]{1,64}$/.test(nextProfile) ||
+            nextProfile === profileId
+          }
+          onClick={() => onProfileChange(nextProfile)}
+        >
+          {zh ? "打开 / 新建配置" : "Open / create profile"}
+        </button>
+      </div>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -62,6 +97,7 @@ export function PersonalAISettings({
           void runtime
             .saveProvider(saved?.version ?? 0, {
               scope,
+              profileId,
               endpoint,
               model,
               key,
@@ -155,7 +191,7 @@ export function PersonalAISettings({
                 return;
               setBusy(true);
               void runtime
-                .removeProvider(scope, saved.version)
+                .removeProvider(scope, saved.version, profileId)
                 .then(() => {
                   setSaved(null);
                   setKey("");

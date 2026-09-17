@@ -1,8 +1,13 @@
-import type { Note, NoteInput } from "@arclattice/application";
+import {
+  type Note,
+  type NoteInput,
+  privateContentPolicy,
+} from "@arclattice/application";
 import { Download, History, ShieldCheck, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime } from "./bootstrap";
+import { ContentPolicyEditor } from "./ContentPolicyEditor";
 import { FilePicker } from "./FilePicker";
 import { Markdown } from "./Markdown";
 export function downloadText(
@@ -44,6 +49,9 @@ export function NoteEditor({
     note?.title ?? (kind === "JOURNAL" ? day : ""),
   );
   const [body, setBody] = useState(note?.bodyMd ?? "");
+  const [aiPolicy, setAiPolicy] = useState(
+    note?.aiPolicy ?? privateContentPolicy,
+  );
   const [preview, setPreview] = useState(false);
   const [history, setHistory] = useState<Note[] | null>(null);
   const [historyError, setHistoryError] = useState(false);
@@ -52,7 +60,9 @@ export function NoteEditor({
   const dialog = useRef<HTMLDialogElement>(null);
   const dirty =
     title !== (note?.title ?? (kind === "JOURNAL" ? day : "")) ||
-    body !== (note?.bodyMd ?? "");
+    body !== (note?.bodyMd ?? "") ||
+    JSON.stringify(aiPolicy) !==
+      JSON.stringify(note?.aiPolicy ?? privateContentPolicy);
   function close() {
     if (dirty) setDiscard(true);
     else onClose();
@@ -89,6 +99,7 @@ export function NoteEditor({
             void onSave({
               title,
               bodyMd: body,
+              aiPolicy,
               kind: note?.kind ?? kind,
               day: note?.day ?? (kind === "JOURNAL" ? day : null),
             });
@@ -112,6 +123,11 @@ export function NoteEditor({
           <ShieldCheck size={15} />
           {t("notePrivacy")}
         </p>
+        <ContentPolicyEditor
+          value={aiPolicy}
+          onChange={setAiPolicy}
+          disabled={busy}
+        />
         {!note && kind === "NOTE" && !body && !title && (
           <FilePicker
             label={t("importMarkdown")}

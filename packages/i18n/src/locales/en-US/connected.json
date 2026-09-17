@@ -1,4 +1,9 @@
 {
+  "attemptUsage": "Persisted send: {{input}} input characters; {{output}} output-token limit. Actual billing unknown.",
+  "reportedUsage": "Provider reports {{input}} input / {{output}} output tokens (not an invoice)",
+  "attemptRESERVED": "Reserved",
+  "attemptSUCCEEDED": "Succeeded",
+  "attemptUNKNOWN": "Outcome unknown; no automatic retry",
   "search": "Search knowledge",
   "searchHint": "Titles and Markdown across notes, work, spaces and lectures",
   "NOTE": "Note / journal",

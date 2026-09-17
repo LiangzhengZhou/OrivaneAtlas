@@ -11,6 +11,8 @@ export const workFields = {
   executionMode: "execution_mode",
   assigneePrincipalId: "assignee_principal_id",
   projectId: "project_id",
+  activationState: "activation_state",
+  activationPolicy: "activation_policy",
   startDate: "start_date",
   dueDate: "due_date",
   version: "version",
@@ -20,7 +22,7 @@ export const workFields = {
   updatedAt: "updated_at",
   completedAt: "completed_at",
   deletedAt: "deleted_at",
-} satisfies Record<keyof WorkItem, string>;
+} satisfies Record<Exclude<keyof WorkItem, "projectIds">, string>;
 export const edgeFields = {
   workspaceId: "workspace_id",
   id: "id",

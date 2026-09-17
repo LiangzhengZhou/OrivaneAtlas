@@ -104,7 +104,7 @@ describe("SQLite migrations and recovery", () => {
       const history = raw.prepare("SELECT * FROM schema_migrations").all();
       const result = await migrate(raw, path, 100);
       backup = result.backupPath!;
-      expect(result.version).toBe(9);
+      expect(result.version).toBe(migrations.length);
       expect(raw.prepare("SELECT payload FROM notebook").get()?.payload).toBe(
         payload,
       );
@@ -153,7 +153,7 @@ describe("SQLite migrations and recovery", () => {
       const history = raw.prepare("SELECT * FROM schema_migrations").all();
       const result = await migrate(raw, path, 100);
       backup = result.backupPath!;
-      expect(result.version).toBe(9);
+      expect(result.version).toBe(migrations.length);
       expect(raw.prepare("SELECT * FROM api_credential").all()).toEqual(before);
       expect(
         raw.prepare("SELECT * FROM schema_migrations WHERE version<=5").all(),

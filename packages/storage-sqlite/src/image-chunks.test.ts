@@ -127,7 +127,7 @@ describe("image chunk storage", () => {
         )
         .run(png);
       before = (await migrate(raw, path, 100)).backupPath!;
-      expect(inspectSchema(raw)).toBe(9);
+      expect(inspectSchema(raw)).toBe(migrations.length);
       expect(
         raw.prepare("SELECT base64 FROM library_asset").get()?.base64,
       ).toBe(png);
@@ -137,7 +137,7 @@ describe("image chunk storage", () => {
     }
     for (const [source, version] of [
       [before, 8],
-      [after, 9],
+      [after, migrations.length],
     ] as const) {
       const destination = harness.file();
       await restoreDatabase(source, destination);

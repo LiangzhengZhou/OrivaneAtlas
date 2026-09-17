@@ -2,6 +2,7 @@ import { type ActorContext, DomainError } from "@arclattice/domain";
 import type { AgentRun, EntityRef, ModelPort, ModelRoute } from "./connected";
 
 export interface PersonalModelInput {
+  profileId?: string;
   scope: string;
   endpoint: string;
   protocol: "chat" | "responses";
@@ -21,8 +22,17 @@ export interface PersonalModelVault {
     version: number,
     input: PersonalModelInput,
   ): PersonalModelSummary;
-  remove(actor: ActorContext, scope: string, version: number): void;
-  resolve(actor: ActorContext, scope: string): ModelPort | null;
+  remove(
+    actor: ActorContext,
+    scope: string,
+    version: number,
+    profileId?: string,
+  ): void;
+  resolve(
+    actor: ActorContext,
+    scope: string,
+    profileId?: string,
+  ): ModelPort | null;
 }
 
 export interface AiTextEdit {

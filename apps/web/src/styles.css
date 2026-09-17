@@ -1,4 +1,21 @@
 @import url("./base.css");
+.project-memberships {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.project-memberships legend {
+  padding: 0 6px;
+}
+.project-memberships label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  overflow-wrap: anywhere;
+}
 /* Stable per-item tint: nearly white behind the title, stronger at the right. */
 .task-card {
   background: linear-gradient(
@@ -134,6 +151,7 @@ input[type="checkbox"] {
 }
 .project-card .text-button {
   margin-top: 20px;
+  margin-inline-end: 16px;
 }
 .calendar-layout {
   display: grid;
@@ -656,4 +674,87 @@ input[type="checkbox"] {
 .file-picker[aria-disabled="true"] {
   opacity: 0.55;
   cursor: not-allowed;
+}
+.workflow-manager {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+  min-width: 0;
+}
+.workflow-manager .panel {
+  padding: 20px;
+  min-width: 0;
+}
+.category-manager form,
+.workflow-manager form {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+.category-manager form > label,
+.workflow-manager label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.workflow-manager input,
+.workflow-manager select,
+.workflow-manager textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.workflow-manager textarea {
+  font-family: monospace;
+}
+.category-manager button,
+.workflow-manager button {
+  min-height: 42px;
+  padding: 10px 16px;
+  margin: 4px 6px 4px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: white;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.category-manager form button[type="submit"],
+.workflow-manager form button[type="submit"] {
+  background: var(--accent);
+  color: white;
+}
+.category-manager button:disabled,
+.workflow-manager button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.category-manager button:focus-visible,
+.workflow-manager button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.workflow-proposal {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 16px;
+  overflow-wrap: anywhere;
+}
+.workflow-proposal li {
+  margin: 10px 0;
+}
+.workflow-description {
+  white-space: pre-wrap;
+}
+/* Keep policy labels beside their own control, including narrow mobile panes. */
+.content-policy > label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-block: 0.75rem;
+  max-width: 32rem;
+}
+.content-policy select {
+  width: 100%;
+  min-width: 0;
 }

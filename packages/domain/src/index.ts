@@ -1,6 +1,8 @@
 export * from "./agent";
 export * from "./data-policy";
 export * from "./governance";
+export * from "./projects";
+export * from "./recurrence";
 
 export type PrincipalKind = "USER" | "AGENT" | "SERVICE";
 export interface Principal {
@@ -34,6 +36,15 @@ export const workStatuses = [
   "CANCELED",
 ] as const;
 export type WorkStatus = (typeof workStatuses)[number];
+export const activationStates = ["ACTIVE", "INACTIVE", "SCHEDULED"] as const;
+export type ActivationState = (typeof activationStates)[number];
+export const activationPolicies = [
+  "MANUAL",
+  "IMMEDIATE",
+  "WHEN_DEPENDENCIES_COMPLETED",
+  "AT_SCHEDULED_TIME",
+] as const;
+export type ActivationPolicy = (typeof activationPolicies)[number];
 export const priorities = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 export type Priority = (typeof priorities)[number];
 export type ExecutionMode = "MANUAL" | "AI" | "AUTOMATIC" | "HYBRID";
@@ -48,6 +59,9 @@ export interface WorkItem {
   readonly executionMode: ExecutionMode;
   readonly assigneePrincipalId: string | null;
   readonly projectId: string | null;
+  readonly projectIds?: readonly string[];
+  readonly activationState: ActivationState;
+  readonly activationPolicy: ActivationPolicy;
   readonly startDate: string | null;
   readonly dueDate: string | null;
   readonly version: number;
@@ -57,6 +71,24 @@ export interface WorkItem {
   readonly updatedAt: string;
   readonly completedAt: string | null;
   readonly deletedAt: string | null;
+}
+/** Scheduled eligibility is read-only; callers supply the UTC calendar date. */
+export function isExecutionActive(item: WorkItem, today?: string): boolean {
+  return item.activationPolicy === "AT_SCHEDULED_TIME"
+    ? !!today && !!item.startDate && item.startDate <= today
+    : item.activationState === "ACTIVE";
+}
+export function isGloballyActiveTask(item: WorkItem, today?: string): boolean {
+  return (
+    item.type === "TASK" &&
+    isExecutionActive(item, today) &&
+    item.status !== "DONE" &&
+    item.status !== "CANCELED" &&
+    !item.deletedAt
+  );
+}
+export function planningTasks(items: readonly WorkItem[]): WorkItem[] {
+  return items.filter((item) => item.type === "TASK" && !item.deletedAt);
 }
 export const edgeTypes = [
   "BLOCKS",
@@ -77,6 +109,7 @@ export interface WorkEdge {
   readonly createdAt: string;
 }
 export type ErrorCode =
+  | "RATE_LIMITED"
   | "VALIDATION_ERROR"
   | "NOT_FOUND"
   | "FORBIDDEN"
@@ -220,9 +253,11 @@ export function isReady(
   item: WorkItem,
   items: readonly WorkItem[],
   edges: readonly WorkEdge[],
+  today?: string,
 ): boolean {
   return (
     !item.deletedAt &&
+    isExecutionActive(item, today) &&
     item.status === "TODO" &&
     blockers(item, items, edges).length === 0
   );

@@ -27,6 +27,7 @@ import type {
   PersonalModelVault,
 } from "@arclattice/application";
 import { type ActorContext, DomainError } from "@arclattice/domain";
+import { providerUsage } from "./model-usage";
 
 const blocked = new BlockList();
 for (const [address, bits] of [
@@ -156,14 +157,19 @@ async function send(
     req.end(JSON.stringify(payload));
   });
 }
-type Entry = PersonalModelInput & { owner: string; version: number };
+type Entry = PersonalModelInput & {
+  owner: string;
+  version: number;
+  generation?: string;
+};
 const owner = (actor: ActorContext) =>
   JSON.stringify([actor.workspaceId, actor.principalId]);
 function summary(entry: Entry): PersonalModelSummary {
-  const { key, owner: identity, ...safe } = entry;
+  const { key, owner: identity, generation: _generation, ...safe } = entry;
   return {
     ...safe,
     route: {
+      ...(entry.profileId ? { profileId: entry.profileId } : {}),
       scope: entry.scope,
       provider: entry.endpoint,
       model: entry.model,
@@ -265,6 +271,9 @@ export function openPersonalVault(directory: string): PersonalModelVault {
     save(actor, version, input) {
       const endpoint = modelEndpoint(input.endpoint).href;
       if (
+        (input.profileId !== undefined &&
+          (typeof input.profileId !== "string" ||
+            !/^[a-zA-Z0-9_-]{1,64}$/.test(input.profileId))) ||
         !["chat", "responses"].includes(input.protocol) ||
         !input.scope ||
         input.scope.length > 240 ||
@@ -278,7 +287,10 @@ export function openPersonalVault(directory: string): PersonalModelVault {
       )
         throw new DomainError("VALIDATION_ERROR");
       const old = entries.find(
-        (e) => e.owner === owner(actor) && e.scope === input.scope,
+        (e) =>
+          e.owner === owner(actor) &&
+          e.scope === input.scope &&
+          (e.profileId ?? "default") === (input.profileId ?? "default"),
       );
       if ((old?.version ?? 0) !== version)
         throw new DomainError("VERSION_CONFLICT");
@@ -291,28 +303,35 @@ export function openPersonalVault(directory: string): PersonalModelVault {
         endpoint,
         key,
         owner: owner(actor),
+        generation: old?.generation ?? randomUUID(),
         version: version + 1,
       };
       commit([...entries.filter((e) => e !== old), entry]);
       return summary(entry);
     },
-    remove(actor, scope, version) {
+    remove(actor, scope, version, profileId = "default") {
       const old = entries.find(
-        (e) => e.owner === owner(actor) && e.scope === scope,
+        (e) =>
+          e.owner === owner(actor) &&
+          e.scope === scope &&
+          (e.profileId ?? "default") === profileId,
       );
       if (!old || old.version !== version)
         throw new DomainError("VERSION_CONFLICT");
       commit(entries.filter((e) => e !== old));
     },
-    resolve(actor, scope): ModelPort | null {
+    resolve(actor, scope, profileId = "default"): ModelPort | null {
       const entry = entries.find(
-        (e) => e.owner === owner(actor) && e.scope === scope,
+        (e) =>
+          e.owner === owner(actor) &&
+          e.scope === scope &&
+          (e.profileId ?? "default") === profileId,
       );
       if (!entry) return null;
       const route = summary(entry).route;
       return {
         route,
-        async complete(prompt, signal) {
+        async complete(prompt, signal, reportUsage) {
           const endpoint = new URL(
             entry.protocol === "chat" ? "chat/completions" : "responses",
             entry.endpoint,
@@ -337,6 +356,7 @@ export function openPersonalVault(directory: string): PersonalModelVault {
                 },
             signal,
           )) as {
+            usage?: unknown;
             choices?: {
               message?: { content?: string; tool_calls?: unknown[] };
             }[];
@@ -345,6 +365,8 @@ export function openPersonalVault(directory: string): PersonalModelVault {
               content?: { type: string; text?: string }[];
             }[];
           };
+          const usage = providerUsage(data.usage);
+          if (usage) reportUsage?.(usage);
           if (
             data.choices?.[0]?.message?.tool_calls?.length ||
             data.output?.some(

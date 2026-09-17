@@ -1,4 +1,9 @@
 {
+  "attemptUsage": "持久发送记录：输入 {{input}} 字符，输出上限 {{output}} token；实际计费未知。",
+  "reportedUsage": "提供商报告输入 {{input}} / 输出 {{output}} token（非账单）",
+  "attemptRESERVED": "已预留",
+  "attemptSUCCEEDED": "已完成",
+  "attemptUNKNOWN": "结果未知，不自动重试",
   "search": "搜索知识",
   "searchHint": "跨笔记、任务、知识空间和讲义检索标题与正文",
   "NOTE": "笔记 / 日记",

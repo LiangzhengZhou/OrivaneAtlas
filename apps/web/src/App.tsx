@@ -2,8 +2,11 @@ import type { Note, OrganizeInput } from "@arclattice/application";
 import {
   type ActorContext,
   DomainError,
+  inheritedArchiveSource,
+  isExecutionActive,
   isReady,
   priorities,
+  projectDescendants,
   type WorkItem,
   type WorkStatus,
   workStatuses,
@@ -46,9 +49,11 @@ import { type DocumentRequest, DocumentWorkspace } from "./DocumentWorkspace";
 import { GraphCanvas } from "./GraphCanvas";
 import { LibraryView } from "./LibraryView";
 import { Login } from "./Login";
+import { PrivateImageContext } from "./Markdown";
 import { downloadText } from "./NoteEditor";
 import { CalendarView, ProjectView } from "./PlanningViews";
 import { TaskEditor } from "./TaskEditor";
+import { WorkflowManager } from "./WorkflowManager";
 import { Dependencies, TaskList, WorkBoard } from "./WorkViews";
 
 type View =
@@ -102,14 +107,18 @@ function localDay() {
 export function App({ runtime }: { runtime: Runtime }) {
   const [context, setContext] = useState(runtime.context);
   return context ? (
-    <Workbench
-      runtime={runtime}
-      context={context}
-      onLogout={() => {
-        runtime.context = null;
-        setContext(null);
-      }}
-    />
+    <PrivateImageContext.Provider
+      value={runtime.native ? runtime.loadImage : null}
+    >
+      <Workbench
+        runtime={runtime}
+        context={context}
+        onLogout={() => {
+          runtime.context = null;
+          setContext(null);
+        }}
+      />
+    </PrivateImageContext.Provider>
   ) : (
     <>
       <Login runtime={runtime} onLogin={() => setContext(runtime.context)} />
@@ -170,8 +179,12 @@ function Workbench({
   const [moveFolder, setMoveFolder] = useState("");
   const organization = (kind: "WORK" | "NOTE", id: string) =>
     snapshot.organization?.find((e) => e.kind === kind && e.id === id);
-  const isArchived = (item: WorkItem) =>
+  const explicitlyArchived = (item: WorkItem) =>
     organization("WORK", item.id)?.archived ?? false;
+  const archiveSource = (item: WorkItem) =>
+    inheritedArchiveSource(item, snapshot.items, explicitlyArchived);
+  const isArchived = (item: WorkItem) =>
+    explicitlyArchived(item) || !!archiveSource(item);
   async function organize(input: OrganizeInput) {
     if (documentDirty || libraryDraft.current) {
       window.alert(t("saveBeforeOrganize"));
@@ -354,13 +367,35 @@ function Workbench({
     (item) => item.type !== "PROJECT" && !isArchived(item),
   );
   const notes = snapshot.notes.filter((note) => !note.deletedAt);
-  const ready = items.filter((item) => isReady(item, allItems, snapshot.edges));
-  const active = items.filter((item) => item.status === "IN_PROGRESS");
+  const [utcDay, setUtcDay] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  useEffect(() => {
+    const update = () => setUtcDay(new Date().toISOString().slice(0, 10));
+    const timer = window.setInterval(update, 30_000);
+    window.addEventListener("focus", update);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", update);
+    };
+  }, []);
+  const ready = items.filter((item) =>
+    isReady(item, allItems, snapshot.edges, utcDay),
+  );
+  const active = items.filter(
+    (item) => item.status === "IN_PROGRESS" && isExecutionActive(item, utcDay),
+  );
   const done = items.filter((item) => item.status === "DONE");
   const matches = (title: string, body: string) =>
     (title + " " + body)
       .toLocaleLowerCase(i18n.language)
       .includes(query.toLocaleLowerCase(i18n.language));
+  const selectedProject = projects.find((p) => p.id === projectFilter);
+  const projectMemberIds = new Set(
+    selectedProject
+      ? projectDescendants(selectedProject, allItems).map((i) => i.id)
+      : [],
+  );
   const visible = (
     showArchived
       ? allItems.filter((item) => item.type !== "PROJECT" && isArchived(item))
@@ -372,7 +407,9 @@ function Workbench({
         (status === "ALL" || item.status === status) &&
         (priority === "ALL" || item.priority === priority) &&
         (projectFilter === "ALL" ||
-          (item.projectId ?? "NONE") === projectFilter),
+          (projectFilter === "NONE"
+            ? !item.projectId
+            : projectMemberIds.has(item.id))),
     )
     .sort((a, b) =>
       sort === "priority"
@@ -435,6 +472,7 @@ function Workbench({
     onOpen: open,
     onStatus,
     isArchived,
+    archiveSource,
     onOrganize: (
       item: WorkItem,
       action: "archive" | "unarchive" | "delete",
@@ -828,7 +866,14 @@ function Workbench({
           ) : view === "library" ? (
             <LibraryView runtime={runtime} onOpen={openDocument} />
           ) : view === "account" ? (
-            <AccountView runtime={runtime} onLogout={onLogout} />
+            <AccountView
+              runtime={runtime}
+              onLogout={onLogout}
+              confirmLeave={() =>
+                !(documentDirty || libraryDraft.current || editor) ||
+                window.confirm(t("discardHint"))
+              }
+            />
           ) : view === "admin" ? (
             <AdminView runtime={runtime} />
           ) : view === "knowledge" ? (
@@ -1010,15 +1055,47 @@ function Workbench({
               </section>
             </>
           ) : view === "projects" ? (
-            <ProjectView
-              projects={projects}
-              items={items}
-              onOpen={open}
-              onTasks={(id) => {
-                navigate("tasks");
-                setProjectFilter(id);
-              }}
-            />
+            <>
+              <ProjectView
+                categories={snapshot.categories ?? []}
+                onSaveCategory={(input) =>
+                  run(() => runtime.saveCategory(input))
+                }
+                projects={projects}
+                items={allItems}
+                busy={busy}
+                isArchived={isArchived}
+                archiveSource={archiveSource}
+                onOrganize={workProps.onOrganize}
+                onOpen={open}
+                onTasks={(id) => {
+                  navigate("tasks");
+                  setProjectFilter(id);
+                  const project = projects.find((p) => p.id === id);
+                  setShowArchived(!!project && isArchived(project));
+                }}
+              />
+              <WorkflowManager
+                records={snapshot.workflows ?? []}
+                projects={projects}
+                busy={busy}
+                preview={(projectId, manifest) =>
+                  run(() => runtime.previewPlan(projectId, manifest))
+                }
+                publish={(id, version) =>
+                  run(() => runtime.publishPlan(id, version))
+                }
+                save={(input) => run(() => runtime.saveRecurrence(input))}
+                generate={(id, version, from, to) =>
+                  run(() => runtime.generateRecurrence(id, version, from, to))
+                }
+                backfill={(id, version, completedAt) =>
+                  run(() =>
+                    runtime.backfillOccurrence(id, version, completedAt),
+                  )
+                }
+              />
+            </>
           ) : view === "calendar" ? (
             <CalendarView
               items={items}
@@ -1127,7 +1204,8 @@ function Workbench({
                   disabled={busy}
                   onClick={() =>
                     void (
-                      documentDirty && !window.confirm(t("discardHint"))
+                      (documentDirty || libraryDraft.current || editor) &&
+                      !window.confirm(t("discardHint"))
                         ? Promise.resolve(false)
                         : run(() => runtime.logout())
                     ).then((ok) => {

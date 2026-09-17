@@ -21,6 +21,7 @@ export interface KnowledgeLink extends ConnectedEntity {
   relation: "REFERENCES" | "RELATED";
 }
 export interface ModelRoute {
+  profileId?: string;
   scope?: string;
   fingerprint: string;
   provider: string;
@@ -38,6 +39,15 @@ export type RunStatus =
   | "REJECTED"
   | "INTERRUPTED";
 export interface AgentRun extends ConnectedEntity {
+  attempt?: {
+    id: string;
+    reservedAt: string;
+    settledAt: string | null;
+    outcome: "RESERVED" | "SUCCEEDED" | "UNKNOWN";
+    inputChars: number;
+    reservedOutputTokens: number;
+    usage?: ModelUsage;
+  };
   context?: {
     ref: EntityRef;
     version: number;
@@ -62,9 +72,18 @@ export interface ConnectedStore {
   getRun(id: string): Promise<AgentRun>;
   saveRun(run: AgentRun, expectedVersion: number): Promise<void>;
 }
+export interface ModelUsage {
+  inputTokens: number;
+  outputTokens: number;
+  source: "PROVIDER_REPORTED";
+}
 export interface ModelPort {
   route: ModelRoute;
-  complete(prompt: string, signal: AbortSignal): Promise<string>;
+  complete(
+    prompt: string,
+    signal: AbortSignal,
+    reportUsage?: (usage: ModelUsage) => void,
+  ): Promise<string>;
 }
 export class ConnectedService {
   constructor(
@@ -202,17 +221,65 @@ export class ConnectedService {
     await this.store.saveRun(run, version);
     return run;
   }
+  /** Must commit in the same transaction as fresh authorization/context checks. */
+  async reserve(context: ActorContext, id: string, version: number) {
+    await this.auth.require(context, "work:update");
+    const old = await this.store.getRun(id);
+    if (
+      old.workspaceId !== context.workspaceId ||
+      old.createdBy !== context.principalId ||
+      old.approvedBy !== context.principalId ||
+      !old.approvedAt ||
+      old.deletedAt ||
+      old.status !== "RUNNING" ||
+      old.version !== version ||
+      old.attempt
+    )
+      throw new DomainError("VERSION_CONFLICT");
+    const now = this.clock.now();
+    const run: AgentRun = {
+      ...old,
+      version: old.version + 1,
+      updatedAt: now,
+      updatedBy: context.principalId,
+      attempt: {
+        id: this.ids.next(),
+        reservedAt: now,
+        settledAt: null,
+        outcome: "RESERVED",
+        inputChars: old.prompt.length,
+        reservedOutputTokens: old.route.maxOutputTokens,
+      },
+    };
+    await this.store.saveRun(run, version);
+    return run;
+  }
   async finish(
     context: ActorContext,
     id: string,
     output: string | null,
     error: string | null,
     interrupted = false,
+    usage?: ModelUsage,
   ) {
     await this.auth.require(context, "work:update");
     const old = await this.store.getRun(id);
-    if (old.workspaceId !== context.workspaceId || old.status !== "RUNNING")
+    if (
+      old.workspaceId !== context.workspaceId ||
+      old.createdBy !== context.principalId ||
+      old.deletedAt ||
+      old.status !== "RUNNING"
+    )
       throw new DomainError("VERSION_CONFLICT");
+    if (
+      usage &&
+      (usage.source !== "PROVIDER_REPORTED" ||
+        !Number.isSafeInteger(usage.inputTokens) ||
+        usage.inputTokens < 0 ||
+        !Number.isSafeInteger(usage.outputTokens) ||
+        usage.outputTokens < 0)
+    )
+      throw new DomainError("VALIDATION_ERROR");
     if (
       output !== null &&
       (typeof output !== "string" || output.length > 100_000)
@@ -223,6 +290,18 @@ export class ConnectedService {
       version: old.version + 1,
       output,
       error,
+      ...(old.attempt
+        ? {
+            attempt: {
+              ...old.attempt,
+              ...(usage ? { usage } : {}),
+              settledAt: this.clock.now(),
+              outcome: (!error && !interrupted ? "SUCCEEDED" : "UNKNOWN") as
+                | "SUCCEEDED"
+                | "UNKNOWN",
+            },
+          }
+        : {}),
       status: interrupted ? "INTERRUPTED" : error ? "FAILED" : "SUCCEEDED",
       updatedAt: this.clock.now(),
       updatedBy: context.principalId,

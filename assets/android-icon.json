@@ -1,0 +1,6 @@
+{
+  "default": "orivane-atlas-android.png",
+  "android_fg": "orivane-atlas-android.png",
+  "android_fg_scale": 75,
+  "bg_color": "#ffffff"
+}

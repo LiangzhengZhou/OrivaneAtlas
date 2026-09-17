@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import type { ModelPort, ModelRoute } from "@arclattice/application";
+import { providerUsage } from "./model-usage";
 
 async function privateFile(path: string) {
   if (!isAbsolute(path)) throw new Error("MODEL_CONFIG_INVALID");
@@ -67,7 +68,7 @@ export async function loadModel(
   };
   return {
     route,
-    async complete(prompt, signal) {
+    async complete(prompt, signal, reportUsage) {
       const response = await fetch(endpoint, {
         method: "POST",
         redirect: "error",
@@ -104,6 +105,8 @@ export async function loadModel(
         await reader.cancel();
       }
       const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const usage = providerUsage(data.usage);
+      if (usage) reportUsage?.(usage);
       const text = data.choices?.[0]?.message?.content;
       if (
         typeof text !== "string" ||

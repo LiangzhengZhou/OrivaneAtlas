@@ -5,10 +5,11 @@ import { inspectSchema, migrate, migrations } from "./migrations";
 import { postgresHarness } from "./testing";
 
 const h = postgresHarness();
+const latest = migrations[migrations.length - 1]!.version;
 const v2 = [
   ...migrations,
   {
-    version: 3,
+    version: latest + 1,
     name: "test-only-v2",
     sql: "CREATE TABLE migration_probe (id INTEGER PRIMARY KEY); UPDATE work_item SET title='upgraded';",
   },
@@ -16,7 +17,7 @@ const v2 = [
 const broken = [
   ...migrations,
   {
-    version: 3,
+    version: latest + 1,
     name: "test-only-broken",
     sql: "CREATE TABLE migration_probe (id INTEGER PRIMARY KEY); UPDATE work_item SET title='must roll back'; SELECT * FROM deliberately_missing_table;",
   },
@@ -25,7 +26,49 @@ const run = (name: string, plan = migrations, backup?: () => Promise<void>) =>
   h.client(name, (client) => migrate(client, 2000, backup, plan));
 
 describe("PostgreSQL transactional migrations", () => {
-  it("upgrades genuine v1 to planning v2 only after the backup hook completes", async () => {
+  it("v5 backfills task memberships without rewriting legacy rows", async () => {
+    const name = await h.database();
+    await run(name, migrations.slice(0, 4));
+    await h.query(
+      name,
+      "INSERT INTO arclattice.workspace VALUES ('w','Workspace'); INSERT INTO arclattice.principal VALUES ('p','USER','Owner'); INSERT INTO arclattice.workspace_principal VALUES ('w','p')",
+    );
+    for (const [id, type, project, deleted] of [
+      ["project", "PROJECT", null, null],
+      ["live", "TASK", "project", null],
+      ["deleted", "TASK", "project", "2026-09-17"],
+    ]) {
+      await h.query(
+        name,
+        "INSERT INTO arclattice.work_item (workspace_id,id,type,title,description_md,status,priority,execution_mode,version,created_by,updated_by,created_at,updated_at,project_id,deleted_at) VALUES ('w',$1,$2,$1,'原文','TODO','MEDIUM','MANUAL',3,'p','p','2026-09-17','2026-09-17',$3,$4)",
+        [id, type, project, deleted],
+      );
+    }
+    const before = (
+      await h.query(name, "SELECT * FROM arclattice.work_item ORDER BY id")
+    ).rows;
+    let backedUp = false;
+    await run(name, migrations, async () => {
+      backedUp = true;
+    });
+    expect(backedUp).toBe(true);
+    expect(
+      (await h.query(name, "SELECT * FROM arclattice.work_item ORDER BY id"))
+        .rows,
+    ).toEqual(before);
+    expect(
+      (
+        await h.query(
+          name,
+          "SELECT task_id,project_id,position FROM arclattice.task_project ORDER BY task_id",
+        )
+      ).rows,
+    ).toEqual([
+      { task_id: "deleted", project_id: "project", position: 0 },
+      { task_id: "live", project_id: "project", position: 0 },
+    ]);
+  });
+  it("upgrades genuine v1 to current schema only after the backup hook completes", async () => {
     const name = await h.database();
     await run(name, migrations.slice(0, 1));
     await expect(run(name)).rejects.toThrow("UPGRADE_BACKUP_REQUIRED");
@@ -34,7 +77,9 @@ describe("PostgreSQL transactional migrations", () => {
       gate = true;
     });
     expect(gate).toBe(true);
-    expect(await h.client(name, (client) => inspectSchema(client))).toBe(2);
+    expect(await h.client(name, (client) => inspectSchema(client))).toBe(
+      latest,
+    );
     expect(
       (
         await h.query(
@@ -44,7 +89,7 @@ describe("PostgreSQL transactional migrations", () => {
       ).rows.map((r) => r.column_name),
     ).toEqual(expect.arrayContaining(["project_id", "start_date", "due_date"]));
   });
-  it("creates v1 once even when independent hosts start concurrently", async () => {
+  it("applies each current migration once when independent hosts start concurrently", async () => {
     const name = await h.database();
     await Promise.all([h.open(name), h.open(name)]);
     expect(
@@ -55,13 +100,15 @@ describe("PostgreSQL transactional migrations", () => {
         )
       ).rows,
     ).toEqual(
-      [1, 2].map((version) => ({
-        version,
+      migrations.map((migration) => ({
+        version: migration.version,
         application: "arclattice",
         digest: 64,
       })),
     );
-    expect(await h.client(name, (client) => inspectSchema(client))).toBe(2);
+    expect(await h.client(name, (client) => inspectSchema(client))).toBe(
+      latest,
+    );
   });
   it("rolls back failed initial schema creation including ownership marker", async () => {
     const name = await h.database();
@@ -137,7 +184,9 @@ describe("PostgreSQL transactional migrations", () => {
         throw new Error("backup unavailable");
       }),
     ).rejects.toThrow("backup unavailable");
-    expect(await h.client(name, (client) => inspectSchema(client))).toBe(2);
+    expect(await h.client(name, (client) => inspectSchema(client))).toBe(
+      latest,
+    );
     expect((await db.run("workspace-a", (tx) => tx.get("a"))).title).toBe("a");
     expect(
       (
@@ -160,7 +209,7 @@ describe("PostgreSQL transactional migrations", () => {
         2000,
         async (info) => {
           called++;
-          expect(info).toEqual({ fromVersion: 2, toVersion: 3 });
+          expect(info).toEqual({ fromVersion: latest, toVersion: latest + 1 });
           expect(
             (await h.query(name, "SELECT title FROM arclattice.work_item"))
               .rows[0].title,
@@ -172,13 +221,15 @@ describe("PostgreSQL transactional migrations", () => {
                 "SELECT count(*)::int AS count FROM arclattice.schema_migrations",
               )
             ).rows[0].count,
-          ).toBe(2);
+          ).toBe(latest);
         },
         v2,
       ),
     );
     expect(called).toBe(1);
-    expect(await h.client(name, (client) => inspectSchema(client, v2))).toBe(3);
+    expect(await h.client(name, (client) => inspectSchema(client, v2))).toBe(
+      latest + 1,
+    );
     expect(
       (await h.query(name, "SELECT title FROM arclattice.work_item")).rows[0]
         .title,
@@ -199,7 +250,9 @@ describe("PostgreSQL transactional migrations", () => {
       }),
     ).rejects.toMatchObject({ code: "42P01" });
     expect(ready).toBe(true);
-    expect(await h.client(name, (client) => inspectSchema(client))).toBe(2);
+    expect(await h.client(name, (client) => inspectSchema(client))).toBe(
+      latest,
+    );
     expect((await db.run("workspace-a", (tx) => tx.get("a"))).title).toBe("a");
     expect(
       (

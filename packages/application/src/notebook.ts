@@ -3,9 +3,11 @@ import {
   DomainError,
   requireTitle,
 } from "@arclattice/domain";
+import { type ContentPolicy, contentPolicy } from "./content-policy";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
 
 export interface Note {
+  aiPolicy?: ContentPolicy;
   id: string;
   workspaceId: string;
   title: string;
@@ -20,10 +22,11 @@ export interface Note {
   deletedAt: string | null;
   classification: "PRIVATE";
   boundary: "REMOTE";
-  aiAccess: "DENY";
+  aiAccess: "ALLOW" | "ASK" | "DENY";
   provenance: "HUMAN" | "EXTERNAL_AI";
 }
 export interface NoteInput {
+  aiPolicy?: ContentPolicy;
   title: string;
   bodyMd: string;
   kind: "NOTE" | "JOURNAL";
@@ -85,6 +88,10 @@ export class NotebookService {
     if (input.kind === "NOTE" && input.day !== null)
       throw new DomainError("VALIDATION_ERROR");
     const now = this.clock.now();
+    const policy = contentPolicy(
+      this.source === "HUMAN" ? input.aiPolicy : undefined,
+      old?.aiPolicy,
+    );
     const note: Note = {
       id: old?.id ?? this.ids.next(),
       workspaceId: context.workspaceId,
@@ -100,7 +107,8 @@ export class NotebookService {
       deletedAt: null,
       classification: "PRIVATE",
       boundary: "REMOTE",
-      aiAccess: "DENY",
+      aiAccess: policy.aiAccess,
+      aiPolicy: policy,
       provenance: this.source,
     };
     await this.store.save(note, version);

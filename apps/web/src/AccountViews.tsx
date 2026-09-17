@@ -1,4 +1,8 @@
-import type { Account, ApiCredential } from "@arclattice/application";
+import type {
+  Account,
+  AccountSession,
+  ApiCredential,
+} from "@arclattice/application";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime } from "./bootstrap";
@@ -6,13 +10,31 @@ import type { Runtime } from "./bootstrap";
 export function AccountView({
   runtime,
   onLogout,
+  confirmLeave,
 }: {
   runtime: Runtime;
   onLogout: () => void;
+  confirmLeave: () => boolean;
 }) {
   const { t, i18n } = useTranslation("spaces");
   const zh = i18n.language.startsWith("zh");
   const [days, setDays] = useState<30 | 90 | 365 | null>(30);
+  const [sessions, setSessions] = useState<AccountSession[]>([]);
+  useEffect(() => {
+    let active = true;
+    if (runtime.account)
+      void runtime
+        .sessions()
+        .then((value) => {
+          if (active) setSessions(value);
+        })
+        .catch(() => {
+          if (active) setError(true);
+        });
+    return () => {
+      active = false;
+    };
+  }, [runtime]);
   const [tokens, setTokens] = useState<ApiCredential[]>([]),
     [name, setName] = useState("");
   const [scope, setScope] = useState<ApiCredential["scope"]>("write"),
@@ -50,6 +72,100 @@ export function AccountView({
         </p>
       )}
       {notice && <p role="status">{t(notice)}</p>}
+      {runtime.account && (
+        <section className="panel account-panel">
+          <h2>{t("loginSessions")}</h2>
+          <p className="muted">{t("switchHint")}</p>
+          <div className="action-row">
+            <button
+              type="button"
+              className="button secondary"
+              disabled={busy}
+              onClick={() => {
+                if (confirmLeave())
+                  void run(async () => {
+                    await runtime.logout();
+                    onLogout();
+                  });
+              }}
+            >
+              {t("signOut")}
+            </button>
+            <button
+              type="button"
+              className="button secondary"
+              disabled={busy}
+              onClick={() => {
+                if (confirmLeave())
+                  void run(async () => {
+                    await runtime.logout();
+                    onLogout();
+                  });
+              }}
+            >
+              {t("switchAccount")}
+            </button>
+            <button
+              type="button"
+              className="button secondary"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => setSessions(await runtime.sessions()))
+              }
+            >
+              {t("refresh")}
+            </button>
+          </div>
+          {sessions.map((session) => (
+            <div className="token-row" key={session.id}>
+              <div>
+                <strong>
+                  {t(session.current ? "currentSession" : "otherSession")}
+                </strong>
+                <small>
+                  {t("signedInAt")}{" "}
+                  {new Date(session.createdAt).toLocaleString(i18n.language)}
+                </small>
+                <small>
+                  {t("expires")}{" "}
+                  {session.expiresAt === null
+                    ? t("PERMANENT")
+                    : new Date(session.expiresAt).toLocaleString(i18n.language)}
+                </small>
+              </div>
+              <button
+                type="button"
+                className="button secondary"
+                disabled={busy}
+                onClick={() => {
+                  if (session.current && !confirmLeave()) return;
+                  void run(async () => {
+                    await runtime.revokeSession(session);
+                    if (session.current) onLogout();
+                    else setSessions(await runtime.sessions());
+                  });
+                }}
+              >
+                {t("revoke")}
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy || sessions.length === 0}
+            onClick={() => {
+              if (confirmLeave() && window.confirm(t("revokeAllConfirm")))
+                void run(async () => {
+                  await runtime.revokeSession({ all: true });
+                  onLogout();
+                });
+            }}
+          >
+            {t("revokeAllSessions")}
+          </button>
+        </section>
+      )}
       {!runtime.account ? (
         <section className="panel account-panel">
           <h2>{t("claim")}</h2>
@@ -100,6 +216,7 @@ export function AccountView({
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              if (!confirmLeave()) return;
               void run(async () => {
                 await runtime.changePassword(current, password);
                 setCurrent("");
@@ -265,12 +382,15 @@ export function AdminView({ runtime }: { runtime: Runtime }) {
   const { t } = useTranslation("spaces");
   const [accounts, setAccounts] = useState<Account[]>([]),
     [bytes, setBytes] = useState(0),
+    [sessionPolicy, setSessionPolicy] = useState("PERMANENT"),
+    [savingPolicy, setSavingPolicy] = useState(false),
     [error, setError] = useState(false),
     [busy, setBusy] = useState(false);
   async function refresh() {
     const data = await runtime.admin();
     setAccounts(data.accounts);
     setBytes(data.databaseBytes);
+    setSessionPolicy(data.sessionLifetimePolicy);
   }
   useEffect(() => {
     void runtime
@@ -278,6 +398,7 @@ export function AdminView({ runtime }: { runtime: Runtime }) {
       .then((data) => {
         setAccounts(data.accounts);
         setBytes(data.databaseBytes);
+        setSessionPolicy(data.sessionLifetimePolicy);
       })
       .catch(() => setError(true));
   }, [runtime]);
@@ -301,6 +422,40 @@ export function AdminView({ runtime }: { runtime: Runtime }) {
           {t("error")}
         </p>
       )}
+      <section className="panel account-panel">
+        <div className="panel-heading">
+          <h2>{t("sessionLifetime")}</h2>
+        </div>
+        <div
+          className="action-row"
+          role="radiogroup"
+          aria-label={t("sessionLifetime")}
+        >
+          {(["ONE_DAY", "SEVEN_DAYS", "THIRTY_DAYS", "PERMANENT"] as const).map(
+            (policy) => (
+              <label key={policy} className="choice-row">
+                <input
+                  type="radio"
+                  name="session-lifetime"
+                  value={policy}
+                  checked={sessionPolicy === policy}
+                  disabled={savingPolicy}
+                  onChange={() => {
+                    setSavingPolicy(true);
+                    setError(false);
+                    void runtime
+                      .setSessionLifetimePolicy(policy)
+                      .then(() => setSessionPolicy(policy))
+                      .catch(() => setError(true))
+                      .finally(() => setSavingPolicy(false));
+                  }}
+                />
+                {t(policy)}
+              </label>
+            ),
+          )}
+        </div>
+      </section>
       <section className="panel account-panel">
         <div className="panel-heading">
           <h2>{t("accounts")}</h2>

@@ -1,10 +1,12 @@
 import type {
   Account,
+  AccountSession,
   ActivityEvent,
   AgentRun,
   ApiCredential,
   AppUpdateProgress,
   AppUpdates,
+  CategoryService,
   EntityRef,
   KnowledgeLink,
   LibraryEntry,
@@ -16,6 +18,9 @@ import type {
   OrganizeInput,
   PersonalModelInput,
   PersonalModelSummary,
+  ProjectCategory,
+  WorkflowRecord,
+  WorkflowService,
   WorkService,
   WorkSnapshot,
 } from "@arclattice/application";
@@ -33,22 +38,91 @@ import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 
 const localeKey = "arclattice.ui.locale";
 const serverOriginKey = "orivane.atlas.server-origin";
+const savedAccountsKey = "orivane.atlas.saved-accounts";
+export interface SavedAccount {
+  id: string;
+  serverUrl: string;
+  userId: string;
+  displayName: string;
+  email?: string;
+  avatarUrl?: string;
+  credentialReference: string;
+  lastWorkspaceId?: string;
+  lastUsedAt?: string;
+}
+function readSavedAccounts(): SavedAccount[] {
+  try {
+    const value: unknown = JSON.parse(
+      localStorage.getItem(savedAccountsKey) ?? "[]",
+    );
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter((item): item is SavedAccount => {
+        if (
+          !item ||
+          typeof item !== "object" ||
+          typeof item.id !== "string" ||
+          typeof item.userId !== "string" ||
+          typeof item.displayName !== "string" ||
+          typeof item.serverUrl !== "string"
+        )
+          return false;
+        try {
+          return (
+            normalizeServerOrigin(item.serverUrl) === item.serverUrl &&
+            item.id === item.serverUrl + "|" + item.userId
+          );
+        } catch {
+          return false;
+        }
+      })
+      .slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+function saveAccountMetadata(account: Account, origin: string) {
+  const id = origin + "|" + account.id;
+  const current = readSavedAccounts().filter((item) => item.id !== id);
+  current.unshift({
+    id,
+    serverUrl: origin,
+    userId: account.id,
+    displayName: account.username,
+    credentialReference: "web-cookie:" + id,
+    lastUsedAt: new Date().toISOString(),
+  });
+  try {
+    localStorage.setItem(
+      savedAccountsKey,
+      JSON.stringify(current.slice(0, 20)),
+    );
+  } catch {
+    /* metadata only */
+  }
+}
 function initialServerOrigin() {
   try {
     const saved = localStorage.getItem(serverOriginKey)?.trim();
     if (saved) return new URL(saved).origin;
   } catch {}
-  return location.protocol === "http:" || location.protocol === "https:"
+  return !isTauri() &&
+    (location.protocol === "http:" || location.protocol === "https:")
     ? location.origin
     : "";
 }
 function normalizeServerOrigin(value: string) {
-  const url = new URL(value.trim());
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new Error("INVALID_SERVER");
+  }
   if (
     url.protocol !== "https:" &&
     !(url.protocol === "http:" && url.hostname === "127.0.0.1")
   )
-    throw new Error("HTTPS server origin required");
+    throw new Error("INVALID_SERVER");
   if (
     url.pathname !== "/" ||
     url.search ||
@@ -56,7 +130,7 @@ function normalizeServerOrigin(value: string) {
     url.username ||
     url.password
   )
-    throw new Error("Exact server origin required");
+    throw new Error("INVALID_SERVER");
   return url.origin;
 }
 export function readPreference(): LocalePreference {
@@ -75,6 +149,8 @@ export function savePreference(value: LocalePreference) {
   }
 }
 export interface Snapshot extends WorkSnapshot {
+  categories?: ProjectCategory[];
+  workflows?: WorkflowRecord[];
   notes: Note[];
   links: KnowledgeLink[];
   library: LibraryEntry[];
@@ -87,9 +163,73 @@ export async function bootstrap() {
   document.documentElement.lang = i18n.resolvedLanguage ?? "en-US";
   let csrf = "";
   let serverOrigin = initialServerOrigin();
+  const native = isTauri();
+  let serverGeneration = 0;
+  let requestController = new AbortController();
+  async function transport(path: string, payload?: string, key = "") {
+    const origin = serverOrigin;
+    const generation = serverGeneration;
+    let response: Response;
+    try {
+      if (native) {
+        const reply = await invoke<{
+          status: number;
+          contentType: string;
+          body: string;
+        }>("server_request", {
+          origin,
+          path,
+          payload: payload ?? null,
+          csrf,
+          idempotencyKey: key,
+        });
+        const bytes = Uint8Array.from(atob(reply.body), (c) => c.charCodeAt(0));
+        response = new Response(bytes, {
+          status: reply.status,
+          headers: { "Content-Type": reply.contentType },
+        });
+      } else {
+        response = await fetch(origin + path, {
+          credentials: "same-origin",
+          ...(payload === undefined
+            ? {}
+            : {
+                method: "POST",
+                body: payload,
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-CSRF-Token": csrf,
+                  "Idempotency-Key": key,
+                },
+              }),
+          signal: (() => {
+            const timeout = AbortSignal.timeout(
+              path === "/api/session"
+                ? 8_000
+                : path === "/api/backup"
+                  ? 60_000
+                  : 15_000,
+            );
+            return AbortSignal.any([requestController.signal, timeout]);
+          })(),
+        });
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        ["TimeoutError", "AbortError"].includes(error.name)
+      )
+        throw new Error("LOGIN_TIMEOUT");
+      if (typeof error === "string") throw new Error(error);
+      throw new Error("NETWORK_ERROR");
+    }
+    if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
+    return response;
+  }
   // Retain the SAME key for an uncertain network retry. Never auto-repeat with a new key.
   const pending = new Map<string, string>();
   async function request<T>(path: string, value?: unknown): Promise<T> {
+    const generation = serverGeneration;
     const payload = value === undefined ? undefined : JSON.stringify(value);
     const signature = path + "\n" + payload;
     const key = pending.get(signature) ?? crypto.randomUUID();
@@ -105,28 +245,37 @@ export async function bootstrap() {
     )
       pending.set(signature, key);
     if (!serverOrigin) throw new DomainError("VALIDATION_ERROR");
-    const response = await fetch(serverOrigin + path, {
-      credentials: "same-origin",
-      ...(payload === undefined
-        ? {}
-        : {
-            method: "POST",
-            body: payload,
-            headers: {
-              "Content-Type": "application/json",
-              "X-CSRF-Token": csrf,
-              "Idempotency-Key": key,
-            },
-          }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    const data = await response.json();
+    const response = await transport(path, payload, key);
+    let data: { error?: string };
+    try {
+      data = await response.json();
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        ["TimeoutError", "AbortError"].includes(error.name)
+      )
+        throw new Error("LOGIN_TIMEOUT");
+      throw new Error("INVALID_RESPONSE");
+    }
+    if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
+    if (!data || typeof data !== "object") throw new Error("INVALID_RESPONSE");
     if (response.status < 500) pending.delete(signature);
     if (!response.ok)
-      throw new DomainError((data.error ?? "UNAVAILABLE") as ErrorCode);
+      throw new DomainError(
+        ((
+          {
+            401: "UNAUTHORIZED",
+            403: "FORBIDDEN",
+            429: "RATE_LIMITED",
+          } as Record<number, string>
+        )[response.status] ??
+          data.error ??
+          "UNAVAILABLE") as ErrorCode,
+      );
     return data as T;
   }
   let account: Account | null = null;
+  let logoutWarning = false;
   async function session(
     credentials?: string | { username: string; password: string },
     expectedContext?: ActorContext,
@@ -146,8 +295,19 @@ export async function bootstrap() {
             ...(expectedContext ? { expectedContext } : {}),
           },
     );
+    if (
+      !value.context ||
+      typeof value.context.workspaceId !== "string" ||
+      typeof value.context.principalId !== "string" ||
+      typeof value.csrf !== "string" ||
+      !value.csrf
+    )
+      throw new Error("INVALID_RESPONSE");
+    resetIdentity();
     csrf = value.csrf;
     account = value.account;
+    context = value.context;
+    if (account) saveAccountMetadata(account, serverOrigin);
     cursor = "";
     current = null;
     return value.context;
@@ -156,8 +316,20 @@ export async function bootstrap() {
   let current: Snapshot | null = null;
   let context: ActorContext | null = null;
   let unavailable = false;
+  function resetIdentity() {
+    serverGeneration += 1;
+    requestController.abort();
+    requestController = new AbortController();
+    pending.clear();
+    csrf = "";
+    account = null;
+    context = null;
+    cursor = "";
+    current = null;
+  }
   if (serverOrigin) {
     try {
+      if (native) await invoke("configure_server", { origin: serverOrigin });
       context = await session();
     } catch (error) {
       unavailable = !(
@@ -181,7 +353,9 @@ export async function bootstrap() {
   };
   let syncQueue: Promise<unknown> = Promise.resolve();
   function sync(): Promise<Snapshot> {
+    const generation = serverGeneration;
     const job = syncQueue.then(async () => {
+      if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
       const data = await request<{ cursor: string; snapshot: Snapshot | null }>(
         "/api/sync?cursor=" + encodeURIComponent(cursor),
       );
@@ -195,6 +369,7 @@ export async function bootstrap() {
   }
   return {
     i18n,
+    native,
     updates: {
       available: isTauri(),
       check: () => invoke("check_app_update"),
@@ -204,13 +379,24 @@ export async function bootstrap() {
         await invoke("install_app_update", { version, progress });
       },
     } satisfies AppUpdates,
-    context,
+    get context() {
+      return context;
+    },
+    set context(value: ActorContext | null) {
+      context = value;
+    },
     unavailable,
+    get logoutWarning() {
+      return logoutWarning;
+    },
     get serverOrigin() {
       return serverOrigin;
     },
-    setServerOrigin(value: string) {
-      serverOrigin = normalizeServerOrigin(value);
+    async setServerOrigin(value: string) {
+      const normalized = normalizeServerOrigin(value);
+      if (native) await invoke("configure_server", { origin: normalized });
+      serverOrigin = normalized;
+      resetIdentity();
       try {
         localStorage.setItem(serverOriginKey, serverOrigin);
       } catch {
@@ -221,20 +407,44 @@ export async function bootstrap() {
       account = null;
       cursor = "";
       current = null;
-      return Promise.resolve();
     },
     session,
     get account() {
       return account;
     },
+    savedAccounts: () => readSavedAccounts(),
+    forgetAccount: (id: string) => {
+      localStorage.setItem(
+        savedAccountsKey,
+        JSON.stringify(readSavedAccounts().filter((item) => item.id !== id)),
+      );
+    },
+    sessions: () => request<AccountSession[]>("/api/account/sessions"),
+    revokeSession: async (
+      target: { id: string; current: boolean } | { all: true },
+    ) => {
+      await request(
+        "/api/account/sessions/revoke",
+        "all" in target ? { all: true } : { id: target.id },
+      );
+      if ("all" in target || target.current) resetIdentity();
+    },
     register: (username: string, password: string) =>
       request("/api/register", { username, password }),
     claim: (username: string, password: string) =>
       request<Account>("/api/account/claim", { username, password }),
-    changePassword: (current: string, password: string) =>
-      request("/api/account/password", { current, password }),
+    changePassword: async (current: string, password: string) => {
+      await request("/api/account/password", { current, password });
+      resetIdentity();
+    },
     admin: () =>
-      request<{ accounts: Account[]; databaseBytes: number }>("/api/admin"),
+      request<{
+        accounts: Account[];
+        databaseBytes: number;
+        sessionLifetimePolicy: string;
+      }>("/api/admin"),
+    setSessionLifetimePolicy: (policy: string) =>
+      request("/api/admin/session-policy", { policy }),
     accountStatus: (
       id: string,
       version: number,
@@ -308,17 +518,31 @@ export async function bootstrap() {
         version,
         input,
       }),
-    removeProvider: (scope: string, version: number) =>
-      request("/api/ai/providers/remove", { scope, version }),
-    ai: (scope = "personal") =>
-      request<{ route: ModelRoute | null; runs: AgentRun[] }>(
-        "/api/ai?scope=" + encodeURIComponent(scope),
+    removeProvider: (scope: string, version: number, profileId = "default") =>
+      request("/api/ai/providers/remove", { scope, version, profileId }),
+    ai: (scope = "personal", profileId = "default") =>
+      request<{
+        route: ModelRoute | null;
+        routes: ModelRoute[];
+        runs: AgentRun[];
+      }>(
+        "/api/ai?scope=" +
+          encodeURIComponent(scope) +
+          "&profileId=" +
+          encodeURIComponent(profileId),
       ),
     propose: (
       prompt: string,
       scope = "personal",
       sources: { kind: EntityRef["kind"]; id: string; version: number }[] = [],
-    ) => request<AgentRun>("/api/ai/propose", { prompt, scope, sources }),
+      profileId = "default",
+    ) =>
+      request<AgentRun>("/api/ai/propose", {
+        prompt,
+        scope,
+        sources,
+        profileId,
+      }),
     applyAi: (id: string, version: number, indices: number[]) =>
       request("/api/ai/apply", { id, version, indices }),
     decide: (id: string, version: number, approve: boolean) =>
@@ -332,28 +556,76 @@ export async function bootstrap() {
       request("/api/link/delete", { id, version }),
     activity: () => request<ActivityEvent[]>("/api/activity"),
     async backup() {
-      const response = await fetch(serverOrigin + "/api/backup", {
-        method: "POST",
-        credentials: "same-origin",
-        body: "{}",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
-        signal: AbortSignal.timeout(60_000),
-      });
+      const response = await transport("/api/backup", "{}");
       if (!response.ok) {
         const data = await response.json();
         throw new DomainError((data.error ?? "UNAVAILABLE") as ErrorCode);
       }
       return response.blob();
     },
+    async loadImage(path: string) {
+      if (!/^\/api\/library\/asset\?id=[a-zA-Z0-9-]+$/.test(path))
+        throw new Error("INVALID_RESPONSE");
+      const response = await transport(path);
+      if (
+        !response.ok ||
+        !["image/png", "image/jpeg", "image/webp"].includes(
+          response.headers.get("Content-Type")?.split(";")[0] ?? "",
+        )
+      )
+        throw new Error("INVALID_RESPONSE");
+      return response.blob();
+    },
     revisions: (id: string) =>
       request<Note[]>("/api/revisions?id=" + encodeURIComponent(id)),
     organize: (input: OrganizeInput) =>
       request<{ changed: number }>("/api/organize", input),
+    saveCategory: (input: Parameters<CategoryService["save"]>[1]) =>
+      request<ProjectCategory>("/api/categories/save", input),
+    previewPlan: (projectId: string, manifest: unknown) =>
+      request<WorkflowRecord>("/api/plans/preview", { projectId, manifest }),
+    publishPlan: (id: string, version: number) =>
+      request<WorkflowRecord>("/api/plans/publish", { id, version }),
+    saveRecurrence: (input: Parameters<WorkflowService["saveRecurrence"]>[1]) =>
+      request<WorkflowRecord>("/api/recurrences/save", input),
+    generateRecurrence: (
+      id: string,
+      version: number,
+      from: string,
+      to: string,
+    ) =>
+      request<WorkflowRecord[]>("/api/recurrences/generate", {
+        id,
+        version,
+        from,
+        to,
+      }),
+    backfillOccurrence: (
+      id: string,
+      version: number,
+      completedAt: string | null,
+    ) =>
+      request<WorkflowRecord>("/api/recurrences/backfill", {
+        id,
+        version,
+        completedAt,
+      }),
     saveNote: (id: string | null, version: number, input: NoteInput) =>
       request<Note>("/api/note/save", { id, version, input }),
     deleteNote: (id: string, version: number, deleted: boolean) =>
       request<Note>("/api/note/delete", { id, version, deleted }),
-    logout: () => request("/api/logout", {}),
+    logout: async () => {
+      logoutWarning = false;
+      try {
+        await request("/api/logout", {});
+      } catch (error) {
+        // Native logout erases the secure local credential before networking.
+        // Never leave an apparently signed-in UI after that irreversible boundary.
+        if (!native) throw error;
+        logoutWarning = true;
+      }
+      resetIdentity();
+    },
   };
 }
 export type Runtime = Awaited<ReturnType<typeof bootstrap>>;

@@ -88,7 +88,56 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 10,
+    name: "instance-settings",
+    sql: readFileSync(
+      new URL("./migrations/0010-instance-settings.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 11,
+    name: "task-activation",
+    sql: readFileSync(
+      new URL("./migrations/0011-task-activation.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 12,
+    name: "login-sessions",
+    sql: readFileSync(
+      new URL("./migrations/0012-login-sessions.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 13,
+    name: "task-memberships",
+    sql: readFileSync(
+      new URL("./migrations/0013-task-memberships.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 14,
+    name: "categories",
+    sql: readFileSync(
+      new URL("./migrations/0014-categories.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 15,
+    name: "workflows",
+    sql: readFileSync(
+      new URL("./migrations/0015-workflows.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
+export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {
   return createHash("sha256")
     .update(sql.replaceAll("\r\n", "\n"))
@@ -199,6 +248,17 @@ export function inspectSchema(
       (name) => !objects.some((row) => row.name === name),
     )
   )
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (version >= 11) {
+    const columns = db.prepare("PRAGMA table_info(work_item)").all();
+    if (
+      !["activation_state", "activation_policy"].every((name) =>
+        columns.some((row) => row.name === name),
+      )
+    )
+      throw new StorageError("SCHEMA_OBJECT_MISSING");
+  }
+  if (version >= 12 && !objects.some((row) => row.name === "login_session"))
     throw new StorageError("SCHEMA_OBJECT_MISSING");
   return version;
 }

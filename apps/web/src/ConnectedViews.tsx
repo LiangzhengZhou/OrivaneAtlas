@@ -274,8 +274,10 @@ export function AiView({
   );
   const [data, setData] = useState<{
     route: ModelRoute | null;
+    routes: ModelRoute[];
     runs: AgentRun[];
   } | null>(null);
+  const [profileId, setProfileId] = useState("default");
   const [prompt, setPrompt] = useState(""),
     [error, setError] = useState(false),
     [busy, setBusy] = useState(false);
@@ -286,7 +288,7 @@ export function AiView({
       if (pending || document.hidden) return;
       pending = true;
       try {
-        const result = await runtime.ai(scope);
+        const result = await runtime.ai(scope, profileId);
         if (active) setData(result);
       } catch {
         if (active) setError(true);
@@ -300,13 +302,13 @@ export function AiView({
       active = false;
       window.clearInterval(timer);
     };
-  }, [runtime, scope]);
+  }, [runtime, scope, profileId]);
   async function act(action: () => Promise<unknown>) {
     setBusy(true);
     setError(false);
     try {
       await action();
-      setData(await runtime.ai(scope));
+      setData(await runtime.ai(scope, profileId));
     } catch {
       setError(true);
     } finally {
@@ -321,6 +323,7 @@ export function AiView({
           value={scope}
           onChange={(e) => {
             setScope(e.target.value);
+            setProfileId("default");
             setData(null);
             setSources([]);
             setPrompt("");
@@ -346,10 +349,39 @@ export function AiView({
             ))}
         </select>
       </label>
+      <label className="field">
+        {zh ? "本次使用的模型配置" : "Model profile for this request"}
+        <select
+          value={profileId}
+          disabled={busy}
+          onChange={(e) => {
+            setProfileId(e.target.value);
+            setData(null);
+          }}
+        >
+          <option value="default">{zh ? "默认配置" : "Default profile"}</option>
+          {(data?.routes ?? [])
+            .filter((route) => route.profileId && route.profileId !== "default")
+            .map((route) => (
+              <option key={route.profileId} value={route.profileId}>
+                {route.profileId} · {route.model}
+              </option>
+            ))}
+          {profileId !== "default" &&
+            !data?.routes?.some((route) => route.profileId === profileId) && (
+              <option value={profileId}>{profileId}</option>
+            )}
+        </select>
+      </label>
       <PersonalAISettings
-        key={scope}
+        key={scope + ":" + profileId}
         runtime={runtime}
         scope={scope}
+        profileId={profileId}
+        onProfileChange={(id) => {
+          setProfileId(id);
+          setData(null);
+        }}
         onChange={() => void act(async () => {})}
       />
       <div className="connected-grid ai-layout">
@@ -387,6 +419,7 @@ export function AiView({
                       id: e.id,
                       version: e.version,
                     })),
+                  profileId,
                 );
                 setPrompt("");
                 setSources([]);
@@ -463,6 +496,25 @@ export function AiView({
                 {run.route.model} · {run.route.provider}
               </p>
               <pre className="run-prompt">{run.prompt}</pre>
+              {run.attempt && (
+                <p>
+                  {t("attemptUsage", {
+                    input: run.attempt.inputChars,
+                    output: run.attempt.reservedOutputTokens,
+                  })}{" "}
+                  · {t("attempt" + run.attempt.outcome)}
+                  {run.attempt.usage && (
+                    <>
+                      {" "}
+                      ·{" "}
+                      {t("reportedUsage", {
+                        input: run.attempt.usage.inputTokens,
+                        output: run.attempt.usage.outputTokens,
+                      })}
+                    </>
+                  )}
+                </p>
+              )}
               {run.status === "WAITING_APPROVAL" && (
                 <>
                   <p>
@@ -474,8 +526,10 @@ export function AiView({
                       className="button primary"
                       disabled={
                         busy ||
-                        !data.route ||
-                        data.route.fingerprint !== run.route.fingerprint
+                        !(data.routes ?? (data.route ? [data.route] : [])).some(
+                          (route) =>
+                            route.fingerprint === run.route.fingerprint,
+                        )
                       }
                       onClick={() =>
                         void act(() =>

@@ -7,6 +7,8 @@ This directory contains public documentation for people who want to run, underst
 - [Self-hosting](SELF_HOSTING.md) - run your own server and connect clients.
 - [Development](DEVELOPMENT.md) - install dependencies, work on the codebase, and run checks.
 - [OpenAPI](api/openapi.json) - HTTP API contract.
+- [Categories, reviewed plans and recurrence](WORKFLOWS.md) - use the new project workflows and understand their current limits.
+- [AI execution and data permission](AI_GATEWAY.md) - configure a provider, review requests and understand privacy and usage guarantees.
 - [Storage](STORAGE.md) - persistence model and backup boundaries.
 - [Architecture](architecture/arclattice-v0-architecture.md) - product architecture and layer boundaries.
 

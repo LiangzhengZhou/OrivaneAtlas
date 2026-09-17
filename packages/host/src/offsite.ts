@@ -15,6 +15,7 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { currentSchemaVersion } from "@arclattice/storage-sqlite";
 
 const magic = Buffer.from("ARCBK001");
 const maxBytes = 64 * 1024 * 1024;
@@ -71,7 +72,7 @@ export function validateSnapshot(path: string): number {
       db.prepare("PRAGMA application_id").get()?.application_id !==
         0x4152434c ||
       version < 1 ||
-      version > 9
+      version > currentSchemaVersion
     )
       throw new Error("Unsupported snapshot");
     const integrity = db.prepare("PRAGMA integrity_check").all();

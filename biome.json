@@ -1,5 +1,6 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
     "includes": [
       "**",
@@ -9,7 +10,9 @@
       "!!**/target",
       "!!**/test-results",
       "!!**/playwright-report",
-      "!!pnpm-lock.yaml"
+      "!!pnpm-lock.yaml",
+      "!!.refactor-backup-20260917",
+      "!!src-tauri/gen/schemas"
     ]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },

@@ -1,8 +1,13 @@
-import type { LibraryEntry, Note } from "@arclattice/application";
+import {
+  type LibraryEntry,
+  type Note,
+  privateContentPolicy,
+} from "@arclattice/application";
 import type { EditorView } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "./bootstrap";
+import { ContentPolicyEditor } from "./ContentPolicyEditor";
 import { FilePicker } from "./FilePicker";
 import { imageAnchor, pendingImage } from "./imageInsertion";
 import { LiveMarkdown } from "./LiveMarkdown";
@@ -191,6 +196,9 @@ function DocumentPane({
   const [base, setBase] = useState(request.entity),
     [title, setTitle] = useState(request.entity?.title ?? request.day ?? ""),
     [body, setBody] = useState(request.entity?.bodyMd ?? "");
+  const [aiPolicy, setAiPolicy] = useState(
+    request.entity?.aiPolicy ?? privateContentPolicy,
+  );
   const [mode, setMode] = useState<"live" | "source" | "read">("live"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -202,14 +210,16 @@ function DocumentPane({
     gate = useRef(false),
     failed = useRef(false),
     baseRef = useRef(base);
-  const current = useRef({ title, body, composing });
-  current.current = { title, body, composing };
+  const current = useRef({ title, body, composing, aiPolicy });
+  current.current = { title, body, composing, aiPolicy };
   const callbacks = useRef({ onStatus, onSaved });
   callbacks.current = { onStatus, onSaved };
   const library = request.kind === "SPACE" || request.kind === "DOCUMENT";
   const dirty =
     title !== (base?.title ?? request.day ?? "") ||
-    body !== (base?.bodyMd ?? "");
+    body !== (base?.bodyMd ?? "") ||
+    JSON.stringify(aiPolicy) !==
+      JSON.stringify(base?.aiPolicy ?? privateContentPolicy);
   const draftKey = [
     runtime.context?.workspaceId ?? "unknown",
     runtime.context?.principalId ?? "unknown",
@@ -251,6 +261,7 @@ function DocumentPane({
     setBase(remote);
     setTitle(remote.title);
     setBody(remote.bodyMd);
+    setAiPolicy(remote.aiPolicy ?? privateContentPolicy);
   }, [remote, base, busy, dirty, composing]);
   async function save(explicit = false) {
     if (
@@ -274,7 +285,9 @@ function DocumentPane({
     if (
       previous &&
       draft.title === previous.title &&
-      draft.body === previous.bodyMd
+      draft.body === previous.bodyMd &&
+      JSON.stringify(draft.aiPolicy) ===
+        JSON.stringify(previous.aiPolicy ?? privateContentPolicy)
     )
       return;
     gate.current = true;
@@ -290,6 +303,7 @@ function DocumentPane({
               spaceId: request.spaceId ?? null,
               title: draft.title,
               bodyMd: draft.body,
+              aiPolicy: draft.aiPolicy,
             },
           )
         : await runtime.saveNote(previous?.id ?? null, previous?.version ?? 0, {
@@ -300,6 +314,7 @@ function DocumentPane({
                 : null,
             title: draft.title,
             bodyMd: draft.body,
+            aiPolicy: draft.aiPolicy,
           });
       baseRef.current = value;
       setBase(value);
@@ -320,7 +335,7 @@ function DocumentPane({
     if (!dirty || composing || busy) return;
     const timer = setTimeout(() => void saver.current(), 1000);
     return () => clearTimeout(timer);
-  }, [title, body, dirty, composing, busy]);
+  }, [title, body, aiPolicy, dirty, composing, busy]);
   async function guarded(action: () => Promise<void>) {
     if (gate.current) return;
     gate.current = true;
@@ -644,10 +659,19 @@ function DocumentPane({
         {request.kind} {request.day} ·{" "}
         {base ? "v" + base.version : zh ? "草稿" : "Draft"} ·{" "}
         {t("characters", { count: body.length })} ·{" "}
-        {zh
-          ? "私人文档 · AI 默认不读取"
-          : "Private · AI does not read by default"}
+        {aiPolicy.aiAccess === "DENY"
+          ? zh
+            ? "AI 禁止读取"
+            : "AI access denied"
+          : zh
+            ? "AI 需审批且符合数据许可"
+            : "AI requires approval and data permission"}
       </div>
+      <ContentPolicyEditor
+        value={aiPolicy}
+        onChange={setAiPolicy}
+        disabled={busy}
+      />
       <details className="document-tools no-print">
         <summary>
           {zh ? "导入、图片与修订" : "Import, images and revisions"}

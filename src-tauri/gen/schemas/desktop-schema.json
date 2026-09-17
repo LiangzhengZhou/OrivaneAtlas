@@ -183,10 +183,22 @@
           "markdownDescription": "Enables the check_app_update command without any pre-configured scope."
         },
         {
+          "description": "Enables the configure_server command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-configure-server",
+          "markdownDescription": "Enables the configure_server command without any pre-configured scope."
+        },
+        {
           "description": "Enables the install_app_update command without any pre-configured scope.",
           "type": "string",
           "const": "allow-install-app-update",
           "markdownDescription": "Enables the install_app_update command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the server_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-server-request",
+          "markdownDescription": "Enables the server_request command without any pre-configured scope."
         },
         {
           "description": "Denies the check_app_update command without any pre-configured scope.",
@@ -195,10 +207,22 @@
           "markdownDescription": "Denies the check_app_update command without any pre-configured scope."
         },
         {
+          "description": "Denies the configure_server command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-configure-server",
+          "markdownDescription": "Denies the configure_server command without any pre-configured scope."
+        },
+        {
           "description": "Denies the install_app_update command without any pre-configured scope.",
           "type": "string",
           "const": "deny-install-app-update",
           "markdownDescription": "Denies the install_app_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the server_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-server-request",
+          "markdownDescription": "Denies the server_request command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

@@ -79,7 +79,9 @@ export class OrganizationService {
       if (
         !entity ||
         entity.deletedAt ||
-        ("type" in entity && entity.type === "PROJECT")
+        ("type" in entity &&
+          entity.type === "PROJECT" &&
+          input.action === "delete")
       )
         throw new DomainError("NOT_FOUND");
       const old = metadata.find(

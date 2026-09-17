@@ -16,6 +16,766 @@
     }
   ],
   "paths": {
+    "/api/v1/plans/preview": {
+      "post": {
+        "operationId": "plans_previewV1",
+        "summary": "Preview an additive Manifest v1",
+        "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Workspace and version scoped. Plan publication binds creator and exact graph revision. Recurrence generation runs manually and in the active-account background worker, limited to 366 calendar dates per transaction through local today; a durable schedulerThrough cursor prevents repeated scanning. Monthly rules skip missing days. Backfill uses the immutable occurrence ruleSnapshot; legacy occurrences require unchanged definition. Actual completion is stored separately. Legacy /api alias supported.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["projectId", "manifest"],
+                "properties": {
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "manifest": {
+                    "type": "object",
+                    "description": "Manifest v1: {version:1,tasks:[{tempId,title,descriptionMd?,startDate?,dueDate?,dependsOn?:string[]}]}. 1–100 tasks, unique IDs, acyclic dependencies. Unknown fields rejected."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Versioned workflow record(s), also in snapshot.workflows"
+          },
+          "400": {
+            "description": "Invalid data"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "409": {
+            "description": "Stale version or graph revision"
+          }
+        }
+      }
+    },
+    "/api/v1/plans/publish": {
+      "post": {
+        "operationId": "plans_publishV1",
+        "summary": "Publish reviewed proposal atomically",
+        "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Workspace and version scoped. Plan publication binds creator and exact graph revision. Recurrence generation runs manually and in the active-account background worker, limited to 366 calendar dates per transaction through local today; a durable schedulerThrough cursor prevents repeated scanning. Monthly rules skip missing days. Backfill uses the immutable occurrence ruleSnapshot; legacy occurrences require unchanged definition. Actual completion is stored separately. Legacy /api alias supported.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Versioned workflow record(s), also in snapshot.workflows"
+          },
+          "400": {
+            "description": "Invalid data"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "409": {
+            "description": "Stale version or graph revision"
+          }
+        }
+      }
+    },
+    "/api/v1/recurrences/save": {
+      "post": {
+        "operationId": "recurrences_saveV1",
+        "summary": "Save or pause recurrence",
+        "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Workspace and version scoped. Plan publication binds creator and exact graph revision. Recurrence generation runs manually and in the active-account background worker, limited to 366 calendar dates per transaction through local today; a durable schedulerThrough cursor prevents repeated scanning. Monthly rules skip missing days. Backfill uses the immutable occurrence ruleSnapshot; legacy occurrences require unchanged definition. Actual completion is stored separately. Legacy /api alias supported.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["version", "deleted", "rule"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "deleted": {
+                    "type": "boolean"
+                  },
+                  "rule": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "title",
+                      "descriptionMd",
+                      "projectId",
+                      "startDate",
+                      "timezone",
+                      "frequency",
+                      "interval"
+                    ],
+                    "properties": {
+                      "title": {
+                        "type": "string"
+                      },
+                      "descriptionMd": {
+                        "type": "string",
+                        "maxLength": 200000
+                      },
+                      "projectId": {
+                        "type": ["string", "null"]
+                      },
+                      "startDate": {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      },
+                      "frequency": {
+                        "enum": ["DAILY", "WEEKLY", "MONTHLY"]
+                      },
+                      "interval": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 366
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Versioned workflow record(s), also in snapshot.workflows"
+          },
+          "400": {
+            "description": "Invalid data"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "409": {
+            "description": "Stale version or graph revision"
+          }
+        }
+      }
+    },
+    "/api/v1/recurrences/generate": {
+      "post": {
+        "operationId": "recurrences_generateV1",
+        "summary": "Generate missed dates and today task",
+        "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Workspace and version scoped. Plan publication binds creator and exact graph revision. Recurrence generation runs manually and in the active-account background worker, limited to 366 calendar dates per transaction through local today; a durable schedulerThrough cursor prevents repeated scanning. Monthly rules skip missing days. Backfill uses the immutable occurrence ruleSnapshot; legacy occurrences require unchanged definition. Actual completion is stored separately. Legacy /api alias supported.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version", "from", "to"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "from": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "to": {
+                    "type": "string",
+                    "format": "date"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Versioned workflow record(s), also in snapshot.workflows"
+          },
+          "400": {
+            "description": "Invalid data"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "409": {
+            "description": "Stale version or graph revision"
+          }
+        }
+      }
+    },
+    "/api/v1/recurrences/backfill": {
+      "post": {
+        "operationId": "recurrences_backfillV1",
+        "summary": "Explicitly backfill missed occurrence",
+        "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Workspace and version scoped. Plan publication binds creator and exact graph revision. Recurrence generation runs manually and in the active-account background worker, limited to 366 calendar dates per transaction through local today; a durable schedulerThrough cursor prevents repeated scanning. Monthly rules skip missing days. Backfill uses the immutable occurrence ruleSnapshot; legacy occurrences require unchanged definition. Actual completion is stored separately. Legacy /api alias supported.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version", "completedAt"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "completedAt": {
+                    "type": ["string", "null"],
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Versioned workflow record(s), also in snapshot.workflows"
+          },
+          "400": {
+            "description": "Invalid data"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "409": {
+            "description": "Stale version or graph revision"
+          }
+        }
+      }
+    },
+    "/api/v1/categories/save": {
+      "post": {
+        "operationId": "saveProjectCategoryV1",
+        "summary": "Create, edit, soft-delete or restore a project category",
+        "description": "Cookie/CSRF only; integration tokens cannot mutate categories. Version zero creates; existing IDs require current version. Replaces the complete project membership set. Deleted categories and their memberships remain in snapshots for restoration. Legacy /api/categories/save is an equivalent alias.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["version", "name", "projectIds", "deleted"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "projectIds": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "deleted": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Versioned category with ID, workspaceId, name, projectIds, version, createdBy, updatedBy, createdAt, updatedAt and nullable deletedAt. Included as categories[] in workspace snapshots and sync."
+          },
+          "400": {
+            "description": "Invalid name, membership or input"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Category or project not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/v1/account/sessions": {
+      "get": {
+        "operationId": "listLoginSessionsV1",
+        "summary": "List the current account's active login sessions",
+        "description": "Cookie authentication only, no integration tokens. No token hashes or credentials are exposed. Times are Unix epoch milliseconds; null expiry means no server deadline.",
+        "responses": {
+          "200": {
+            "description": "Active sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["id", "createdAt", "expiresAt", "current"],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "type": "integer"
+                      },
+                      "expiresAt": {
+                        "type": ["integer", "null"]
+                      },
+                      "current": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired or revoked"
+          },
+          "403": {
+            "description": "Integration tokens forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/account/sessions/revoke": {
+      "post": {
+        "operationId": "revokeLoginSessionsV1",
+        "summary": "Revoke a selected session or all sessions of the caller",
+        "description": "Cookie plus CSRF only. Foreign/unknown IDs are no-ops. Receipt and deletion are atomic. Revoking the current session clears the cookie; subsequent retries receive 401 even with the same key.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id"],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["all"],
+                    "properties": {
+                      "all": {
+                        "const": true
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Revoked or prior successful operation replayed"
+          },
+          "400": {
+            "description": "Invalid request or missing idempotency key"
+          },
+          "401": {
+            "description": "Session expired or revoked"
+          },
+          "403": {
+            "description": "CSRF required or integration token forbidden"
+          },
+          "409": {
+            "description": "Idempotency payload conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/session-policy": {
+      "post": {
+        "operationId": "setSessionLifetimePolicyV1",
+        "summary": "Set the instance policy for newly issued login sessions",
+        "description": "Administrator cookie session and CSRF required; integration tokens forbidden. Existing sessions retain their deadline. Identical Idempotency-Key replay returns the original result without reapplying the setting; changed payload returns 409. Explicit Host sessionLifetimePolicy overrides the persisted setting. SQLite migration 12 persists hashed revocable sessions across restarts. PERMANENT has no server expiry and renews a one-year browser cookie. Old process-local sessions require new login on upgrade.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["policy"],
+                "properties": {
+                  "policy": {
+                    "type": "string",
+                    "enum": [
+                      "ONE_DAY",
+                      "SEVEN_DAYS",
+                      "THIRTY_DAYS",
+                      "PERMANENT"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy persisted or original successful response replayed"
+          },
+          "400": {
+            "description": "Invalid policy or missing idempotency key"
+          },
+          "401": {
+            "description": "Session expired or revoked"
+          },
+          "403": {
+            "description": "Administrator or CSRF required"
+          },
+          "409": {
+            "description": "Idempotency key reused with different payload"
+          }
+        }
+      }
+    },
+    "/api/account/sessions": {
+      "get": {
+        "operationId": "listLoginSessions",
+        "summary": "List the current account's active login sessions",
+        "description": "Cookie authentication only, no integration tokens. No token hashes or credentials are exposed. Times are Unix epoch milliseconds; null expiry means no server deadline.",
+        "responses": {
+          "200": {
+            "description": "Active sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["id", "createdAt", "expiresAt", "current"],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "type": "integer"
+                      },
+                      "expiresAt": {
+                        "type": ["integer", "null"]
+                      },
+                      "current": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session expired or revoked"
+          },
+          "403": {
+            "description": "Integration tokens forbidden"
+          }
+        }
+      }
+    },
+    "/api/account/sessions/revoke": {
+      "post": {
+        "operationId": "revokeLoginSessions",
+        "summary": "Revoke a selected session or all sessions of the caller",
+        "description": "Cookie plus CSRF only. Foreign/unknown IDs are no-ops. Receipt and deletion are atomic. Revoking the current session clears the cookie; subsequent retries receive 401 even with the same key.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id"],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 240
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["all"],
+                    "properties": {
+                      "all": {
+                        "const": true
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Revoked or prior successful operation replayed"
+          },
+          "400": {
+            "description": "Invalid request or missing idempotency key"
+          },
+          "401": {
+            "description": "Session expired or revoked"
+          },
+          "403": {
+            "description": "CSRF required or integration token forbidden"
+          },
+          "409": {
+            "description": "Idempotency payload conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/session-policy": {
+      "post": {
+        "operationId": "setSessionLifetimePolicy",
+        "summary": "Set the instance policy for newly issued login sessions",
+        "description": "Administrator cookie session and CSRF required; integration tokens forbidden. Existing sessions retain their deadline. Identical Idempotency-Key replay returns the original result without reapplying the setting; changed payload returns 409. Explicit Host sessionLifetimePolicy overrides the persisted setting. SQLite migration 12 persists hashed revocable sessions across restarts. PERMANENT has no server expiry and renews a one-year browser cookie. Old process-local sessions require new login on upgrade.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["policy"],
+                "properties": {
+                  "policy": {
+                    "type": "string",
+                    "enum": [
+                      "ONE_DAY",
+                      "SEVEN_DAYS",
+                      "THIRTY_DAYS",
+                      "PERMANENT"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Policy persisted or original successful response replayed"
+          },
+          "400": {
+            "description": "Invalid policy or missing idempotency key"
+          },
+          "401": {
+            "description": "Session expired or revoked"
+          },
+          "403": {
+            "description": "Administrator or CSRF required"
+          },
+          "409": {
+            "description": "Idempotency key reused with different payload"
+          }
+        }
+      }
+    },
     "/api/library/upload-chunk": {
       "post": {
         "operationId": "uploadImageChunk",
@@ -1313,9 +2073,15 @@
                       "items": {
                         "$ref": "#/components/schemas/AgentRun"
                       }
+                    },
+                    "routes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ModelRoute"
+                      }
                     }
                   },
-                  "required": ["route", "runs"]
+                  "required": ["route", "runs", "routes"]
                 }
               }
             }
@@ -1340,6 +2106,16 @@
               "pattern": "^(personal|(?:WORK|SPACE):[^:]+)$",
               "default": "personal",
               "description": "Personal configuration or own active project / knowledge-space ID. No administrator-global model."
+            }
+          },
+          {
+            "name": "profileId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+              "default": "default",
+              "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
             }
           }
         ]
@@ -1600,6 +2376,12 @@
                       },
                       "required": ["kind", "id", "version"]
                     }
+                  },
+                  "profileId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+                    "default": "default",
+                    "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
                   }
                 },
                 "required": ["prompt"]
@@ -2826,6 +3608,12 @@
                   "version": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "profileId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+                    "default": "default",
+                    "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
                   }
                 },
                 "required": ["scope", "version"]
@@ -4014,9 +4802,15 @@
                       "items": {
                         "$ref": "#/components/schemas/AgentRun"
                       }
+                    },
+                    "routes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ModelRoute"
+                      }
                     }
                   },
-                  "required": ["route", "runs"]
+                  "required": ["route", "runs", "routes"]
                 }
               }
             }
@@ -4041,6 +4835,16 @@
               "pattern": "^(personal|(?:WORK|SPACE):[^:]+)$",
               "default": "personal",
               "description": "Personal configuration or own active project / knowledge-space ID. No administrator-global model."
+            }
+          },
+          {
+            "name": "profileId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+              "default": "default",
+              "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
             }
           }
         ]
@@ -4301,6 +5105,12 @@
                       },
                       "required": ["kind", "id", "version"]
                     }
+                  },
+                  "profileId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+                    "default": "default",
+                    "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
                   }
                 },
                 "required": ["prompt"]
@@ -5527,6 +6337,12 @@
                   "version": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "profileId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+                    "default": "default",
+                    "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
                   }
                 },
                 "required": ["scope", "version"]
@@ -5793,7 +6609,7 @@
             "integration": []
           }
         ],
-        "description": "Cookie + CSRF or write/read-write Bearer. Idempotency-Key required. Entire batch rolls back on stale entity or organization version, missing/deleted entity, foreign workspace or invalid entry. Maximum100 distinct IDs. organizationVersion0 means no metadata. Archive/unarchive require WORK (not PROJECT), preserve task status and dependencies. Move requires NOTE (including JOURNAL), folder up to80 characters trimmed; empty means Unfiled. Journal kind/day and all Markdown remain unchanged. Delete is recoverable soft deletion. Snapshot includes organization metadata; use its version on subsequent operations. No autonomous Agent tool is added."
+        "description": "Cookie + CSRF or write/read-write Bearer. Idempotency-Key required. Entire batch rolls back on stale entity or organization version, missing/deleted entity, foreign workspace or invalid entry. Maximum100 distinct IDs. organizationVersion0 means no metadata. Archive/unarchive require WORK including PROJECT; preserve status, dependencies and descendant records. Descendants inherit ancestor archive in work-view projections; explicit descendant unarchive does not override an archived ancestor. Restore ancestors first. Move requires NOTE (including JOURNAL), folder up to80 characters trimmed; empty means Unfiled. Journal kind/day and all Markdown remain unchanged. Delete is recoverable soft deletion for non-project entries; project deletion uses the Work API with child protection. Snapshot includes organization metadata; use its version on subsequent operations. No autonomous Agent tool is added."
       }
     },
     "/api/v1/organize": {
@@ -5919,7 +6735,7 @@
             "integration": []
           }
         ],
-        "description": "Cookie + CSRF or write/read-write Bearer. Idempotency-Key required. Entire batch rolls back on stale entity or organization version, missing/deleted entity, foreign workspace or invalid entry. Maximum100 distinct IDs. organizationVersion0 means no metadata. Archive/unarchive require WORK (not PROJECT), preserve task status and dependencies. Move requires NOTE (including JOURNAL), folder up to80 characters trimmed; empty means Unfiled. Journal kind/day and all Markdown remain unchanged. Delete is recoverable soft deletion. Snapshot includes organization metadata; use its version on subsequent operations. No autonomous Agent tool is added."
+        "description": "Cookie + CSRF or write/read-write Bearer. Idempotency-Key required. Entire batch rolls back on stale entity or organization version, missing/deleted entity, foreign workspace or invalid entry. Maximum100 distinct IDs. organizationVersion0 means no metadata. Archive/unarchive require WORK including PROJECT; preserve status, dependencies and descendant records. Descendants inherit ancestor archive in work-view projections; explicit descendant unarchive does not override an archived ancestor. Restore ancestors first. Move requires NOTE (including JOURNAL), folder up to80 characters trimmed; empty means Unfiled. Journal kind/day and all Markdown remain unchanged. Delete is recoverable soft deletion for non-project entries; project deletion uses the Work API with child protection. Snapshot includes organization metadata; use its version on subsequent operations. No autonomous Agent tool is added."
       }
     }
   },
@@ -5937,6 +6753,17 @@
       }
     },
     "schemas": {
+      "TaskProjectIds": {
+        "type": "array",
+        "maxItems": 100,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "description": "TASK only. Ordered live projects in the same workspace. Replaces all memberships; first entry is projectId. An explicit legacy projectId edit replaces memberships with zero or one project."
+      },
       "Error": {
         "type": "object",
         "additionalProperties": false,
@@ -6015,14 +6842,37 @@
         },
         "required": ["context", "csrf", "account"]
       },
+      "ActivationState": {
+        "type": "string",
+        "enum": ["ACTIVE", "INACTIVE", "SCHEDULED"]
+      },
+      "ActivationPolicy": {
+        "type": "string",
+        "enum": [
+          "MANUAL",
+          "IMMEDIATE",
+          "WHEN_DEPENDENCIES_COMPLETED",
+          "AT_SCHEDULED_TIME"
+        ],
+        "description": "Scheduled eligibility starts on startDate (UTC), requires a date, and does not bypass dependencies. Other automatic policies derive activation state transactionally."
+      },
       "CreateWork": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "projectIds": {
+            "$ref": "#/components/schemas/TaskProjectIds"
+          },
+          "activationState": {
+            "$ref": "#/components/schemas/ActivationState"
+          },
+          "activationPolicy": {
+            "$ref": "#/components/schemas/ActivationPolicy"
+          },
           "projectId": {
             "type": ["string", "null"],
             "maxLength": 240,
-            "description": "Active PROJECT in same workspace. PROJECT cannot be nested."
+            "description": "Live PROJECT in same workspace; parent for PROJECT, primary project otherwise. Cycles are rejected."
           },
           "startDate": {
             "type": ["string", "null"],
@@ -6072,6 +6922,15 @@
               "projectId": {
                 "type": ["string", "null"],
                 "maxLength": 240
+              },
+              "projectIds": {
+                "$ref": "#/components/schemas/TaskProjectIds"
+              },
+              "activationState": {
+                "$ref": "#/components/schemas/ActivationState"
+              },
+              "activationPolicy": {
+                "$ref": "#/components/schemas/ActivationPolicy"
               },
               "startDate": {
                 "type": ["string", "null"],
@@ -6127,6 +6986,9 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "aiPolicy": {
+            "$ref": "#/components/schemas/ContentPolicy"
+          },
           "title": {
             "type": "string",
             "minLength": 1,
@@ -6170,8 +7032,17 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "activationState": {
+            "$ref": "#/components/schemas/ActivationState"
+          },
+          "activationPolicy": {
+            "$ref": "#/components/schemas/ActivationPolicy"
+          },
           "projectId": {
             "type": ["string", "null"]
+          },
+          "projectIds": {
+            "$ref": "#/components/schemas/TaskProjectIds"
           },
           "startDate": {
             "type": ["string", "null"],
@@ -6247,6 +7118,8 @@
           "status",
           "priority",
           "executionMode",
+          "activationState",
+          "activationPolicy",
           "assigneePrincipalId",
           "projectId",
           "startDate",
@@ -6357,7 +7230,10 @@
           },
           "aiAccess": {
             "type": "string",
-            "enum": ["DENY"]
+            "enum": ["ALLOW", "ASK", "DENY"]
+          },
+          "aiPolicy": {
+            "$ref": "#/components/schemas/ContentPolicy"
           },
           "provenance": {
             "type": "string",
@@ -6583,6 +7459,12 @@
             "pattern": "^(personal|(?:WORK|SPACE):[^:]+)$",
             "default": "personal",
             "description": "Personal configuration or own active project / knowledge-space ID. No administrator-global model."
+          },
+          "profileId": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+            "default": "default",
+            "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
           }
         },
         "required": [
@@ -6599,6 +7481,58 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "attempt": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "reservedAt": {
+                "type": "string"
+              },
+              "settledAt": {
+                "type": ["string", "null"]
+              },
+              "outcome": {
+                "enum": ["RESERVED", "SUCCEEDED", "UNKNOWN"]
+              },
+              "inputChars": {
+                "type": "integer"
+              },
+              "reservedOutputTokens": {
+                "type": "integer"
+              },
+              "usage": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "inputTokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "outputTokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "source": {
+                    "const": "PROVIDER_REPORTED"
+                  }
+                },
+                "required": ["inputTokens", "outputTokens", "source"],
+                "description": "Optional provider-reported counters, not billed cost. Absent means unknown, never zero."
+              }
+            },
+            "required": [
+              "id",
+              "reservedAt",
+              "settledAt",
+              "outcome",
+              "inputChars",
+              "reservedOutputTokens"
+            ],
+            "description": "Durable single-send reservation, not a billed token or cost report. Unknown outcomes are never automatically replayed."
+          },
           "id": {
             "type": "string"
           },
@@ -6842,10 +7776,30 @@
           "secret"
         ]
       },
+      "ContentPolicy": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Human cookie-authenticated edits only. Missing policy defaults to PRIVATE/LOCAL_ONLY/DENY; omission on update preserves policy. External AI and integration tokens cannot elevate permission. Parent-space and document restrictions intersect.",
+        "properties": {
+          "classification": {
+            "enum": ["PUBLIC", "WORKSPACE", "PRIVATE", "SENSITIVE", "SECRET"]
+          },
+          "processingBoundary": {
+            "enum": ["LOCAL_ONLY", "SELF_HOSTED_ONLY", "TRUSTED_CLOUD", "ANY"]
+          },
+          "aiAccess": {
+            "enum": ["ALLOW", "ASK", "DENY"]
+          }
+        },
+        "required": ["classification", "processingBoundary", "aiAccess"]
+      },
       "LibraryInput": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "aiPolicy": {
+            "$ref": "#/components/schemas/ContentPolicy"
+          },
           "kind": {
             "type": "string",
             "enum": ["SPACE", "DOCUMENT"]
@@ -6869,6 +7823,9 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "aiPolicy": {
+            "$ref": "#/components/schemas/ContentPolicy"
+          },
           "kind": {
             "type": "string",
             "enum": ["SPACE", "DOCUMENT"]
@@ -6981,6 +7938,12 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 100
+          },
+          "profileId": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+            "default": "default",
+            "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
           }
         },
         "required": [
@@ -7026,6 +7989,12 @@
           },
           "route": {
             "$ref": "#/components/schemas/ModelRoute"
+          },
+          "profileId": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+            "default": "default",
+            "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
           }
         },
         "required": [

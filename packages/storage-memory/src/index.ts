@@ -1,21 +1,32 @@
 import type {
   ActivityEvent,
   AuthorizationService,
+  CategoryChange,
   OutboxEvent,
   Permission,
+  ProjectCategory,
   UnitOfWork,
+  WorkflowRecord,
   WorkTransaction,
 } from "@arclattice/application";
 import type { ActorContext, WorkEdge, WorkItem } from "@arclattice/domain";
 import { DomainError } from "@arclattice/domain";
 
 interface MemoryState {
+  workflows: Map<string, WorkflowRecord>;
+  workflowEvents: WorkflowRecord[];
+  categories: Map<string, ProjectCategory>;
+  categoryChanges: CategoryChange[];
   items: Map<string, WorkItem>;
   edges: Map<string, WorkEdge>;
   activity: ActivityEvent[];
   outbox: OutboxEvent[];
 }
 const emptyState = (): MemoryState => ({
+  workflows: new Map(),
+  workflowEvents: [],
+  categories: new Map(),
+  categoryChanges: [],
   items: new Map(),
   edges: new Map(),
   activity: [],
@@ -48,16 +59,64 @@ export class MemoryUnitOfWork implements UnitOfWork {
         assertOpen();
         const item = state.items.get(id);
         if (!item) throw new DomainError("NOT_FOUND");
-        return structuredClone(item);
+        return structuredClone(
+          item.type === "TASK"
+            ? {
+                ...item,
+                projectIds:
+                  item.projectIds ?? (item.projectId ? [item.projectId] : []),
+              }
+            : item,
+        );
       };
       const tx: WorkTransaction = {
+        workflows: async () => {
+          assertOpen();
+          return structuredClone([...state.workflows.values()]);
+        },
+        saveWorkflow: async (record, expected) => {
+          assertScope(record);
+          const old = state.workflows.get(record.id);
+          if (
+            (old?.version ?? 0) !== expected ||
+            record.version !== expected + 1
+          )
+            throw new DomainError("VERSION_CONFLICT");
+          if (
+            old &&
+            (old.createdBy !== record.createdBy ||
+              old.createdAt !== record.createdAt ||
+              old.payload.kind !== record.payload.kind)
+          )
+            throw new DomainError("VALIDATION_ERROR");
+          state.workflows.set(record.id, structuredClone(record));
+          state.workflowEvents.push(structuredClone(record));
+        },
+        categories: async () => {
+          assertOpen();
+          return structuredClone([...state.categories.values()]);
+        },
+        saveCategory: async (category, expectedVersion) => {
+          assertScope(category);
+          if (
+            (state.categories.get(category.id)?.version ?? 0) !==
+              expectedVersion ||
+            category.version !== expectedVersion + 1
+          )
+            throw new DomainError("VERSION_CONFLICT");
+          state.categories.set(category.id, structuredClone(category));
+        },
+        appendCategoryChange: async (event) => {
+          assertScope(event);
+          state.categoryChanges.push(structuredClone(event));
+        },
         get: async (id) => get(id),
         list: async (includeDeleted = false) => {
           assertOpen();
           return structuredClone(
-            [...state.items.values()].filter(
-              (item) => includeDeleted || !item.deletedAt,
-            ),
+            [...state.items.values()]
+              .map((item) => get(item.id))
+              .filter((item) => includeDeleted || !item.deletedAt),
           );
         },
         edges: async () => {

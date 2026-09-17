@@ -1,0 +1,7 @@
+# ADR0032 — Named personal model routes
+
+New vault entries carry an internal random generation nonce included in their fingerprint, never exposed in summaries. Removing and recreating an identical profile cannot restore an old approval. Legacy entries remain readable; their next edit acquires a generation nonce and invalidates prior approvals.
+
+Accepted 2026-09-18. Extend the existing encrypted personal vault with optional profileId, scoped by workspace, principal and project/space. Missing profileId means default, preserving legacy records without rewriting keys. Each named profile has an independent CAS version and route fingerprint. Selection is explicit; an unknown or removed named profile never falls back to a default provider. Approval and dispatch resolve the profile recorded in the approved route, not the currently selected UI profile. Updating or deleting that profile invalidates old approval.
+
+Credentials remain only in the encrypted vault; API lists expose no keys. Existing human-only CSRF-protected configuration and separate audit remain. Profiles add provider/model choices, not a shared administrator registry, trusted local destinations, automatic fallback or full six-policy execution. Public HTTPS egress restrictions remain unchanged. No SQL migration; additive encrypted JSON and AgentRun route metadata. Verify reopening/backup compatibility, independent versions, isolation, revoked routes, HTTP and bilingual UI.

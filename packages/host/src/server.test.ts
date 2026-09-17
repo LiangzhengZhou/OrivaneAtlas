@@ -1,12 +1,19 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { ModelPort, PersonalModelVault } from "@arclattice/application";
-import { restoreDatabase } from "@arclattice/storage-sqlite";
+import {
+  type ModelPort,
+  type PersonalModelVault,
+  WorkflowService,
+} from "@arclattice/application";
+import {
+  currentSchemaVersion,
+  restoreDatabase,
+} from "@arclattice/storage-sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { passwordHash } from "./password";
 import { openPersonalVault } from "./personal-model";
@@ -18,8 +25,129 @@ let directory: string,
   base: string,
   cookie: string,
   csrf: string;
+const ownerPassword = "Test-only-password-123";
+async function seedOwner() {
+  const existing = await host.db.accounts((store) => store.find("owner"));
+  if (existing) return existing;
+  const verifier = await passwordHash(ownerPassword);
+  return host.db.accounts((store) => store.register("owner", verifier, true));
+}
 const origin = "http://127.0.0.1:4317";
+it("background recurrence starts after restart without login and ignores disabled creators", async () => {
+  const account = await seedOwner();
+  const disabled = await host.db.accounts((store) => {
+    const member = store.register(
+      "disabled-worker",
+      store.find("owner")!.verifier,
+      false,
+    );
+    return store.status(member.id, member.version, "DISABLED");
+  });
+  const day = new Date().toISOString().slice(0, 10);
+  for (const actor of [account, disabled])
+    await host.db.request(actor, null, (uow) =>
+      new WorkflowService(
+        uow,
+        { require: async () => {} },
+        { now: () => new Date().toISOString() },
+        { next: randomUUID },
+      ).saveRecurrence(actor, {
+        version: 0,
+        deleted: false,
+        rule: {
+          title: "Background " + actor.id,
+          descriptionMd: "",
+          projectId: null,
+          startDate: day,
+          timezone: "UTC",
+          frequency: "DAILY",
+          interval: 1,
+        },
+      }),
+    );
+  await host.close();
+  cookie = "";
+  csrf = "";
+  await start();
+  const tasks = (actor: typeof account) =>
+    host.db.request(actor, null, (uow) =>
+      uow.run(actor.workspaceId, (tx) => tx.list()),
+    );
+  await vi.waitFor(async () => expect(await tasks(account)).toHaveLength(1));
+  expect(await tasks(disabled)).toHaveLength(0);
+  await host.close();
+  await start();
+  await vi.waitFor(async () => expect(await tasks(account)).toHaveLength(1));
+});
 describe("atomic workbench organization", () => {
+  it("archives projects atomically without cascading writes and preserves independent child archive", async () => {
+    await login();
+    const project = await (
+      await call("/api/work/create", { title: "Root", type: "PROJECT" })
+    ).json();
+    const child = await (
+      await call("/api/work/create", {
+        title: "Child",
+        type: "PROJECT",
+        projectId: project.id,
+      })
+    ).json();
+    const task = await (
+      await call("/api/work/create", {
+        title: "Task",
+        projectId: child.id,
+        descriptionMd: "- [ ] Preserve Markdown",
+      })
+    ).json();
+    const before = await (await call("/api/snapshot")).json();
+    const entries = [project, child].map((item) => ({
+      id: item.id,
+      version: 1,
+      organizationVersion: 0,
+    }));
+    const payload = { kind: "WORK", action: "archive", entries };
+    const headers = { "Idempotency-Key": randomUUID() };
+    expect((await call("/api/v1/organize", payload, headers)).status).toBe(200);
+    expect((await call("/api/v1/organize", payload, headers)).status).toBe(200);
+    let snapshot = await (await call("/api/snapshot")).json();
+    expect(snapshot.items).toEqual(before.items);
+    expect(snapshot.organization).toHaveLength(2);
+    expect(
+      snapshot.organization.every((m: { version: number }) => m.version === 1),
+    ).toBe(true);
+    expect(
+      snapshot.organization.some((m: { id: string }) => m.id === task.id),
+    ).toBe(false);
+    expect(
+      (
+        await call("/api/organize", {
+          ...payload,
+          action: "unarchive",
+          entries: [{ ...entries[0], organizationVersion: 1 }, entries[1]],
+        })
+      ).status,
+    ).toBe(409);
+    expect((await (await call("/api/snapshot")).json()).organization).toEqual(
+      snapshot.organization,
+    );
+    expect(
+      (
+        await call("/api/organize", {
+          ...payload,
+          action: "unarchive",
+          entries: [{ ...entries[0], organizationVersion: 1 }],
+        })
+      ).status,
+    ).toBe(200);
+    snapshot = await (await call("/api/snapshot")).json();
+    expect(
+      snapshot.organization.find((m: { id: string }) => m.id === project.id),
+    ).toMatchObject({ archived: false, version: 2 });
+    expect(
+      snapshot.organization.find((m: { id: string }) => m.id === child.id),
+    ).toMatchObject({ archived: true, version: 1 });
+    expect(snapshot.items).toEqual(before.items);
+  });
   it("archives independently of status, replays once, detects conflicts and restores soft deletion", async () => {
     await login();
     const task = await create("Archive me");
@@ -275,7 +403,11 @@ async function call(
   });
 }
 async function login() {
-  const response = await call("/api/session", { secret });
+  await seedOwner();
+  const response = await call("/api/session", {
+    username: "owner",
+    password: ownerPassword,
+  });
   expect(response.status).toBe(200);
   cookie = response.headers.get("set-cookie")?.split(";")[0] ?? "";
   csrf = (await response.json()).csrf;
@@ -285,11 +417,25 @@ async function create(title = "A") {
   expect(response.status).toBe(200);
   return response.json();
 }
-async function note(bodyMd = "原文\r\n# Thought") {
+async function note(bodyMd = "原文\r\n# Thought", allowAi = false) {
   const response = await call("/api/note/save", {
     id: null,
     version: 0,
-    input: { title: "Thought", bodyMd, kind: "NOTE", day: null },
+    input: {
+      title: "Thought",
+      bodyMd,
+      kind: "NOTE",
+      day: null,
+      ...(allowAi
+        ? {
+            aiPolicy: {
+              classification: "PRIVATE",
+              processingBoundary: "ANY",
+              aiAccess: "ASK",
+            },
+          }
+        : {}),
+    },
   });
   expect(response.status).toBe(200);
   return response.json();
@@ -311,7 +457,7 @@ afterEach(async () => {
     !resolve(directory).startsWith(resolve(tmpdir()) + sep + "arclattice-host-")
   )
     throw new Error("Unsafe cleanup");
-  rmSync(directory, { recursive: true });
+  rmSync(directory, { recursive: true, maxRetries: 5, retryDelay: 100 });
 });
 
 describe("private HTTP host", () => {
@@ -381,14 +527,98 @@ describe("private HTTP host", () => {
       ).status,
     ).toBe(200);
   }, 15000);
+  it("named route selection persists approval identity and deletion never falls back", async () => {
+    await host.close();
+    const vault = openPersonalVault(join(directory, "named-vault"));
+    const sent = vi.fn(async () => "named output");
+    await start(undefined, undefined, {
+      ...vault,
+      resolve(actor, scope, profileId) {
+        const actual = vault.resolve(actor, scope, profileId);
+        return actual ? { route: actual.route, complete: sent } : null;
+      },
+    });
+    await claim();
+    const input = {
+      scope: "personal",
+      endpoint: "https://provider.example/v1",
+      protocol: "chat",
+      model: "default-model",
+      key: "TEST-ONLY-NAMED-KEY",
+      maxRunsPerDay: 10,
+    };
+    for (const profileId of ["default", "research"])
+      expect(
+        (
+          await call("/api/ai/providers/save", {
+            version: 0,
+            input: { ...input, profileId, model: profileId },
+          })
+        ).status,
+      ).toBe(200);
+    const state = await (await call("/api/ai?profileId=research")).json();
+    expect(state.routes).toHaveLength(2);
+    expect(state.route.profileId).toBe("research");
+    expect(JSON.stringify(state)).not.toContain(input.key);
+    expect(
+      (await (await call("/api/ai?profileId=missing")).json()).route,
+    ).toBeNull();
+    expect(
+      (await call("/api/ai/propose", { prompt: "test", profileId: "missing" }))
+        .status,
+    ).toBe(409);
+    const run = await (
+      await call("/api/ai/propose", { prompt: "test", profileId: "research" })
+    ).json();
+    expect(run.route.profileId).toBe("research");
+    expect(
+      (
+        await call("/api/ai/decide", {
+          id: run.id,
+          version: run.version,
+          approve: true,
+        })
+      ).status,
+    ).toBe(200);
+    await vi.waitFor(async () => {
+      const current = await (await call("/api/ai")).json();
+      expect(
+        current.runs.find((r: { id: string }) => r.id === run.id).status,
+      ).toBe("SUCCEEDED");
+    });
+    expect(sent).toHaveBeenCalledTimes(1);
+    const stale = await (
+      await call("/api/ai/propose", { prompt: "stale", profileId: "research" })
+    ).json();
+    expect(
+      (
+        await call("/api/ai/providers/remove", {
+          scope: "personal",
+          version: 1,
+          profileId: "research",
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("/api/ai/decide", {
+          id: stale.id,
+          version: stale.version,
+          approve: true,
+        })
+      ).status,
+    ).toBe(409);
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect((await (await call("/api/ai")).json()).route.model).toBe("default");
+  }, 15000);
   it("personal providers and reviewed AI edits are isolated, version-bound and atomic", async () => {
     await host.close();
     const vault = openPersonalVault(join(directory, "vault"));
     const complete = vi.fn(async () => "");
     await start(undefined, undefined, {
       ...vault,
-      resolve(actor, scope) {
-        const actual = vault.resolve(actor, scope);
+      resolve(actor, scope, profileId) {
+        const actual = vault.resolve(actor, scope, profileId);
         return actual ? { route: actual.route, complete } : null;
       },
     });
@@ -434,8 +664,18 @@ describe("private HTTP host", () => {
     expect(
       (await call("/api/ai/providers/save", { version: 0, input })).status,
     ).toBe(200);
-    const own = await note("one"),
-      second = await note("two");
+    const denied = await note("private");
+    expect(
+      (
+        await call("/api/ai/propose", {
+          prompt: "blocked",
+          sources: [{ kind: "NOTE", id: denied.id, version: denied.version }],
+        })
+      ).status,
+    ).toBe(403);
+    expect(complete).not.toHaveBeenCalled();
+    const own = await note("one", true),
+      second = await note("two", true);
     expect(
       (
         await call("/api/ai/propose", {
@@ -580,13 +820,9 @@ describe("private HTTP host", () => {
   }, 20000);
   const password = "Test-only-password-123";
   async function claim() {
+    const account = await seedOwner();
     await login();
-    const response = await call("/api/account/claim", {
-      username: "owner",
-      password,
-    });
-    expect(response.status).toBe(200);
-    return response.json();
+    return account;
   }
   async function signIn(username = "owner", candidate = password) {
     cookie = "";
@@ -602,7 +838,11 @@ describe("private HTTP host", () => {
   async function registerUser() {
     expect(
       (await call("/api/register", { username: "reader", password })).status,
-    ).toBe(201);
+    ).toBe(404);
+    const verifier = await passwordHash(password);
+    await host.db.accounts((store) =>
+      store.register("reader", verifier, false),
+    );
     const accounts = (await (await call("/api/admin")).json()).accounts;
     const user = accounts.find(
       (a: { username: string }) => a.username === "reader",
@@ -638,7 +878,7 @@ describe("private HTTP host", () => {
   }
   const png =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXs8AAAAASUVORK5CYII=";
-  it("only a legacy owner can claim the original workspace; public registration is pending and isolated", async () => {
+  it("operator-provisioned accounts are isolated; public registration and legacy claiming are disabled", async () => {
     expect(
       (await call("/api/account/claim", { username: "attacker", password }))
         .status,
@@ -1366,7 +1606,9 @@ describe("private HTTP host", () => {
     await restoreDatabase(backup, restored);
     const raw = new DatabaseSync(restored, { readOnly: true });
     try {
-      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(9);
+      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(
+        currentSchemaVersion,
+      );
       expect(
         raw.prepare("SELECT base64 FROM library_asset").get()?.base64,
       ).toBe(png);
@@ -1505,7 +1747,7 @@ describe("private HTTP host", () => {
     try {
       expect(
         raw.prepare("SELECT COUNT(*) AS n FROM connected_activity").get()?.n,
-      ).toBe(3);
+      ).toBe(4);
       expect(
         raw.prepare("SELECT COUNT(*) AS n FROM audit_record").get()?.n,
       ).toBe(2);
@@ -1642,6 +1884,7 @@ describe("private HTTP host", () => {
         webRoot: directory,
       }),
     ).rejects.toThrow();
+    expect(existsSync(join(directory, "bad.sqlite"))).toBe(false);
     await host.close();
     host = await createHost({
       database: join(directory, "secure.sqlite"),
@@ -1655,7 +1898,12 @@ describe("private HTTP host", () => {
       Host: "example.test",
       Origin: "https://example.test",
     };
-    const response = await call("/api/session", { secret }, headers);
+    await seedOwner();
+    const response = await call(
+      "/api/session",
+      { username: "owner", password: ownerPassword },
+      headers,
+    );
     expect(response.status).toBe(200);
     expect(response.headers.get("set-cookie")).toContain("; Secure");
     expect(
@@ -1709,7 +1957,9 @@ describe("private HTTP host", () => {
       expect(raw.prepare("SELECT count(*) AS n FROM notebook").get()?.n).toBe(
         1,
       );
-      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(9);
+      expect(raw.prepare("PRAGMA user_version").get()?.user_version).toBe(
+        currentSchemaVersion,
+      );
     } finally {
       raw.close();
     }
@@ -1779,8 +2029,16 @@ describe("private HTTP host", () => {
   });
   it("requires a real session and uses protected cookies and security headers", async () => {
     expect((await call("/api/snapshot")).status).toBe(401);
-    expect((await call("/api/session", { secret: "bad" })).status).toBe(401);
-    const response = await call("/api/session", { secret });
+    expect((await call("/api/session", { secret: "bad" })).status).toBe(404);
+    await seedOwner();
+    expect(
+      (await call("/api/session", { username: "owner", password: "bad" }))
+        .status,
+    ).toBe(401);
+    const response = await call("/api/session", {
+      username: "owner",
+      password: ownerPassword,
+    });
     expect(response.headers.get("set-cookie")).toContain(
       "HttpOnly; SameSite=Strict",
     );
@@ -1858,7 +2116,7 @@ describe("private HTTP host", () => {
       ).status,
     ).toBe(409);
   });
-  it("keeps receipts and content after restart, but invalidates sessions", async () => {
+  it("keeps receipts, content and durable sessions after restart", async () => {
     await login();
     const key = randomUUID();
     const item = await (
@@ -1871,7 +2129,7 @@ describe("private HTTP host", () => {
     const n = await note();
     await host.close();
     await start();
-    expect((await call("/api/snapshot")).status).toBe(401);
+    expect((await call("/api/snapshot")).status).toBe(200);
     await login();
     const retry = await (
       await call(
@@ -2051,8 +2309,18 @@ describe("private HTTP host", () => {
     expect((await call("/api/logout", {})).status).toBe(200);
     expect((await call("/api/snapshot")).status).toBe(401);
     for (let i = 0; i < 9; i++)
-      expect((await call("/api/session", { secret: "no" })).status).toBe(401);
-    expect((await call("/api/session", { secret })).status).toBe(429);
+      expect(
+        (await call("/api/session", { username: "owner", password: "no" }))
+          .status,
+      ).toBe(401);
+    expect(
+      (
+        await call("/api/session", {
+          username: "owner",
+          password: ownerPassword,
+        })
+      ).status,
+    ).toBe(429);
   });
   it("serves only web assets and never database or key files", async () => {
     expect((await call("/")).status).toBe(200);

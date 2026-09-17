@@ -1,5 +1,6 @@
 {
   "connected": "Connected",
+  "localLogoutOnly": "Signed out on this device. Server revocation could not be confirmed. When connected, sign in again and revoke other sessions in Account settings.",
   "account": "Account & API",
   "accountHint": "Your identity, authorized integrations and password.",
   "admin": "Administration",
@@ -45,6 +46,11 @@
   "active": "Active",
   "waiting": "Pending review",
   "database": "Database",
+  "sessionLifetime": "Session lifetime",
+  "ONE_DAY": "1 day",
+  "SEVEN_DAYS": "7 days",
+  "THIRTY_DAYS": "30 days",
+  "PERMANENT": "Permanent",
   "empty": "Nothing here yet.",
   "newSpace": "New knowledge space",
   "spaceTitle": "Subject / project name",
@@ -86,5 +92,17 @@
   "recoverHint": "Deleted content is retained. Restore its space before opening a lecture.",
   "apiExample": "Use Authorization: Bearer <credential> and a unique Idempotency-Key for each mutation. Retry uncertain requests with the same key; send the current entity version on updates.",
   "closeSecret": "I have saved the credential",
-  "changeSuccess": "Password changed. Please sign in again."
+  "changeSuccess": "Password changed. Please sign in again.",
+  "loginSessions": "Login sessions",
+  "signOut": "Sign out",
+  "switchAccount": "Switch account",
+  "switchHint": "Switching signs out this session. Sign in to another account with its password.",
+  "currentSession": "This session",
+  "otherSession": "Other session",
+  "signedInAt": "Signed in",
+  "revokeAllSessions": "Sign out all sessions",
+  "revokeAllConfirm": "Sign out every session, including this one?",
+  "savedAccounts": "Recent accounts",
+  "savedAccountsHint": "Shortcuts only. Passwords are not saved; authentication is required.",
+  "forgetAccount": "Forget shortcut"
 }

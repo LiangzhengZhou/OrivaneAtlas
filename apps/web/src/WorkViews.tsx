@@ -28,6 +28,7 @@ interface WorkProps {
   onOpen(item: WorkItem): void;
   onStatus(item: WorkItem, status: WorkStatus): Promise<boolean>;
   isArchived(item: WorkItem): boolean;
+  archiveSource(item: WorkItem): WorkItem | undefined;
   onOrganize(item: WorkItem, action: "archive" | "unarchive" | "delete"): void;
 }
 function Task({
@@ -38,10 +39,12 @@ function Task({
   onOpen,
   onStatus,
   isArchived,
+  archiveSource,
   onOrganize,
 }: Omit<WorkProps, "items"> & { item: WorkItem }) {
   const { t } = useTranslation(["common", "work"]);
   const blocked = blockers(item, allItems, edges).length > 0;
+  const inherited = archiveSource(item);
   return (
     <article
       draggable={!busy}
@@ -76,11 +79,20 @@ function Task({
         </button>
       </div>
       <div className="task-meta">
+        {inherited && (
+          <small>
+            {t("desk:inheritedArchive", { title: inherited.title })}
+          </small>
+        )}
         <button
           type="button"
           className="icon-button"
-          disabled={busy}
-          title={t(isArchived(item) ? "desk:unarchive" : "desk:archive")}
+          disabled={busy || !!inherited}
+          title={
+            inherited
+              ? t("desk:inheritedArchive", { title: inherited.title })
+              : t(isArchived(item) ? "desk:unarchive" : "desk:archive")
+          }
           aria-label={
             t(isArchived(item) ? "desk:unarchive" : "desk:archive") +
             ": " +

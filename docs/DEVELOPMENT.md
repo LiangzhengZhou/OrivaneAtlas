@@ -27,6 +27,8 @@ pnpm test:e2e
 
 Useful focused commands are pnpm lint, pnpm typecheck, and pnpm format. Run end-to-end tests on an isolated development machine and never use production data for tests.
 
+Biome honors Git ignore rules and excludes generated native schemas and the preserved refactor backup; maintained source and architecture boundaries remain checked. Do not reformat backup copies or generated schemas to fix source lint. For native transport integration coverage, set `ATLAS_NATIVE_TEST_EXE` to the locally built Rust release test executable before running `pnpm check`; without that fixture, report the native integration coverage as skipped. Browser native mocks are not real-device validation.
+
 ## Contribution rules
 
 - Every business access carries a workspaceId; every mutation identifies a principalId.

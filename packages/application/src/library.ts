@@ -3,9 +3,11 @@ import {
   DomainError,
   requireTitle,
 } from "@arclattice/domain";
+import { type ContentPolicy, contentPolicy } from "./content-policy";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
 
 export interface LibraryEntry {
+  aiPolicy?: ContentPolicy;
   id: string;
   workspaceId: string;
   kind: "SPACE" | "DOCUMENT";
@@ -21,6 +23,7 @@ export interface LibraryEntry {
   provenance: "HUMAN" | "EXTERNAL_AI";
 }
 export interface LibraryInput {
+  aiPolicy?: ContentPolicy;
   kind: LibraryEntry["kind"];
   spaceId: string | null;
   title: string;
@@ -87,6 +90,10 @@ export class LibraryService {
     const now = this.clock.now();
     const entry: LibraryEntry = {
       ...input,
+      aiPolicy: contentPolicy(
+        this.source === "HUMAN" ? input.aiPolicy : undefined,
+        old?.aiPolicy,
+      ),
       title: requireTitle(input.title),
       id: old?.id ?? this.ids.next(),
       workspaceId: context.workspaceId,

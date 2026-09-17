@@ -19,6 +19,8 @@ assert.deepEqual(config.app.security.capabilities, [capability.identifier]);
 assert.deepEqual(capability.permissions, [
   "allow-check-app-update",
   "allow-install-app-update",
+  "allow-configure-server",
+  "allow-server-request",
 ]);
 assert.equal(capability.remote, undefined);
 console.log(

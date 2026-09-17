@@ -1,1 +1,1 @@
-{"main-window":{"identifier":"main-window","description":"Local UI only; remote pages receive no IPC, filesystem, shell, credential or plugin access.","local":true,"windows":["main"],"permissions":["allow-check-app-update","allow-install-app-update"]}}
+{"main-window":{"identifier":"main-window","description":"Local UI only; remote pages receive no IPC, filesystem, shell, credential or plugin access.","local":true,"windows":["main"],"permissions":["allow-check-app-update","allow-install-app-update","allow-configure-server","allow-server-request"]}}

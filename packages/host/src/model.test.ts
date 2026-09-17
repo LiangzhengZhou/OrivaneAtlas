@@ -34,13 +34,22 @@ function config(overrides = {}) {
 }
 it("sends only explicit input, disables redirects/storage/tools and exposes no credentials", async () => {
   const fetcher = vi.fn(async () =>
-    Response.json({ choices: [{ message: { content: "Done" } }] }),
+    Response.json({
+      choices: [{ message: { content: "Done" } }],
+      usage: { prompt_tokens: 12, completion_tokens: 3 },
+    }),
   );
   vi.stubGlobal("fetch", fetcher);
   const model = (await loadModel(config()))!;
   expect(JSON.stringify(model.route)).not.toContain("test-only-secret");
   const signal = new AbortController().signal;
-  expect(await model.complete("Only this", signal)).toBe("Done");
+  const usage = vi.fn();
+  expect(await model.complete("Only this", signal, usage)).toBe("Done");
+  expect(usage).toHaveBeenCalledWith({
+    inputTokens: 12,
+    outputTokens: 3,
+    source: "PROVIDER_REPORTED",
+  });
   expect(fetcher).toHaveBeenCalledExactlyOnceWith(
     new URL("https://model.example/v1/chat/completions"),
     expect.objectContaining({

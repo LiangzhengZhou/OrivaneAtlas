@@ -1,5 +1,9 @@
-import type { Note } from "@arclattice/application";
-import type { WorkItem } from "@arclattice/domain";
+import type {
+  CategoryService,
+  Note,
+  ProjectCategory,
+} from "@arclattice/application";
+import { projectDescendants, type WorkItem } from "@arclattice/domain";
 import {
   ArrowUpRight,
   ChevronLeft,
@@ -8,73 +12,167 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { CategoryManager } from "./CategoryManager";
 
 export function ProjectView({
+  categories,
+  onSaveCategory,
   projects,
   items,
   onOpen,
   onTasks,
+  busy,
+  isArchived,
+  archiveSource,
+  onOrganize,
 }: {
+  categories: ProjectCategory[];
+  onSaveCategory(
+    input: Parameters<CategoryService["save"]>[1],
+  ): Promise<boolean>;
   projects: WorkItem[];
   items: WorkItem[];
   onOpen(item: WorkItem): void;
   onTasks(id: string): void;
+  busy: boolean;
+  isArchived(item: WorkItem): boolean;
+  archiveSource(item: WorkItem): WorkItem | undefined;
+  onOrganize(item: WorkItem, action: "archive" | "unarchive"): void;
 }) {
   const { t } = useTranslation("desk");
+  const [showArchived, setShowArchived] = useState(false);
+  const [categoryId, setCategoryId] = useState("");
+  const visibleProjects = projects.filter(
+    (p) =>
+      isArchived(p) === showArchived &&
+      (!categoryId ||
+        categories.some(
+          (c) =>
+            c.id === categoryId && !c.deletedAt && c.projectIds.includes(p.id),
+        )),
+  );
   return (
-    <div className="project-grid">
-      {projects.length ? (
-        projects.map((project) => {
-          const members = items.filter((item) => item.projectId === project.id);
-          const done = members.filter((item) => item.status === "DONE").length;
-          return (
-            <section className="panel project-card" key={project.id}>
-              <div className="panel-heading">
-                <FolderKanban size={22} />
-                <span className="priority">
-                  {t("work:statuses." + project.status)}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="project-title"
-                onClick={() => onOpen(project)}
-              >
-                <h2>{project.title}</h2>
-              </button>
-              <p className="project-description">
-                {project.descriptionMd || t("projectEmptyHint")}
-              </p>
-              {project.dueDate && (
-                <p className="muted">
-                  {t("dueDate")} · {project.dueDate}
+    <div>
+      <div className="organization-toolbar">
+        <label>
+          {t("categories.filter")}
+          <select
+            aria-label={t("categories.filter")}
+            value={categoryId}
+            onChange={(e) => setCategoryId(e.target.value)}
+          >
+            <option value="">{t("categories.all")}</option>
+            {categories
+              .filter((c) => !c.deletedAt)
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="chip"
+          aria-pressed={showArchived}
+          onClick={() => setShowArchived(!showArchived)}
+        >
+          {t("archivedProjects")} · {projects.filter(isArchived).length}
+        </button>
+      </div>
+      <div className="project-grid">
+        {visibleProjects.length ? (
+          visibleProjects.map((project) => {
+            const inherited = archiveSource(project);
+            const members = projectDescendants(project, items).filter(
+              (item) => item.type !== "PROJECT",
+            );
+            const done = members.filter(
+              (item) => item.status === "DONE",
+            ).length;
+            return (
+              <section className="panel project-card" key={project.id}>
+                <div className="panel-heading">
+                  <FolderKanban size={22} />
+                  <span className="priority">
+                    {t("work:statuses." + project.status)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="project-title"
+                  onClick={() => onOpen(project)}
+                >
+                  <h2>{project.title}</h2>
+                </button>
+                <p className="project-description">
+                  {project.descriptionMd || t("projectEmptyHint")}
                 </p>
-              )}
-              <div className="progress-label">
-                <span>{t("completion")}</span>
-                <strong>
-                  {done} / {members.length}
-                </strong>
-              </div>
-              <progress max={Math.max(members.length, 1)} value={done} />
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => onTasks(project.id)}
-              >
-                {t("projectTasks")}
-                <ArrowUpRight size={16} />
-              </button>
-            </section>
-          );
-        })
-      ) : (
-        <div className="empty-state">
-          <FolderKanban size={32} />
-          <h2>{t("firstProject")}</h2>
-          <p>{t("projectsHint")}</p>
-        </div>
-      )}
+                {project.projectId && (
+                  <p className="muted">
+                    {t("parentProject")} ·{" "}
+                    {
+                      projects.find((parent) => parent.id === project.projectId)
+                        ?.title
+                    }
+                  </p>
+                )}
+                {project.dueDate && (
+                  <p className="muted">
+                    {t("dueDate")} · {project.dueDate}
+                  </p>
+                )}
+                <div className="progress-label">
+                  <span>{t("completion")}</span>
+                  <strong>
+                    {done} / {members.length}
+                  </strong>
+                </div>
+                <progress max={Math.max(members.length, 1)} value={done} />
+                <p className="muted">{t("recursiveProgress")}</p>
+                {inherited && (
+                  <p className="muted">
+                    {t("inheritedArchive", { title: inherited.title })}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="text-button"
+                  disabled={busy || !!inherited}
+                  onClick={() =>
+                    onOrganize(
+                      project,
+                      isArchived(project) ? "unarchive" : "archive",
+                    )
+                  }
+                >
+                  {t(isArchived(project) ? "unarchive" : "archive")}
+                </button>
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => onTasks(project.id)}
+                >
+                  {t("projectTasks")}
+                  <ArrowUpRight size={16} />
+                </button>
+              </section>
+            );
+          })
+        ) : (
+          <div className="empty-state">
+            <FolderKanban size={32} />
+            <h2>{t(showArchived ? "noArchivedProjects" : "firstProject")}</h2>
+            {!showArchived && <p>{t("projectsHint")}</p>}
+          </div>
+        )}
+      </div>
+      <CategoryManager
+        categories={categories}
+        projects={projects}
+        busy={busy}
+        onSave={onSaveCategory}
+      />
     </div>
   );
 }

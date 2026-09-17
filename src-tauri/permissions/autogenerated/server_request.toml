@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-server-request"
+description = "Enables the server_request command without any pre-configured scope."
+commands.allow = ["server_request"]
+
+[[permission]]
+identifier = "deny-server-request"
+description = "Denies the server_request command without any pre-configured scope."
+commands.deny = ["server_request"]

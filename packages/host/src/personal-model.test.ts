@@ -37,6 +37,69 @@ afterEach(() => {
   rmSync(directory, { recursive: true });
 });
 describe("personal model vault and public-only egress", () => {
+  it("keeps named routes independently versioned, encrypted, isolated and never falls back", () => {
+    const vault = openPersonalVault(directory);
+    const legacy = vault.save(actor, 0, input);
+    const named = vault.save(actor, 0, {
+      ...input,
+      profileId: "research",
+      model: "model-2",
+    });
+    expect(vault.list(actor)).toHaveLength(2);
+    expect(vault.resolve(actor, "personal")?.route).toEqual(legacy.route);
+    expect(vault.resolve(actor, "personal", "default")?.route).toEqual(
+      legacy.route,
+    );
+    expect(vault.resolve(actor, "personal", "research")?.route).toEqual(
+      named.route,
+    );
+    expect(vault.resolve(actor, "personal", "missing")).toBeNull();
+    expect(
+      vault.resolve({ ...actor, principalId: "other" }, "personal", "research"),
+    ).toBeNull();
+    expect(vault.resolve(actor, "WORK:other", "research")).toBeNull();
+    expect(() =>
+      vault.save(actor, 0, { ...input, profileId: "research" }),
+    ).toThrow("VERSION_CONFLICT");
+    expect(() =>
+      vault.save(actor, 0, { ...input, profileId: "../bad" }),
+    ).toThrow("VALIDATION_ERROR");
+    const changed = vault.save(actor, 1, {
+      ...input,
+      profileId: "research",
+      key: "",
+      model: "model-3",
+    });
+    expect(changed.route.fingerprint).not.toBe(named.route.fingerprint);
+    const reopened = openPersonalVault(directory);
+    expect(reopened.resolve(actor, "personal")?.route).toEqual(legacy.route);
+    expect(reopened.resolve(actor, "personal", "research")?.route).toEqual(
+      changed.route,
+    );
+    expect(JSON.stringify(reopened.list(actor))).not.toContain(input.key);
+    reopened.remove(actor, "personal", 2, "research");
+    expect(
+      openPersonalVault(directory).resolve(actor, "personal", "research"),
+    ).toBeNull();
+    expect(reopened.resolve(actor, "personal")?.route).toEqual(legacy.route);
+    const recreated = reopened.save(actor, 0, {
+      ...input,
+      profileId: "research",
+      model: "model-3",
+    });
+    expect(recreated.route.fingerprint).not.toBe(changed.route.fingerprint);
+    reopened.remove(actor, "personal", 1, "research");
+    const sameVersionRecreated = reopened.save(actor, 0, {
+      ...input,
+      profileId: "research",
+      model: "model-3",
+    });
+    expect(sameVersionRecreated.version).toBe(recreated.version);
+    expect(sameVersionRecreated.route.fingerprint).not.toBe(
+      recreated.route.fingerprint,
+    );
+    expect(JSON.stringify(reopened.list(actor))).not.toContain("generation");
+  });
   it.each([
     "0.0.0.0",
     "127.0.0.1",

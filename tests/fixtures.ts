@@ -12,6 +12,8 @@ export function work(id: string, workspaceId = "workspace-a"): WorkItem {
     executionMode: "MANUAL",
     assigneePrincipalId: null,
     projectId: null,
+    activationState: "ACTIVE",
+    activationPolicy: "MANUAL",
     startDate: null,
     dueDate: null,
     version: 1,

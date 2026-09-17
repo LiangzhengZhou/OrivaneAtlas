@@ -1,0 +1,7 @@
+# ADR0030 — Transactional background recurrence
+
+Accepted 2026-09-17. The host polls active accounts without requiring an open browser or live session. Each definition executes as its creator; active account identity is rechecked inside every transaction. Disabled accounts and other principals' definitions are excluded. No synthetic owner bypass is introduced.
+
+An optional schedulerThrough date in the existing versioned RECURRENCE payload is a durable cursor. One transaction generates at most 366 calendar days and advances the cursor, including days without an occurrence. Existing deterministic occurrence IDs and workspace transaction locking deduplicate manual and background execution. Cursor changes use CAS and Activity/Outbox, so crashes cannot commit progress without occurrences. No external side effect requires a lease. Host ticks do not overlap and shutdown drains work before closing storage.
+
+Definition edits reset the cursor to the day before the edit's local calendar day, so the new rule starts today without retroactive use. New definitions catch up from startDate; historic slots are MISSED, never silently completed. Occurrences retain an immutable rule snapshot, allowing explicit backfill after a rule edit. Legacy occurrences without snapshots keep the old version conflict safeguard. Existing JSON payloads remain readable without DDL changes; old application versions must not be used after generating snapshots. SQLite15/PG7 remain unchanged.

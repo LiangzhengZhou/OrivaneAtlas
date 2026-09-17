@@ -13,12 +13,15 @@ import {
   type AccountStore,
   type AgentRun,
   type ApiCredential,
+  CategoryService,
   ConnectedService,
   type CreateWorkInput,
   type EntityRef,
+  executeApprovedModel,
   type LibraryInput,
   LibraryService,
   type ModelPort,
+  type ModelUsage,
   NotebookService,
   type NoteInput,
   OrganizationService,
@@ -26,7 +29,11 @@ import {
   type PersonalModelInput,
   type PersonalModelVault,
   parseAiTextEdits,
+  type RecurrencePayload,
   type UpdateWorkInput,
+  validateApprovedContext,
+  validateContextPolicy,
+  WorkflowService,
   WorkService,
 } from "@arclattice/application";
 import {
@@ -37,6 +44,7 @@ import {
 import { SqliteUnitOfWork } from "@arclattice/storage-sqlite";
 import { v7 } from "uuid";
 import { passwordHash, passwordMatches, username } from "./password";
+import { startRecurrenceWorker } from "./recurrence-worker";
 
 export interface HostOptions {
   vault?: PersonalModelVault;
@@ -45,6 +53,11 @@ export interface HostOptions {
   secret: string;
   origin: string;
   webRoot: string;
+  sessionLifetimePolicy?:
+    | "ONE_DAY"
+    | "SEVEN_DAYS"
+    | "THIRTY_DAYS"
+    | "PERMANENT";
 }
 const context: ActorContext = {
   workspaceId: "arclattice-personal",
@@ -116,6 +129,13 @@ function json(res: ServerResponse, status: number, value: unknown) {
 function digest(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
+const SESSION_AGE_SECONDS = {
+  ONE_DAY: 24 * 60 * 60,
+  SEVEN_DAYS: 7 * 24 * 60 * 60,
+  THIRTY_DAYS: 30 * 24 * 60 * 60,
+} as const;
+const PERMANENT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
+
 export async function createHost(options: HostOptions) {
   const origin = new URL(options.origin);
   if (
@@ -131,7 +151,19 @@ export async function createHost(options: HostOptions) {
     options.secret.length < 32
   )
     throw new Error("Invalid private host configuration");
+  // Reject invalid configuration before opening/migrating a database.
   const db = await SqliteUnitOfWork.open(options.database);
+  const readSessionPolicy = async () => {
+    const persisted = await db.getInstanceSetting("session_lifetime_policy");
+    return (
+      options.sessionLifetimePolicy ??
+      (persisted === "ONE_DAY" ||
+      persisted === "SEVEN_DAYS" ||
+      persisted === "THIRTY_DAYS"
+        ? persisted
+        : "PERMANENT")
+    );
+  };
   const agentContext = { ...context, principalId: "arclattice-inference" };
   await db.provisionWorkspace({ id: context.workspaceId, name: "Personal" }, [
     { id: context.principalId, kind: "USER", displayName: "Owner" },
@@ -146,6 +178,19 @@ export async function createHost(options: HostOptions) {
   const inFlight = new Set<Promise<void>>();
   const controllers = new Set<AbortController>();
   const model = options.model ?? null;
+  function resolveModel(
+    actor: ActorContext,
+    scope = "personal",
+    profileId = "default",
+  ) {
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(profileId)) fail(400, "VALIDATION_ERROR");
+    return (
+      options.vault?.resolve(actor, scope, profileId) ??
+      (profileId === "default" && actor.principalId === "arclattice-owner"
+        ? model
+        : null)
+    );
+  }
   const recoveryActors: ActorContext[] = [
     context,
     ...(await db.accounts((s) => s.list())),
@@ -180,7 +225,6 @@ export async function createHost(options: HostOptions) {
   function dispatch(
     run: AgentRun,
     actor: ActorContext,
-    selectedModel: ModelPort | null,
     checkAccess: (store: AccountStore) => void,
   ) {
     const agentContext = actor;
@@ -198,36 +242,77 @@ export async function createHost(options: HostOptions) {
     const job = (async () => {
       let output: string | null = null,
         error: string | null = null;
-      const timeout = setTimeout(() => controller.abort(), run.route.timeoutMs);
+      let interrupted = false;
+      let usage: ModelUsage | undefined;
+      let reserved: AgentRun;
+      try {
+        reserved = await db.request(
+          actor,
+          null,
+          async (_uow, notes, connected, library) => {
+            const current = await connected.getRun(run.id);
+            await validateApprovedContext(actor, current, notes, library);
+            return new ConnectedService(
+              connected,
+              agentAuthorization,
+              clock,
+              ids,
+            ).reserve(actor, run.id, run.version);
+          },
+          checkAccess,
+        );
+      } catch {
+        // A duplicate/stale dispatcher never completes another attempt.
+        controllers.delete(controller);
+        await db.request(agentContext, null, async (_uow, _notes, store) => {
+          const current = await store.getRun(run.id);
+          if (
+            current.status === "RUNNING" &&
+            !current.attempt &&
+            current.version === run.version
+          )
+            await new ConnectedService(
+              store,
+              agentAuthorization,
+              clock,
+              ids,
+            ).finish(agentContext, run.id, null, "MODEL_REQUEST_FAILED");
+        });
+        return;
+      }
       try {
         await db.audit(actor, run.id, "MODEL_SEND_APPROVED");
-        await db.accounts(checkAccess);
-        const currentModel =
-          options.vault?.resolve(actor, run.route.scope ?? "personal") ??
-          (actor.principalId === "arclattice-owner" ? model : null);
-        if (currentModel?.route.fingerprint !== run.route.fingerprint)
-          throw new Error("MODEL_ROUTE_CHANGED");
-        if (!selectedModel || controller.signal.aborted)
-          throw new Error("Unavailable");
-        output = await Promise.race([
-          selectedModel.complete(run.prompt, controller.signal),
-          new Promise<never>((_resolve, reject) =>
-            controller.signal.addEventListener(
-              "abort",
-              () => reject(new Error("Aborted")),
-              { once: true },
+        const result = await executeApprovedModel(
+          actor,
+          reserved,
+          () =>
+            db.request(
+              actor,
+              null,
+              async (_uow, notes, connected, library) => {
+                const current = await connected.getRun(run.id);
+                if (
+                  current.version !== reserved.version ||
+                  current.status !== "RUNNING"
+                )
+                  throw new DomainError("VERSION_CONFLICT");
+                await validateApprovedContext(actor, current, notes, library);
+              },
+              checkAccess,
             ),
-          ),
-        ]);
-        if (typeof output !== "string" || !output || output.length > 100_000)
-          throw new Error("Invalid output");
+          () => resolveModel(actor, run.route.scope, run.route.profileId),
+          controller.signal,
+        );
+        output = result.output;
+        error = result.error;
+        interrupted = result.interrupted;
+        usage = result.usage;
       } catch {
         output = null;
         error = controller.signal.aborted
           ? "MODEL_INTERRUPTED"
           : "MODEL_REQUEST_FAILED";
       } finally {
-        clearTimeout(timeout);
         controllers.delete(controller);
       }
       await db.request(agentContext, null, (_uow, _notes, store) =>
@@ -236,7 +321,8 @@ export async function createHost(options: HostOptions) {
           run.id,
           output,
           error,
-          controller.signal.aborted,
+          interrupted || controller.signal.aborted,
+          usage,
         ),
       );
       await db.audit(agentContext, run.id, error ?? "MODEL_SUCCEEDED");
@@ -248,16 +334,6 @@ export async function createHost(options: HostOptions) {
       )
       .finally(() => inFlight.delete(job));
   }
-  const sessions = new Map<
-    string,
-    {
-      csrf: string;
-      expires: number;
-      accountId: string | null;
-      accountVersion: number | null;
-      context: ActorContext;
-    }
-  >();
   let hashing = false;
   async function hashJob<T>(job: () => Promise<T>): Promise<T> {
     if (hashing) fail(429, "RATE_LIMITED");
@@ -312,9 +388,13 @@ export async function createHost(options: HostOptions) {
           .map((v) => v.trim())
           .find((v) => v.startsWith("arc_session="))
           ?.slice(12) ?? "";
-      for (const [id, s] of sessions)
-        if (s.expires < Date.now()) sessions.delete(id);
-      const session = sessions.get(token);
+      const tokenHash = digest(token);
+      const storedSession = /^[a-f0-9]{64}$/.test(token)
+        ? await db.accounts((store) => store.session(tokenHash, Date.now()))
+        : null;
+      const session = storedSession
+        ? { ...storedSession, csrf: digest("atlas-csrf:" + token) }
+        : null;
       if (path === "/api/register" && mutation) {
         fail(404, "NOT_FOUND");
       }
@@ -367,22 +447,35 @@ export async function createHost(options: HostOptions) {
           )
             fail(403, "FORBIDDEN");
         }
-        if (sessions.size >= 32) fail(429, "RATE_LIMITED");
-        if (token) sessions.delete(token);
+        const sessionPolicy = await readSessionPolicy();
+        const sessionMaxAge =
+          sessionPolicy === "PERMANENT"
+            ? null
+            : SESSION_AGE_SECONDS[sessionPolicy];
+        if (!account) fail(401, "UNAUTHORIZED");
         const id = randomBytes(32).toString("hex");
-        const csrf = randomBytes(32).toString("hex");
-        sessions.set(id, {
-          csrf,
-          expires: Date.now() + 8 * 60 * 60 * 1000,
-          context: actor,
-          accountId: account?.id ?? null,
-          accountVersion: account?.version ?? null,
+        const csrf = digest("atlas-csrf:" + id);
+        const issuedAt = Date.now();
+        await db.accounts((store) => {
+          store.createSession(
+            account!.id,
+            account!.version,
+            digest(id),
+            sessionMaxAge === null ? null : issuedAt + sessionMaxAge * 1000,
+            issuedAt,
+            tokenHash,
+          );
+          if (session && session.accountId !== account!.id)
+            store.revokeSession(session.accountId, session.id);
         });
         res.setHeader(
           "Set-Cookie",
           "arc_session=" +
             id +
-            "; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800" +
+            "; HttpOnly; SameSite=Strict; Path=/; Max-Age=" +
+            (sessionMaxAge === null
+              ? PERMANENT_COOKIE_MAX_AGE
+              : sessionMaxAge) +
             secureCookie,
         );
         json(res, 200, { context: actor, csrf, account });
@@ -393,7 +486,12 @@ export async function createHost(options: HostOptions) {
           ? await db.accounts((s) => s.get(session.accountId!))
           : null;
         let credential: ApiCredential | null = null;
-        let actor = session?.context;
+        let actor = account
+          ? {
+              workspaceId: account.workspaceId,
+              principalId: account.principalId,
+            }
+          : undefined;
         if (bearer) {
           if (!/^Bearer arc_[a-f0-9]{64}$/.test(bearer))
             fail(401, "UNAUTHORIZED");
@@ -449,6 +547,16 @@ export async function createHost(options: HostOptions) {
         }
         if (!actor) fail(401, "UNAUTHORIZED");
         const context = actor;
+        if (!bearer && session && session.expiresAt === null && token) {
+          res.setHeader(
+            "Set-Cookie",
+            "arc_session=" +
+              token +
+              "; HttpOnly; SameSite=Strict; Path=/; Max-Age=" +
+              PERMANENT_COOKIE_MAX_AGE +
+              secureCookie,
+          );
+        }
         // Recheck inside the write transaction, after body/hash awaits and BEFORE receipts.
         const requireAccess = (store: AccountStore) => {
           if (credential) {
@@ -457,8 +565,7 @@ export async function createHost(options: HostOptions) {
           } else {
             if (
               !session ||
-              sessions.get(token) !== session ||
-              session.expires < Date.now()
+              store.session(tokenHash, Date.now())?.id !== session.id
             )
               fail(401, "UNAUTHORIZED");
             if (session.accountId) {
@@ -492,6 +599,58 @@ export async function createHost(options: HostOptions) {
           json(res, 200, { context, csrf: session?.csrf, account });
           return;
         }
+        if (path === "/api/account/sessions" && req.method === "GET") {
+          if (!account || credential) fail(403, "FORBIDDEN");
+          const active = await db.accounts((store) => {
+            requireAccess(store);
+            return store.sessions(account!.id, Date.now());
+          });
+          json(
+            res,
+            200,
+            active.map((entry) => ({
+              id: entry.id,
+              createdAt: entry.createdAt,
+              expiresAt: entry.expiresAt,
+              current: entry.id === session?.id,
+            })),
+          );
+          return;
+        }
+        if (path === "/api/account/sessions/revoke" && mutation) {
+          if (!account || credential) fail(403, "FORBIDDEN");
+          const key = requestId(req);
+          const { value, raw } = await body(req);
+          keys(value, ["id", "all"]);
+          if (
+            (typeof value.id === "string") === (value.all === true) ||
+            (value.all !== undefined && value.all !== true)
+          )
+            fail(400, "VALIDATION_ERROR");
+          const id = value.id === undefined ? null : string(value.id);
+          if (id === "") fail(400, "VALIDATION_ERROR");
+          await db.accounts(
+            (store) => {
+              if (value.all === true) store.revokeSessions(account!.id);
+              else store.revokeSession(account!.id, id!);
+            },
+            {
+              context,
+              key,
+              digest: digest(path + raw),
+              authorize: requireAccess,
+            },
+          );
+          if (value.all === true || id === session?.id)
+            res.setHeader(
+              "Set-Cookie",
+              "arc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0" +
+                secureCookie,
+            );
+          await db.audit(context, account.id, "LOGIN_SESSION_REVOKED");
+          json(res, 200, {});
+          return;
+        }
         if (path === "/api/ai/providers" && req.method === "GET") {
           if (credential) fail(403, "FORBIDDEN");
           json(res, 200, options.vault?.list(context) ?? []);
@@ -509,7 +668,7 @@ export async function createHost(options: HostOptions) {
             value,
             path.endsWith("/save")
               ? ["version", "input"]
-              : ["scope", "version"],
+              : ["scope", "version", "profileId"],
           );
           const scope = string(
             path.endsWith("/save") ? object(value.input).scope : value.scope,
@@ -545,7 +704,14 @@ export async function createHost(options: HostOptions) {
           const result = await db.accounts((store) => {
             requireAccess(store);
             if (path.endsWith("/remove")) {
-              options.vault!.remove(context, scope, version(value.version));
+              options.vault!.remove(
+                context,
+                scope,
+                version(value.version),
+                value.profileId === undefined
+                  ? undefined
+                  : string(value.profileId, 64),
+              );
               return { removed: true };
             }
             const input = object(value.input);
@@ -556,6 +722,7 @@ export async function createHost(options: HostOptions) {
               "model",
               "key",
               "maxRunsPerDay",
+              "profileId",
             ]);
             for (const key of ["scope", "endpoint", "protocol", "model", "key"])
               string(input[key], key === "key" ? 4096 : 1000);
@@ -620,8 +787,6 @@ export async function createHost(options: HostOptions) {
             once: true,
             authorize: requireAccess,
           });
-          for (const [id, s] of sessions)
-            if (s.accountId === account.id) sessions.delete(id);
           await db.audit(context, account.id, "PASSWORD_CHANGED");
           json(res, 200, {});
           return;
@@ -632,7 +797,36 @@ export async function createHost(options: HostOptions) {
           json(res, 200, {
             accounts,
             databaseBytes: (await stat(options.database)).size,
+            sessionLifetimePolicy: await readSessionPolicy(),
           });
+          return;
+        }
+        if (path === "/api/admin/session-policy" && mutation) {
+          if (!admin) fail(403, "FORBIDDEN");
+          const key = requestId(req);
+          const { value, raw } = await body(req);
+          keys(value, ["policy"]);
+          const policy = string(value.policy);
+          if (
+            !["ONE_DAY", "SEVEN_DAYS", "THIRTY_DAYS", "PERMANENT"].includes(
+              policy,
+            )
+          )
+            fail(400, "VALIDATION_ERROR");
+          await db.setInstanceSetting("session_lifetime_policy", policy, {
+            context,
+            key,
+            digest: digest(path + raw),
+            authorize: (store) => {
+              requireAccess(store);
+              if (
+                session?.accountId &&
+                store.get(session.accountId)?.role !== "ADMIN"
+              )
+                fail(403, "FORBIDDEN");
+            },
+          });
+          json(res, 200, { sessionLifetimePolicy: policy });
           return;
         }
         if (path === "/api/admin/status" && mutation) {
@@ -657,9 +851,6 @@ export async function createHost(options: HostOptions) {
             },
           );
           await db.audit(context, result.id, "ACCOUNT_" + result.status);
-          if (result.status === "DISABLED")
-            for (const [id, current] of sessions)
-              if (current.accountId === result.id) sessions.delete(id);
           json(res, 200, result);
           return;
         }
@@ -772,7 +963,10 @@ export async function createHost(options: HostOptions) {
           return;
         }
         if (path === "/api/logout" && mutation) {
-          sessions.delete(token);
+          await db.accounts((store) => {
+            requireAccess(store);
+            store.revokeSession(session!.accountId, session!.id);
+          });
           res.setHeader(
             "Set-Cookie",
             "arc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0" +
@@ -825,6 +1019,18 @@ export async function createHost(options: HostOptions) {
             null,
             async (uow, store, connected, library, organization) => ({
               organization: await organization.list(),
+              workflows: await new WorkflowService(
+                uow,
+                authorization,
+                clock,
+                ids,
+              ).list(context),
+              categories: await new CategoryService(
+                uow,
+                authorization,
+                clock,
+                ids,
+              ).list(context),
               ...(await new WorkService(
                 uow,
                 authorization,
@@ -883,14 +1089,26 @@ export async function createHost(options: HostOptions) {
           const runs = await db.request(context, null, (_uow, _notes, store) =>
             store.runs(),
           );
+          const scope = url.searchParams.get("scope") ?? "personal";
+          const routes = (options.vault?.list(context) ?? [])
+            .filter((entry) => entry.scope === scope)
+            .map((entry) => entry.route);
+          const defaultRoute = resolveModel(context, scope)?.route;
+          if (
+            defaultRoute &&
+            !routes.some(
+              (route) => route.fingerprint === defaultRoute.fingerprint,
+            )
+          )
+            routes.unshift(defaultRoute);
           json(res, 200, {
             route:
-              (
-                options.vault?.resolve(
-                  context,
-                  url.searchParams.get("scope") ?? "personal",
-                ) ?? (context.principalId === "arclattice-owner" ? model : null)
+              resolveModel(
+                context,
+                scope,
+                url.searchParams.get("profileId") ?? "default",
               )?.route ?? null,
+            routes,
             runs: runs.slice(-100).reverse(),
           });
           return;
@@ -923,19 +1141,21 @@ export async function createHost(options: HostOptions) {
         const { raw, value } = await body(req);
         let selectedModel: ModelPort | null = null;
         if (path === "/api/ai/propose")
-          selectedModel =
-            options.vault?.resolve(
-              context,
-              string(value.scope ?? "personal"),
-            ) ?? (context.principalId === "arclattice-owner" ? model : null);
+          selectedModel = resolveModel(
+            context,
+            string(value.scope ?? "personal"),
+            string(value.profileId ?? "default", 64),
+          );
         if (path === "/api/ai/decide") {
           const run = await db.request(context, null, (_uow, _notes, store) =>
             store.getRun(string(value.id)),
           );
           if (run.createdBy !== context.principalId) fail(403, "FORBIDDEN");
-          selectedModel =
-            options.vault?.resolve(context, run.route.scope ?? "personal") ??
-            (context.principalId === "arclattice-owner" ? model : null);
+          selectedModel = resolveModel(
+            context,
+            run.route.scope,
+            run.route.profileId,
+          );
         }
         let approved: AgentRun | undefined;
         const result = await db.request(
@@ -1007,7 +1227,9 @@ export async function createHost(options: HostOptions) {
               case "/api/library/save": {
                 keys(value, ["id", "version", "input"]);
                 const input = object(value.input);
-                keys(input, ["kind", "spaceId", "title", "bodyMd"]);
+                keys(input, ["kind", "spaceId", "title", "bodyMd", "aiPolicy"]);
+                if (credential && input.aiPolicy !== undefined)
+                  fail(403, "FORBIDDEN");
                 string(input.title);
                 string(input.bodyMd, 200000);
                 string(input.kind);
@@ -1127,7 +1349,7 @@ export async function createHost(options: HostOptions) {
                 );
               case "/api/ai/propose": {
                 if (credential) fail(403, "FORBIDDEN");
-                keys(value, ["prompt", "scope", "sources"]);
+                keys(value, ["prompt", "scope", "sources", "profileId"]);
                 if (!selectedModel) fail(409, "MODEL_NOT_CONFIGURED");
                 if ((await connected.runs()).length >= 1000)
                   fail(429, "RATE_LIMITED");
@@ -1174,6 +1396,17 @@ export async function createHost(options: HostOptions) {
                         entity.spaceId !== scope.slice(6))
                     )
                       fail(403, "FORBIDDEN");
+                    validateContextPolicy(context, selectedModel.route, entity);
+                    if (
+                      kind === "DOCUMENT" &&
+                      "spaceId" in entity &&
+                      entity.spaceId
+                    )
+                      validateContextPolicy(
+                        context,
+                        selectedModel.route,
+                        await library.get(entity.spaceId),
+                      );
                     sources.push({
                       ref: { kind: kind as EntityRef["kind"], id },
                       version: entity.version,
@@ -1277,6 +1510,104 @@ export async function createHost(options: HostOptions) {
                 if (decision.status === "RUNNING") approved = decision;
                 return decision;
               }
+              case "/api/categories/save": {
+                keys(value, ["id", "version", "name", "projectIds", "deleted"]);
+                return new CategoryService(uow, authorization, clock, ids).save(
+                  context,
+                  {
+                    ...(value.id === undefined ? {} : { id: string(value.id) }),
+                    version: value.version as number,
+                    name: string(value.name),
+                    projectIds: value.projectIds as string[],
+                    deleted: boolean(value.deleted),
+                  },
+                );
+              }
+              case "/api/plans/preview": {
+                if (credential) fail(403, "FORBIDDEN");
+                keys(value, ["projectId", "manifest"]);
+                return new WorkflowService(
+                  uow,
+                  authorization,
+                  clock,
+                  ids,
+                ).preview(context, string(value.projectId), value.manifest);
+              }
+              case "/api/plans/publish": {
+                if (credential) fail(403, "FORBIDDEN");
+                keys(value, ["id", "version"]);
+                return new WorkflowService(
+                  uow,
+                  authorization,
+                  clock,
+                  ids,
+                ).publish(context, string(value.id), version(value.version));
+              }
+              case "/api/recurrences/save": {
+                if (credential) fail(403, "FORBIDDEN");
+                keys(value, ["id", "version", "deleted", "rule"]);
+                const rule = object(value.rule);
+                keys(rule, [
+                  "title",
+                  "descriptionMd",
+                  "projectId",
+                  "startDate",
+                  "timezone",
+                  "frequency",
+                  "interval",
+                ]);
+                for (const field of [
+                  "title",
+                  "descriptionMd",
+                  "startDate",
+                  "timezone",
+                  "frequency",
+                ])
+                  string(rule[field], 200000);
+                if (rule.projectId !== null) string(rule.projectId);
+                return new WorkflowService(
+                  uow,
+                  authorization,
+                  clock,
+                  ids,
+                ).saveRecurrence(context, {
+                  ...(value.id === undefined ? {} : { id: string(value.id) }),
+                  version: value.version as number,
+                  deleted: boolean(value.deleted),
+                  rule: rule as unknown as Omit<RecurrencePayload, "kind">,
+                });
+              }
+              case "/api/recurrences/generate": {
+                if (credential) fail(403, "FORBIDDEN");
+                keys(value, ["id", "version", "from", "to"]);
+                return new WorkflowService(
+                  uow,
+                  authorization,
+                  clock,
+                  ids,
+                ).generate(
+                  context,
+                  string(value.id),
+                  version(value.version),
+                  string(value.from),
+                  string(value.to),
+                );
+              }
+              case "/api/recurrences/backfill": {
+                if (credential) fail(403, "FORBIDDEN");
+                keys(value, ["id", "version", "completedAt"]);
+                return new WorkflowService(
+                  uow,
+                  authorization,
+                  clock,
+                  ids,
+                ).backfill(
+                  context,
+                  string(value.id),
+                  version(value.version),
+                  value.completedAt === null ? null : string(value.completedAt),
+                );
+              }
               case "/api/work/create": {
                 keys(value, [
                   "title",
@@ -1284,6 +1615,9 @@ export async function createHost(options: HostOptions) {
                   "priority",
                   "type",
                   "projectId",
+                  "projectIds",
+                  "activationState",
+                  "activationPolicy",
                   "startDate",
                   "dueDate",
                 ]);
@@ -1309,10 +1643,14 @@ export async function createHost(options: HostOptions) {
                   "priority",
                   "status",
                   "projectId",
+                  "projectIds",
+                  "activationState",
+                  "activationPolicy",
                   "startDate",
                   "dueDate",
                 ]);
                 for (const [key, val] of Object.entries(input)) {
+                  if (key === "projectIds") continue;
                   if (
                     ["projectId", "startDate", "dueDate"].includes(key) &&
                     val === null
@@ -1350,7 +1688,9 @@ export async function createHost(options: HostOptions) {
               case "/api/note/save": {
                 keys(value, ["id", "version", "input"]);
                 const input = object(value.input);
-                keys(input, ["title", "bodyMd", "kind", "day"]);
+                keys(input, ["title", "bodyMd", "kind", "day", "aiPolicy"]);
+                if (credential && input.aiPolicy !== undefined)
+                  fail(403, "FORBIDDEN");
                 string(input.title);
                 string(input.bodyMd, 200_000);
                 string(input.kind);
@@ -1376,7 +1716,7 @@ export async function createHost(options: HostOptions) {
           },
           requireAccess,
         );
-        if (approved) dispatch(approved, context, selectedModel, requireAccess);
+        if (approved) dispatch(approved, context, requireAccess);
         json(res, 200, result);
         return;
       }
@@ -1413,13 +1753,15 @@ export async function createHost(options: HostOptions) {
         error instanceof HttpError
           ? error.status
           : error instanceof DomainError
-            ? error.code === "FORBIDDEN"
-              ? 403
-              : error.code === "NOT_FOUND"
-                ? 404
-                : error.code === "VALIDATION_ERROR"
-                  ? 400
-                  : 409
+            ? error.code === "RATE_LIMITED"
+              ? 429
+              : error.code === "FORBIDDEN"
+                ? 403
+                : error.code === "NOT_FOUND"
+                  ? 404
+                  : error.code === "VALIDATION_ERROR"
+                    ? 400
+                    : 409
             : 500;
       const code =
         error instanceof HttpError || error instanceof DomainError
@@ -1433,11 +1775,75 @@ export async function createHost(options: HostOptions) {
   server.headersTimeout = 10_000;
   server.keepAliveTimeout = 5_000;
   server.maxConnections = 32;
+  const recurrenceWorker = startRecurrenceWorker(async () => {
+    const accounts = await db.accounts((store) =>
+      store.list().filter((a) => a.status === "ACTIVE"),
+    );
+    for (const account of accounts) {
+      const authorize = (store: AccountStore) => {
+        const current = store.get(account.id);
+        if (
+          !current ||
+          current.status !== "ACTIVE" ||
+          current.principalId !== account.principalId ||
+          current.workspaceId !== account.workspaceId
+        )
+          throw new DomainError("FORBIDDEN");
+      };
+      try {
+        const definitions = await db.request(
+          account,
+          null,
+          (uow) =>
+            uow.run(account.workspaceId, async (tx) =>
+              (await tx.workflows()).filter(
+                (r) =>
+                  r.payload.kind === "RECURRENCE" &&
+                  !r.deletedAt &&
+                  r.createdBy === account.principalId,
+              ),
+            ),
+          authorize,
+        );
+        for (const definition of definitions) {
+          try {
+            await db.request(
+              account,
+              null,
+              (uow) =>
+                new WorkflowService(
+                  uow,
+                  {
+                    async require(actor) {
+                      if (
+                        actor.workspaceId !== account.workspaceId ||
+                        actor.principalId !== account.principalId
+                      )
+                        throw new DomainError("FORBIDDEN");
+                    },
+                  },
+                  clock,
+                  ids,
+                ).tick(account, definition.id),
+              authorize,
+            );
+          } catch {
+            console.error(
+              "Recurrence definition deferred; check account and project availability",
+            );
+          }
+        }
+      } catch {
+        console.error("Recurrence workspace deferred; retrying next tick");
+      }
+    }
+  });
   return {
     server,
     db,
     context,
     async close() {
+      await recurrenceWorker.close();
       for (const controller of controllers) controller.abort();
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

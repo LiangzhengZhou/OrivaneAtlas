@@ -21,7 +21,35 @@ export interface ApiCredential {
   revokedAt: string | null;
 }
 /** Host-only authentication port. Never expose verifiers to the web contract. */
+export interface LoginSession {
+  id: string;
+  accountId: string;
+  accountVersion: number;
+  createdAt: number;
+  expiresAt: number | null;
+}
+
+/** Safe account-facing session summary: no token or token digest. */
+export interface AccountSession {
+  id: string;
+  createdAt: number;
+  expiresAt: number | null;
+  current: boolean;
+}
+
 export interface AccountStore {
+  session(hash: string, now: number): LoginSession | null;
+  createSession(
+    accountId: string,
+    accountVersion: number,
+    hash: string,
+    expiresAt: number | null,
+    now: number,
+    replaceHash: string,
+  ): void;
+  sessions(accountId: string, now: number): LoginSession[];
+  revokeSession(accountId: string, id: string): void;
+  revokeSessions(accountId: string): void;
   find(username: string): AccountVerifier | null;
   get(id: string): Account | null;
   list(): Account[];

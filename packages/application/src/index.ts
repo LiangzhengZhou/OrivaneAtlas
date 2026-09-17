@@ -1,8 +1,15 @@
+export * from "./categories";
+export * from "./workflows";
+
+import type { WorkflowRecord } from "./workflows";
+
 export * from "./connected";
 export * from "./notebook";
 export * from "./organization";
 
 import type {
+  ActivationPolicy,
+  ActivationState,
   ActorContext,
   EdgeType,
   Priority,
@@ -12,10 +19,13 @@ import type {
   WorkType,
 } from "@arclattice/domain";
 import {
+  activationPolicies,
+  activationStates,
   blockers,
   DomainError,
   dependency,
   edgeTypes,
+  isExecutionActive,
   priorities,
   requireMember,
   requireTitle,
@@ -24,6 +34,7 @@ import {
   workStatuses,
   workTypes,
 } from "@arclattice/domain";
+import type { CategoryChange, ProjectCategory } from "./categories";
 
 export type Permission =
   | "work:read"
@@ -67,6 +78,14 @@ export interface WorkSnapshot {
 }
 /** A transaction is already bound to one workspace by UnitOfWork.run. */
 export interface WorkTransaction {
+  workflows(): Promise<WorkflowRecord[]>;
+  saveWorkflow(record: WorkflowRecord, expectedVersion: number): Promise<void>;
+  categories(): Promise<ProjectCategory[]>;
+  saveCategory(
+    category: ProjectCategory,
+    expectedVersion: number,
+  ): Promise<void>;
+  appendCategoryChange(event: CategoryChange): Promise<void>;
   list(includeDeleted?: boolean): Promise<readonly WorkItem[]>;
   get(id: string): Promise<WorkItem>;
   edges(): Promise<readonly WorkEdge[]>;
@@ -84,6 +103,7 @@ export interface UnitOfWork {
   ): Promise<T>;
 }
 export interface CreateWorkInput {
+  readonly projectIds?: readonly string[];
   readonly projectId?: string | null;
   readonly startDate?: string | null;
   readonly dueDate?: string | null;
@@ -91,8 +111,11 @@ export interface CreateWorkInput {
   readonly type?: WorkType;
   readonly priority?: Priority;
   readonly descriptionMd?: string;
+  readonly activationState?: ActivationState;
+  readonly activationPolicy?: ActivationPolicy;
 }
 export interface UpdateWorkInput {
+  readonly projectIds?: readonly string[];
   readonly projectId?: string | null;
   readonly startDate?: string | null;
   readonly dueDate?: string | null;
@@ -100,6 +123,8 @@ export interface UpdateWorkInput {
   readonly status?: WorkStatus;
   readonly priority?: Priority;
   readonly descriptionMd?: string;
+  readonly activationState?: ActivationState;
+  readonly activationPolicy?: ActivationPolicy;
 }
 export class WorkService {
   constructor(
@@ -125,6 +150,8 @@ export class WorkService {
     input: CreateWorkInput,
   ): Promise<WorkItem> {
     await this.authorization.require(context, "work:create");
+    if (input.projectIds !== undefined && !Array.isArray(input.projectIds))
+      throw new DomainError("VALIDATION_ERROR", { field: "projectIds" });
     return this.uow.run(context.workspaceId, async (tx) => {
       const now = this.clock.now();
       const item: WorkItem = {
@@ -142,8 +169,28 @@ export class WorkService {
         executionMode: "MANUAL",
         assigneePrincipalId: null,
         projectId: input.projectId ?? null,
+        ...(input.projectIds === undefined
+          ? {}
+          : {
+              projectIds: input.projectIds,
+              projectId: input.projectIds[0] ?? null,
+            }),
         startDate: input.startDate ?? null,
         dueDate: input.dueDate ?? null,
+        activationState: requireMember(
+          input.activationState === undefined
+            ? "ACTIVE"
+            : input.activationState,
+          activationStates,
+          "activationState",
+        ),
+        activationPolicy: requireMember(
+          input.activationPolicy === undefined
+            ? "MANUAL"
+            : input.activationPolicy,
+          activationPolicies,
+          "activationPolicy",
+        ),
         version: 1,
         createdBy: context.principalId,
         updatedBy: context.principalId,
@@ -152,10 +199,12 @@ export class WorkService {
         completedAt: null,
         deletedAt: null,
       };
+      await this.validateMemberships(tx, item, input);
       await this.validatePlanning(tx, item);
-      await tx.insert(item);
+      const normalized = await this.normalizeActivation(tx, item);
+      await tx.insert(normalized);
       await this.record(tx, context, item.id, "WORK_ITEM_CREATED", now);
-      return item;
+      return normalized;
     });
   }
 
@@ -166,6 +215,8 @@ export class WorkService {
     input: UpdateWorkInput,
   ): Promise<WorkItem> {
     await this.authorization.require(context, "work:update");
+    if (input.projectIds !== undefined && !Array.isArray(input.projectIds))
+      throw new DomainError("VALIDATION_ERROR", { field: "projectIds" });
     return this.uow.run(context.workspaceId, async (tx) => {
       const previous = await tx.get(id);
       if (previous.deletedAt) throw new DomainError("NOT_FOUND");
@@ -197,11 +248,34 @@ export class WorkService {
       const now = this.clock.now();
       const item: WorkItem = {
         ...previous,
+        ...(input.projectIds !== undefined
+          ? { projectIds: input.projectIds }
+          : input.projectId !== undefined && previous.type === "TASK"
+            ? { projectIds: input.projectId ? [input.projectId] : [] }
+            : {}),
         projectId:
-          input.projectId === undefined ? previous.projectId : input.projectId,
+          input.projectIds !== undefined
+            ? (input.projectIds[0] ?? null)
+            : input.projectId === undefined
+              ? previous.projectId
+              : input.projectId,
         startDate:
           input.startDate === undefined ? previous.startDate : input.startDate,
         dueDate: input.dueDate === undefined ? previous.dueDate : input.dueDate,
+        activationState: requireMember(
+          input.activationState === undefined
+            ? previous.activationState
+            : input.activationState,
+          activationStates,
+          "activationState",
+        ),
+        activationPolicy: requireMember(
+          input.activationPolicy === undefined
+            ? previous.activationPolicy
+            : input.activationPolicy,
+          activationPolicies,
+          "activationPolicy",
+        ),
         title:
           input.title === undefined
             ? previous.title
@@ -218,10 +292,19 @@ export class WorkService {
         updatedAt: now,
         completedAt: status === "DONE" ? (previous.completedAt ?? now) : null,
       };
+      await this.validateMemberships(tx, item, input);
       await this.validatePlanning(tx, item);
-      await tx.replace(item, expectedVersion);
+      const normalized = await this.normalizeActivation(tx, item);
+      if (
+        (status === "IN_PROGRESS" || status === "DONE") &&
+        !isExecutionActive(normalized, now.slice(0, 10)) &&
+        (status !== previous.status || previous.status === "IN_PROGRESS")
+      )
+        throw new DomainError("WORK_ITEM_BLOCKED");
+      await tx.replace(normalized, expectedVersion);
       await this.record(tx, context, item.id, "WORK_ITEM_UPDATED", now);
-      return item;
+      await this.reconcileDependents(tx, context, now);
+      return normalized;
     });
   }
 
@@ -239,7 +322,9 @@ export class WorkService {
       const previous = await tx.get(id);
       if (
         deleted &&
-        ((await tx.list()).some((item) => item.projectId === id) ||
+        ((await tx.list()).some(
+          (item) => item.projectId === id || item.projectIds?.includes(id),
+        ) ||
           (await tx.edges()).some(
             (edge) => edge.fromId === id || edge.toId === id,
           ))
@@ -262,6 +347,21 @@ export class WorkService {
         updatedBy: context.principalId,
         version: previous.version + 1,
       };
+      if (!deleted) {
+        if (item.type === "TASK") {
+          const liveProjects = new Set(
+            (await tx.list())
+              .filter((p) => p.type === "PROJECT")
+              .map((p) => p.id),
+          );
+          item.projectIds = (
+            previous.projectIds ??
+            (previous.projectId ? [previous.projectId] : [])
+          ).filter((id) => liveProjects.has(id));
+          item.projectId = item.projectIds[0] ?? null;
+        }
+        await this.validatePlanning(tx, item);
+      }
       await tx.replace(item, expectedVersion);
       await this.record(
         tx,
@@ -304,6 +404,7 @@ export class WorkService {
       }
       await tx.addEdge(edge);
       await this.record(tx, context, edge.id, "WORK_EDGE_ADDED", now);
+      await this.reconcileDependents(tx, context, now);
       return edge;
     });
   }
@@ -314,11 +415,7 @@ export class WorkService {
   ): Promise<void> {
     validateSchedule(item.startDate, item.dueDate);
     if (item.projectId !== null) {
-      if (
-        typeof item.projectId !== "string" ||
-        item.type === "PROJECT" ||
-        item.projectId === item.id
-      )
+      if (typeof item.projectId !== "string" || item.projectId === item.id)
         throw new DomainError("VALIDATION_ERROR", { field: "projectId" });
       const project = await tx.get(item.projectId);
       if (
@@ -327,6 +424,18 @@ export class WorkService {
         project.workspaceId !== item.workspaceId
       )
         throw new DomainError("NOT_FOUND");
+      if (item.type === "PROJECT") {
+        const visited = new Set([item.id]);
+        let ancestor: WorkItem | null = project;
+        while (ancestor) {
+          if (visited.has(ancestor.id))
+            throw new DomainError("WORK_GRAPH_CYCLE_DETECTED");
+          visited.add(ancestor.id);
+          ancestor = ancestor.projectId
+            ? await tx.get(ancestor.projectId)
+            : null;
+        }
+      }
     }
   }
 
@@ -335,7 +444,97 @@ export class WorkService {
     return this.uow.run(context.workspaceId, async (tx) => {
       await tx.removeEdge(id);
       await this.record(tx, context, id, "WORK_EDGE_REMOVED", this.clock.now());
+      await this.reconcileDependents(tx, context, this.clock.now());
     });
+  }
+
+  private async validateMemberships(
+    tx: WorkTransaction,
+    item: WorkItem,
+    input: CreateWorkInput | UpdateWorkInput,
+  ) {
+    const ids = item.projectIds;
+    if (ids === undefined) return;
+    if (
+      item.type !== "TASK" ||
+      !Array.isArray(ids) ||
+      ids.length > 100 ||
+      ids.some((id) => typeof id !== "string" || !id || id.length > 240) ||
+      new Set(ids).size !== ids.length ||
+      (input.projectIds !== undefined &&
+        input.projectId !== undefined &&
+        input.projectId !== (ids[0] ?? null))
+    )
+      throw new DomainError("VALIDATION_ERROR", { field: "projectIds" });
+    for (const id of ids) {
+      const project = await tx.get(id);
+      if (
+        project.type !== "PROJECT" ||
+        project.deletedAt ||
+        project.workspaceId !== item.workspaceId
+      )
+        throw new DomainError("VALIDATION_ERROR", { field: "projectIds" });
+    }
+  }
+
+  private async normalizeActivation(
+    tx: WorkTransaction,
+    item: WorkItem,
+  ): Promise<WorkItem> {
+    let activationState = item.activationState;
+    if (item.activationPolicy === "AT_SCHEDULED_TIME") {
+      if (!item.startDate)
+        throw new DomainError("VALIDATION_ERROR", { field: "startDate" });
+      activationState = "SCHEDULED";
+    } else if (item.activationPolicy === "IMMEDIATE")
+      activationState = "ACTIVE";
+    else if (item.activationPolicy === "WHEN_DEPENDENCIES_COMPLETED")
+      activationState = blockers(item, await tx.list(), await tx.edges()).length
+        ? "INACTIVE"
+        : "ACTIVE";
+    else if (activationState === "SCHEDULED")
+      throw new DomainError("VALIDATION_ERROR", { field: "activationState" });
+    return {
+      ...item,
+      activationState,
+      ...(item.type === "TASK"
+        ? {
+            projectIds:
+              item.projectIds ?? (item.projectId ? [item.projectId] : []),
+          }
+        : {}),
+    };
+  }
+
+  private async reconcileDependents(
+    tx: WorkTransaction,
+    context: ActorContext,
+    now: string,
+  ) {
+    const items = await tx.list();
+    const edges = await tx.edges();
+    for (const previous of items) {
+      if (
+        previous.activationPolicy !== "WHEN_DEPENDENCIES_COMPLETED" ||
+        previous.status !== "TODO"
+      )
+        continue;
+      const activationState = blockers(previous, items, edges).length
+        ? "INACTIVE"
+        : "ACTIVE";
+      if (activationState === previous.activationState) continue;
+      await tx.replace(
+        {
+          ...previous,
+          activationState,
+          version: previous.version + 1,
+          updatedBy: context.principalId,
+          updatedAt: now,
+        },
+        previous.version,
+      );
+      await this.record(tx, context, previous.id, "WORK_ITEM_UPDATED", now);
+    }
   }
 
   private async record(
@@ -364,7 +563,13 @@ export class WorkService {
   }
 }
 export * from "./accounts";
+export * from "./content-policy";
 export * from "./library";
+export {
+  executeApprovedModel,
+  validateApprovedContext,
+  validateContextPolicy,
+} from "./model-gateway";
 export type {
   PersonalModelInput,
   PersonalModelSummary,

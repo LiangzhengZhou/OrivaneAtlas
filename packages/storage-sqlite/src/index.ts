@@ -22,6 +22,7 @@ import type {
 } from "@arclattice/domain";
 import { DomainError } from "@arclattice/domain";
 import { accountStore } from "./accounts";
+import { categoryPort } from "./categories";
 import { connectedStore } from "./connected";
 import {
   beginImmediate,
@@ -34,8 +35,10 @@ import { libraryStore } from "./library";
 import { inspectSchema, migrate } from "./migrations";
 import { notebookStore } from "./notebook";
 import { organizationStore } from "./organization";
+import { workflowPort } from "./workflows";
 
 export { StorageError } from "./database";
+export { currentSchemaVersion } from "./migrations";
 
 // Trusted, static field maps only. All user values are bound parameters.
 const workFields = {
@@ -49,6 +52,8 @@ const workFields = {
   executionMode: "execution_mode",
   assigneePrincipalId: "assignee_principal_id",
   projectId: "project_id",
+  activationState: "activation_state",
+  activationPolicy: "activation_policy",
   startDate: "start_date",
   dueDate: "due_date",
   version: "version",
@@ -58,7 +63,7 @@ const workFields = {
   updatedAt: "updated_at",
   completedAt: "completed_at",
   deletedAt: "deleted_at",
-} satisfies Record<keyof WorkItem, string>;
+} satisfies Record<Exclude<keyof WorkItem, "projectIds">, string>;
 const edgeFields = {
   workspaceId: "workspace_id",
   id: "id",
@@ -89,7 +94,7 @@ function projection(fields: Record<string, string>) {
     .join(", ");
 }
 function values<T extends object>(
-  fields: Record<keyof T, string>,
+  fields: Partial<Record<keyof T, string>>,
   entity: T,
 ): SQLInputValue[] {
   return (Object.keys(fields) as (keyof T)[]).map(
@@ -99,7 +104,7 @@ function values<T extends object>(
 function insert<T extends object>(
   db: DatabaseSync,
   table: string,
-  fields: Record<keyof T, string>,
+  fields: Partial<Record<keyof T, string>>,
   entity: T,
 ) {
   db.prepare(
@@ -132,6 +137,29 @@ export class SqliteUnitOfWork implements UnitOfWork {
     readonly filename: string,
     private readonly timeoutMs: number,
   ) {}
+
+  getInstanceSetting(key: string): Promise<string | null> {
+    return this.enqueue(async () => {
+      const row = this.db
+        .prepare("SELECT value FROM instance_setting WHERE key=?")
+        .get(key) as { value?: string } | undefined;
+      return row?.value ?? null;
+    });
+  }
+
+  setInstanceSetting(
+    key: string,
+    value: string,
+    receipt?: Parameters<SqliteUnitOfWork["accounts"]>[1],
+  ): Promise<void> {
+    return this.accounts(() => {
+      this.db
+        .prepare(
+          "INSERT INTO instance_setting (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        )
+        .run(key, value);
+    }, receipt);
+  }
 
   static async open(
     filename: string,
@@ -326,6 +354,30 @@ export class SqliteUnitOfWork implements UnitOfWork {
       )
         throw new DomainError("FORBIDDEN");
     };
+    const hydrate = (row: WorkItem): WorkItem =>
+      row.type !== "TASK"
+        ? row
+        : {
+            ...row,
+            projectIds: this.db
+              .prepare(
+                "SELECT project_id FROM task_project WHERE workspace_id=? AND task_id=? ORDER BY position",
+              )
+              .all(workspaceId, row.id)
+              .map((r) => String(r.project_id)),
+          };
+    const memberships = (item: WorkItem) => {
+      this.db
+        .prepare("DELETE FROM task_project WHERE workspace_id=? AND task_id=?")
+        .run(workspaceId, item.id);
+      if (item.type === "TASK")
+        for (const [position, id] of (
+          item.projectIds ?? (item.projectId ? [item.projectId] : [])
+        ).entries())
+          this.db
+            .prepare("INSERT INTO task_project VALUES (?,?,?,?)")
+            .run(workspaceId, item.id, id, position);
+    };
     const get = (id: string): WorkItem => {
       guard();
       const row = this.db
@@ -336,21 +388,25 @@ export class SqliteUnitOfWork implements UnitOfWork {
         )
         .get(workspaceId, id);
       if (!row) throw new DomainError("NOT_FOUND");
-      return { ...row } as unknown as WorkItem;
+      return hydrate({ ...row } as unknown as WorkItem);
     };
     const tx: WorkTransaction = {
+      ...categoryPort(this.db, workspaceId, guard),
+      ...workflowPort(this.db, workspaceId, guard),
       get: async (id) => get(id),
       list: async (includeDeleted = false) => {
         guard();
-        return this.db
-          .prepare(
-            "SELECT " +
-              projection(workFields) +
-              " FROM work_item WHERE workspace_id=?" +
-              (includeDeleted ? "" : " AND deleted_at IS NULL") +
-              " ORDER BY created_at, id",
-          )
-          .all(workspaceId) as unknown as WorkItem[];
+        return (
+          this.db
+            .prepare(
+              "SELECT " +
+                projection(workFields) +
+                " FROM work_item WHERE workspace_id=?" +
+                (includeDeleted ? "" : " AND deleted_at IS NULL") +
+                " ORDER BY created_at, id",
+            )
+            .all(workspaceId) as unknown as WorkItem[]
+        ).map(hydrate);
       },
       edges: async () => {
         guard();
@@ -375,6 +431,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
         )
           throw new DomainError("VERSION_CONFLICT");
         insert(this.db, "work_item", workFields, item);
+        memberships(item);
       },
       replace: async (item, expectedVersion) => {
         scope(item);
@@ -406,6 +463,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
             expectedVersion,
           );
         if (result.changes !== 1) throw new DomainError("VERSION_CONFLICT");
+        memberships(item);
       },
       addEdge: async (edge) => {
         scope(edge);

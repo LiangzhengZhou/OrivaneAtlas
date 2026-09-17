@@ -1,4 +1,11 @@
-import { type Priority, priorities, type WorkItem } from "@arclattice/domain";
+import {
+  type ActivationPolicy,
+  type ActivationState,
+  activationPolicies,
+  type Priority,
+  priorities,
+  type WorkItem,
+} from "@arclattice/domain";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,8 +23,11 @@ interface Props {
     descriptionMd: string;
     priority: Priority;
     projectId: string | null;
+    projectIds?: readonly string[];
     startDate: string | null;
     dueDate: string | null;
+    activationState: ActivationState;
+    activationPolicy: ActivationPolicy;
   }): Promise<void>;
   onDelete: (() => Promise<void>) | null;
 }
@@ -37,6 +47,15 @@ export function TaskEditor({
   const [preview, setPreview] = useState(false);
   const [title, setTitle] = useState(item?.title ?? "");
   const [projectId, setProjectId] = useState(item?.projectId ?? "");
+  const [extraProjects, setExtraProjects] = useState<string[]>([
+    ...(item?.projectIds ?? []).slice(1),
+  ]);
+  const [activationState, setActivationState] = useState<ActivationState>(
+    item?.activationState ?? "ACTIVE",
+  );
+  const [activationPolicy, setActivationPolicy] = useState<ActivationPolicy>(
+    item?.activationPolicy ?? "MANUAL",
+  );
   const [startDate, setStartDate] = useState(item?.startDate ?? "");
   const [dueDate, setDueDate] = useState(item?.dueDate ?? "");
   const [descriptionMd, setDescription] = useState(item?.descriptionMd ?? "");
@@ -48,6 +67,10 @@ export function TaskEditor({
     descriptionMd !== (item?.descriptionMd ?? "") ||
     priority !== (item?.priority ?? "MEDIUM") ||
     projectId !== (item?.projectId ?? "") ||
+    JSON.stringify(extraProjects) !==
+      JSON.stringify((item?.projectIds ?? []).slice(1)) ||
+    activationState !== (item?.activationState ?? "ACTIVE") ||
+    activationPolicy !== (item?.activationPolicy ?? "MANUAL") ||
     startDate !== (item?.startDate ?? "") ||
     dueDate !== (item?.dueDate ?? "");
   function close() {
@@ -88,8 +111,22 @@ export function TaskEditor({
               descriptionMd,
               priority,
               projectId: projectId || null,
+              ...((item?.type ?? createType) === "TASK"
+                ? {
+                    projectIds: [
+                      ...(projectId ? [projectId] : []),
+                      ...extraProjects.filter((id) => id !== projectId),
+                    ],
+                    projectId: projectId || extraProjects[0] || null,
+                  }
+                : {}),
               startDate: startDate || null,
               dueDate: dueDate || null,
+              activationState:
+                activationPolicy === "MANUAL" && activationState === "SCHEDULED"
+                  ? "INACTIVE"
+                  : activationState,
+              activationPolicy,
             });
         }}
       >
@@ -156,22 +193,97 @@ export function TaskEditor({
             ))}
           </select>
         </label>
-        {(item?.type ?? createType) !== "PROJECT" && (
+        {
           <label className="field">
-            <span>{t("desk:project")}</span>
+            <span>
+              {t(
+                (item?.type ?? createType) === "PROJECT"
+                  ? "desk:parentProject"
+                  : "desk:project",
+              )}
+            </span>
             <select
-              aria-label={t("desk:project")}
+              aria-label={t(
+                (item?.type ?? createType) === "PROJECT"
+                  ? "desk:parentProject"
+                  : "desk:project",
+              )}
               value={projectId}
               onChange={(event) => setProjectId(event.target.value)}
             >
               <option value="">{t("desk:noProject")}</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.title}
-                </option>
-              ))}
+              {projects
+                .filter((project) => project.id !== item?.id)
+                .map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.title}
+                  </option>
+                ))}
             </select>
           </label>
+        }
+        {(item?.type ?? createType) === "TASK" && (
+          <fieldset className="field project-memberships">
+            <legend>{t("desk:additionalProjects")}</legend>
+            {projects
+              .filter((p) => p.id !== projectId)
+              .map((p) => (
+                <label key={p.id}>
+                  <input
+                    type="checkbox"
+                    checked={extraProjects.includes(p.id)}
+                    onChange={(event) =>
+                      setExtraProjects((ids) =>
+                        event.target.checked
+                          ? [...ids, p.id]
+                          : ids.filter((id) => id !== p.id),
+                      )
+                    }
+                  />{" "}
+                  {p.title}
+                </label>
+              ))}
+          </fieldset>
+        )}
+        <label className="field">
+          <span>{t("desk:activationPolicy")}</span>
+          <select
+            aria-label={t("desk:activationPolicy")}
+            value={activationPolicy}
+            onChange={(event) =>
+              setActivationPolicy(event.target.value as ActivationPolicy)
+            }
+          >
+            {activationPolicies.map((policy) => (
+              <option key={policy} value={policy}>
+                {t("desk:activationPolicies." + policy)}
+              </option>
+            ))}
+          </select>
+        </label>
+        {activationPolicy === "MANUAL" && (
+          <label className="field">
+            <span>{t("desk:activationState")}</span>
+            <select
+              aria-label={t("desk:activationState")}
+              value={
+                activationState === "SCHEDULED" ? "INACTIVE" : activationState
+              }
+              onChange={(event) =>
+                setActivationState(event.target.value as ActivationState)
+              }
+            >
+              <option value="ACTIVE">
+                {t("desk:activationStates.ACTIVE")}
+              </option>
+              <option value="INACTIVE">
+                {t("desk:activationStates.INACTIVE")}
+              </option>
+            </select>
+          </label>
+        )}
+        {activationPolicy === "AT_SCHEDULED_TIME" && (
+          <p className="muted">{t("desk:scheduledHint")}</p>
         )}
         <div className="schedule-fields">
           <label className="field">
@@ -179,6 +291,7 @@ export function TaskEditor({
             <input
               type="date"
               min="0001-01-01"
+              required={activationPolicy === "AT_SCHEDULED_TIME"}
               max={dueDate || "9999-12-31"}
               value={startDate}
               onChange={(event) => setStartDate(event.target.value)}

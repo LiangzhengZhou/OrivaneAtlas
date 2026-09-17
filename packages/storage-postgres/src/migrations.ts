@@ -38,6 +38,46 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 3,
+    name: "instance-settings",
+    sql: readFileSync(
+      new URL("./migrations/0003-instance-settings.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 4,
+    name: "task-activation",
+    sql: readFileSync(
+      new URL("./migrations/0004-task-activation.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 5,
+    name: "task-memberships",
+    sql: readFileSync(
+      new URL("./migrations/0005-task-memberships.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 6,
+    name: "categories",
+    sql: readFileSync(
+      new URL("./migrations/0006-categories.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 7,
+    name: "workflows",
+    sql: readFileSync(
+      new URL("./migrations/0007-workflows.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")

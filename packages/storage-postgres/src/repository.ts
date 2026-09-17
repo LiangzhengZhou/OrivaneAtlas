@@ -1,6 +1,7 @@
 import type { WorkTransaction } from "@arclattice/application";
 import { DomainError, type WorkItem } from "@arclattice/domain";
 import type { PoolClient } from "pg";
+import { categoryPort } from "./categories";
 import { PostgresStorageError, pgCode } from "./database";
 import {
   activityFields,
@@ -9,14 +10,18 @@ import {
   projection,
   workFields,
 } from "./fields";
+import { workflowPort } from "./workflows";
 
-function values<T extends object>(fields: Record<keyof T, string>, entity: T) {
+function values<T extends object>(
+  fields: Partial<Record<keyof T, string>>,
+  entity: T,
+) {
   return (Object.keys(fields) as (keyof T)[]).map((key) => entity[key]);
 }
 async function insert<T extends object>(
   client: PoolClient,
   table: string,
-  fields: Record<keyof T, string>,
+  fields: Partial<Record<keyof T, string>>,
   entity: T,
 ) {
   await client.query(
@@ -70,6 +75,32 @@ export function repository(client: PoolClient, workspaceId: string) {
     )
       throw new DomainError("FORBIDDEN");
   };
+  const hydrate = async (item: WorkItem): Promise<WorkItem> =>
+    item.type !== "TASK"
+      ? item
+      : {
+          ...item,
+          projectIds: (
+            await client.query(
+              "SELECT project_id FROM arclattice.task_project WHERE workspace_id=$1 AND task_id=$2 ORDER BY position",
+              [workspaceId, item.id],
+            )
+          ).rows.map((r) => String(r.project_id)),
+        };
+  const memberships = async (item: WorkItem) => {
+    await client.query(
+      "DELETE FROM arclattice.task_project WHERE workspace_id=$1 AND task_id=$2",
+      [workspaceId, item.id],
+    );
+    if (item.type === "TASK")
+      for (const [position, id] of (
+        item.projectIds ?? (item.projectId ? [item.projectId] : [])
+      ).entries())
+        await client.query(
+          "INSERT INTO arclattice.task_project VALUES ($1,$2,$3,$4)",
+          [workspaceId, item.id, id, position],
+        );
+  };
   const get = async (id: string): Promise<WorkItem> => {
     const row = (
       await client.query(
@@ -80,13 +111,34 @@ export function repository(client: PoolClient, workspaceId: string) {
       )
     ).rows[0];
     if (!row) throw new DomainError("NOT_FOUND");
-    return row as WorkItem;
+    return hydrate(row as WorkItem);
+  };
+  const hydrateList = async (items: WorkItem[]) => {
+    const rows = (
+      await client.query(
+        "SELECT task_id, project_id FROM arclattice.task_project WHERE workspace_id=$1 ORDER BY position",
+        [workspaceId],
+      )
+    ).rows;
+    const byTask = new Map<string, string[]>();
+    for (const row of rows) {
+      const ids = byTask.get(row.task_id) ?? [];
+      ids.push(row.project_id);
+      byTask.set(row.task_id, ids);
+    }
+    return items.map((item) =>
+      item.type === "TASK"
+        ? { ...item, projectIds: byTask.get(item.id) ?? [] }
+        : item,
+    );
   };
   const port: WorkTransaction = {
+    ...categoryPort(client, workspaceId, schedule),
+    ...workflowPort(client, workspaceId, schedule),
     get: (id) => schedule(() => get(id)),
     list: (includeDeleted = false) =>
-      schedule(
-        async () =>
+      schedule(async () =>
+        hydrateList(
           (
             await client.query(
               "SELECT " +
@@ -97,6 +149,7 @@ export function repository(client: PoolClient, workspaceId: string) {
               [workspaceId],
             )
           ).rows,
+        ),
       ),
     edges: () =>
       schedule(
@@ -111,7 +164,7 @@ export function repository(client: PoolClient, workspaceId: string) {
           ).rows,
       ),
     insert: (item) => {
-      const copy = { ...item };
+      const copy = structuredClone(item);
       return schedule(async () => {
         scope(copy);
         await member(copy.createdBy);
@@ -120,6 +173,7 @@ export function repository(client: PoolClient, workspaceId: string) {
         if (copy.version !== 1) throw new DomainError("VERSION_CONFLICT");
         try {
           await insert(client, "work_item", workFields, copy);
+          await memberships(copy);
         } catch (error) {
           if (pgCode(error) === "23505")
             throw new DomainError("VERSION_CONFLICT");
@@ -128,7 +182,7 @@ export function repository(client: PoolClient, workspaceId: string) {
       });
     },
     replace: (item, expectedVersion) => {
-      const copy = { ...item };
+      const copy = structuredClone(item);
       return schedule(async () => {
         scope(copy);
         await member(copy.createdBy);
@@ -160,6 +214,7 @@ export function repository(client: PoolClient, workspaceId: string) {
           [...parameters, workspaceId, copy.id, expectedVersion],
         );
         if (result.rowCount !== 1) throw new DomainError("VERSION_CONFLICT");
+        await memberships(copy);
       });
     },
     addEdge: (edge) => {
