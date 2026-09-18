@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-saved-accounts"
+description = "Enables the saved_accounts command without any pre-configured scope."
+commands.allow = ["saved_accounts"]
+
+[[permission]]
+identifier = "deny-saved-accounts"
+description = "Denies the saved_accounts command without any pre-configured scope."
+commands.deny = ["saved_accounts"]

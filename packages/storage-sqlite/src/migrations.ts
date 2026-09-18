@@ -136,6 +136,22 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 16,
+    name: "category-presentation",
+    sql: readFileSync(
+      new URL("./migrations/0016-category-presentation.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 17,
+    name: "project-materials",
+    sql: readFileSync(
+      new URL("./migrations/0017-project-materials.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {
@@ -259,6 +275,15 @@ export function inspectSchema(
       throw new StorageError("SCHEMA_OBJECT_MISSING");
   }
   if (version >= 12 && !objects.some((row) => row.name === "login_session"))
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (
+    version >= 17 &&
+    [
+      "project_material",
+      "project_material_activity",
+      "project_material_outbox",
+    ].some((name) => !objects.some((row) => row.name === name))
+  )
     throw new StorageError("SCHEMA_OBJECT_MISSING");
   return version;
 }

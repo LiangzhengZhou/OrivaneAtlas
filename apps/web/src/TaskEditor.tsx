@@ -15,6 +15,7 @@ interface Props {
   item: WorkItem | null;
   projects: WorkItem[];
   createType: "TASK" | "PROJECT";
+  initialProjectId?: string;
   busy: boolean;
   error: string | null;
   onClose(): void;
@@ -35,6 +36,7 @@ export function TaskEditor({
   item,
   projects,
   createType,
+  initialProjectId = "",
   busy,
   error,
   onClose,
@@ -46,7 +48,9 @@ export function TaskEditor({
   const [discard, setDiscard] = useState(false);
   const [preview, setPreview] = useState(false);
   const [title, setTitle] = useState(item?.title ?? "");
-  const [projectId, setProjectId] = useState(item?.projectId ?? "");
+  const [projectId, setProjectId] = useState(
+    item?.projectId ?? initialProjectId,
+  );
   const [extraProjects, setExtraProjects] = useState<string[]>([
     ...(item?.projectIds ?? []).slice(1),
   ]);
@@ -66,7 +70,7 @@ export function TaskEditor({
     title !== (item?.title ?? "") ||
     descriptionMd !== (item?.descriptionMd ?? "") ||
     priority !== (item?.priority ?? "MEDIUM") ||
-    projectId !== (item?.projectId ?? "") ||
+    projectId !== (item?.projectId ?? initialProjectId) ||
     JSON.stringify(extraProjects) !==
       JSON.stringify((item?.projectIds ?? []).slice(1)) ||
     activationState !== (item?.activationState ?? "ACTIVE") ||

@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Complete Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "projects": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/project"
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    },
+    "categories": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/category"
+      }
+    },
+    "recurrences": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/recurrence"
+      }
+    },
+    "spaces": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/space"
+      }
+    },
+    "documents": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/document"
+      }
+    }
+  },
+  "$defs": {
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tempId", "title"],
+      "properties": {
+        "tempId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "descriptionMd": {
+          "type": "string",
+          "maxLength": 200000
+        },
+        "parentTempId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,80}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tempId", "title"],
+      "properties": {
+        "tempId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projectIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "assigneePrincipalId": {
+          "type": ["string", "null"],
+          "maxLength": 240
+        },
+        "priority": {
+          "enum": ["LOW", "MEDIUM", "HIGH", "URGENT"]
+        },
+        "activationState": {
+          "enum": ["ACTIVE", "INACTIVE", "SCHEDULED"]
+        },
+        "activationPolicy": {
+          "enum": [
+            "MANUAL",
+            "IMMEDIATE",
+            "WHEN_DEPENDENCIES_COMPLETED",
+            "AT_SCHEDULED_TIME"
+          ]
+        },
+        "descriptionMd": {
+          "type": "string",
+          "maxLength": 200000
+        },
+        "startDate": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "dueDate": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "dependsOn": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$"
+          }
+        },
+        "projectTempId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "projectTempIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$"
+          }
+        }
+      }
+    },
+    "category": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tempId", "name"],
+      "properties": {
+        "tempId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "existingId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "projectIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "projectTempIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$"
+          }
+        }
+      }
+    },
+    "recurrence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tempId",
+        "title",
+        "startDate",
+        "timezone",
+        "frequency",
+        "interval"
+      ],
+      "properties": {
+        "tempId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projectIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "assigneePrincipalId": {
+          "type": ["string", "null"],
+          "maxLength": 240
+        },
+        "priority": {
+          "enum": ["LOW", "MEDIUM", "HIGH", "URGENT"]
+        },
+        "activationState": {
+          "enum": ["ACTIVE", "INACTIVE", "SCHEDULED"]
+        },
+        "activationPolicy": {
+          "enum": [
+            "MANUAL",
+            "IMMEDIATE",
+            "WHEN_DEPENDENCIES_COMPLETED",
+            "AT_SCHEDULED_TIME"
+          ]
+        },
+        "descriptionMd": {
+          "type": "string",
+          "maxLength": 200000
+        },
+        "projectId": {
+          "type": ["string", "null"]
+        },
+        "projectTempIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$"
+          }
+        },
+        "startDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "endDate": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frequency": {
+          "enum": ["DAILY", "WEEKLY", "MONTHLY"]
+        },
+        "interval": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 366
+        }
+      }
+    },
+    "space": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tempId", "title"],
+      "properties": {
+        "tempId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "descriptionMd": {
+          "type": "string",
+          "maxLength": 200000
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tempId", "title"],
+      "properties": {
+        "tempId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bodyMd": {
+          "type": "string",
+          "maxLength": 200000
+        },
+        "spaceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "spaceTempId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "projectTempId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "ownership": {
+          "enum": ["OWNED", "LINKED"]
+        }
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "required": ["projects"],
+      "properties": {
+        "projects": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": ["tasks"],
+      "properties": {
+        "tasks": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": ["categories"],
+      "properties": {
+        "categories": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": ["recurrences"],
+      "properties": {
+        "recurrences": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": ["spaces"],
+      "properties": {
+        "spaces": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": ["documents"],
+      "properties": {
+        "documents": {
+          "minItems": 1
+        }
+      }
+    }
+  ]
+}

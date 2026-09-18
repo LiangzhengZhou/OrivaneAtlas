@@ -9,7 +9,8 @@ export function Login({
   runtime: Runtime;
   onLogin: () => void;
 }) {
-  const { t } = useTranslation("desk");
+  const { t, i18n } = useTranslation("desk");
+  const zh = i18n.language.startsWith("zh");
   const { t: a } = useTranslation("spaces");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
@@ -17,6 +18,34 @@ export function Login({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(runtime.unavailable ? "loginNetwork" : "");
   const [saved, setSaved] = useState(() => runtime.savedAccounts());
+  const forgetLabel = runtime.native
+    ? a("forgetSecureAccount", {
+        defaultValue: zh ? "忘记账户" : "Forget account",
+      })
+    : a("forgetAccount");
+  function showLoginError(cause: unknown) {
+    const code =
+      cause && typeof cause === "object" && "code" in cause
+        ? String(cause.code)
+        : cause instanceof Error
+          ? cause.message
+          : String(cause);
+    const messages: Record<string, string> = {
+      INVALID_SERVER: "loginInvalidServer",
+      VALIDATION_ERROR: "loginInvalidInput",
+      UNAUTHORIZED: "loginCredentials",
+      ACCOUNT_MISMATCH: "loginCredentials",
+      FORBIDDEN: "loginForbidden",
+      RATE_LIMITED: "loginRateLimited",
+      LOGIN_TIMEOUT: "loginTimeout",
+      NETWORK_ERROR: "loginNetwork",
+      INVALID_RESPONSE: "loginInvalidResponse",
+      SERVER_CHANGED: "loginServerChanged",
+      SECURE_STORAGE: "loginSecureStorage",
+      VAULT_FULL: "loginVaultFull",
+    };
+    setError(messages[code] ?? "loginError");
+  }
   return (
     <main className="login-shell">
       <section className="login-story">
@@ -47,25 +76,7 @@ export function Login({
             setPassword("");
             onLogin();
           } catch (cause) {
-            const code =
-              cause && typeof cause === "object" && "code" in cause
-                ? String(cause.code)
-                : cause instanceof Error
-                  ? cause.message
-                  : String(cause);
-            const messages: Record<string, string> = {
-              INVALID_SERVER: "loginInvalidServer",
-              VALIDATION_ERROR: "loginInvalidInput",
-              UNAUTHORIZED: "loginCredentials",
-              FORBIDDEN: "loginForbidden",
-              RATE_LIMITED: "loginRateLimited",
-              LOGIN_TIMEOUT: "loginTimeout",
-              NETWORK_ERROR: "loginNetwork",
-              INVALID_RESPONSE: "loginInvalidResponse",
-              SERVER_CHANGED: "loginServerChanged",
-              SECURE_STORAGE: "loginSecureStorage",
-            };
-            setError(messages[code] ?? "loginError");
+            showLoginError(cause);
           } finally {
             setBusy(false);
           }
@@ -81,18 +92,46 @@ export function Login({
         )}
         {saved.length > 0 && (
           <section aria-label={a("savedAccounts")}>
-            <p className="muted">{a("savedAccountsHint")}</p>
+            <p className="muted">
+              {runtime.native
+                ? a("secureAccountsHint", {
+                    defaultValue: zh
+                      ? "选择已保存的账户可直接切换；会话过期后需重新登录。忘记账户仅删除本机凭据。"
+                      : "Select a saved account to switch. Expired sessions require sign-in. Forget removes only the credential on this device.",
+                  })
+                : a("savedAccountsHint")}
+            </p>
             {saved.map((item) => (
-              <div className="token-row" key={item.id}>
+              <div
+                className="token-row"
+                key={item.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr)",
+                  gap: 10,
+                }}
+              >
                 <button
                   type="button"
                   className="button secondary"
                   disabled={busy}
-                  onClick={() => {
+                  onClick={async () => {
                     setServer(item.serverUrl);
                     setUsername(item.displayName);
                     setPassword("");
                     setError("");
+                    if (runtime.native) {
+                      setBusy(true);
+                      try {
+                        await runtime.switchAccount(item.id);
+                        onLogin();
+                      } catch (cause) {
+                        showLoginError(cause);
+                        setSaved(runtime.savedAccounts());
+                      } finally {
+                        setBusy(false);
+                      }
+                    }
                   }}
                 >
                   {item.displayName}
@@ -102,17 +141,20 @@ export function Login({
                   type="button"
                   className="button secondary"
                   disabled={busy}
-                  aria-label={a("forgetAccount") + " " + item.displayName}
-                  onClick={() => {
+                  aria-label={forgetLabel + " " + item.displayName}
+                  onClick={async () => {
                     try {
-                      runtime.forgetAccount(item.id);
+                      setBusy(true);
+                      await runtime.forgetAccount(item.id);
                       setSaved(runtime.savedAccounts());
                     } catch {
                       setError("loginError");
+                    } finally {
+                      setBusy(false);
                     }
                   }}
                 >
-                  {a("forgetAccount")}
+                  {forgetLabel}
                 </button>
               </div>
             ))}
@@ -156,7 +198,13 @@ export function Login({
         </label>
         {error && (
           <p className="error" role="alert">
-            {t(error)}
+            {error === "loginVaultFull"
+              ? t(error, {
+                  defaultValue: zh
+                    ? "最多保存 20 个账户，请先忘记不再使用的账户。"
+                    : "Up to 20 accounts can be saved. Forget an unused account first.",
+                })
+              : t(error)}
           </p>
         )}
         <button

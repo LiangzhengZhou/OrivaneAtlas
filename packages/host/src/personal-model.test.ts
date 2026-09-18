@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import type { PersonalModelInput } from "@arclattice/application";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { GatewayPolicy } from "../../application/src/gateway-policy";
 
 const network = vi.hoisted(() => ({ lookup: vi.fn(), request: vi.fn() }));
 vi.mock("node:dns/promises", () => ({ lookup: network.lookup }));
@@ -37,6 +38,113 @@ afterEach(() => {
   rmSync(directory, { recursive: true });
 });
 describe("personal model vault and public-only egress", () => {
+  const gateway: GatewayPolicy = {
+    providerId: "test",
+    enabled: true,
+    capabilities: ["TEXT", "JSON", "EMBEDDING"],
+    capability: "TEXT",
+    dailyRequests: "UNLIMITED",
+    dailyBudgetMicros: 1000000,
+    currency: "USD",
+    inputMicrosPerMillion: 1000000,
+    outputMicrosPerMillion: 3000000,
+    fallbackProfileIds: [],
+  };
+  it("persists safe registry policy and fingerprints alternative changes without exposing credentials", () => {
+    const vault = openPersonalVault(directory);
+    vault.save(actor, 0, { ...input, profileId: "backup", gateway });
+    const primary = vault.save(actor, 0, {
+      ...input,
+      gateway: { ...gateway, fallbackProfileIds: ["backup"] },
+    });
+    expect(primary.route.fallbackRoutes).toHaveLength(1);
+    const opened = openPersonalVault(directory);
+    expect(opened.resolve(actor, "personal")?.route).toEqual(primary.route);
+    expect(opened.resolve(actor, "personal")?.fallbacks).toHaveLength(1);
+    expect(JSON.stringify(opened.list(actor))).not.toContain(input.key);
+    expect(
+      readFileSync(join(directory, "providers.enc"), "utf8"),
+    ).not.toContain(input.key);
+    const summaries = opened.list(actor);
+    summaries[0]!.gateway!.enabled = false;
+    expect(opened.resolve(actor, "personal", "backup")).not.toBeNull();
+    opened.save(actor, 1, {
+      ...input,
+      profileId: "backup",
+      model: "changed",
+      gateway,
+    });
+    expect(opened.resolve(actor, "personal")?.route.fingerprint).not.toBe(
+      primary.route.fingerprint,
+    );
+    opened.remove(actor, "personal", 2, "backup");
+    expect(opened.resolve(actor, "personal")).toBeNull();
+    expect(() =>
+      opened.save(actor, 1, {
+        ...input,
+        gateway: { ...gateway, fallbackProfileIds: ["missing"] },
+      }),
+    ).toThrow();
+    expect(() =>
+      opened.save(actor, 1, {
+        ...input,
+        gateway: { ...gateway, fallbackProfileIds: ["default"] },
+      }),
+    ).toThrow();
+    expect(() =>
+      opened.save(actor, 1, {
+        ...input,
+        gateway: { ...gateway, dailyRequests: -1 },
+      }),
+    ).toThrow();
+  });
+  it("executes registered embedding and JSON capabilities with pinned public transport", async () => {
+    const vault = openPersonalVault(directory);
+    vault.save(actor, 0, {
+      ...input,
+      gateway: { ...gateway, capability: "EMBEDDING" },
+    });
+    response({
+      data: [{ embedding: [0.2, -0.3] }],
+      usage: { prompt_tokens: 4, total_tokens: 4 },
+    });
+    const usage = vi.fn();
+    expect(
+      await vault
+        .resolve(actor, "personal")!
+        .complete("hello", new AbortController().signal, usage),
+    ).toBe('{"embedding":[0.2,-0.3]}');
+    expect(network.request.mock.calls[0]![0].href).toBe(
+      "https://provider.example/v1/embeddings",
+    );
+    expect(usage).toHaveBeenCalledWith({
+      inputTokens: 4,
+      outputTokens: 0,
+      source: "PROVIDER_REPORTED",
+    });
+    response({ data: [{ embedding: ["invalid"] }] });
+    await expect(
+      vault
+        .resolve(actor, "personal")!
+        .complete("hello", new AbortController().signal),
+    ).rejects.toThrow("MODEL_RESPONSE_INVALID");
+    vault.save(actor, 1, {
+      ...input,
+      gateway: { ...gateway, capability: "JSON" },
+    });
+    response({ choices: [{ message: { content: '{"valid":true}' } }] });
+    expect(
+      await vault
+        .resolve(actor, "personal")!
+        .complete("hello", new AbortController().signal),
+    ).toBe('{"valid":true}');
+    response({ choices: [{ message: { content: "invalid json" } }] });
+    await expect(
+      vault
+        .resolve(actor, "personal")!
+        .complete("hello", new AbortController().signal),
+    ).rejects.toThrow();
+  });
   it("keeps named routes independently versioned, encrypted, isolated and never falls back", () => {
     const vault = openPersonalVault(directory);
     const legacy = vault.save(actor, 0, input);

@@ -14,7 +14,7 @@ export function categoryPort(
       guard();
       const rows = db
         .prepare(
-          "SELECT id, workspace_id AS workspaceId, name, version, created_by AS createdBy, updated_by AS updatedBy, created_at AS createdAt, updated_at AS updatedAt, deleted_at AS deletedAt FROM project_category WHERE workspace_id=? ORDER BY created_at,id",
+          "SELECT id, workspace_id AS workspaceId, name, icon, color, position, version, created_by AS createdBy, updated_by AS updatedBy, created_at AS createdAt, updated_at AS updatedAt, deleted_at AS deletedAt FROM project_category WHERE workspace_id=? ORDER BY position,created_at,id",
         )
         .all(workspaceId);
       return rows.map(
@@ -44,7 +44,7 @@ export function categoryPort(
         )
           throw new DomainError("VERSION_CONFLICT");
         db.prepare(
-          "INSERT INTO project_category VALUES (?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO project_category (workspace_id,id,name,version,created_by,updated_by,created_at,updated_at,deleted_at,icon,color,position) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         ).run(
           workspaceId,
           c.id,
@@ -55,11 +55,14 @@ export function categoryPort(
           c.createdAt,
           c.updatedAt,
           c.deletedAt,
+          c.icon ?? "",
+          c.color ?? "#7863c5",
+          c.position ?? 0,
         );
       } else if (
         db
           .prepare(
-            "UPDATE project_category SET name=?,version=?,updated_by=?,updated_at=?,deleted_at=? WHERE workspace_id=? AND id=? AND version=?",
+            "UPDATE project_category SET name=?,version=?,updated_by=?,updated_at=?,deleted_at=?,icon=?,color=?,position=? WHERE workspace_id=? AND id=? AND version=?",
           )
           .run(
             c.name,
@@ -67,6 +70,9 @@ export function categoryPort(
             c.updatedBy,
             c.updatedAt,
             c.deletedAt,
+            c.icon ?? "",
+            c.color ?? "#7863c5",
+            c.position ?? 0,
             workspaceId,
             c.id,
             expected,

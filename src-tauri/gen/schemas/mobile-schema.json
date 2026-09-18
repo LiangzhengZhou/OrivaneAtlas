@@ -189,10 +189,34 @@
           "markdownDescription": "Enables the configure_server command without any pre-configured scope."
         },
         {
+          "description": "Enables the detach_account command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-detach-account",
+          "markdownDescription": "Enables the detach_account command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the forget_account command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-forget-account",
+          "markdownDescription": "Enables the forget_account command without any pre-configured scope."
+        },
+        {
           "description": "Enables the install_app_update command without any pre-configured scope.",
           "type": "string",
           "const": "allow-install-app-update",
           "markdownDescription": "Enables the install_app_update command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the saved_accounts command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-saved-accounts",
+          "markdownDescription": "Enables the saved_accounts command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the select_account command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-select-account",
+          "markdownDescription": "Enables the select_account command without any pre-configured scope."
         },
         {
           "description": "Enables the server_request command without any pre-configured scope.",
@@ -213,10 +237,34 @@
           "markdownDescription": "Denies the configure_server command without any pre-configured scope."
         },
         {
+          "description": "Denies the detach_account command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-detach-account",
+          "markdownDescription": "Denies the detach_account command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the forget_account command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-forget-account",
+          "markdownDescription": "Denies the forget_account command without any pre-configured scope."
+        },
+        {
           "description": "Denies the install_app_update command without any pre-configured scope.",
           "type": "string",
           "const": "deny-install-app-update",
           "markdownDescription": "Denies the install_app_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the saved_accounts command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-saved-accounts",
+          "markdownDescription": "Denies the saved_accounts command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the select_account command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-select-account",
+          "markdownDescription": "Denies the select_account command without any pre-configured scope."
         },
         {
           "description": "Denies the server_request command without any pre-configured scope.",

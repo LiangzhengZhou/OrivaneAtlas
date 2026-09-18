@@ -2,6 +2,8 @@
 
 Orivane Atlas is a server-backed workspace. The server stores authoritative workspace data; web, Windows, and Android clients connect to that server. Clients may keep local drafts, but this is not a complete offline replica or conflict-free sync engine.
 
+Version 0.0.8 requires matching server code, SQLite schema 17 and PostgreSQL repository schema 8. Upgrade the server before clients. Back up the database and separate provider vault and validate restoration to a new file. Native clients now retain up to 20 encrypted account sessions across servers, revalidate identity when switching, and isolate drafts by server and account. The historical 0.0.7 account limitations below describe the older release.
+
 ## Requirements
 
 - Node.js 24 or a compatible current LTS release

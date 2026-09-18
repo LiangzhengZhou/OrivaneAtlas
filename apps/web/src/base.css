@@ -101,6 +101,48 @@ kbd {
   display: grid;
   grid-template-columns: 238px minmax(0, 1fr);
   min-height: 100vh;
+  transition: grid-template-columns 180ms ease;
+}
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 68px minmax(0, 1fr);
+}
+.sidebar-collapsed .sidebar {
+  padding-left: 10px;
+  padding-right: 10px;
+  align-items: center;
+}
+.sidebar-collapsed .brand-logo {
+  width: 42px;
+  object-fit: cover;
+  object-position: left;
+}
+.sidebar-collapsed .workspace-switch {
+  justify-content: center;
+  padding: 8px;
+}
+.sidebar-collapsed .workspace-switch > div,
+.sidebar-collapsed .section-label,
+.sidebar-collapsed .nav-item span,
+.sidebar-collapsed .storage-card {
+  display: none;
+}
+.sidebar-collapsed .nav-item {
+  justify-content: center;
+  padding: 11px 8px;
+  gap: 0;
+}
+.sidebar-collapsed .nav-drag-handle {
+  display: none;
+}
+.nav-drag-handle {
+  opacity: 0.35;
+  margin-left: -7px;
+}
+.nav-item[draggable="true"] {
+  cursor: grab;
+}
+.nav-item[draggable="true"]:active {
+  cursor: grabbing;
 }
 .sidebar {
   background: #1e2435;
@@ -269,6 +311,104 @@ kbd {
   display: flex;
   align-items: center;
   gap: 20px;
+}
+.compact-create {
+  min-height: 34px;
+  padding: 6px 11px;
+  font-size: 14px;
+}
+.sidebar-toggle {
+  order: -1;
+}
+.sidebar .mobile-navigation-toggle {
+  display: none;
+}
+.project-summary {
+  padding: 20px;
+  overflow-wrap: anywhere;
+}
+.project-summary h1 {
+  margin: 0;
+}
+.project-material {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+}
+.project-workspace {
+  min-width: 0;
+}
+.project-workspace [role="tab"][aria-selected="true"] {
+  color: #5945bf;
+  background: #eeeafa;
+  box-shadow: inset 0 -2px #7762de;
+}
+.sidebar .mobile-navigation-toggle:hover {
+  color: #fff;
+  background: #ffffff20;
+}
+.project-workspace select {
+  max-width: 100%;
+}
+.project-workspace .organization-toolbar label {
+  min-width: 0;
+  max-width: 100%;
+}
+.plan-tree-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fafaff;
+  color: var(--muted);
+}
+.plan-tree,
+.plan-tree-children,
+.plan-tree-tasks {
+  list-style: none;
+  padding: 0;
+}
+.plan-tree {
+  margin: 14px 0;
+  display: grid;
+  gap: 8px;
+}
+.plan-tree-node {
+  border-left: 3px solid #a694ee;
+  padding: 9px 12px;
+  background: #f7f5ff;
+  border-radius: 6px;
+}
+.plan-tree-project,
+.plan-tree-task {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.plan-tree-project span,
+.plan-tree-task span,
+.plan-tree-tasks span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.plan-tree-tasks {
+  margin: 7px 0 0 18px;
+  display: grid;
+  gap: 4px;
+}
+.plan-tree-children {
+  margin: 8px 0 0;
+  display: grid;
+  gap: 7px;
+}
+.plan-tree-task {
+  padding: 7px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
 }
 .mode-badge {
   display: flex;
@@ -1368,6 +1508,42 @@ svg.status-dot {
     padding: 16px 16px 0;
     overflow: visible;
   }
+  .sidebar-collapsed .sidebar {
+    padding: 16px 16px 0;
+    align-items: stretch;
+  }
+  .sidebar-collapsed .sidebar .brand-logo {
+    width: 170px;
+    object-fit: contain;
+  }
+  .sidebar-collapsed .nav-item span {
+    display: inline;
+  }
+  .sidebar-collapsed .nav-item {
+    justify-content: flex-start;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .sidebar-toggle {
+    display: none;
+  }
+  .sidebar .mobile-navigation-toggle {
+    display: flex;
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    color: white;
+  }
+  .sidebar .brand {
+    padding-right: 88px;
+  }
+  .app-shell.mobile-navigation-closed .sidebar nav,
+  .app-shell.mobile-navigation-closed .sidebar-bottom {
+    display: none;
+  }
+  .app-shell.mobile-navigation-closed .sidebar {
+    padding-bottom: 12px;
+  }
   .brand {
     font-size: 19px;
   }
@@ -1378,6 +1554,8 @@ svg.status-dot {
   }
   .sidebar nav {
     display: flex;
+    min-width: 0;
+    max-width: 100%;
     overflow: auto;
     margin-top: 16px;
     padding-bottom: 9px;
@@ -1406,7 +1584,7 @@ svg.status-dot {
   .sidebar-bottom {
     padding: 0;
     position: absolute;
-    right: 12px;
+    right: 60px;
     top: 14px;
   }
   .sidebar-bottom .nav-item {
@@ -1418,8 +1596,15 @@ svg.status-dot {
     width: 18px;
   }
   .topbar {
-    height: 51px;
-    padding: 0 18px;
+    height: auto;
+    min-height: 51px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 18px;
+  }
+  .topbar .breadcrumb,
+  .topbar .mode-badge {
+    white-space: nowrap;
   }
   .topbar-actions {
     gap: 9px;

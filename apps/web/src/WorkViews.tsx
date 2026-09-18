@@ -1,6 +1,7 @@
 import {
   blockers,
   dependency,
+  isExecutionActive,
   type WorkEdge,
   type WorkItem,
   type WorkStatus,
@@ -21,6 +22,7 @@ import { type CSSProperties, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface WorkProps {
+  today: string;
   items: readonly WorkItem[];
   allItems: readonly WorkItem[];
   edges: readonly WorkEdge[];
@@ -32,6 +34,7 @@ interface WorkProps {
   onOrganize(item: WorkItem, action: "archive" | "unarchive" | "delete"): void;
 }
 function Task({
+  today,
   item,
   allItems,
   edges,
@@ -44,6 +47,7 @@ function Task({
 }: Omit<WorkProps, "items"> & { item: WorkItem }) {
   const { t } = useTranslation(["common", "work"]);
   const blocked = blockers(item, allItems, edges).length > 0;
+  const activated = isExecutionActive(item, today);
   const inherited = archiveSource(item);
   return (
     <article
@@ -132,7 +136,16 @@ function Task({
             {item.dueDate}
           </time>
         )}
-        {item.status === "TODO" && (
+        <span
+          className={`activation-badge ${activated ? "active" : "inactive"}`}
+        >
+          {t(
+            activated
+              ? "desk:activationStates.ACTIVE"
+              : "desk:activationStates.INACTIVE",
+          )}
+        </span>
+        {item.status === "TODO" && activated && (
           <span className={`readiness ${blocked ? "blocked" : "ready"}`}>
             {blocked && <LockKeyhole size={12} aria-hidden="true" />}
             {t(blocked ? "work:blocked" : "work:ready")}

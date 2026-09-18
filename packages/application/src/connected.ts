@@ -1,4 +1,11 @@
 import { type ActorContext, DomainError } from "@arclattice/domain";
+import {
+  type GatewayMoney,
+  type GatewayPolicy,
+  type GatewaySettlement,
+  gatewayReservation,
+  settleGatewayMoney,
+} from "./gateway-policy";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
 
 export interface EntityRef {
@@ -21,6 +28,8 @@ export interface KnowledgeLink extends ConnectedEntity {
   relation: "REFERENCES" | "RELATED";
 }
 export interface ModelRoute {
+  gateway?: GatewayPolicy;
+  fallbackRoutes?: ModelRoute[];
   profileId?: string;
   scope?: string;
   fingerprint: string;
@@ -40,6 +49,7 @@ export type RunStatus =
   | "INTERRUPTED";
 export interface AgentRun extends ConnectedEntity {
   attempt?: {
+    money?: GatewayMoney;
     id: string;
     reservedAt: string;
     settledAt: string | null;
@@ -78,6 +88,7 @@ export interface ModelUsage {
   source: "PROVIDER_REPORTED";
 }
 export interface ModelPort {
+  fallbacks?: ModelPort[];
   route: ModelRoute;
   complete(
     prompt: string,
@@ -193,7 +204,11 @@ export class ConnectedService {
   ) {
     await this.auth.require(context, "work:update");
     const old = await this.store.getRun(id);
-    if (old.workspaceId !== context.workspaceId || old.deletedAt)
+    if (
+      old.workspaceId !== context.workspaceId ||
+      old.createdBy !== context.principalId ||
+      old.deletedAt
+    )
       throw new DomainError("NOT_FOUND");
     if (old.status !== "WAITING_APPROVAL" || old.version !== version)
       throw new DomainError("VERSION_CONFLICT");
@@ -204,8 +219,15 @@ export class ConnectedService {
       if (
         runs.some((r) => r.status === "RUNNING") ||
         runs.filter(
-          (r) => r.approvedAt?.slice(0, 10) === this.clock.now().slice(0, 10),
-        ).length >= route.maxRunsPerDay
+          (r) =>
+            r.approvedAt?.slice(0, 10) === this.clock.now().slice(0, 10) &&
+            (!route.gateway ||
+              (r.createdBy === context.principalId &&
+                (r.route.scope ?? "personal") === (route.scope ?? "personal"))),
+        ).length >=
+          (route.gateway?.dailyRequests === "UNLIMITED"
+            ? Number.POSITIVE_INFINITY
+            : (route.gateway?.dailyRequests ?? route.maxRunsPerDay))
       )
         throw new DomainError("FORBIDDEN");
     }
@@ -237,12 +259,14 @@ export class ConnectedService {
     )
       throw new DomainError("VERSION_CONFLICT");
     const now = this.clock.now();
+    const money = gatewayReservation(old, await this.store.runs(), now);
     const run: AgentRun = {
       ...old,
       version: old.version + 1,
       updatedAt: now,
       updatedBy: context.principalId,
       attempt: {
+        ...(money ? { money } : {}),
         id: this.ids.next(),
         reservedAt: now,
         settledAt: null,
@@ -261,6 +285,7 @@ export class ConnectedService {
     error: string | null,
     interrupted = false,
     usage?: ModelUsage,
+    settlement?: GatewaySettlement,
   ) {
     await this.auth.require(context, "work:update");
     const old = await this.store.getRun(id);
@@ -294,6 +319,9 @@ export class ConnectedService {
         ? {
             attempt: {
               ...old.attempt,
+              ...(old.attempt.money
+                ? { money: settleGatewayMoney(old, usage, settlement)! }
+                : {}),
               ...(usage ? { usage } : {}),
               settledAt: this.clock.now(),
               outcome: (!error && !interrupted ? "SUCCEEDED" : "UNKNOWN") as

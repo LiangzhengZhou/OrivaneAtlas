@@ -1,0 +1,24 @@
+.category-presentation-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.category-presentation-fields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.category-presentation-fields input {
+  max-width: 100%;
+}
+.category-color {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  flex-shrink: 0;
+}
+.category-manager li {
+  overflow-wrap: anywhere;
+}

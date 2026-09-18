@@ -60,6 +60,10 @@ pub fn run() {
             update::check_app_update,
             update::install_app_update,
             transport::configure_server,
+            transport::saved_accounts,
+            transport::select_account,
+            transport::forget_account,
+            transport::detach_account,
             transport::server_request
         ])
         .run(tauri::generate_context!())

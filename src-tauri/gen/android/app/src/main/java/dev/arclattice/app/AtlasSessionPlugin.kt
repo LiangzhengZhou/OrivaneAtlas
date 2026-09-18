@@ -45,7 +45,7 @@ class AtlasSessionPlugin(private val activity: Activity) : Plugin(activity) {
             var value: String? = null
             if (file.exists()) {
                 try {
-                    require(file.length() in 29..16384)
+                    require(file.length() in 29..131072)
                     val bytes = file.readBytes()
                     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                     cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
@@ -59,7 +59,7 @@ class AtlasSessionPlugin(private val activity: Activity) : Plugin(activity) {
     fun save(invoke: Invoke) {
         try {
             val value = invoke.parseArgs(SessionSaveArgs::class.java).value
-            require(value.length <= 8192)
+            require(value.toByteArray(Charsets.UTF_8).size <= 98304)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, key())
             require(cipher.iv.size == 12)

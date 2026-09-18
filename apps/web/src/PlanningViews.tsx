@@ -52,7 +52,7 @@ export function ProjectView({
         )),
   );
   return (
-    <div>
+    <div className="projects-overview">
       <div className="organization-toolbar">
         <label>
           {t("categories.filter")}
@@ -135,27 +135,36 @@ export function ProjectView({
                     {t("inheritedArchive", { title: inherited.title })}
                   </p>
                 )}
-                <button
-                  type="button"
-                  className="text-button"
-                  disabled={busy || !!inherited}
-                  onClick={() =>
-                    onOrganize(
-                      project,
-                      isArchived(project) ? "unarchive" : "archive",
-                    )
-                  }
-                >
-                  {t(isArchived(project) ? "unarchive" : "archive")}
-                </button>
-                <button
-                  type="button"
-                  className="text-button"
-                  onClick={() => onTasks(project.id)}
-                >
-                  {t("projectTasks")}
-                  <ArrowUpRight size={16} />
-                </button>
+                <div className="project-card-actions">
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={() => onOpen(project)}
+                  >
+                    {t("openProject")}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-button"
+                    disabled={busy || !!inherited}
+                    onClick={() =>
+                      onOrganize(
+                        project,
+                        isArchived(project) ? "unarchive" : "archive",
+                      )
+                    }
+                  >
+                    {t(isArchived(project) ? "unarchive" : "archive")}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => onTasks(project.id)}
+                  >
+                    {t("projectTasks")}
+                    <ArrowUpRight size={16} />
+                  </button>
+                </div>
               </section>
             );
           })

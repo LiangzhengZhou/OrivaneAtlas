@@ -1,9 +1,10 @@
-import type { Note, OrganizeInput } from "@arclattice/application";
+import type { EntityRef, Note, OrganizeInput } from "@arclattice/application";
 import {
   type ActorContext,
   DomainError,
   inheritedArchiveSource,
   isExecutionActive,
+  isGloballyActiveTask,
   isReady,
   priorities,
   projectDescendants,
@@ -21,11 +22,13 @@ import {
   Download,
   FolderKanban,
   GitBranch,
+  GripVertical,
   Layers2,
   LayoutDashboard,
   ListTodo,
   LogOut,
   NotebookPen,
+  PanelLeft,
   Plus,
   RefreshCw,
   Search,
@@ -45,6 +48,7 @@ import {
   savePreference,
 } from "./bootstrap";
 import { AiView, KnowledgeView } from "./ConnectedViews";
+import { DensitySettings } from "./DensitySettings";
 import { type DocumentRequest, DocumentWorkspace } from "./DocumentWorkspace";
 import { GraphCanvas } from "./GraphCanvas";
 import { LibraryView } from "./LibraryView";
@@ -52,6 +56,7 @@ import { Login } from "./Login";
 import { PrivateImageContext } from "./Markdown";
 import { downloadText } from "./NoteEditor";
 import { CalendarView, ProjectView } from "./PlanningViews";
+import { ProjectWorkspace } from "./ProjectWorkspace";
 import { TaskEditor } from "./TaskEditor";
 import { WorkflowManager } from "./WorkflowManager";
 import { Dependencies, TaskList, WorkBoard } from "./WorkViews";
@@ -65,6 +70,7 @@ type View =
   | "overview"
   | "focus"
   | "tasks"
+  | "planning"
   | "board"
   | "projects"
   | "calendar"
@@ -82,6 +88,7 @@ const navigation = [
   { view: "overview", icon: LayoutDashboard },
   { view: "focus", icon: Target },
   { view: "tasks", icon: ListTodo },
+  { view: "planning", icon: FolderKanban },
   { view: "board", icon: Columns3 },
   { view: "projects", icon: FolderKanban },
   { view: "calendar", icon: CalendarDays },
@@ -90,6 +97,9 @@ const navigation = [
   { view: "journal", icon: NotebookPen },
   { view: "trash", icon: Trash2 },
 ] as const;
+type NavigationView = (typeof navigation)[number]["view"];
+const NAVIGATION_ORDER_KEY = "orivane-atlas.navigation-order";
+const SIDEBAR_COLLAPSED_KEY = "orivane-atlas.sidebar-collapsed";
 function currentView(): View {
   const hash = location.hash.slice(1);
   return [...navigation.map((n) => n.view), "settings"].includes(hash)
@@ -155,6 +165,69 @@ function Workbench({
       ? a(value)
       : t(value);
   const [view, setView] = useState<View>(currentView);
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(true);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [creation, setCreation] = useState<{
+    type: "TASK" | "PROJECT";
+    parentId: string;
+  }>({ type: "TASK", parentId: "" });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [navigationOrder, setNavigationOrder] = useState<NavigationView[]>(
+    () => {
+      const fallback = navigation.map((item) => item.view);
+      try {
+        const saved = JSON.parse(
+          localStorage.getItem(NAVIGATION_ORDER_KEY) ?? "null",
+        );
+        if (!Array.isArray(saved)) return fallback;
+        return [
+          ...saved.filter((value): value is NavigationView =>
+            fallback.includes(value),
+          ),
+          ...fallback.filter((value) => !saved.includes(value)),
+        ];
+      } catch {
+        return fallback;
+      }
+    },
+  );
+  const [draggedNavigation, setDraggedNavigation] =
+    useState<NavigationView | null>(null);
+  function toggleSidebar() {
+    setSidebarCollapsed((collapsed) => {
+      const next = !collapsed;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        /* best effort UI preference */
+      }
+      return next;
+    });
+  }
+  function moveNavigation(target: NavigationView) {
+    if (!draggedNavigation || draggedNavigation === target) return;
+    setNavigationOrder((current) => {
+      const next = [...current];
+      const from = next.indexOf(draggedNavigation);
+      const to = next.indexOf(target);
+      if (from < 0 || to < 0) return current;
+      next.splice(from, 1);
+      next.splice(to, 0, draggedNavigation);
+      try {
+        localStorage.setItem(NAVIGATION_ORDER_KEY, JSON.stringify(next));
+      } catch {
+        /* best effort UI preference */
+      }
+      return next;
+    });
+    setDraggedNavigation(null);
+  }
   const libraryDraft = useRef(false);
   const [documentRequest, setDocumentRequest] =
     useState<DocumentRequest | null>(null);
@@ -165,6 +238,7 @@ function Workbench({
     setDocumentVisible(true);
   }
   const [snapshot, setSnapshot] = useState<Snapshot>({
+    projectMaterials: [],
     items: [],
     edges: [],
     notes: [],
@@ -197,7 +271,10 @@ function Workbench({
       return;
     if (await run(() => runtime.organize(input))) setSelectedNotes([]);
   }
-  const [status, setStatus] = useState("ALL");
+  const [status, setStatus] = useState(() =>
+    currentView() === "tasks" ? "UNFINISHED" : "ALL",
+  );
+  const [activationFilter, setActivationFilter] = useState("ALL");
   const [priority, setPriority] = useState("ALL");
   const [sort, setSort] = useState("updated");
   const [projectFilter, setProjectFilter] = useState("ALL");
@@ -302,7 +379,8 @@ function Workbench({
       setView(currentView());
       setDocumentVisible(false);
       setQuery("");
-      setStatus("ALL");
+      setStatus(currentView() === "tasks" ? "UNFINISHED" : "ALL");
+      setActivationFilter("ALL");
       setPriority("ALL");
     };
     window.addEventListener("hashchange", listener);
@@ -332,7 +410,7 @@ function Workbench({
         event.preventDefault();
         setError(null);
         if (view === "notes") setNoteEditor("NOTE");
-        else if (view !== "journal") setEditor("new");
+        else if (view !== "journal") open("new");
       }
     };
     window.addEventListener("keydown", listener);
@@ -403,8 +481,18 @@ function Workbench({
   )
     .filter(
       (item) =>
+        item.type === "TASK" &&
+        (!["tasks", "board"].includes(view) ||
+          isExecutionActive(item, utcDay)) &&
+        (view !== "planning" ||
+          activationFilter === "ALL" ||
+          isExecutionActive(item, utcDay) ===
+            (activationFilter === "ACTIVE")) &&
         matches(item.title, item.descriptionMd) &&
-        (status === "ALL" || item.status === status) &&
+        (status === "ALL" ||
+          (status === "UNFINISHED"
+            ? ["TODO", "IN_PROGRESS"].includes(item.status)
+            : item.status === status)) &&
         (priority === "ALL" || item.priority === priority) &&
         (projectFilter === "ALL" ||
           (projectFilter === "NONE"
@@ -439,13 +527,37 @@ function Workbench({
     setShowArchived(false);
     setFolderFilter(null);
     setQuery("");
-    setStatus("ALL");
+    setStatus(next === "tasks" ? "UNFINISHED" : "ALL");
+    setActivationFilter("ALL");
     setPriority("ALL");
     setSaved(false);
   }
   function open(item: WorkItem | "new") {
     setError(null);
+    if (item === "new")
+      setCreation({
+        type: view === "projects" ? "PROJECT" : "TASK",
+        parentId: "",
+      });
     setEditor(item);
+  }
+  function openEntity(ref: EntityRef) {
+    if (ref.kind === "WORK") {
+      const item = snapshot.items.find((entry) => entry.id === ref.id);
+      if (item) open(item);
+    } else if (ref.kind === "NOTE") {
+      const note = snapshot.notes.find((entry) => entry.id === ref.id);
+      if (note) openNote(note);
+    } else {
+      const entity = snapshot.library.find((entry) => entry.id === ref.id);
+      if (entity)
+        openDocument({
+          key: entity.id,
+          kind: entity.kind,
+          entity,
+          spaceId: entity.spaceId,
+        });
+    }
   }
   function openNote(note: Note | "NOTE" | "JOURNAL") {
     setError(null);
@@ -466,6 +578,7 @@ function Workbench({
   const onStatus = (item: WorkItem, next: WorkStatus) =>
     run(() => service.update(context, item.id, item.version, { status: next }));
   const workProps = {
+    today: utcDay,
     allItems,
     edges: snapshot.edges,
     busy,
@@ -675,8 +788,16 @@ function Workbench({
     );
   };
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div
+      className={
+        "app-shell " +
+        (sidebarCollapsed ? "sidebar-collapsed " : "") +
+        (mobileNavigationOpen
+          ? "mobile-navigation-open"
+          : "mobile-navigation-closed")
+      }
+    >
+      <aside className="sidebar" id="workspace-sidebar">
         <div className="brand">
           <img
             className="brand-logo"
@@ -684,6 +805,18 @@ function Workbench({
             alt="Orivane Atlas"
           />
         </div>
+        <button
+          type="button"
+          className="icon-button mobile-navigation-toggle"
+          aria-label={t(
+            mobileNavigationOpen ? "collapseSidebar" : "expandSidebar",
+          )}
+          aria-expanded={mobileNavigationOpen}
+          aria-controls="workspace-navigation"
+          onClick={() => setMobileNavigationOpen((value) => !value)}
+        >
+          <PanelLeft size={20} />
+        </button>
         <div className="workspace-switch">
           <span className="workspace-avatar">A</span>
           <div>
@@ -691,9 +824,11 @@ function Workbench({
             <small>{t("privateWorkspace")}</small>
           </div>
         </div>
-        <nav aria-label={t("workspace")}>
+        <nav id="workspace-navigation" aria-label={t("workspace")}>
           <p className="section-label">{t("workspace")}</p>
-          {navigation
+          {navigationOrder
+            .map((next) => navigation.find((item) => item.view === next)!)
+            .filter(Boolean)
             .filter(
               (n) =>
                 n.view !== "admin" ||
@@ -706,12 +841,28 @@ function Workbench({
                 key={next}
                 className={"nav-item " + (view === next ? "active" : "")}
                 aria-current={view === next ? "page" : undefined}
+                aria-label={viewLabel(next)}
                 onClick={() => navigate(next)}
+                draggable
+                onDragStart={() => setDraggedNavigation(next)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => moveNavigation(next)}
+                title={sidebarCollapsed ? viewLabel(next) : undefined}
               >
+                <GripVertical
+                  className="nav-drag-handle"
+                  size={14}
+                  aria-hidden="true"
+                />
                 <Icon size={18} />
                 <span>{viewLabel(next)}</span>
                 {next === "tasks" && (
-                  <span className="nav-count">{count(items.length)}</span>
+                  <span className="nav-count">
+                    {count(
+                      items.filter((item) => isGloballyActiveTask(item, utcDay))
+                        .length,
+                    )}
+                  </span>
                 )}
                 {next === "notes" && (
                   <span className="nav-count">
@@ -731,9 +882,10 @@ function Workbench({
             className={"nav-item " + (view === "settings" ? "active" : "")}
             type="button"
             onClick={() => navigate("settings")}
+            aria-label={t("settings")}
           >
             <Settings2 size={18} />
-            {t("settings")}
+            <span>{t("settings")}</span>
           </button>
         </div>
       </aside>
@@ -745,6 +897,18 @@ function Workbench({
             <strong>{viewLabel(view)}</strong>
           </div>
           <div className="topbar-actions">
+            <button
+              className="icon-button sidebar-toggle"
+              type="button"
+              aria-label={
+                sidebarCollapsed ? t("expandSidebar") : t("collapseSidebar")
+              }
+              aria-expanded={!sidebarCollapsed}
+              aria-controls="workspace-sidebar"
+              onClick={toggleSidebar}
+            >
+              <PanelLeft size={17} />
+            </button>
             <span
               className={
                 "mode-badge " + (error || syncOffline ? "offline" : "")
@@ -781,44 +945,19 @@ function Workbench({
             >
               <RefreshCw size={17} />
             </button>
-          </div>
-        </header>
-        <DocumentWorkspace
-          request={documentRequest}
-          visible={documentVisible}
-          runtime={runtime}
-          snapshot={snapshot}
-          onDirty={setDocumentDirty}
-          onChange={() => void refresh()}
-          onBrowse={() => setDocumentVisible(false)}
-          onVisibility={() => setDocumentVisible(true)}
-        />
-        <div className="content" hidden={documentVisible}>
-          <section className="page-heading">
-            <div>
-              <p className="eyebrow">
-                {view === "overview"
-                  ? new Intl.DateTimeFormat(i18n.language, {
-                      month: "long",
-                      day: "numeric",
-                      weekday: "long",
-                    }).format(new Date())
-                  : t("privateWorkspace")}
-              </p>
-              <h1>{view === "overview" ? t("welcome") : viewLabel(view)}</h1>
-              <p className="subtitle">{viewLabel(view + "Hint")}</p>
-            </div>
-            {![
-              "settings",
-              "trash",
-              "knowledge",
-              "ai",
-              "library",
-              "account",
-              "admin",
-            ].includes(view) && (
+            {!(
+              [
+                "settings",
+                "trash",
+                "knowledge",
+                "ai",
+                "library",
+                "account",
+                "admin",
+              ] as string[]
+            ).includes(view) && (
               <button
-                className="button primary"
+                className="button primary compact-create"
                 type="button"
                 disabled={busy || loading}
                 onClick={create}
@@ -833,10 +972,21 @@ function Workbench({
                         ? "newProject"
                         : "newTask",
                 )}
-                {view !== "journal" && <kbd>N</kbd>}
               </button>
             )}
-          </section>
+          </div>
+        </header>
+        <DocumentWorkspace
+          request={documentRequest}
+          visible={documentVisible}
+          runtime={runtime}
+          snapshot={snapshot}
+          onDirty={setDocumentDirty}
+          onChange={() => void refresh()}
+          onBrowse={() => setDocumentVisible(false)}
+          onVisibility={() => setDocumentVisible(true)}
+        />
+        <div className="content" hidden={documentVisible}>
           {errorMessage && !editor && !noteEditor && (
             <div className="error" role="alert">
               {errorMessage}
@@ -859,6 +1009,15 @@ function Workbench({
               )}
             </div>
           )}
+          <div
+            className="settings-panel"
+            hidden={view !== "settings" || loading}
+          >
+            <DensitySettings
+              actor={context}
+              controls={view === "settings" && !loading}
+            />
+          </div>
           {loading ? (
             <div className="loading-panel" role="status">
               {t("connecting")}
@@ -1056,45 +1215,82 @@ function Workbench({
             </>
           ) : view === "projects" ? (
             <>
-              <ProjectView
-                categories={snapshot.categories ?? []}
-                onSaveCategory={(input) =>
-                  run(() => runtime.saveCategory(input))
-                }
-                projects={projects}
-                items={allItems}
-                busy={busy}
-                isArchived={isArchived}
-                archiveSource={archiveSource}
-                onOrganize={workProps.onOrganize}
-                onOpen={open}
-                onTasks={(id) => {
-                  navigate("tasks");
-                  setProjectFilter(id);
-                  const project = projects.find((p) => p.id === id);
-                  setShowArchived(!!project && isArchived(project));
-                }}
-              />
-              <WorkflowManager
-                records={snapshot.workflows ?? []}
-                projects={projects}
-                busy={busy}
-                preview={(projectId, manifest) =>
-                  run(() => runtime.previewPlan(projectId, manifest))
-                }
-                publish={(id, version) =>
-                  run(() => runtime.publishPlan(id, version))
-                }
-                save={(input) => run(() => runtime.saveRecurrence(input))}
-                generate={(id, version, from, to) =>
-                  run(() => runtime.generateRecurrence(id, version, from, to))
-                }
-                backfill={(id, version, completedAt) =>
-                  run(() =>
-                    runtime.backfillOccurrence(id, version, completedAt),
-                  )
-                }
-              />
+              {projects.find((project) => project.id === activeProjectId) ? (
+                <ProjectWorkspace
+                  runtime={runtime}
+                  run={run}
+                  key={activeProjectId}
+                  project={
+                    projects.find((project) => project.id === activeProjectId)!
+                  }
+                  snapshot={snapshot}
+                  busy={busy}
+                  onBack={() => setActiveProjectId(null)}
+                  onProject={setActiveProjectId}
+                  onOpen={openEntity}
+                  onCreate={(type, parentId) => {
+                    setCreation({ type, parentId });
+                    setError(null);
+                    setEditor("new");
+                  }}
+                  onLink={(from, to) =>
+                    run(() => runtime.link(from, to, "REFERENCES"))
+                  }
+                  onUnlink={(link) =>
+                    run(() => runtime.unlink(link.id, link.version))
+                  }
+                  onAddEdge={(from, to) =>
+                    run(() => service.addEdge(context, from, to))
+                  }
+                  onRemoveEdge={(id) =>
+                    run(() => service.removeEdge(context, id))
+                  }
+                />
+              ) : (
+                <>
+                  <ProjectView
+                    categories={snapshot.categories ?? []}
+                    onSaveCategory={(input) =>
+                      run(() => runtime.saveCategory(input))
+                    }
+                    projects={projects}
+                    items={allItems}
+                    busy={busy}
+                    isArchived={isArchived}
+                    archiveSource={archiveSource}
+                    onOrganize={workProps.onOrganize}
+                    onOpen={(project) => setActiveProjectId(project.id)}
+                    onTasks={(id) => {
+                      navigate("tasks");
+                      setProjectFilter(id);
+                      const project = projects.find((p) => p.id === id);
+                      setShowArchived(!!project && isArchived(project));
+                    }}
+                  />
+                  <WorkflowManager
+                    records={snapshot.workflows ?? []}
+                    projects={projects}
+                    busy={busy}
+                    preview={(projectId, manifest) =>
+                      run(() => runtime.previewPlan(projectId, manifest))
+                    }
+                    publish={(id, version) =>
+                      run(() => runtime.publishPlan(id, version))
+                    }
+                    save={(input) => run(() => runtime.saveRecurrence(input))}
+                    generate={(id, version, from, to) =>
+                      run(() =>
+                        runtime.generateRecurrence(id, version, from, to),
+                      )
+                    }
+                    backfill={(id, version, completedAt) =>
+                      run(() =>
+                        runtime.backfillOccurrence(id, version, completedAt),
+                      )
+                    }
+                  />
+                </>
+              )}
             </>
           ) : view === "calendar" ? (
             <CalendarView
@@ -1260,9 +1456,7 @@ function Workbench({
                             snapshot.notes.filter((n) => n.deletedAt).length
                           : view === "focus"
                             ? focus.length
-                            : showArchived
-                              ? allItems.filter(isArchived).length
-                              : items.length,
+                            : visible.length,
                     )}
                   </span>
                 </div>
@@ -1278,75 +1472,120 @@ function Workbench({
                   <kbd>/</kbd>
                 </label>
               </div>
-              {["tasks", "board"].includes(view) && (
-                <div className="filter-bar">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={showArchived}
-                      onChange={(e) => setShowArchived(e.target.checked)}
-                    />
-                    {t("showArchived")}
-                  </label>
-                  <label>
-                    <span>{t("project")}</span>
-                    <select
-                      aria-label={t("project")}
-                      value={projectFilter}
-                      onChange={(event) => setProjectFilter(event.target.value)}
-                    >
-                      <option value="ALL">{t("all")}</option>
-                      <option value="NONE">{t("noProject")}</option>
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.title}
+              {["tasks", "board", "planning"].includes(view) && (
+                <section className="task-query-panel">
+                  <div className="task-scope-heading">
+                    <p>
+                      {t(
+                        view === "planning"
+                          ? "planningHint"
+                          : "activeTasksHint",
+                      )}
+                    </p>
+                    {view !== "planning" && (
+                      <button
+                        type="button"
+                        className="chip"
+                        onClick={() => navigate("planning")}
+                      >
+                        {t("manageActivation")}
+                      </button>
+                    )}
+                  </div>
+                  <div className="filter-bar">
+                    {view === "planning" && (
+                      <label>
+                        <span>{t("activationState")}</span>
+                        <select
+                          aria-label={t("activationState")}
+                          value={activationFilter}
+                          onChange={(event) =>
+                            setActivationFilter(event.target.value)
+                          }
+                        >
+                          <option value="ALL">{t("all")}</option>
+                          <option value="ACTIVE">
+                            {t("activationStates.ACTIVE")}
+                          </option>
+                          <option value="INACTIVE">
+                            {t("activationStates.INACTIVE")}
+                          </option>
+                        </select>
+                      </label>
+                    )}
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={showArchived}
+                        onChange={(e) => setShowArchived(e.target.checked)}
+                      />
+                      {t("showArchived")}
+                    </label>
+                    <label>
+                      <span>{t("project")}</span>
+                      <select
+                        aria-label={t("project")}
+                        value={projectFilter}
+                        onChange={(event) =>
+                          setProjectFilter(event.target.value)
+                        }
+                      >
+                        <option value="ALL">{t("all")}</option>
+                        <option value="NONE">{t("noProject")}</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>{t("status")}</span>
+                      <select
+                        aria-label={t("status")}
+                        value={status}
+                        onChange={(event) => setStatus(event.target.value)}
+                      >
+                        <option value="ALL">{t("all")}</option>
+                        <option value="UNFINISHED">
+                          {t("unfinishedTasks")}
                         </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>{t("status")}</span>
-                    <select
-                      aria-label={t("status")}
-                      value={status}
-                      onChange={(event) => setStatus(event.target.value)}
-                    >
-                      <option value="ALL">{t("all")}</option>
-                      {workStatuses.map((s) => (
-                        <option key={s} value={s}>
-                          {t("work:statuses." + s)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>{t("priority")}</span>
-                    <select
-                      aria-label={t("priority")}
-                      value={priority}
-                      onChange={(event) => setPriority(event.target.value)}
-                    >
-                      <option value="ALL">{t("all")}</option>
-                      {priorities.map((p) => (
-                        <option key={p} value={p}>
-                          {t("work:priorities." + p)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="sort-control">
-                    <span>{t("sort")}</span>
-                    <select
-                      aria-label={t("sort")}
-                      value={sort}
-                      onChange={(event) => setSort(event.target.value)}
-                    >
-                      <option value="updated">{t("recentlyUpdated")}</option>
-                      <option value="priority">{t("priority")}</option>
-                      <option value="title">{t("title")}</option>
-                    </select>
-                  </label>
-                </div>
+                        {workStatuses.map((s) => (
+                          <option key={s} value={s}>
+                            {t("work:statuses." + s)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>{t("priority")}</span>
+                      <select
+                        aria-label={t("priority")}
+                        value={priority}
+                        onChange={(event) => setPriority(event.target.value)}
+                      >
+                        <option value="ALL">{t("all")}</option>
+                        {priorities.map((p) => (
+                          <option key={p} value={p}>
+                            {t("work:priorities." + p)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="sort-control">
+                      <span>{t("sort")}</span>
+                      <select
+                        aria-label={t("sort")}
+                        value={sort}
+                        onChange={(event) => setSort(event.target.value)}
+                      >
+                        <option value="updated">{t("recentlyUpdated")}</option>
+                        <option value="priority">{t("priority")}</option>
+                        <option value="title">{t("title")}</option>
+                      </select>
+                    </label>
+                  </div>
+                </section>
               )}
               {view === "notes" || view === "journal" ? (
                 (() => {
@@ -1482,7 +1721,8 @@ function Workbench({
           key={editor === "new" ? "new" : editor.id + "-" + editor.version}
           item={editor === "new" ? null : editor}
           projects={projects}
-          createType={view === "projects" ? "PROJECT" : "TASK"}
+          createType={creation.type}
+          initialProjectId={creation.parentId}
           busy={busy}
           error={errorMessage}
           onClose={() => setEditor(null)}
@@ -1492,7 +1732,7 @@ function Workbench({
                 editor === "new"
                   ? service.create(context, {
                       ...input,
-                      type: view === "projects" ? "PROJECT" : "TASK",
+                      type: creation.type,
                     })
                   : service.update(context, editor.id, editor.version, input),
               )

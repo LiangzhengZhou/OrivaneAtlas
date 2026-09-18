@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AiEdits } from "./AiEdits";
 import type { Runtime, Snapshot } from "./bootstrap";
+import { GatewayRunDetails } from "./GatewaySettings";
 import { GraphCanvas } from "./GraphCanvas";
 import { Markdown } from "./Markdown";
 import { PersonalAISettings } from "./PersonalAISettings";
@@ -400,7 +401,9 @@ export function AiView({
                 {t("limits", {
                   input: data.route.maxInputChars,
                   output: data.route.maxOutputTokens,
-                  calls: data.route.maxRunsPerDay,
+                  calls:
+                    data.route.gateway?.dailyRequests ??
+                    data.route.maxRunsPerDay,
                 })}
               </small>
             </div>
@@ -496,6 +499,7 @@ export function AiView({
                 {run.route.model} · {run.route.provider}
               </p>
               <pre className="run-prompt">{run.prompt}</pre>
+              <GatewayRunDetails run={run} zh={zh} />
               {run.attempt && (
                 <p>
                   {t("attemptUsage", {

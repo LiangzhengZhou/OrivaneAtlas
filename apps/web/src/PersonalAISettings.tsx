@@ -1,7 +1,11 @@
-import type { PersonalModelSummary } from "@arclattice/application";
+import type {
+  PersonalModelInput,
+  PersonalModelSummary,
+} from "@arclattice/application";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime } from "./bootstrap";
+import { GatewaySettings } from "./GatewaySettings";
 export function PersonalAISettings({
   runtime,
   scope,
@@ -18,6 +22,8 @@ export function PersonalAISettings({
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
   const [nextProfile, setNextProfile] = useState(profileId);
+  const [gateway, setGateway] = useState<PersonalModelInput["gateway"]>();
+  const [profiles, setProfiles] = useState<string[]>([]);
   const [saved, setSaved] = useState<PersonalModelSummary | null>(null),
     [endpoint, setEndpoint] = useState(""),
     [model, setModel] = useState(""),
@@ -34,6 +40,15 @@ export function PersonalAISettings({
       .providers()
       .then((list) => {
         if (!active) return;
+        setProfiles(
+          list
+            .filter(
+              (item) =>
+                item.scope === scope &&
+                (item.profileId ?? "default") !== profileId,
+            )
+            .map((item) => item.profileId ?? "default"),
+        );
         const item =
           list.find(
             (p) =>
@@ -44,6 +59,7 @@ export function PersonalAISettings({
         setModel(item?.model ?? "");
         setProtocol(item?.protocol ?? "chat");
         setCap(item?.maxRunsPerDay ?? 10);
+        setGateway(item?.gateway);
       })
       .catch(() => {
         if (active) setError("UNAVAILABLE");
@@ -103,6 +119,7 @@ export function PersonalAISettings({
               key,
               protocol,
               maxRunsPerDay: cap,
+              ...(gateway ? { gateway } : {}),
             })
             .then((value) => {
               setSaved(value);
@@ -172,6 +189,13 @@ export function PersonalAISettings({
             onChange={(e) => setCap(Number(e.target.value))}
           />
         </label>
+        <GatewaySettings
+          value={gateway}
+          onChange={setGateway}
+          disabled={busy}
+          zh={zh}
+          profiles={profiles}
+        />
         <button className="button primary" disabled={busy}>
           {zh ? "保存个人配置" : "Save personal configuration"}
         </button>

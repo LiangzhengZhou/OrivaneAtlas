@@ -4,6 +4,10 @@ fn main() {
             "check_app_update",
             "install_app_update",
             "configure_server",
+            "saved_accounts",
+            "select_account",
+            "forget_account",
+            "detach_account",
             "server_request",
         ]),
     ))

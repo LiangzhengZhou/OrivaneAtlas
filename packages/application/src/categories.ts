@@ -14,6 +14,9 @@ export interface ProjectCategory {
   id: string;
   workspaceId: string;
   name: string;
+  icon: string;
+  color: string;
+  position: number;
   projectIds: string[];
   version: number;
   createdBy: string;
@@ -39,7 +42,9 @@ export class CategoryService {
   ) {}
   async list(context: ActorContext) {
     await this.authorization.require(context, "work:read");
-    return this.uow.run(context.workspaceId, (tx) => tx.categories());
+    return this.uow.run(context.workspaceId, async (tx) =>
+      (await tx.categories()).map(categoryPresentation).sort(compareCategories),
+    );
   }
   async save(
     context: ActorContext,
@@ -47,6 +52,9 @@ export class CategoryService {
       id?: string;
       version: number;
       name: string;
+      icon?: string;
+      color?: string;
+      position?: number;
       projectIds: string[];
       deleted: boolean;
     },
@@ -98,10 +106,33 @@ export class CategoryService {
             throw new DomainError("VALIDATION_ERROR");
         }
       const now = this.clock.now();
+      const previous = categoryPresentation(old ?? {});
+      const presentation = {
+        icon: input.icon === undefined ? previous.icon : input.icon,
+        color: input.color === undefined ? previous.color : input.color,
+        position:
+          input.position === undefined ? previous.position : input.position,
+      };
+      if (
+        typeof presentation.icon !== "string" ||
+        /[<>&]/u.test(presentation.icon) ||
+        !/^[\p{L}\p{N}\p{S}\p{M}\u200d\uFE0F _-]{0,16}$/u.test(
+          presentation.icon,
+        ) ||
+        typeof presentation.color !== "string" ||
+        !/^#[0-9a-fA-F]{6}$/.test(presentation.color) ||
+        !Number.isSafeInteger(presentation.position) ||
+        presentation.position < 0 ||
+        presentation.position > 2147483647
+      )
+        throw new DomainError("VALIDATION_ERROR");
       const category: ProjectCategory = {
         id: old?.id ?? this.ids.next(),
         workspaceId: context.workspaceId,
         name,
+        icon: presentation.icon,
+        color: presentation.color.toLowerCase(),
+        position: presentation.position,
         projectIds: [...input.projectIds],
         version: input.version + 1,
         createdBy: old?.createdBy ?? context.principalId,
@@ -122,4 +153,26 @@ export class CategoryService {
       return category;
     });
   }
+}
+
+export function categoryPresentation<
+  T extends { icon?: string; color?: string; position?: number },
+>(category: T) {
+  return {
+    ...category,
+    icon: category.icon ?? "",
+    color: category.color ?? "#7863c5",
+    position: category.position ?? 0,
+  };
+}
+
+export function compareCategories(
+  left: ProjectCategory,
+  right: ProjectCategory,
+) {
+  return (
+    left.position - right.position ||
+    left.createdAt.localeCompare(right.createdAt) ||
+    left.id.localeCompare(right.id)
+  );
 }

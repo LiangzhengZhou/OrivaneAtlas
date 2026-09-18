@@ -33,6 +33,114 @@ async function seedOwner() {
   return host.db.accounts((store) => store.register("owner", verifier, true));
 }
 const origin = "http://127.0.0.1:4317";
+it("project documents and files use atomic receipts, soft deletion and authenticated downloads", async () => {
+  await login();
+  const project = await (
+    await call("/api/work/create", { title: "Materials", type: "PROJECT" })
+  ).json();
+  const headers = { "Idempotency-Key": randomUUID() };
+  const input = {
+    projectId: project.id,
+    title: "Owned document",
+    bodyMd: "# Exact\r\n- [ ] not a task",
+  };
+  const document = await (
+    await call("/api/projects/document", input, headers)
+  ).json();
+  expect(
+    await (await call("/api/projects/document", input, headers)).json(),
+  ).toEqual(document);
+  const fileResponse = await call("/api/projects/upload", {
+    projectId: project.id,
+    name: "sample.txt",
+    mime: "text/plain",
+    base64: "aGVsbG8=",
+  });
+  expect(fileResponse.status).toBe(200);
+  const file = await fileResponse.json();
+  const snapshot = await (await call("/api/snapshot")).json();
+  expect(snapshot.projectMaterials).toHaveLength(3);
+  expect(snapshot.items).toHaveLength(1);
+  expect(
+    snapshot.library.find((entry: { id: string }) => entry.id === document.id)
+      .bodyMd,
+  ).toBe(input.bodyMd);
+  expect(
+    (await (await call("/api/projects/file?id=" + file.id)).json()).base64,
+  ).toBe("aGVsbG8=");
+  expect(
+    (
+      await call("/api/projects/delete", {
+        id: file.id,
+        version: 8,
+        deleted: true,
+      })
+    ).status,
+  ).toBe(409);
+  expect(
+    (
+      await call("/api/projects/delete", {
+        id: file.id,
+        version: 1,
+        deleted: true,
+      })
+    ).status,
+  ).toBe(200);
+  expect((await call("/api/projects/file?id=" + file.id)).status).toBe(404);
+  expect(
+    (
+      await call("/api/projects/delete", {
+        id: file.id,
+        version: 2,
+        deleted: false,
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (await call("/api/projects/file?id=" + file.id, undefined, { Cookie: "" }))
+      .status,
+  ).toBe(401);
+});
+it("MCP exposes constrained tools and writes only after normal authorization and idempotency", async () => {
+  await login();
+  const rpc = (method: string, params?: unknown) => ({
+    jsonrpc: "2.0",
+    id: 1,
+    method,
+    params,
+  });
+  const initialized = await (await call("/api/mcp", rpc("initialize"))).json();
+  expect(initialized.result.protocolVersion).toBe("2025-03-26");
+  const list = await (await call("/api/mcp", rpc("tools/list"))).json();
+  expect(
+    list.result.tools.map((entry: { name: string }) => entry.name),
+  ).toEqual(["workspace_snapshot", "plan_preview", "project_document_create"]);
+  const project = await (
+    await call("/api/work/create", { title: "MCP project", type: "PROJECT" })
+  ).json();
+  const input = rpc("tools/call", {
+    name: "project_document_create",
+    arguments: { projectId: project.id, title: "AI draft", bodyMd: "raw text" },
+  });
+  expect(
+    (await call("/api/mcp", input, { "Idempotency-Key": "" })).status,
+  ).toBe(400);
+  expect((await call("/api/mcp", input, { "X-CSRF-Token": "" })).status).toBe(
+    403,
+  );
+  const headers = { "Idempotency-Key": randomUUID() };
+  const created = await (await call("/api/mcp", input, headers)).json();
+  expect(await (await call("/api/mcp", input, headers)).json()).toEqual(
+    created,
+  );
+  expect(JSON.parse(created.result.content[0].text).provenance).toBe(
+    "EXTERNAL_AI",
+  );
+  const unknown = await (
+    await call("/api/mcp", rpc("tools/call", { name: "shell", arguments: {} }))
+  ).json();
+  expect(unknown.error.code).toBe(-32602);
+});
 it("background recurrence starts after restart without login and ignores disabled creators", async () => {
   const account = await seedOwner();
   const disabled = await host.db.accounts((store) => {

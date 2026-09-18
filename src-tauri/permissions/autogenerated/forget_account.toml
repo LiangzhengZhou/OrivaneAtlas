@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-forget-account"
+description = "Enables the forget_account command without any pre-configured scope."
+commands.allow = ["forget_account"]
+
+[[permission]]
+identifier = "deny-forget-account"
+description = "Denies the forget_account command without any pre-configured scope."
+commands.deny = ["forget_account"]

@@ -2,6 +2,8 @@
 
 These features are available in the local development implementation. They do not imply that an existing public installer or hosted instance has been upgraded.
 
+Version 0.0.8 adds category icons, colors and ordering; complete additive plans with project trees, categories, multi-project tasks, spaces, documents and recurrence; and recurrence end dates, assignee, activation and priority defaults. See the [complete example](agent/complete-plan-example.json) and [integration contract](agent/workflow-integration.md). Publication is atomic after review and revalidates the preview's work and document versions. External proposals keep their origin; only a human session may publish them.
+
 ## Categories
 
 Open **Projects → Manage project categories**. Create a name and select projects. A project can belong to multiple categories. The category filter changes the project list; it does not change task ownership or permissions. Deleting a category preserves its associations so it can be restored.

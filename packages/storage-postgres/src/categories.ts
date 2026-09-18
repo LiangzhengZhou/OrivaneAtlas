@@ -14,7 +14,7 @@ export function categoryPort(
       schedule(async () => {
         const rows = (
           await client.query(
-            'SELECT id, workspace_id AS "workspaceId", name, version, created_by AS "createdBy", updated_by AS "updatedBy", created_at AS "createdAt", updated_at AS "updatedAt", deleted_at AS "deletedAt" FROM arclattice.project_category WHERE workspace_id=$1 ORDER BY created_at,id',
+            'SELECT id, workspace_id AS "workspaceId", name, icon, color, position, version, created_by AS "createdBy", updated_by AS "updatedBy", created_at AS "createdAt", updated_at AS "updatedAt", deleted_at AS "deletedAt" FROM arclattice.project_category WHERE workspace_id=$1 ORDER BY position,created_at,id',
             [workspaceId],
           )
         ).rows;
@@ -42,7 +42,7 @@ export function categoryPort(
           throw new DomainError("VERSION_CONFLICT");
         if (expected === 0) {
           const result = await client.query(
-            "INSERT INTO arclattice.project_category VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING",
+            "INSERT INTO arclattice.project_category (workspace_id,id,name,version,created_by,updated_by,created_at,updated_at,deleted_at,icon,color,position) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING",
             [
               workspaceId,
               c.id,
@@ -53,13 +53,16 @@ export function categoryPort(
               c.createdAt,
               c.updatedAt,
               c.deletedAt,
+              c.icon ?? "",
+              c.color ?? "#7863c5",
+              c.position ?? 0,
             ],
           );
           if (result.rowCount !== 1) throw new DomainError("VERSION_CONFLICT");
         } else if (
           (
             await client.query(
-              "UPDATE arclattice.project_category SET name=$1,version=$2,updated_by=$3,updated_at=$4,deleted_at=$5 WHERE workspace_id=$6 AND id=$7 AND version=$8",
+              "UPDATE arclattice.project_category SET name=$1,version=$2,updated_by=$3,updated_at=$4,deleted_at=$5,icon=$9,color=$10,position=$11 WHERE workspace_id=$6 AND id=$7 AND version=$8",
               [
                 c.name,
                 c.version,
@@ -69,6 +72,9 @@ export function categoryPort(
                 workspaceId,
                 c.id,
                 expected,
+                c.icon ?? "",
+                c.color ?? "#7863c5",
+                c.position ?? 0,
               ],
             )
           ).rowCount !== 1

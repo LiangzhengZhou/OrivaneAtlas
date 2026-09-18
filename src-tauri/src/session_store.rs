@@ -1,9 +1,22 @@
 //! Native-only credential storage. Never expose these bytes through IPC.
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct SavedSession {
     pub origin: String,
+    pub cookie: String,
+    #[serde(default)]
+    pub accounts: Vec<SavedCredential>,
+    #[serde(default)]
+    pub active: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct SavedCredential {
+    pub reference: String,
+    pub origin: String,
+    pub account_id: String,
+    pub display_name: String,
     pub cookie: String,
 }
 
@@ -31,6 +44,7 @@ mod tests {
         let session = SavedSession {
             origin: "https://private.example".into(),
             cookie: format!("arc_session={}", "a".repeat(64)),
+            ..SavedSession::default()
         };
         vault.save(&session).unwrap();
         let raw = std::fs::read(&vault.0).unwrap();
@@ -112,7 +126,7 @@ impl Vault for WindowsVault {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(_) => return Err("SECURE_STORAGE".into()),
         };
-        let decoded = if data.len() <= 16384 {
+        let decoded = if data.len() <= 131072 {
             protect(&data, false).ok()
         } else {
             None

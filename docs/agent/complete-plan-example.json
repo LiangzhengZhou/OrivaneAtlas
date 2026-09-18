@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "projects": [
+    {
+      "tempId": "chapter",
+      "title": "Chapter",
+      "parentTempId": "paper",
+      "descriptionMd": "Chapter scope"
+    },
+    {
+      "tempId": "paper",
+      "title": "Research paper",
+      "descriptionMd": "# Project overview\nPreserve Markdown."
+    }
+  ],
+  "categories": [
+    { "tempId": "research", "name": "Research", "projectTempIds": ["paper"] }
+  ],
+  "tasks": [
+    {
+      "tempId": "read",
+      "title": "Read sources",
+      "projectTempIds": ["paper", "chapter"],
+      "priority": "HIGH",
+      "activationState": "ACTIVE"
+    },
+    {
+      "tempId": "draft",
+      "title": "Draft",
+      "projectTempId": "chapter",
+      "dependsOn": ["read"],
+      "activationState": "INACTIVE",
+      "activationPolicy": "WHEN_DEPENDENCIES_COMPLETED"
+    }
+  ],
+  "recurrences": [
+    {
+      "tempId": "review",
+      "title": "Review notes",
+      "projectTempIds": ["paper"],
+      "startDate": "2026-09-18",
+      "endDate": "2026-10-18",
+      "timezone": "Asia/Shanghai",
+      "frequency": "WEEKLY",
+      "interval": 1,
+      "activationState": "INACTIVE",
+      "priority": "MEDIUM"
+    }
+  ],
+  "spaces": [
+    {
+      "tempId": "sources",
+      "title": "Sources",
+      "descriptionMd": "# Reading collection"
+    }
+  ],
+  "documents": [
+    {
+      "tempId": "outline",
+      "title": "Outline",
+      "projectTempId": "paper",
+      "ownership": "OWNED",
+      "bodyMd": "# Outline\n\n- [ ] This remains Markdown."
+    },
+    {
+      "tempId": "notes",
+      "title": "Notes",
+      "spaceTempId": "sources",
+      "projectTempId": "chapter",
+      "ownership": "LINKED",
+      "bodyMd": "# Notes\n\nOriginal text."
+    }
+  ]
+}

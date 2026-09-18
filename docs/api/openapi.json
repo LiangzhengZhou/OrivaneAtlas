@@ -16,6 +16,1208 @@
     }
   ],
   "paths": {
+    "/api/mcp": {
+      "post": {
+        "operationId": "mcp",
+        "summary": "Stateless authenticated MCP JSON-RPC",
+        "description": "POST JSON-RPC 2.0, protocol 2025-03-26. Supports initialize, ping, notifications/initialized, tools/list and tools/call; no SSE/session transport or arbitrary tool execution. Cookie requests require CSRF and Origin checks. Personal access tokens may initialize/list/call permitted tools; workspace_snapshot requires read-write scope and exposes the authenticated workspace's work items/edges, notes, library and project materials. plan_preview stores an additive plan for human review; it does not publish or activate tasks. PATs cannot publish plans. project_document_create creates an owned Markdown document with EXTERNAL_AI provenance and deny-by-default AI policy; never a task. Mutating tools/call (plan_preview/project_document_create) require Idempotency-Key and commit with durable receipts. No key is needed for initialization, listing or snapshot reads. Tool result content is text containing serialized JSON. Unknown methods/tools return JSON-RPC errors; authorization and validation failures use HTTP error responses.",
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Required only for mutating tools/call.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "description": "Required for every cookie-authenticated POST; not used with PAT Bearer.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["jsonrpc", "method"],
+                "properties": {
+                  "jsonrpc": {
+                    "const": "2.0"
+                  },
+                  "id": {
+                    "type": ["string", "number", "null"]
+                  },
+                  "method": {
+                    "type": "string",
+                    "examples": ["initialize", "tools/list", "tools/call"]
+                  },
+                  "params": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "enum": [
+                          "workspace_snapshot",
+                          "plan_preview",
+                          "project_document_create"
+                        ]
+                      },
+                      "arguments": {
+                        "type": "object",
+                        "description": "workspace_snapshot: {}. plan_preview: {projectId: string|null, manifest: object}. project_document_create: {projectId:string,title:string,bodyMd:string}. All tool schemas reject extra argument keys."
+                      }
+                    }
+                  }
+                }
+              },
+              "examples": {
+                "snapshot": {
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                      "name": "workspace_snapshot",
+                      "arguments": {}
+                    }
+                  }
+                },
+                "document": {
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {
+                      "name": "project_document_create",
+                      "arguments": {
+                        "projectId": "project-id",
+                        "title": "Research notes",
+                        "bodyMd": "# Notes"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JSON-RPC result or method/tool error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["jsonrpc", "id"],
+                  "properties": {
+                    "jsonrpc": {
+                      "const": "2.0"
+                    },
+                    "id": {
+                      "type": ["string", "number", "null"]
+                    },
+                    "result": {},
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "integer",
+                          "examples": [-32601, -32602]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "notifications/initialized accepted; empty body."
+          },
+          "400": {
+            "description": "Invalid RPC, tool input or missing mutation idempotency key."
+          },
+          "401": {
+            "description": "Unauthenticated."
+          },
+          "403": {
+            "description": "Forbidden tool/scope, invalid CSRF or origin."
+          },
+          "404": {
+            "description": "Target not found in workspace."
+          },
+          "409": {
+            "description": "Stale target or conflicting idempotency key."
+          }
+        }
+      }
+    },
+    "/api/v1/mcp": {
+      "post": {
+        "operationId": "mcpV1",
+        "summary": "Stateless authenticated MCP JSON-RPC",
+        "description": "POST JSON-RPC 2.0, protocol 2025-03-26. Supports initialize, ping, notifications/initialized, tools/list and tools/call; no SSE/session transport or arbitrary tool execution. Cookie requests require CSRF and Origin checks. Personal access tokens may initialize/list/call permitted tools; workspace_snapshot requires read-write scope and exposes the authenticated workspace's work items/edges, notes, library and project materials. plan_preview stores an additive plan for human review; it does not publish or activate tasks. PATs cannot publish plans. project_document_create creates an owned Markdown document with EXTERNAL_AI provenance and deny-by-default AI policy; never a task. Mutating tools/call (plan_preview/project_document_create) require Idempotency-Key and commit with durable receipts. No key is needed for initialization, listing or snapshot reads. Tool result content is text containing serialized JSON. Unknown methods/tools return JSON-RPC errors; authorization and validation failures use HTTP error responses.",
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "Required only for mutating tools/call.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "description": "Required for every cookie-authenticated POST; not used with PAT Bearer.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["jsonrpc", "method"],
+                "properties": {
+                  "jsonrpc": {
+                    "const": "2.0"
+                  },
+                  "id": {
+                    "type": ["string", "number", "null"]
+                  },
+                  "method": {
+                    "type": "string",
+                    "examples": ["initialize", "tools/list", "tools/call"]
+                  },
+                  "params": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "enum": [
+                          "workspace_snapshot",
+                          "plan_preview",
+                          "project_document_create"
+                        ]
+                      },
+                      "arguments": {
+                        "type": "object",
+                        "description": "workspace_snapshot: {}. plan_preview: {projectId: string|null, manifest: object}. project_document_create: {projectId:string,title:string,bodyMd:string}. All tool schemas reject extra argument keys."
+                      }
+                    }
+                  }
+                }
+              },
+              "examples": {
+                "snapshot": {
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {
+                      "name": "workspace_snapshot",
+                      "arguments": {}
+                    }
+                  }
+                },
+                "document": {
+                  "value": {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {
+                      "name": "project_document_create",
+                      "arguments": {
+                        "projectId": "project-id",
+                        "title": "Research notes",
+                        "bodyMd": "# Notes"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JSON-RPC result or method/tool error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["jsonrpc", "id"],
+                  "properties": {
+                    "jsonrpc": {
+                      "const": "2.0"
+                    },
+                    "id": {
+                      "type": ["string", "number", "null"]
+                    },
+                    "result": {},
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "integer",
+                          "examples": [-32601, -32602]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "notifications/initialized accepted; empty body."
+          },
+          "400": {
+            "description": "Invalid RPC, tool input or missing mutation idempotency key."
+          },
+          "401": {
+            "description": "Unauthenticated."
+          },
+          "403": {
+            "description": "Forbidden tool/scope, invalid CSRF or origin."
+          },
+          "404": {
+            "description": "Target not found in workspace."
+          },
+          "409": {
+            "description": "Stale target or conflicting idempotency key."
+          }
+        }
+      }
+    },
+    "/api/projects/document": {
+      "post": {
+        "operationId": "project_document",
+        "summary": "Create an owned Markdown document inside a project",
+        "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Creates a dedicated owned knowledge SPACE when needed and an owned DOCUMENT material. Returns the LibraryEntry; material records appear in snapshots. Body Markdown is preserved. Integration provenance is EXTERNAL_AI.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["projectId", "title", "bodyMd"],
+                "properties": {
+                  "projectId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "bodyMd": {
+                    "type": "string",
+                    "maxLength": 200000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/projects/link": {
+      "post": {
+        "operationId": "project_link",
+        "summary": "Link an existing knowledge space or document to a project",
+        "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Target must be live and in the same workspace. Duplicate live project/target links are rejected; linking does not transfer ownership.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["projectId", "targetId"],
+                "properties": {
+                  "projectId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "targetId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMaterial"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/projects/upload": {
+      "post": {
+        "operationId": "project_upload",
+        "summary": "Upload an owned project file",
+        "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Maximum decoded file size 2097152 bytes; JSON body limit 2800000 bytes. File names cannot contain control characters or path separators. Base64 is stored as data; uploaded files are not executed.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["projectId", "name", "mime", "base64"],
+                "properties": {
+                  "projectId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[^\\u0000-\\u001f/\\\\]+$"
+                  },
+                  "mime": {
+                    "type": "string",
+                    "pattern": "^[\\w.+-]+/[\\w.+-]+$"
+                  },
+                  "base64": {
+                    "type": "string",
+                    "minLength": 4,
+                    "maxLength": 2796204,
+                    "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMaterial"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/projects/delete": {
+      "post": {
+        "operationId": "project_delete",
+        "summary": "Soft-delete or restore a project material",
+        "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Requires current material version. For OWNED DOCUMENT, corresponding library document deletion/restoration occurs in the same request. LINKED removal/restoration changes only the reference. The owned project SPACE cannot be deleted through this endpoint.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version", "deleted"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "deleted": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMaterial"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/projects/file": {
+      "get": {
+        "operationId": "project_file",
+        "summary": "Read a project file as base64",
+        "description": "Cookie or read-write integration token. Retrieves a same-workspace file material and its base64 data; file contents are never served as executable HTML.",
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["material", "base64"],
+                  "properties": {
+                    "material": {
+                      "$ref": "#/components/schemas/ProjectMaterial"
+                    },
+                    "base64": {
+                      "type": "string",
+                      "contentEncoding": "base64"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/projects/activity": {
+      "get": {
+        "operationId": "project_activity",
+        "summary": "Read project material activity",
+        "description": "Cookie or read-write integration token. Returns material activity for a project in the authenticated workspace. Work/task history remains available through the work activity endpoint.",
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectActivity"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/document": {
+      "post": {
+        "operationId": "project_documentV1",
+        "summary": "Create an owned Markdown document inside a project",
+        "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Creates a dedicated owned knowledge SPACE when needed and an owned DOCUMENT material. Returns the LibraryEntry; material records appear in snapshots. Body Markdown is preserved. Integration provenance is EXTERNAL_AI.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["projectId", "title", "bodyMd"],
+                "properties": {
+                  "projectId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "bodyMd": {
+                    "type": "string",
+                    "maxLength": 200000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/link": {
+      "post": {
+        "operationId": "project_linkV1",
+        "summary": "Link an existing knowledge space or document to a project",
+        "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Target must be live and in the same workspace. Duplicate live project/target links are rejected; linking does not transfer ownership.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["projectId", "targetId"],
+                "properties": {
+                  "projectId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "targetId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMaterial"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/upload": {
+      "post": {
+        "operationId": "project_uploadV1",
+        "summary": "Upload an owned project file",
+        "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Maximum decoded file size 2097152 bytes; JSON body limit 2800000 bytes. File names cannot contain control characters or path separators. Base64 is stored as data; uploaded files are not executed.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["projectId", "name", "mime", "base64"],
+                "properties": {
+                  "projectId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[^\\u0000-\\u001f/\\\\]+$"
+                  },
+                  "mime": {
+                    "type": "string",
+                    "pattern": "^[\\w.+-]+/[\\w.+-]+$"
+                  },
+                  "base64": {
+                    "type": "string",
+                    "minLength": 4,
+                    "maxLength": 2796204,
+                    "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMaterial"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/delete": {
+      "post": {
+        "operationId": "project_deleteV1",
+        "summary": "Soft-delete or restore a project material",
+        "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Requires current material version. For OWNED DOCUMENT, corresponding library document deletion/restoration occurs in the same request. LINKED removal/restoration changes only the reference. The owned project SPACE cannot be deleted through this endpoint.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version", "deleted"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "deleted": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMaterial"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/file": {
+      "get": {
+        "operationId": "project_fileV1",
+        "summary": "Read a project file as base64",
+        "description": "Cookie or read-write integration token. Retrieves a same-workspace file material and its base64 data; file contents are never served as executable HTML.",
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["material", "base64"],
+                  "properties": {
+                    "material": {
+                      "$ref": "#/components/schemas/ProjectMaterial"
+                    },
+                    "base64": {
+                      "type": "string",
+                      "contentEncoding": "base64"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/activity": {
+      "get": {
+        "operationId": "project_activityV1",
+        "summary": "Read project material activity",
+        "description": "Cookie or read-write integration token. Returns material activity for a project in the authenticated workspace. Work/task history remains available through the work activity endpoint.",
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectActivity"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
+    },
     "/api/v1/plans/preview": {
       "post": {
         "operationId": "plans_previewV1",
@@ -45,7 +1247,7 @@
                   },
                   "manifest": {
                     "type": "object",
-                    "description": "Manifest v1: {version:1,tasks:[{tempId,title,descriptionMd?,startDate?,dueDate?,dependsOn?:string[]}]}. 1–100 tasks, unique IDs, acyclic dependencies. Unknown fields rejected."
+                    "description": "Complete reviewed Manifest v1. May contain projects/subprojects, categories, multi-project tasks and dependencies, recurrences, knowledge spaces and documents. Temporary IDs are globally unique; Markdown is preserved. Arrays are bounded (projects 64, other entities 100), and publication is explicit human review."
                   }
                 }
               }
@@ -177,6 +1379,12 @@
                       "projectId": {
                         "type": ["string", "null"]
                       },
+                      "projectIds": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "maxItems": 100,
+                        "items": { "type": "string", "maxLength": 240 }
+                      },
                       "startDate": {
                         "type": "string",
                         "format": "date"
@@ -191,6 +1399,24 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 366
+                      },
+                      "endDate": {
+                        "type": ["string", "null"],
+                        "format": "date",
+                        "description": "Inclusive calendar end date."
+                      },
+                      "priority": {
+                        "$ref": "#/components/schemas/Priority"
+                      },
+                      "activationState": {
+                        "$ref": "#/components/schemas/ActivationState"
+                      },
+                      "activationPolicy": {
+                        "$ref": "#/components/schemas/ActivationPolicy"
+                      },
+                      "assigneePrincipalId": {
+                        "type": ["string", "null"],
+                        "maxLength": 240
                       }
                     }
                   }
@@ -335,7 +1561,7 @@
       "post": {
         "operationId": "saveProjectCategoryV1",
         "summary": "Create, edit, soft-delete or restore a project category",
-        "description": "Cookie/CSRF only; integration tokens cannot mutate categories. Version zero creates; existing IDs require current version. Replaces the complete project membership set. Deleted categories and their memberships remain in snapshots for restoration. Legacy /api/categories/save is an equivalent alias.",
+        "description": "Cookie/CSRF only; integration tokens cannot mutate categories. Version zero creates; existing IDs require current version. Replaces the complete project membership set. Optional icon/color/position default to empty icon/#7863c5/0 on creation; omitted fields preserve existing values on updates, deletion and restoration. Lists sort by position, createdAt then ID. Deleted categories and their memberships remain in snapshots for restoration. Legacy /api/categories/save is an equivalent alias.",
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -356,6 +1582,21 @@
                 "additionalProperties": false,
                 "required": ["version", "name", "projectIds", "deleted"],
                 "properties": {
+                  "icon": {
+                    "type": "string",
+                    "maxLength": 16,
+                    "description": "Plain Unicode letters, numbers, symbols, marks, spaces, underscores or hyphens; control characters and markup delimiters are rejected. Empty is allowed."
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "description": "Normalized to lowercase when saved."
+                  },
+                  "position": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
                   "id": {
                     "type": "string"
                   },
@@ -386,7 +1627,7 @@
         },
         "responses": {
           "200": {
-            "description": "Versioned category with ID, workspaceId, name, projectIds, version, createdBy, updatedBy, createdAt, updatedAt and nullable deletedAt. Included as categories[] in workspace snapshots and sync."
+            "description": "Versioned category with ID, workspaceId, name, icon, six-digit hex color, integer position, projectIds, version, createdBy, updatedBy, createdAt, updatedAt and nullable deletedAt. Included as categories[] in workspace snapshots and sync."
           },
           "400": {
             "description": "Invalid name, membership or input"
@@ -6753,6 +7994,267 @@
       }
     },
     "schemas": {
+      "GatewayLimit": {
+        "oneOf": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          {
+            "const": "UNLIMITED"
+          }
+        ]
+      },
+      "GatewayPolicy": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "capabilities": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "uniqueItems": true,
+            "items": {
+              "enum": ["TEXT", "JSON", "EMBEDDING"]
+            }
+          },
+          "capability": {
+            "enum": ["TEXT", "JSON", "EMBEDDING"],
+            "description": "Must be included in capabilities."
+          },
+          "dailyRequests": {
+            "$ref": "#/components/schemas/GatewayLimit"
+          },
+          "dailyBudgetMicros": {
+            "$ref": "#/components/schemas/GatewayLimit"
+          },
+          "currency": {
+            "const": "USD"
+          },
+          "inputMicrosPerMillion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "outputMicrosPerMillion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000000000
+          },
+          "fallbackProfileIds": {
+            "type": "array",
+            "maxItems": 2,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+            },
+            "description": "Same-owner/scope enabled profiles of the same selected capability; self-reference is forbidden. The complete bounded route chain is bound to approval; ambiguous send outcomes never trigger fallback."
+          }
+        },
+        "description": "Optional personal model registry/budget policy. Prices are configured USD micro-units per million tokens; this is a local estimate, not provider billing reconciliation. Daily limits use UTC and aggregate the same workspace/principal/scope. Legacy maxRunsPerDay remains required (1..100), but gateway dailyRequests controls the configured Gateway quota.",
+        "required": [
+          "providerId",
+          "enabled",
+          "capabilities",
+          "capability",
+          "dailyRequests",
+          "dailyBudgetMicros",
+          "currency",
+          "inputMicrosPerMillion",
+          "outputMicrosPerMillion",
+          "fallbackProfileIds"
+        ]
+      },
+      "GatewayMoney": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["currency", "reservedMicros", "chargedMicros", "state"],
+        "properties": {
+          "currency": {
+            "const": "USD"
+          },
+          "reservedMicros": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "chargedMicros": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "state": {
+            "enum": ["RESERVED", "RECONCILED", "UNKNOWN", "NOT_SENT"]
+          },
+          "routeFingerprint": {
+            "type": "string"
+          }
+        },
+        "description": "Persisted attempt ledger. RESERVED holds the worst candidate estimate; RECONCILED prices provider-reported usage at configured rates. UNKNOWN retains reservation, never assumed zero. NOT_SENT releases the charge to zero only when no request was sent. Actual route fingerprint identifies reconciled fallback usage."
+      },
+      "ProjectCategory": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "name",
+          "icon",
+          "color",
+          "position",
+          "projectIds",
+          "version",
+          "createdBy",
+          "updatedBy",
+          "createdAt",
+          "updatedAt",
+          "deletedAt"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "workspaceId": { "type": "string" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+          "icon": { "type": "string", "maxLength": 16 },
+          "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "projectIds": {
+            "type": "array",
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": { "type": "string" }
+          },
+          "version": { "type": "integer", "minimum": 1 },
+          "createdBy": { "type": "string" },
+          "updatedBy": { "type": "string" },
+          "createdAt": { "type": "string" },
+          "updatedAt": { "type": "string" },
+          "deletedAt": { "type": ["string", "null"] }
+        }
+      },
+      "ProjectMaterial": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "projectId",
+          "kind",
+          "ownership",
+          "targetId",
+          "title",
+          "mime",
+          "size",
+          "version",
+          "updatedBy",
+          "updatedAt",
+          "deletedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "workspaceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "kind": {
+            "enum": ["SPACE", "DOCUMENT", "FILE"]
+          },
+          "ownership": {
+            "enum": ["OWNED", "LINKED"]
+          },
+          "targetId": {
+            "type": ["string", "null"]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "mime": {
+            "type": ["string", "null"]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2097152
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "updatedBy": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "deletedAt": {
+            "type": ["string", "null"]
+          }
+        },
+        "description": "Workspace-scoped versioned project material. Snapshots expose projectMaterials; file content is fetched separately. OWNED documents belong to the project's dedicated knowledge space; LINKED references preserve the original entity."
+      },
+      "ProjectActivity": {
+        "type": "object",
+        "required": [
+          "id",
+          "projectId",
+          "materialId",
+          "principalId",
+          "type",
+          "occurredAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "materialId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "principalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "type": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string"
+          }
+        }
+      },
       "TaskProjectIds": {
         "type": "array",
         "maxItems": 100,
@@ -6863,6 +8365,10 @@
           "projectIds": {
             "$ref": "#/components/schemas/TaskProjectIds"
           },
+          "assigneePrincipalId": {
+            "type": ["string", "null"],
+            "maxLength": 240
+          },
           "activationState": {
             "$ref": "#/components/schemas/ActivationState"
           },
@@ -6925,6 +8431,10 @@
               },
               "projectIds": {
                 "$ref": "#/components/schemas/TaskProjectIds"
+              },
+              "assigneePrincipalId": {
+                "type": ["string", "null"],
+                "maxLength": 240
               },
               "activationState": {
                 "$ref": "#/components/schemas/ActivationState"
@@ -7304,6 +8814,14 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "projectMaterials": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ProjectMaterial" }
+          },
+          "categories": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ProjectCategory" }
+          },
           "items": {
             "type": "array",
             "items": {
@@ -7424,6 +8942,13 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "gateway": { "$ref": "#/components/schemas/GatewayPolicy" },
+          "fallbackRoutes": {
+            "type": "array",
+            "maxItems": 2,
+            "items": { "$ref": "#/components/schemas/ModelRoute" },
+            "description": "Resolved same-scope fallback routes approved together with the primary route."
+          },
           "fingerprint": {
             "type": "string"
           },
@@ -7485,6 +9010,7 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "money": { "$ref": "#/components/schemas/GatewayMoney" },
               "id": {
                 "type": "string"
               },
@@ -7531,7 +9057,7 @@
               "inputChars",
               "reservedOutputTokens"
             ],
-            "description": "Durable single-send reservation, not a billed token or cost report. Unknown outcomes are never automatically replayed."
+            "description": "Durable request reservation and optional configured-price ledger. Provider usage is reconciled only when reported; money is not an invoice. Unknown outcomes are never automatically replayed. Fallback is restricted to the approved bounded route chain and confirmed not-sent failures."
           },
           "id": {
             "type": "string"
@@ -7909,6 +9435,7 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "gateway": { "$ref": "#/components/schemas/GatewayPolicy" },
           "scope": {
             "type": "string",
             "pattern": "^(personal|(?:WORK|SPACE):[^:]+)$",
@@ -7959,6 +9486,7 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "gateway": { "$ref": "#/components/schemas/GatewayPolicy" },
           "scope": {
             "type": "string",
             "pattern": "^(personal|(?:WORK|SPACE):[^:]+)$",

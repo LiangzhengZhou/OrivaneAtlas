@@ -155,8 +155,116 @@ it("ignores malformed/credential-bearing server shortcuts and forgetting is meta
   const runtime = await bootstrap();
   expect(runtime.savedAccounts().map((a) => a.userId)).toEqual(["a"]);
   const count = fetcher.mock.calls.length;
-  runtime.forgetAccount(runtime.savedAccounts()[0]!.id);
+  await runtime.forgetAccount(runtime.savedAccounts()[0]!.id);
   expect(runtime.savedAccounts()).toEqual([]);
   expect(fetcher.mock.calls.length).toBe(count);
   expect(runtime.account?.id).toBe("a");
+});
+
+it("native saved-account switch clears old requests and restores through verified IPC without passwords", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  metadata.set("orivane.atlas.server-origin", origin);
+  const saved = ["a", "b"].map((id) => ({
+    id: origin + "|" + id,
+    serverUrl: origin,
+    userId: id,
+    displayName: id,
+    credentialReference: "native:" + origin + "|" + id,
+  }));
+  let selected = "a";
+  let finish!: (value: unknown) => void;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "saved_accounts") return saved as never;
+    if (command === "configure_server" || command === "detach_account")
+      return undefined as never;
+    if (command === "select_account") {
+      selected = (args as { reference: string }).reference.endsWith("|b")
+        ? "b"
+        : "a";
+    }
+    if (
+      command === "server_request" &&
+      (args as { path: string }).path === "/api/tokens"
+    )
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    return {
+      status: 200,
+      contentType: "application/json",
+      body: btoa(JSON.stringify(identity(selected))),
+    } as never;
+  });
+  const runtime = await bootstrap();
+  const stale = runtime.tokens();
+  const rejected = expect(stale).rejects.toThrow("SERVER_CHANGED");
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  await runtime.beginAccountSwitch();
+  expect(runtime.context).toBeNull();
+  await runtime.switchAccount(saved[1]!.id);
+  expect(runtime.account?.id).toBe("b");
+  finish({
+    status: 200,
+    contentType: "application/json",
+    body: btoa(JSON.stringify([{ id: "private-a" }])),
+  });
+  await rejected;
+  await runtime.switchAccount(saved[0]!.id);
+  expect(runtime.account?.id).toBe("a");
+  expect(
+    vi
+      .mocked(invoke)
+      .mock.calls.some(
+        ([command, args]) =>
+          command === "server_request" &&
+          (args as { path: string }).path === "/api/logout",
+      ),
+  ).toBe(false);
+  expect(JSON.stringify([...metadata.values()])).not.toContain("credential");
+  expect(JSON.stringify(vi.mocked(invoke).mock.calls)).not.toContain(
+    "password",
+  );
+});
+
+it("native forget deletes the vault reference and clears the selected runtime identity", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  metadata.set("orivane.atlas.server-origin", origin);
+  let saved = [
+    {
+      id: origin + "|a",
+      serverUrl: origin,
+      userId: "a",
+      displayName: "a",
+      credentialReference: "native-ref",
+    },
+  ];
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "saved_accounts") return saved as never;
+    if (command === "forget_account") {
+      saved = [];
+      return undefined as never;
+    }
+    return {
+      status: 200,
+      contentType: "application/json",
+      body: btoa(JSON.stringify(identity())),
+    } as never;
+  });
+  const runtime = await bootstrap();
+  await runtime.forgetAccount(origin + "|a");
+  expect(invoke).toHaveBeenCalledWith("forget_account", {
+    reference: "native-ref",
+  });
+  expect(runtime.context).toBeNull();
+  expect(runtime.savedAccounts()).toEqual([]);
+});
+
+it("web ignores saved cross-origin server and rejects switching its cookie boundary", async () => {
+  metadata.set("orivane.atlas.server-origin", "https://untrusted.example");
+  const runtime = await bootstrap();
+  expect(runtime.serverOrigin).toBe(origin);
+  await expect(
+    runtime.setServerOrigin("https://untrusted.example"),
+  ).rejects.toThrow("INVALID_SERVER");
+  expect(runtime.context?.principalId).toBe("a");
 });

@@ -122,12 +122,15 @@ input[type="checkbox"] {
 }
 .project-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
 }
 .project-card {
-  padding: 24px;
+  padding: 20px;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 .project-title {
   border: 0;
@@ -150,8 +153,63 @@ input[type="checkbox"] {
   min-height: 40px;
 }
 .project-card .text-button {
-  margin-top: 20px;
-  margin-inline-end: 16px;
+  margin: 0;
+}
+.project-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.task-query-panel {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.task-scope-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.task-scope-heading p {
+  margin: 0;
+  flex: 1 1 300px;
+  color: #626b7b;
+  font-size: 14px;
+}
+.task-query-panel .filter-bar {
+  padding: 0;
+  gap: 16px;
+  color: #626b7b;
+}
+.task-query-panel .filter-bar label {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.task-query-panel select {
+  max-width: 100%;
+}
+.activation-badge {
+  border-radius: 5px;
+  padding: 3px 6px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.activation-badge.active {
+  background: #e8f5ed;
+  color: #286648;
+}
+.activation-badge.inactive {
+  background: #edf0f5;
+  color: #596476;
 }
 .calendar-layout {
   display: grid;
@@ -757,4 +815,24 @@ input[type="checkbox"] {
 .content-policy select {
   width: 100%;
   min-width: 0;
+}
+.project-summary form:not(.organization-toolbar) {
+  display: grid;
+  gap: 12px;
+  margin-block: 16px;
+}
+.project-summary form:not(.organization-toolbar) label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.project-summary input:not([type="checkbox"]),
+.project-summary textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.project-summary textarea {
+  min-height: 160px;
+  resize: vertical;
 }

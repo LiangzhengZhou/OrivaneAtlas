@@ -18,7 +18,9 @@ import type {
   OrganizeInput,
   PersonalModelInput,
   PersonalModelSummary,
+  ProjectActivity,
   ProjectCategory,
+  ProjectMaterial,
   WorkflowRecord,
   WorkflowService,
   WorkService,
@@ -102,6 +104,7 @@ function saveAccountMetadata(account: Account, origin: string) {
   }
 }
 function initialServerOrigin() {
+  if (!isTauri()) return location.origin;
   try {
     const saved = localStorage.getItem(serverOriginKey)?.trim();
     if (saved) return new URL(saved).origin;
@@ -149,12 +152,16 @@ export function savePreference(value: LocalePreference) {
   }
 }
 export interface Snapshot extends WorkSnapshot {
+  projectMaterials: ProjectMaterial[];
   categories?: ProjectCategory[];
   workflows?: WorkflowRecord[];
   notes: Note[];
   links: KnowledgeLink[];
   library: LibraryEntry[];
   organization: Organization[];
+}
+function normalizeSnapshot(snapshot: Snapshot): Snapshot {
+  return { ...snapshot, projectMaterials: snapshot.projectMaterials ?? [] };
 }
 export async function bootstrap() {
   const i18n = await createI18n(
@@ -164,6 +171,14 @@ export async function bootstrap() {
   let csrf = "";
   let serverOrigin = initialServerOrigin();
   const native = isTauri();
+  let nativeAccounts: SavedAccount[] = [];
+  async function refreshSavedAccounts() {
+    if (native) {
+      const entries = await invoke<SavedAccount[]>("saved_accounts");
+      nativeAccounts = Array.isArray(entries) ? entries : [];
+    }
+    return native ? nativeAccounts : readSavedAccounts();
+  }
   let serverGeneration = 0;
   let requestController = new AbortController();
   async function transport(path: string, payload?: string, key = "") {
@@ -307,7 +322,11 @@ export async function bootstrap() {
     csrf = value.csrf;
     account = value.account;
     context = value.context;
-    if (account) saveAccountMetadata(account, serverOrigin);
+    const identityGeneration = serverGeneration;
+    if (native) await refreshSavedAccounts();
+    else if (account) saveAccountMetadata(account, serverOrigin);
+    if (identityGeneration !== serverGeneration)
+      throw new Error("SERVER_CHANGED");
     cursor = "";
     current = null;
     return value.context;
@@ -327,6 +346,18 @@ export async function bootstrap() {
     cursor = "";
     current = null;
   }
+  async function removeCurrentCredential() {
+    if (!native || !account) return;
+    const selected = nativeAccounts.find(
+      (entry) =>
+        entry.serverUrl === serverOrigin && entry.userId === account?.id,
+    );
+    if (selected)
+      await invoke("forget_account", {
+        reference: selected.credentialReference,
+      });
+    await refreshSavedAccounts();
+  }
   if (serverOrigin) {
     try {
       if (native) await invoke("configure_server", { origin: serverOrigin });
@@ -337,11 +368,19 @@ export async function bootstrap() {
       );
     }
   }
+  if (native) {
+    try {
+      await refreshSavedAccounts();
+    } catch {
+      unavailable = true;
+    }
+  }
   const service: Pick<
     WorkService,
     "snapshot" | "create" | "update" | "setDeleted" | "addEdge" | "removeEdge"
   > = {
-    snapshot: () => request<Snapshot>("/api/snapshot"),
+    snapshot: async () =>
+      normalizeSnapshot(await request<Snapshot>("/api/snapshot")),
     create: (_actor, input) => request("/api/work/create", input),
     update: (_actor, id, version, input) =>
       request("/api/work/update", { id, version, input }),
@@ -359,7 +398,7 @@ export async function bootstrap() {
       const data = await request<{ cursor: string; snapshot: Snapshot | null }>(
         "/api/sync?cursor=" + encodeURIComponent(cursor),
       );
-      if (data.snapshot) current = data.snapshot;
+      if (data.snapshot) current = normalizeSnapshot(data.snapshot);
       if (!current) throw new Error("Invalid sync response");
       cursor = data.cursor;
       return current;
@@ -394,9 +433,11 @@ export async function bootstrap() {
     },
     async setServerOrigin(value: string) {
       const normalized = normalizeServerOrigin(value);
+      if (!native && normalized !== location.origin)
+        throw new Error("INVALID_SERVER");
+      resetIdentity();
       if (native) await invoke("configure_server", { origin: normalized });
       serverOrigin = normalized;
-      resetIdentity();
       try {
         localStorage.setItem(serverOriginKey, serverOrigin);
       } catch {
@@ -412,8 +453,55 @@ export async function bootstrap() {
     get account() {
       return account;
     },
-    savedAccounts: () => readSavedAccounts(),
-    forgetAccount: (id: string) => {
+    savedAccounts: () => (native ? nativeAccounts : readSavedAccounts()),
+    refreshSavedAccounts,
+    async beginAccountSwitch() {
+      resetIdentity();
+      if (native) await invoke("detach_account");
+    },
+    async switchAccount(id: string) {
+      if (!native) throw new Error("UNAUTHORIZED");
+      const selected = nativeAccounts.find((entry) => entry.id === id);
+      if (!selected) throw new Error("UNAUTHORIZED");
+      resetIdentity();
+      const generation = serverGeneration;
+      try {
+        await invoke("select_account", {
+          reference: selected.credentialReference,
+        });
+        if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
+        serverOrigin = normalizeServerOrigin(selected.serverUrl);
+        const identity = await session();
+        if (account?.id !== selected.userId) {
+          resetIdentity();
+          await invoke("detach_account");
+          throw new Error("ACCOUNT_MISMATCH");
+        }
+        try {
+          localStorage.setItem(serverOriginKey, serverOrigin);
+        } catch {}
+        return identity;
+      } catch (error) {
+        if (generation === serverGeneration) resetIdentity();
+        await refreshSavedAccounts();
+        throw error;
+      }
+    },
+    forgetAccount: async (id: string) => {
+      if (native) {
+        const selected = nativeAccounts.find((entry) => entry.id === id);
+        if (!selected) return;
+        await invoke("forget_account", {
+          reference: selected.credentialReference,
+        });
+        if (
+          selected.serverUrl === serverOrigin &&
+          selected.userId === account?.id
+        )
+          resetIdentity();
+        await refreshSavedAccounts();
+        return;
+      }
       localStorage.setItem(
         savedAccountsKey,
         JSON.stringify(readSavedAccounts().filter((item) => item.id !== id)),
@@ -427,7 +515,13 @@ export async function bootstrap() {
         "/api/account/sessions/revoke",
         "all" in target ? { all: true } : { id: target.id },
       );
-      if ("all" in target || target.current) resetIdentity();
+      if ("all" in target || target.current) {
+        try {
+          await removeCurrentCredential();
+        } finally {
+          resetIdentity();
+        }
+      }
     },
     register: (username: string, password: string) =>
       request("/api/register", { username, password }),
@@ -435,7 +529,11 @@ export async function bootstrap() {
       request<Account>("/api/account/claim", { username, password }),
     changePassword: async (current: string, password: string) => {
       await request("/api/account/password", { current, password });
-      resetIdentity();
+      try {
+        await removeCurrentCredential();
+      } finally {
+        resetIdentity();
+      }
     },
     admin: () =>
       request<{
@@ -463,6 +561,27 @@ export async function bootstrap() {
       }),
     revokeToken: (id: string) => request("/api/tokens/revoke", { id }),
     library: () => request<LibraryEntry[]>("/api/library"),
+    projectDocument: (input: {
+      projectId: string;
+      title: string;
+      bodyMd: string;
+    }) => request<LibraryEntry>("/api/projects/document", input),
+    projectUpload: (input: {
+      projectId: string;
+      name: string;
+      mime: string;
+      base64: string;
+    }) => request<ProjectMaterial>("/api/projects/upload", input),
+    projectDelete: (id: string, version: number, deleted: boolean) =>
+      request("/api/projects/delete", { id, version, deleted }),
+    projectActivity: (projectId: string) =>
+      request<ProjectActivity[]>(
+        "/api/projects/activity?projectId=" + encodeURIComponent(projectId),
+      ),
+    projectFile: (id: string) =>
+      request<{ material: ProjectMaterial; base64: string }>(
+        "/api/projects/file?id=" + encodeURIComponent(id),
+      ),
     saveLibrary: (id: string | null, version: number, input: LibraryInput) =>
       request<LibraryEntry>("/api/library/save", { id, version, input }),
     deleteLibrary: (id: string, version: number, deleted: boolean) =>
@@ -582,7 +701,7 @@ export async function bootstrap() {
       request<{ changed: number }>("/api/organize", input),
     saveCategory: (input: Parameters<CategoryService["save"]>[1]) =>
       request<ProjectCategory>("/api/categories/save", input),
-    previewPlan: (projectId: string, manifest: unknown) =>
+    previewPlan: (projectId: string | null, manifest: unknown) =>
       request<WorkflowRecord>("/api/plans/preview", { projectId, manifest }),
     publishPlan: (id: string, version: number) =>
       request<WorkflowRecord>("/api/plans/publish", { id, version }),
@@ -625,6 +744,13 @@ export async function bootstrap() {
         logoutWarning = true;
       }
       resetIdentity();
+      if (native) {
+        try {
+          await refreshSavedAccounts();
+        } catch {
+          nativeAccounts = [];
+        }
+      }
     },
   };
 }

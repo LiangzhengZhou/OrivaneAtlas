@@ -1,13 +1,13 @@
 import type { WorkflowRecord, WorkflowService } from "@arclattice/application";
 import { localCalendarDay, type WorkItem } from "@arclattice/domain";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface Props {
   records: WorkflowRecord[];
   projects: WorkItem[];
   busy: boolean;
-  preview(projectId: string, manifest: unknown): Promise<boolean>;
+  preview(projectId: string | null, manifest: unknown): Promise<boolean>;
   publish(id: string, version: number): Promise<boolean>;
   save(
     input: Parameters<WorkflowService["saveRecurrence"]>[1],
@@ -34,7 +34,9 @@ export function WorkflowManager({
   generate,
   backfill,
 }: Props) {
-  const { t } = useTranslation("desk");
+  const { t, i18n } = useTranslation("desk");
+  const text = (zh: string, en: string) =>
+    i18n.language.startsWith("zh") ? zh : en;
   const [projectId, setProjectId] = useState(""),
     [manifest, setManifest] = useState(
       '{"version":1,"tasks":[{"tempId":"first","title":""}]}',
@@ -55,6 +57,74 @@ export function WorkflowManager({
     ),
     [interval, setInterval] = useState(1);
   const [completed, setCompleted] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState<{
+    id: string;
+    version: number;
+  } | null>(null);
+  const [descriptionMd, setDescriptionMd] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const [priority, setPriority] = useState<
+    "LOW" | "MEDIUM" | "HIGH" | "URGENT"
+  >("MEDIUM");
+  const [activation, setActivation] = useState<
+    "ACTIVE" | "INACTIVE" | "SCHEDULED"
+  >("ACTIVE");
+  const [activationPolicy, setActivationPolicy] = useState<
+    "MANUAL" | "IMMEDIATE" | "WHEN_DEPENDENCIES_COMPLETED" | "AT_SCHEDULED_TIME"
+  >("MANUAL");
+  const [recurrenceProjects, setRecurrenceProjects] = useState<string[]>([]);
+  function renderPlanTree(
+    record: Extract<WorkflowRecord["payload"], { kind: "PLAN" }>,
+  ) {
+    const nodes = record.projects ?? [];
+    const children = new Map<string | null, typeof nodes>();
+    for (const node of nodes) {
+      const list = children.get(node.parentTempId) ?? [];
+      list.push(node);
+      children.set(node.parentTempId, list);
+    }
+    const draw = (parent: string | null, depth = 0): ReactNode[] =>
+      (children.get(parent) ?? []).map((node) => (
+        <li
+          className="plan-tree-node"
+          key={node.tempId}
+          style={{ marginLeft: depth * 18 }}
+        >
+          <div className="plan-tree-project">
+            <strong>{node.title}</strong>
+            <span>{node.tempId}</span>
+          </div>
+          {node.descriptionMd && (
+            <p className="workflow-description">{node.descriptionMd}</p>
+          )}
+          <ul className="plan-tree-tasks">
+            {record.tasks
+              .filter((task) => task.projectTempId === node.tempId)
+              .map((task) => (
+                <li key={task.tempId}>
+                  <strong>{task.title}</strong>
+                  <span>{task.tempId}</span>
+                </li>
+              ))}
+          </ul>
+          <ul className="plan-tree-children">{draw(node.tempId, depth + 1)}</ul>
+        </li>
+      ));
+    return (
+      <ul className="plan-tree">
+        {draw(null)}
+        {record.tasks
+          .filter((task) => !task.projectTempId)
+          .map((task) => (
+            <li className="plan-tree-task" key={task.tempId}>
+              <strong>{task.title}</strong>
+              <span>{task.tempId}</span>
+            </li>
+          ))}
+      </ul>
+    );
+  }
   return (
     <section className="workflow-manager">
       <details className="panel">
@@ -71,14 +141,13 @@ export function WorkflowManager({
               setError(true);
               return;
             }
-            await preview(projectId, value);
+            await preview(projectId || null, value);
           }}
         >
           <label>
             {t("workflows.project")}
             <select
               aria-label={t("workflows.project")}
-              required
               value={projectId}
               onChange={(e) => setProjectId(e.target.value)}
             >
@@ -123,6 +192,16 @@ export function WorkflowManager({
                   )}
                 </h3>
                 <p>{t("workflows.reviewHelp")}</p>
+                <div className="plan-tree-summary">
+                  <strong>{t("workflows.treePreview")}</strong>
+                  <span>
+                    {(r.payload.projects ?? []).length}{" "}
+                    {t("workflows.projectsCount")} · {r.payload.tasks.length}{" "}
+                    {t("workflows.tasksCount")}
+                  </span>
+                </div>
+                {(r.payload.projects ?? []).length > 0 &&
+                  renderPlanTree(r.payload)}
                 <ol>
                   {r.payload.tasks.map((task) => (
                     <li key={task.tempId}>
@@ -138,9 +217,73 @@ export function WorkflowManager({
                         {t("workflows.dependencies")}:{" "}
                         {task.dependsOn.join(", ") || "—"}
                       </span>
+                      <pre
+                        style={{
+                          whiteSpace: "pre-wrap",
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {JSON.stringify(
+                          {
+                            projectIds: task.projectIds,
+                            projectTempIds:
+                              task.projectTempIds ??
+                              (task.projectTempId ? [task.projectTempId] : []),
+                            activationState: task.activationState ?? "ACTIVE",
+                            activationPolicy: task.activationPolicy ?? "MANUAL",
+                            priority: task.priority ?? "MEDIUM",
+                            assigneePrincipalId:
+                              task.assigneePrincipalId ?? null,
+                          },
+                          null,
+                          2,
+                        )}
+                      </pre>
                     </li>
                   ))}
                 </ol>
+                {(
+                  [
+                    [text("分类", "Categories"), r.payload.categories ?? []],
+                    [
+                      text("周期定义", "Recurrence definitions"),
+                      r.payload.recurrences ?? [],
+                    ],
+                    [
+                      text("知识空间", "Knowledge spaces"),
+                      r.payload.spaces ?? [],
+                    ],
+                    [
+                      text(
+                        "文档（保留完整正文）",
+                        "Documents (full content preserved)",
+                      ),
+                      r.payload.documents ?? [],
+                    ],
+                  ] as const
+                ).map(
+                  ([label, entities]) =>
+                    entities.length > 0 && (
+                      <section key={label}>
+                        <h4>
+                          {label} · {entities.length}
+                        </h4>
+                        {entities.map((entity) => (
+                          <details key={entity.tempId} open>
+                            <summary>{entity.tempId}</summary>
+                            <pre
+                              style={{
+                                whiteSpace: "pre-wrap",
+                                overflowWrap: "anywhere",
+                              }}
+                            >
+                              {JSON.stringify(entity, null, 2)}
+                            </pre>
+                          </details>
+                        ))}
+                      </section>
+                    ),
+                )}
                 {!r.payload.published && (
                   <button
                     type="button"
@@ -162,20 +305,29 @@ export function WorkflowManager({
             e.preventDefault();
             if (
               await save({
-                version: 0,
+                ...(editing ? { id: editing.id } : {}),
+                version: editing?.version ?? 0,
                 deleted: false,
                 rule: {
                   title,
-                  descriptionMd: "",
-                  projectId: projectId || null,
+                  descriptionMd,
+                  projectId: recurrenceProjects[0] ?? null,
+                  projectIds: recurrenceProjects,
+                  assigneePrincipalId: assignee || null,
+                  priority,
+                  activationState: activation,
+                  activationPolicy,
+                  endDate: endDate || null,
                   startDate,
                   timezone,
                   frequency,
                   interval,
                 },
               })
-            )
+            ) {
               setTitle("");
+              setEditing(null);
+            }
           }}
         >
           <label>
@@ -186,6 +338,78 @@ export function WorkflowManager({
               aria-label={t("workflows.title")}
               onChange={(e) => setTitle(e.target.value)}
             />
+          </label>
+          <label>
+            {text("说明（Markdown）", "Description (Markdown)")}
+            <textarea
+              value={descriptionMd}
+              onChange={(event) => setDescriptionMd(event.target.value)}
+            />
+          </label>
+          <label>
+            {text("结束日期（含当天）", "End date (inclusive)")}
+            <input
+              type="date"
+              min={startDate}
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+            />
+          </label>
+          <label>
+            {text("默认负责人 ID", "Default assignee ID")}
+            <input
+              maxLength={240}
+              value={assignee}
+              onChange={(event) => setAssignee(event.target.value)}
+            />
+          </label>
+          <label>
+            {text("默认优先级", "Default priority")}
+            <select
+              value={priority}
+              onChange={(event) =>
+                setPriority(event.target.value as typeof priority)
+              }
+            >
+              {(["LOW", "MEDIUM", "HIGH", "URGENT"] as const).map((value) => (
+                <option key={value} value={value}>
+                  {t(`priority.${value}`, { defaultValue: value })}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {text("默认激活状态", "Default activation state")}
+            <select
+              value={activation}
+              onChange={(event) =>
+                setActivation(event.target.value as typeof activation)
+              }
+            >
+              <option value="ACTIVE">{text("已激活", "Active")}</option>
+              <option value="INACTIVE">{text("未激活", "Inactive")}</option>
+              <option value="SCHEDULED">{text("按计划", "Scheduled")}</option>
+            </select>
+          </label>
+          <label>
+            {text("激活规则", "Activation policy")}
+            <select
+              value={activationPolicy}
+              onChange={(event) =>
+                setActivationPolicy(
+                  event.target.value as typeof activationPolicy,
+                )
+              }
+            >
+              <option value="MANUAL">{text("手动", "Manual")}</option>
+              <option value="IMMEDIATE">{text("立即", "Immediate")}</option>
+              <option value="WHEN_DEPENDENCIES_COMPLETED">
+                {text("依赖完成后", "After dependencies complete")}
+              </option>
+              <option value="AT_SCHEDULED_TIME">
+                {text("到计划日期", "At scheduled date")}
+              </option>
+            </select>
           </label>
           <label>
             {t("workflows.start")}
@@ -235,10 +459,17 @@ export function WorkflowManager({
             {t("workflows.project")}
             <select
               aria-label={t("workflows.project")}
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
+              multiple
+              value={recurrenceProjects}
+              onChange={(event) =>
+                setRecurrenceProjects(
+                  Array.from(
+                    event.target.selectedOptions,
+                    (option) => option.value,
+                  ),
+                )
+              }
             >
-              <option value="">{t("workflows.noProject")}</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.title}
@@ -247,8 +478,21 @@ export function WorkflowManager({
             </select>
           </label>
           <button type="submit" disabled={busy}>
-            {t("workflows.save")}
+            {editing
+              ? text("保存规则修改", "Save rule changes")
+              : t("workflows.save")}
           </button>
+          {editing && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(null);
+                setTitle("");
+              }}
+            >
+              {text("取消编辑", "Cancel edit")}
+            </button>
+          )}
         </form>
         {records
           .filter((r) => r.payload.kind === "RECURRENCE")
@@ -259,6 +503,48 @@ export function WorkflowManager({
             return (
               <article className="workflow-proposal" key={r.id}>
                 <h3>{rule.title}</h3>
+                <p className="workflow-description">{rule.descriptionMd}</p>
+                <p>
+                  {rule.startDate} →{" "}
+                  {rule.endDate ?? text("无结束日期", "No end date")} ·{" "}
+                  {text("负责人", "Assignee")}:{" "}
+                  {rule.assigneePrincipalId ?? "—"} ·{" "}
+                  {rule.activationState ?? "ACTIVE"} ·{" "}
+                  {rule.priority ?? "MEDIUM"}
+                </p>
+                <p>
+                  {(rule.projectIds ?? (rule.projectId ? [rule.projectId] : []))
+                    .map(
+                      (id) =>
+                        projects.find((project) => project.id === id)?.title ??
+                        id,
+                    )
+                    .join(" · ")}
+                </p>
+                <button
+                  type="button"
+                  disabled={busy || !!r.deletedAt}
+                  onClick={() => {
+                    setEditing({ id: r.id, version: r.version });
+                    setTitle(rule.title);
+                    setDescriptionMd(rule.descriptionMd);
+                    setStartDate(rule.startDate);
+                    setEndDate(rule.endDate ?? "");
+                    setTimezone(rule.timezone);
+                    setFrequency(rule.frequency);
+                    setInterval(rule.interval);
+                    setAssignee(rule.assigneePrincipalId ?? "");
+                    setPriority(rule.priority ?? "MEDIUM");
+                    setActivation(rule.activationState ?? "ACTIVE");
+                    setActivationPolicy(rule.activationPolicy ?? "MANUAL");
+                    setRecurrenceProjects(
+                      rule.projectIds ??
+                        (rule.projectId ? [rule.projectId] : []),
+                    );
+                  }}
+                >
+                  {text("编辑规则", "Edit rule")}
+                </button>
                 <p>
                   {rule.schedulerThrough
                     ? `${t("workflows.schedulerThrough")}: ${rule.schedulerThrough}`

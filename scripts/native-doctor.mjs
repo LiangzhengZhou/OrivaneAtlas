@@ -20,6 +20,10 @@ assert.deepEqual(capability.permissions, [
   "allow-check-app-update",
   "allow-install-app-update",
   "allow-configure-server",
+  "allow-saved-accounts",
+  "allow-select-account",
+  "allow-forget-account",
+  "allow-detach-account",
   "allow-server-request",
 ]);
 assert.equal(capability.remote, undefined);

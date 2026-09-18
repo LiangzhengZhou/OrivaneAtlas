@@ -1,4 +1,5 @@
 export * from "./categories";
+export * from "./project-materials";
 export * from "./workflows";
 
 import type { WorkflowRecord } from "./workflows";
@@ -26,6 +27,7 @@ import {
   dependency,
   edgeTypes,
   isExecutionActive,
+  MAX_PROJECT_DEPTH,
   priorities,
   requireMember,
   requireTitle,
@@ -103,6 +105,7 @@ export interface UnitOfWork {
   ): Promise<T>;
 }
 export interface CreateWorkInput {
+  readonly assigneePrincipalId?: string | null;
   readonly projectIds?: readonly string[];
   readonly projectId?: string | null;
   readonly startDate?: string | null;
@@ -115,6 +118,7 @@ export interface CreateWorkInput {
   readonly activationPolicy?: ActivationPolicy;
 }
 export interface UpdateWorkInput {
+  readonly assigneePrincipalId?: string | null;
   readonly projectIds?: readonly string[];
   readonly projectId?: string | null;
   readonly startDate?: string | null;
@@ -127,6 +131,16 @@ export interface UpdateWorkInput {
   readonly activationPolicy?: ActivationPolicy;
 }
 export class WorkService {
+  private assignee(value: string | null): string | null {
+    if (
+      value !== null &&
+      (typeof value !== "string" || !value.trim() || value.length > 240)
+    )
+      throw new DomainError("VALIDATION_ERROR", {
+        field: "assigneePrincipalId",
+      });
+    return value;
+  }
   constructor(
     private readonly uow: UnitOfWork,
     private readonly authorization: AuthorizationService,
@@ -167,7 +181,7 @@ export class WorkService {
         ),
         status: "TODO",
         executionMode: "MANUAL",
-        assigneePrincipalId: null,
+        assigneePrincipalId: this.assignee(input.assigneePrincipalId ?? null),
         projectId: input.projectId ?? null,
         ...(input.projectIds === undefined
           ? {}
@@ -248,6 +262,10 @@ export class WorkService {
       const now = this.clock.now();
       const item: WorkItem = {
         ...previous,
+        assigneePrincipalId:
+          input.assigneePrincipalId === undefined
+            ? previous.assigneePrincipalId
+            : this.assignee(input.assigneePrincipalId),
         ...(input.projectIds !== undefined
           ? { projectIds: input.projectIds }
           : input.projectId !== undefined && previous.type === "TASK"
@@ -427,10 +445,16 @@ export class WorkService {
       if (item.type === "PROJECT") {
         const visited = new Set([item.id]);
         let ancestor: WorkItem | null = project;
+        let depth = 1;
         while (ancestor) {
           if (visited.has(ancestor.id))
             throw new DomainError("WORK_GRAPH_CYCLE_DETECTED");
           visited.add(ancestor.id);
+          depth += 1;
+          if (depth > MAX_PROJECT_DEPTH)
+            throw new DomainError("VALIDATION_ERROR", {
+              field: "projectDepth",
+            });
           ancestor = ancestor.projectId
             ? await tx.get(ancestor.projectId)
             : null;
@@ -564,6 +588,7 @@ export class WorkService {
 }
 export * from "./accounts";
 export * from "./content-policy";
+export * from "./gateway-policy";
 export * from "./library";
 export {
   executeApprovedModel,

@@ -1,7 +1,9 @@
 import { type ActorContext, DomainError } from "@arclattice/domain";
 import type { AgentRun, EntityRef, ModelPort, ModelRoute } from "./connected";
+import type { GatewayPolicy } from "./gateway-policy";
 
 export interface PersonalModelInput {
+  gateway?: GatewayPolicy;
   profileId?: string;
   scope: string;
   endpoint: string;

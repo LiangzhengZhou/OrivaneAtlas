@@ -8,6 +8,8 @@ struct Session {
     origin: String,
     cookie: String,
     generation: u64,
+    reference: Option<String>,
+    expected_account: Option<String>,
 }
 #[derive(Default)]
 pub struct Transport(Mutex<Session>, Option<Box<dyn crate::session_store::Vault>>);
@@ -50,6 +52,10 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/tokens/revoke",
             "/api/logout",
             "/api/work/create",
+            "/api/projects/document",
+            "/api/projects/link",
+            "/api/projects/upload",
+            "/api/projects/delete",
             "/api/work/update",
             "/api/work/delete",
             "/api/edge/create",
@@ -90,6 +96,8 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/ai/providers",
             "/api/ai",
             "/api/activity",
+            "/api/projects/file",
+            "/api/projects/activity",
             "/api/revisions",
         ][..]
     };
@@ -143,24 +151,166 @@ fn configure(state: &Transport, origin: &str) -> Result<(), String> {
     if current.origin == origin {
         return Ok(());
     }
-    let first = current.origin.is_empty();
     current.cookie.clear();
+    current.reference = None;
+    current.expected_account = None;
     current.generation += 1;
     if let Some(vault) = &state.1 {
-        if first {
-            if let Some(saved) = vault.load()? {
-                if saved.origin == origin && valid_cookie(&saved.cookie) {
-                    current.cookie = saved.cookie;
-                } else {
-                    vault.clear()?;
+        if let Some(saved) = vault.load()? {
+            if let Some(entry) = saved.accounts.iter().find(|entry| {
+                Some(&entry.reference) == saved.active.as_ref() && entry.origin == origin
+            }) {
+                if valid_cookie(&entry.cookie) {
+                    current.cookie = entry.cookie.clone();
+                    current.reference = Some(entry.reference.clone());
+                    current.expected_account = Some(entry.account_id.clone());
                 }
+            } else if saved.origin == origin && valid_cookie(&saved.cookie) {
+                current.cookie = saved.cookie;
             }
-        } else {
-            vault.clear()?;
         }
     }
     current.origin = origin;
     Ok(())
+}
+
+fn write_store(
+    state: &Transport,
+    saved: &crate::session_store::SavedSession,
+) -> Result<(), String> {
+    if let Some(vault) = &state.1 {
+        if saved.accounts.is_empty() && saved.cookie.is_empty() {
+            vault.clear()?;
+        } else {
+            vault.save(saved)?;
+        }
+    }
+    Ok(())
+}
+
+fn forget_current(state: &Transport, current: &mut Session) -> Result<(), String> {
+    if let Some(vault) = &state.1 {
+        let mut saved = vault.load()?.unwrap_or_default();
+        saved
+            .accounts
+            .retain(|entry| Some(&entry.reference) != current.reference.as_ref());
+        if saved.active == current.reference {
+            saved.active = None;
+        }
+        if saved.origin == current.origin {
+            saved.origin.clear();
+            saved.cookie.clear();
+        }
+        write_store(state, &saved)?;
+    }
+    current.cookie.clear();
+    current.reference = None;
+    current.expected_account = None;
+    current.generation += 1;
+    Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountMetadata {
+    id: String,
+    server_url: String,
+    user_id: String,
+    display_name: String,
+    credential_reference: String,
+}
+
+#[tauri::command]
+pub fn saved_accounts(state: tauri::State<'_, Transport>) -> Result<Vec<AccountMetadata>, String> {
+    let _guard = state.0.lock().map_err(|_| "SECURE_STORAGE")?;
+    let saved = match &state.1 {
+        Some(vault) => vault.load()?.unwrap_or_default(),
+        None => return Ok(Vec::new()),
+    };
+    Ok(saved
+        .accounts
+        .into_iter()
+        .map(|entry| AccountMetadata {
+            id: format!("{}|{}", entry.origin, entry.account_id),
+            server_url: entry.origin,
+            user_id: entry.account_id,
+            display_name: entry.display_name,
+            credential_reference: entry.reference,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn detach_account(state: tauri::State<'_, Transport>) -> Result<(), String> {
+    let mut current = state.0.lock().map_err(|_| "SECURE_STORAGE")?;
+    current.cookie.clear();
+    current.reference = None;
+    current.expected_account = None;
+    current.generation += 1;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn forget_account(state: tauri::State<'_, Transport>, reference: String) -> Result<(), String> {
+    let mut current = state.0.lock().map_err(|_| "SECURE_STORAGE")?;
+    let vault = state.1.as_ref().ok_or("SECURE_STORAGE")?;
+    let mut saved = vault.load()?.unwrap_or_default();
+    saved.accounts.retain(|entry| entry.reference != reference);
+    if saved.active.as_ref() == Some(&reference) {
+        saved.active = None;
+    }
+    write_store(&state, &saved)?;
+    if current.reference.as_ref() == Some(&reference) {
+        current.cookie.clear();
+        current.reference = None;
+        current.expected_account = None;
+        current.generation += 1;
+    }
+    Ok(())
+}
+
+async fn select(state: &Transport, reference: String) -> Result<Reply, String> {
+    let origin = {
+        let mut current = state.0.lock().map_err(|_| "SECURE_STORAGE")?;
+        let saved = state
+            .1
+            .as_ref()
+            .ok_or("SECURE_STORAGE")?
+            .load()?
+            .unwrap_or_default();
+        let entry = saved
+            .accounts
+            .iter()
+            .find(|entry| entry.reference == reference)
+            .ok_or("UNAUTHORIZED")?;
+        let origin = normalize(&entry.origin)?;
+        if origin != entry.origin || !valid_cookie(&entry.cookie) {
+            return Err("SECURE_STORAGE".into());
+        }
+        current.origin = origin.clone();
+        current.cookie = entry.cookie.clone();
+        current.reference = Some(entry.reference.clone());
+        current.expected_account = Some(entry.account_id.clone());
+        current.generation += 1;
+        origin
+    };
+    send(
+        state,
+        origin,
+        "/api/session".into(),
+        None,
+        String::new(),
+        String::new(),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn select_account(
+    state: tauri::State<'_, Transport>,
+    reference: String,
+) -> Result<Reply, String> {
+    select(&state, reference).await
 }
 
 fn valid_cookie(cookie: &str) -> bool {
@@ -201,13 +351,17 @@ async fn send(
         if current.origin != origin || origin.is_empty() {
             return Err("INVALID_SERVER".into());
         }
-        let cookie = current.cookie.clone();
-        if path == "/api/logout" && payload.is_some() {
+        let cookie = if path == "/api/session" && payload.is_some() {
             current.cookie.clear();
+            current.reference = None;
+            current.expected_account = None;
             current.generation += 1;
-            if let Some(vault) = &state.1 {
-                vault.clear()?;
-            }
+            String::new()
+        } else {
+            current.cookie.clone()
+        };
+        if path == "/api/logout" && payload.is_some() {
+            forget_current(state, &mut current)?;
         }
         (cookie, current.generation)
     };
@@ -260,25 +414,76 @@ async fn send(
     if current.generation != generation {
         return Err("SERVER_CHANGED".into());
     }
-    if let Some(cookie) = new_cookie {
-        current.cookie = cookie;
-        current.generation += 1;
-        if let Some(vault) = &state.1 {
-            if valid_cookie(&current.cookie) {
-                vault.save(&crate::session_store::SavedSession {
-                    origin: current.origin.clone(),
-                    cookie: current.cookie.clone(),
-                })?;
+    if status == 401 || (path == "/api/logout" && status < 300) {
+        forget_current(state, &mut current)?;
+    } else if (200..300).contains(&status) {
+        if let Some(cookie) = new_cookie {
+            if !valid_cookie(&cookie) {
+                forget_current(state, &mut current)?;
             } else {
-                vault.clear()?;
+                current.cookie = cookie;
             }
         }
-    }
-    if status == 401 || (path == "/api/logout" && status < 300) {
-        current.cookie.clear();
-        current.generation += 1;
+        let identity = if path == "/api/session" {
+            let body: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(|_| "INVALID_RESPONSE")?;
+            let account = body.get("account");
+            let id = account
+                .and_then(|value| value.get("id"))
+                .and_then(|value| value.as_str());
+            if current
+                .expected_account
+                .as_deref()
+                .is_some_and(|expected| Some(expected) != id)
+            {
+                forget_current(state, &mut current)?;
+                return Err("ACCOUNT_MISMATCH".into());
+            }
+            id.zip(
+                account
+                    .and_then(|value| value.get("username"))
+                    .and_then(|value| value.as_str()),
+            )
+            .map(|(id, name)| (id.to_string(), name.to_string()))
+        } else {
+            None
+        };
         if let Some(vault) = &state.1 {
-            vault.clear()?;
+            let mut saved = vault.load()?.unwrap_or_default();
+            if valid_cookie(&current.cookie) {
+                if let Some((id, name)) = identity {
+                    if id.len() > 256 || name.len() > 256 {
+                        return Err("INVALID_RESPONSE".into());
+                    }
+                    let reference = format!("native:{}|{}", current.origin, id);
+                    saved.accounts.retain(|entry| entry.reference != reference);
+                    if saved.accounts.len() >= 20 {
+                        return Err("VAULT_FULL".into());
+                    }
+                    saved.accounts.push(crate::session_store::SavedCredential {
+                        reference: reference.clone(),
+                        origin: current.origin.clone(),
+                        account_id: id.clone(),
+                        display_name: name,
+                        cookie: current.cookie.clone(),
+                    });
+                    current.reference = Some(reference.clone());
+                    current.expected_account = Some(id);
+                    saved.active = Some(reference);
+                    saved.origin.clear();
+                    saved.cookie.clear();
+                } else if let Some(entry) = saved
+                    .accounts
+                    .iter_mut()
+                    .find(|entry| Some(&entry.reference) == current.reference.as_ref())
+                {
+                    entry.cookie = current.cookie.clone();
+                } else {
+                    saved.origin = current.origin.clone();
+                    saved.cookie = current.cookie.clone();
+                }
+                write_store(state, &saved)?;
+            }
         }
     }
     Ok(Reply {
@@ -314,14 +519,225 @@ mod tests {
             Ok(())
         }
     }
+    fn fixture(
+        replies: Vec<(u16, serde_json::Value, Option<String>)>,
+    ) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let worker = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for (status, body, cookie) in replies {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut buffer = [0; 8192];
+                let length = stream.read(&mut buffer).unwrap();
+                requests.push(String::from_utf8_lossy(&buffer[..length]).into_owned());
+                let body = body.to_string();
+                let cookie = cookie
+                    .map(|value| format!("Set-Cookie: {value}; HttpOnly\r\n"))
+                    .unwrap_or_default();
+                let reply = format!("HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\n{cookie}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                stream.write_all(reply.as_bytes()).unwrap();
+            }
+            requests
+        });
+        (origin, worker)
+    }
+    fn identity(id: &str) -> serde_json::Value {
+        serde_json::json!({"account":{"id":id,"username":id},"context":{"workspaceId":id,"principalId":id},"csrf":"verified-csrf"})
+    }
+    fn credential(origin: &str, id: &str, token: char) -> crate::session_store::SavedCredential {
+        crate::session_store::SavedCredential {
+            origin: origin.into(),
+            reference: format!("native:{origin}|{id}"),
+            account_id: id.into(),
+            display_name: id.into(),
+            cookie: format!("arc_session={}", token.to_string().repeat(64)),
+        }
+    }
     #[test]
-    fn restore_is_origin_bound_and_switch_forgets() {
+    fn multiple_accounts_switch_back_without_password_and_logout_only_selected() {
+        let (origin, worker) = fixture(vec![
+            (200, identity("first"), None),
+            (200, identity("second"), None),
+            (200, identity("first"), None),
+            (200, serde_json::json!({}), None),
+        ]);
+        let first = credential(&origin, "first", 'a');
+        let second = credential(&origin, "second", 'b');
+        let vault = MemoryVault::default();
+        vault
+            .save(&SavedSession {
+                accounts: vec![first.clone(), second.clone()],
+                ..SavedSession::default()
+            })
+            .unwrap();
+        let state = Transport::with_vault(vault.clone());
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            for reference in [&first.reference, &second.reference, &first.reference] {
+                assert_eq!(select(&state, reference.clone()).await.unwrap().status, 200);
+            }
+            assert_eq!(vault.load().unwrap().unwrap().accounts.len(), 2);
+            send(
+                &state,
+                origin,
+                "/api/logout".into(),
+                Some("{}".into()),
+                "verified-csrf".into(),
+                String::new(),
+            )
+            .await
+            .unwrap();
+        });
+        let requests = worker.join().unwrap();
+        assert!(requests[0].contains(&first.cookie));
+        assert!(requests[1].contains(&second.cookie));
+        assert!(requests[2].contains(&first.cookie));
+        assert!(requests[3].contains(&first.cookie));
+        let saved = vault.load().unwrap().unwrap();
+        assert_eq!(saved.accounts.len(), 1);
+        assert_eq!(saved.accounts[0].reference, second.reference);
+        assert!(state.0.lock().unwrap().cookie.is_empty());
+    }
+    #[test]
+    fn trusted_identity_mismatch_removes_only_the_selected_entry() {
+        let (origin, worker) = fixture(vec![(200, identity("wrong-account"), None)]);
+        let selected = credential(&origin, "expected", 'a');
+        let unrelated = credential("https://other.example", "expected", 'b');
+        let vault = MemoryVault::default();
+        vault
+            .save(&SavedSession {
+                accounts: vec![selected.clone(), unrelated.clone()],
+                ..SavedSession::default()
+            })
+            .unwrap();
+        let state = Transport::with_vault(vault.clone());
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(select(&state, selected.reference));
+        assert_eq!(result.err().unwrap(), "ACCOUNT_MISMATCH");
+        assert!(state.0.lock().unwrap().cookie.is_empty());
+        let remaining = vault.load().unwrap().unwrap();
+        assert_eq!(remaining.accounts.len(), 1);
+        assert_eq!(remaining.accounts[0].reference, unrelated.reference);
+        worker.join().unwrap();
+    }
+    #[test]
+    fn same_account_id_on_different_servers_never_shares_a_cookie() {
+        let (first_origin, first_worker) = fixture(vec![(200, identity("same"), None)]);
+        let (second_origin, second_worker) = fixture(vec![(200, identity("same"), None)]);
+        let first = credential(&first_origin, "same", 'a');
+        let second = credential(&second_origin, "same", 'b');
+        let vault = MemoryVault::default();
+        vault
+            .save(&SavedSession {
+                accounts: vec![first.clone(), second.clone()],
+                ..SavedSession::default()
+            })
+            .unwrap();
+        let state = Transport::with_vault(vault.clone());
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            select(&state, first.reference.clone()).await.unwrap();
+            select(&state, second.reference.clone()).await.unwrap();
+        });
+        let first_requests = first_worker.join().unwrap();
+        let second_requests = second_worker.join().unwrap();
+        assert!(first_requests[0].contains(&first.cookie));
+        assert!(!first_requests[0].contains(&second.cookie));
+        assert!(second_requests[0].contains(&second.cookie));
+        assert!(!second_requests[0].contains(&first.cookie));
+        assert_eq!(vault.load().unwrap().unwrap().accounts.len(), 2);
+    }
+    #[test]
+    fn signing_in_another_account_never_sends_the_retained_cookie() {
+        let next_cookie = format!("arc_session={}", "b".repeat(64));
+        let (origin, worker) = fixture(vec![(200, identity("second"), Some(next_cookie))]);
+        let first = credential(&origin, "first", 'a');
+        let vault = MemoryVault::default();
+        vault
+            .save(&SavedSession {
+                accounts: vec![first.clone()],
+                active: Some(first.reference),
+                ..SavedSession::default()
+            })
+            .unwrap();
+        let state = Transport::with_vault(vault.clone());
+        configure(&state, &origin).unwrap();
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(send(
+                &state,
+                origin,
+                "/api/session".into(),
+                Some("{\"username\":\"second\",\"password\":\"request-only\"}".into()),
+                String::new(),
+                String::new(),
+            ))
+            .unwrap();
+        let requests = worker.join().unwrap();
+        assert!(!requests[0].to_lowercase().contains("cookie:"));
+        let saved = vault.load().unwrap().unwrap();
+        assert_eq!(saved.accounts.len(), 2);
+        assert!(!serde_json::to_string(&saved)
+            .unwrap()
+            .contains("request-only"));
+    }
+    #[test]
+    fn revoked_selection_preserves_other_server_and_legacy_promotes() {
+        let (origin, worker) = fixture(vec![
+            (200, identity("legacy"), None),
+            (401, serde_json::json!({}), None),
+        ]);
+        let vault = MemoryVault::default();
+        vault
+            .save(&SavedSession {
+                origin: origin.clone(),
+                cookie: format!("arc_session={}", "a".repeat(64)),
+                accounts: vec![credential("https://other.example", "legacy", 'b')],
+                ..SavedSession::default()
+            })
+            .unwrap();
+        let state = Transport::with_vault(vault.clone());
+        configure(&state, &origin).unwrap();
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            send(
+                &state,
+                origin.clone(),
+                "/api/session".into(),
+                None,
+                String::new(),
+                String::new(),
+            )
+            .await
+            .unwrap();
+            let saved = vault.load().unwrap().unwrap();
+            assert!(saved.cookie.is_empty());
+            assert_eq!(saved.accounts.len(), 2);
+            assert_eq!(
+                select(&state, format!("native:{origin}|legacy"))
+                    .await
+                    .unwrap()
+                    .status,
+                401
+            );
+        });
+        let saved = vault.load().unwrap().unwrap();
+        assert_eq!(saved.accounts.len(), 1);
+        assert_eq!(saved.accounts[0].origin, "https://other.example");
+        worker.join().unwrap();
+    }
+    #[test]
+    fn legacy_restore_is_origin_bound_and_switch_preserves() {
         let vault = MemoryVault::default();
         let cookie = format!("arc_session={}", "b".repeat(64));
         vault
             .save(&SavedSession {
                 origin: "https://one.example".into(),
                 cookie: cookie.clone(),
+                ..SavedSession::default()
             })
             .unwrap();
         let state = Transport::with_vault(vault.clone());
@@ -335,16 +751,17 @@ mod tests {
         assert_eq!(restarted.0.lock().unwrap().cookie, cookie);
         configure(&restarted, "https://two.example").unwrap();
         assert!(restarted.0.lock().unwrap().cookie.is_empty());
-        assert!(vault.load().unwrap().is_none());
+        assert!(vault.load().unwrap().is_some());
         vault
             .save(&SavedSession {
                 origin: "https://one.example".into(),
                 cookie,
+                ..SavedSession::default()
             })
             .unwrap();
         let mismatched = Transport::with_vault(vault.clone());
         configure(&mismatched, "https://two.example").unwrap();
-        assert!(vault.load().unwrap().is_none());
+        assert!(vault.load().unwrap().is_some());
     }
 
     #[test]
@@ -357,6 +774,7 @@ mod tests {
             .save(&SavedSession {
                 origin: origin.clone(),
                 cookie: format!("arc_session={}", "c".repeat(64)),
+                ..SavedSession::default()
             })
             .unwrap();
         let state = Transport::with_vault(vault.clone());

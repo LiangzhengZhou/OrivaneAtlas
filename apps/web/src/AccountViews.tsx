@@ -75,7 +75,15 @@ export function AccountView({
       {runtime.account && (
         <section className="panel account-panel">
           <h2>{t("loginSessions")}</h2>
-          <p className="muted">{t("switchHint")}</p>
+          <p className="muted">
+            {runtime.native
+              ? t("secureSwitchHint", {
+                  defaultValue: zh
+                    ? "切换账户会保留本机加密会话，返回登录页选择账户或添加其他服务器账户。退出登录会撤销并删除当前会话。"
+                    : "Switch preserves encrypted sessions on this device. Select an account or add another server account on the sign-in page. Sign out revokes and removes the current session.",
+                })
+              : t("switchHint")}
+          </p>
           <div className="action-row">
             <button
               type="button"
@@ -98,7 +106,8 @@ export function AccountView({
               onClick={() => {
                 if (confirmLeave())
                   void run(async () => {
-                    await runtime.logout();
+                    if (runtime.native) await runtime.beginAccountSwitch();
+                    else await runtime.logout();
                     onLogout();
                   });
               }}

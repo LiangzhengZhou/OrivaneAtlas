@@ -28,6 +28,7 @@ import {
   type OrganizeInput,
   type PersonalModelInput,
   type PersonalModelVault,
+  ProjectService,
   parseAiTextEdits,
   type RecurrencePayload,
   type UpdateWorkInput,
@@ -43,7 +44,10 @@ import {
 } from "@arclattice/domain";
 import { SqliteUnitOfWork } from "@arclattice/storage-sqlite";
 import { v7 } from "uuid";
+import type { GatewaySettlement } from "../../application/src/gateway-policy";
+import { mcpDispatch, parseMcp } from "./mcp";
 import { passwordHash, passwordMatches, username } from "./password";
+import { planDocumentPublisher } from "./plan-documents";
 import { startRecurrenceWorker } from "./recurrence-worker";
 
 export interface HostOptions {
@@ -105,6 +109,7 @@ function boolean(value: unknown): boolean {
 }
 async function body(
   req: IncomingMessage,
+  limit = 900_000,
 ): Promise<{ raw: string; value: Record<string, unknown> }> {
   if (req.headers["content-type"]?.split(";")[0] !== "application/json")
     fail(415, "VALIDATION_ERROR");
@@ -112,7 +117,7 @@ async function body(
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 900_000) fail(413, "VALIDATION_ERROR");
+    if (size > limit) fail(413, "VALIDATION_ERROR");
     chunks.push(chunk);
   }
   const raw = Buffer.concat(chunks).toString("utf8");
@@ -244,6 +249,7 @@ export async function createHost(options: HostOptions) {
         error: string | null = null;
       let interrupted = false;
       let usage: ModelUsage | undefined;
+      let settlement: GatewaySettlement | undefined;
       let reserved: AgentRun;
       try {
         reserved = await db.request(
@@ -285,7 +291,7 @@ export async function createHost(options: HostOptions) {
         const result = await executeApprovedModel(
           actor,
           reserved,
-          () =>
+          (route) =>
             db.request(
               actor,
               null,
@@ -296,7 +302,12 @@ export async function createHost(options: HostOptions) {
                   current.status !== "RUNNING"
                 )
                   throw new DomainError("VERSION_CONFLICT");
-                await validateApprovedContext(actor, current, notes, library);
+                await validateApprovedContext(
+                  actor,
+                  { ...current, route },
+                  notes,
+                  library,
+                );
               },
               checkAccess,
             ),
@@ -307,6 +318,7 @@ export async function createHost(options: HostOptions) {
         error = result.error;
         interrupted = result.interrupted;
         usage = result.usage;
+        settlement = result.settlement;
       } catch {
         output = null;
         error = controller.signal.aborted
@@ -323,6 +335,7 @@ export async function createHost(options: HostOptions) {
           error,
           interrupted || controller.signal.aborted,
           usage,
+          settlement,
         ),
       );
       await db.audit(agentContext, run.id, error ?? "MODEL_SUCCEEDED");
@@ -513,8 +526,11 @@ export async function createHost(options: HostOptions) {
             "/api/library/revisions",
             "/api/library/asset",
             "/api/openapi.json",
+            "/api/projects/file",
+            "/api/projects/activity",
           ];
           const writable = [
+            "/api/mcp",
             "/api/organize",
             "/api/work/create",
             "/api/work/update",
@@ -529,6 +545,10 @@ export async function createHost(options: HostOptions) {
             "/api/library/delete",
             "/api/library/upload",
             "/api/library/upload-chunk",
+            "/api/projects/document",
+            "/api/projects/link",
+            "/api/projects/upload",
+            "/api/projects/delete",
           ];
           if (
             mutation
@@ -597,6 +617,84 @@ export async function createHost(options: HostOptions) {
           fail(403, "FORBIDDEN");
         if (path === "/api/session" && req.method === "GET") {
           json(res, 200, { context, csrf: session?.csrf, account });
+          return;
+        }
+        if (path === "/api/mcp" && mutation) {
+          const { raw, value } = await body(req);
+          const rpc = parseMcp(value);
+          const response = await mcpDispatch(rpc, async (name, args) => {
+            const reading = name === "workspace_snapshot";
+            if (reading && credential && credential.scope !== "read-write")
+              fail(403, "FORBIDDEN");
+            const receipt = reading
+              ? null
+              : { key: requestId(req), digest: digest(path + "\n" + raw) };
+            return db.request(
+              context,
+              receipt,
+              async (
+                uow,
+                notes,
+                _connected,
+                library,
+                _organization,
+                projects,
+              ) => {
+                if (reading)
+                  return {
+                    ...(await new WorkService(
+                      uow,
+                      authorization,
+                      clock,
+                      ids,
+                    ).snapshot(context)),
+                    library: await library.list(),
+                    notes: await notes.list(),
+                    projectMaterials: await projects.list(),
+                  };
+                if (name === "plan_preview")
+                  return new WorkflowService(
+                    uow,
+                    authorization,
+                    clock,
+                    ids,
+                    planDocumentPublisher(
+                      uow,
+                      projects,
+                      library,
+                      authorization,
+                      clock,
+                      ids,
+                    ),
+                  ).preview(
+                    context,
+                    args.projectId === null ? null : string(args.projectId),
+                    args.manifest,
+                    "EXTERNAL_AI",
+                  );
+                if (name === "project_document_create")
+                  return new ProjectService(
+                    uow,
+                    projects,
+                    library,
+                    authorization,
+                    clock,
+                    ids,
+                  ).createDocument(context, {
+                    projectId: string(args.projectId),
+                    title: string(args.title),
+                    bodyMd: string(args.bodyMd, 200000),
+                    provenance: "EXTERNAL_AI",
+                  });
+                throw new DomainError("FORBIDDEN");
+              },
+              requireAccess,
+            );
+          });
+          if (response === null) {
+            res.writeHead(202);
+            res.end();
+          } else json(res, 200, response);
           return;
         }
         if (path === "/api/account/sessions" && req.method === "GET") {
@@ -723,6 +821,7 @@ export async function createHost(options: HostOptions) {
               "key",
               "maxRunsPerDay",
               "profileId",
+              "gateway",
             ]);
             for (const key of ["scope", "endpoint", "protocol", "model", "key"])
               string(input[key], key === "key" ? 4096 : 1000);
@@ -1017,7 +1116,8 @@ export async function createHost(options: HostOptions) {
           const data = await db.request(
             context,
             null,
-            async (uow, store, connected, library, organization) => ({
+            async (uow, store, connected, library, organization, projects) => ({
+              projectMaterials: await projects.list(),
               organization: await organization.list(),
               workflows: await new WorkflowService(
                 uow,
@@ -1131,6 +1231,38 @@ export async function createHost(options: HostOptions) {
           json(res, 200, result);
           return;
         }
+        if (path === "/api/projects/file" && req.method === "GET") {
+          const result = await db.request(
+            context,
+            null,
+            async (
+              _uow,
+              _notes,
+              _connected,
+              _library,
+              _organization,
+              projects,
+            ) => {
+              const id = string(url.searchParams.get("id"));
+              return {
+                material: await projects.get(id),
+                base64: await projects.file(id),
+              };
+            },
+          );
+          json(res, 200, result);
+          return;
+        }
+        if (path === "/api/projects/activity" && req.method === "GET") {
+          const result = await db.request(
+            context,
+            null,
+            (_uow, _notes, _connected, _library, _organization, projects) =>
+              projects.activity(string(url.searchParams.get("projectId"))),
+          );
+          json(res, 200, result);
+          return;
+        }
         if (!mutation) fail(404, "NOT_FOUND");
         const requestKey = req.headers["idempotency-key"];
         if (
@@ -1138,7 +1270,10 @@ export async function createHost(options: HostOptions) {
           !/^[a-zA-Z0-9-]{16,80}$/.test(requestKey)
         )
           fail(400, "IDEMPOTENCY_REQUIRED");
-        const { raw, value } = await body(req);
+        const { raw, value } = await body(
+          req,
+          path === "/api/projects/upload" ? 2_800_000 : 900_000,
+        );
         let selectedModel: ModelPort | null = null;
         if (path === "/api/ai/propose")
           selectedModel = resolveModel(
@@ -1161,7 +1296,7 @@ export async function createHost(options: HostOptions) {
         const result = await db.request(
           context,
           { key: requestKey, digest: digest(path + "\n" + raw) },
-          async (uow, store, connected, library, organization) => {
+          async (uow, store, connected, library, organization, projects) => {
             const work = new WorkService(uow, authorization, clock, ids);
             // A deleted project cannot authorize a new scoped model request.
             // Rejecting an existing proposal and removing its credentials remain possible.
@@ -1199,6 +1334,69 @@ export async function createHost(options: HostOptions) {
               ids,
             );
             switch (path) {
+              case "/api/projects/document": {
+                keys(value, ["projectId", "title", "bodyMd"]);
+                return new ProjectService(
+                  uow,
+                  projects,
+                  library,
+                  authorization,
+                  clock,
+                  ids,
+                ).createDocument(context, {
+                  projectId: string(value.projectId),
+                  title: string(value.title),
+                  bodyMd: string(value.bodyMd, 200000),
+                  provenance: credential ? "EXTERNAL_AI" : "HUMAN",
+                });
+              }
+              case "/api/projects/link": {
+                keys(value, ["projectId", "targetId"]);
+                return new ProjectService(
+                  uow,
+                  projects,
+                  library,
+                  authorization,
+                  clock,
+                  ids,
+                ).link(
+                  context,
+                  string(value.projectId),
+                  string(value.targetId),
+                );
+              }
+              case "/api/projects/upload": {
+                keys(value, ["projectId", "name", "mime", "base64"]);
+                return new ProjectService(
+                  uow,
+                  projects,
+                  library,
+                  authorization,
+                  clock,
+                  ids,
+                ).upload(context, {
+                  projectId: string(value.projectId),
+                  name: string(value.name, 120),
+                  mime: string(value.mime),
+                  base64: string(value.base64, 2796204),
+                });
+              }
+              case "/api/projects/delete": {
+                keys(value, ["id", "version", "deleted"]);
+                return new ProjectService(
+                  uow,
+                  projects,
+                  library,
+                  authorization,
+                  clock,
+                  ids,
+                ).setDeleted(
+                  context,
+                  string(value.id),
+                  version(value.version),
+                  boolean(value.deleted),
+                );
+              }
               case "/api/organize": {
                 keys(value, ["kind", "action", "folder", "entries"]);
                 if (!Array.isArray(value.entries))
@@ -1351,8 +1549,6 @@ export async function createHost(options: HostOptions) {
                 if (credential) fail(403, "FORBIDDEN");
                 keys(value, ["prompt", "scope", "sources", "profileId"]);
                 if (!selectedModel) fail(409, "MODEL_NOT_CONFIGURED");
-                if ((await connected.runs()).length >= 1000)
-                  fail(429, "RATE_LIMITED");
                 const sources: NonNullable<AgentRun["context"]> = [];
                 if (value.sources !== undefined) {
                   if (
@@ -1511,37 +1707,68 @@ export async function createHost(options: HostOptions) {
                 return decision;
               }
               case "/api/categories/save": {
-                keys(value, ["id", "version", "name", "projectIds", "deleted"]);
+                keys(value, [
+                  "id",
+                  "version",
+                  "name",
+                  "projectIds",
+                  "deleted",
+                  "icon",
+                  "color",
+                  "position",
+                ]);
                 return new CategoryService(uow, authorization, clock, ids).save(
                   context,
                   {
                     ...(value.id === undefined ? {} : { id: string(value.id) }),
                     version: value.version as number,
                     name: string(value.name),
+                    ...(value.icon === undefined
+                      ? {}
+                      : { icon: string(value.icon) }),
+                    ...(value.color === undefined
+                      ? {}
+                      : { color: string(value.color) }),
+                    ...(value.position === undefined
+                      ? {}
+                      : { position: value.position as number }),
                     projectIds: value.projectIds as string[],
                     deleted: boolean(value.deleted),
                   },
                 );
               }
-              case "/api/plans/preview": {
-                if (credential) fail(403, "FORBIDDEN");
-                keys(value, ["projectId", "manifest"]);
-                return new WorkflowService(
-                  uow,
-                  authorization,
-                  clock,
-                  ids,
-                ).preview(context, string(value.projectId), value.manifest);
-              }
+              case "/api/plans/preview":
               case "/api/plans/publish": {
                 if (credential) fail(403, "FORBIDDEN");
-                keys(value, ["id", "version"]);
-                return new WorkflowService(
+                const workflows = new WorkflowService(
                   uow,
                   authorization,
                   clock,
                   ids,
-                ).publish(context, string(value.id), version(value.version));
+                  planDocumentPublisher(
+                    uow,
+                    projects,
+                    library,
+                    authorization,
+                    clock,
+                    ids,
+                  ),
+                );
+                if (url.pathname === "/api/plans/preview") {
+                  keys(value, ["projectId", "manifest"]);
+                  return workflows.preview(
+                    context,
+                    value.projectId === null ? null : string(value.projectId),
+                    value.manifest,
+                  );
+                }
+                keys(value, ["id", "version"]);
+                return workflows.publish(
+                  context,
+                  string(value.id),
+                  version(value.version),
+                  true,
+                );
               }
               case "/api/recurrences/save": {
                 if (credential) fail(403, "FORBIDDEN");
@@ -1555,6 +1782,12 @@ export async function createHost(options: HostOptions) {
                   "timezone",
                   "frequency",
                   "interval",
+                  "endDate",
+                  "projectIds",
+                  "priority",
+                  "activationState",
+                  "activationPolicy",
+                  "assigneePrincipalId",
                 ]);
                 for (const field of [
                   "title",
@@ -1565,6 +1798,9 @@ export async function createHost(options: HostOptions) {
                 ])
                   string(rule[field], 200000);
                 if (rule.projectId !== null) string(rule.projectId);
+                for (const field of ["endDate", "assigneePrincipalId"])
+                  if (rule[field] !== undefined && rule[field] !== null)
+                    string(rule[field]);
                 return new WorkflowService(
                   uow,
                   authorization,
@@ -1610,6 +1846,7 @@ export async function createHost(options: HostOptions) {
               }
               case "/api/work/create": {
                 keys(value, [
+                  "assigneePrincipalId",
                   "title",
                   "descriptionMd",
                   "priority",
@@ -1621,7 +1858,12 @@ export async function createHost(options: HostOptions) {
                   "startDate",
                   "dueDate",
                 ]);
-                for (const field of ["projectId", "startDate", "dueDate"])
+                for (const field of [
+                  "projectId",
+                  "startDate",
+                  "dueDate",
+                  "assigneePrincipalId",
+                ])
                   if (value[field] !== undefined && value[field] !== null)
                     string(value[field]);
                 string(value.title);
@@ -1638,6 +1880,7 @@ export async function createHost(options: HostOptions) {
                 keys(value, ["id", "version", "input"]);
                 const input = object(value.input);
                 keys(input, [
+                  "assigneePrincipalId",
                   "title",
                   "descriptionMd",
                   "priority",
@@ -1652,7 +1895,12 @@ export async function createHost(options: HostOptions) {
                 for (const [key, val] of Object.entries(input)) {
                   if (key === "projectIds") continue;
                   if (
-                    ["projectId", "startDate", "dueDate"].includes(key) &&
+                    [
+                      "projectId",
+                      "startDate",
+                      "dueDate",
+                      "assigneePrincipalId",
+                    ].includes(key) &&
                     val === null
                   )
                     continue;

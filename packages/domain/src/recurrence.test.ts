@@ -1,6 +1,26 @@
 import { expect, test } from "vitest";
 import { localCalendarDay, occurrenceDays } from "./recurrence";
 
+test("end dates are inclusive and reject invalid ranges", () => {
+  const rule = {
+    startDate: "2026-03-07",
+    endDate: "2026-03-09",
+    timezone: "America/New_York",
+    frequency: "DAILY" as const,
+    interval: 1,
+  };
+  expect(occurrenceDays(rule, "2026-03-07", "2026-03-12")).toEqual([
+    "2026-03-07",
+    "2026-03-08",
+    "2026-03-09",
+  ]);
+  expect(occurrenceDays(rule, "2026-03-10", "2026-03-12")).toEqual([]);
+  for (const endDate of ["2026-03-06", "2026-02-30", "bad"])
+    expect(() =>
+      occurrenceDays({ ...rule, endDate }, "2026-03-07", "2026-03-12"),
+    ).toThrow("VALIDATION_ERROR");
+});
+
 test("calendar recurrence skips absent month days and remains stable through DST", () => {
   const base = {
     startDate: "2026-01-31",

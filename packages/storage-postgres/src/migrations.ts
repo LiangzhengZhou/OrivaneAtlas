@@ -78,6 +78,14 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 8,
+    name: "category-presentation",
+    sql: readFileSync(
+      new URL("./migrations/0008-category-presentation.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")

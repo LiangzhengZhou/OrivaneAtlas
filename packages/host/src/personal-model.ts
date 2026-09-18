@@ -27,6 +27,10 @@ import type {
   PersonalModelVault,
 } from "@arclattice/application";
 import { type ActorContext, DomainError } from "@arclattice/domain";
+import {
+  ModelNotSentError,
+  validateGatewayPolicy,
+} from "../../application/src/gateway-policy";
 import { providerUsage } from "./model-usage";
 
 const blocked = new BlockList();
@@ -92,7 +96,7 @@ export function modelEndpoint(value: string) {
     throw new DomainError("VALIDATION_ERROR");
   url.pathname =
     url.pathname
-      .replace(/\/(chat\/completions|responses|models)\/?$/, "")
+      .replace(/\/(chat\/completions|responses|models|embeddings)\/?$/, "")
       .replace(/\/$/, "") + "/";
   return url;
 }
@@ -104,13 +108,17 @@ async function send(
 ): Promise<unknown> {
   const host = endpoint.hostname.replace(/^\[|\]$/g, "");
   // Validate every answer, then pin one. TLS still verifies the original hostname.
-  const answers = await lookup(host, { all: true, verbatim: true });
+  const answers = await lookup(host, { all: true, verbatim: true }).catch(
+    () => {
+      throw new ModelNotSentError();
+    },
+  );
   if (
     !answers.length ||
     answers.some((a) => !publicAddress(a.address)) ||
     signal.aborted
   )
-    throw new Error("MODEL_DESTINATION_REJECTED");
+    throw new ModelNotSentError("MODEL_DESTINATION_REJECTED");
   const address = answers[0]!;
   return new Promise((resolve, reject) => {
     const req = request(
@@ -167,8 +175,9 @@ const owner = (actor: ActorContext) =>
 function summary(entry: Entry): PersonalModelSummary {
   const { key, owner: identity, generation: _generation, ...safe } = entry;
   return {
-    ...safe,
+    ...structuredClone(safe),
     route: {
+      ...(entry.gateway ? { gateway: structuredClone(entry.gateway) } : {}),
       ...(entry.profileId ? { profileId: entry.profileId } : {}),
       scope: entry.scope,
       provider: entry.endpoint,
@@ -265,11 +274,68 @@ export function openPersonalVault(directory: string): PersonalModelVault {
       }
     }
   }
+  function registeredSummary(entry: Entry): PersonalModelSummary {
+    const result = summary(entry);
+    if (!entry.gateway?.fallbackProfileIds.length) return result;
+    const alternatives = entry.gateway.fallbackProfileIds.map((profileId) =>
+      entries.find(
+        (candidate) =>
+          candidate.owner === entry.owner &&
+          candidate.scope === entry.scope &&
+          (candidate.profileId ?? "default") === profileId,
+      ),
+    );
+    result.route.fallbackRoutes = alternatives.flatMap((candidate) =>
+      candidate ? [summary(candidate).route] : [],
+    );
+    result.route.fingerprint = createHash("sha256")
+      .update(
+        JSON.stringify([
+          result.route.fingerprint,
+          alternatives.map((candidate) =>
+            candidate ? summary(candidate).route.fingerprint : null,
+          ),
+        ]),
+      )
+      .digest("hex");
+    return result;
+  }
   return {
     list: (actor) =>
-      entries.filter((e) => e.owner === owner(actor)).map(summary),
+      entries.filter((e) => e.owner === owner(actor)).map(registeredSummary),
     save(actor, version, input) {
       const endpoint = modelEndpoint(input.endpoint).href;
+      const gateway =
+        input.gateway === undefined
+          ? undefined
+          : validateGatewayPolicy(input.gateway);
+      if (
+        gateway &&
+        (gateway.fallbackProfileIds.includes(input.profileId ?? "default") ||
+          entries.some(
+            (candidate) =>
+              candidate.owner === owner(actor) &&
+              candidate.gateway?.providerId === gateway.providerId &&
+              candidate.endpoint !== endpoint &&
+              !(
+                candidate.scope === input.scope &&
+                (candidate.profileId ?? "default") ===
+                  (input.profileId ?? "default")
+              ),
+          ) ||
+          gateway.fallbackProfileIds.some(
+            (profileId) =>
+              !entries.some(
+                (candidate) =>
+                  candidate.owner === owner(actor) &&
+                  candidate.scope === input.scope &&
+                  (candidate.profileId ?? "default") === profileId &&
+                  candidate.gateway?.enabled &&
+                  candidate.gateway.capability === gateway.capability,
+              ),
+          ))
+      )
+        throw new DomainError("VALIDATION_ERROR");
       if (
         (input.profileId !== undefined &&
           (typeof input.profileId !== "string" ||
@@ -300,6 +366,7 @@ export function openPersonalVault(directory: string): PersonalModelVault {
       if (!key) throw new DomainError("VALIDATION_ERROR");
       const entry = {
         ...input,
+        ...(gateway ? { gateway } : {}),
         endpoint,
         key,
         owner: owner(actor),
@@ -307,7 +374,7 @@ export function openPersonalVault(directory: string): PersonalModelVault {
         version: version + 1,
       };
       commit([...entries.filter((e) => e !== old), entry]);
-      return summary(entry);
+      return registeredSummary(entry);
     },
     remove(actor, scope, version, profileId = "default") {
       const old = entries.find(
@@ -328,34 +395,66 @@ export function openPersonalVault(directory: string): PersonalModelVault {
           (e.profileId ?? "default") === profileId,
       );
       if (!entry) return null;
-      const route = summary(entry).route;
-      return {
+      if (entry.gateway?.enabled === false) return null;
+      const route = registeredSummary(entry).route;
+      const alternatives =
+        entry.gateway?.fallbackProfileIds.map((profile) =>
+          entries.find(
+            (candidate) =>
+              candidate.owner === entry.owner &&
+              candidate.scope === entry.scope &&
+              (candidate.profileId ?? "default") === profile,
+          ),
+        ) ?? [];
+      if (
+        alternatives.some(
+          (candidate) =>
+            !candidate?.gateway?.enabled ||
+            candidate.gateway.capability !== entry.gateway?.capability,
+        )
+      )
+        return null;
+      const build = (entry: Entry, route: ModelPort["route"]): ModelPort => ({
         route,
         async complete(prompt, signal, reportUsage) {
+          const embedding = route.gateway?.capability === "EMBEDDING";
           const endpoint = new URL(
-            entry.protocol === "chat" ? "chat/completions" : "responses",
+            embedding
+              ? "embeddings"
+              : entry.protocol === "chat"
+                ? "chat/completions"
+                : "responses",
             entry.endpoint,
           );
           const data = (await send(
             endpoint,
             entry.key,
-            entry.protocol === "chat"
-              ? {
-                  model: entry.model,
-                  messages: [{ role: "user", content: prompt }],
-                  max_completion_tokens: route.maxOutputTokens,
-                  store: false,
-                  stream: false,
-                }
-              : {
-                  model: entry.model,
-                  input: prompt,
-                  max_output_tokens: route.maxOutputTokens,
-                  store: false,
-                  stream: false,
-                },
+            embedding
+              ? { model: entry.model, input: prompt, encoding_format: "float" }
+              : entry.protocol === "chat"
+                ? {
+                    model: entry.model,
+                    messages: [{ role: "user", content: prompt }],
+                    max_completion_tokens: route.maxOutputTokens,
+                    store: false,
+                    stream: false,
+                    ...(route.gateway?.capability === "JSON"
+                      ? { response_format: { type: "json_object" } }
+                      : {}),
+                  }
+                : {
+                    model: entry.model,
+                    input: prompt,
+                    max_output_tokens: route.maxOutputTokens,
+                    store: false,
+                    stream: false,
+                    ...(route.gateway?.capability === "JSON"
+                      ? { text: { format: { type: "json_object" } } }
+                      : {}),
+                  },
             signal,
           )) as {
+            data?: { embedding?: unknown }[];
             usage?: unknown;
             choices?: {
               message?: { content?: string; tool_calls?: unknown[] };
@@ -365,8 +464,25 @@ export function openPersonalVault(directory: string): PersonalModelVault {
               content?: { type: string; text?: string }[];
             }[];
           };
-          const usage = providerUsage(data.usage);
+          const usage = providerUsage(data.usage, embedding);
           if (usage) reportUsage?.(usage);
+          if (embedding) {
+            const vector = data.data?.[0]?.embedding;
+            if (
+              data.data?.length !== 1 ||
+              !Array.isArray(vector) ||
+              !vector.length ||
+              vector.length > 32768 ||
+              !vector.every(
+                (value) => typeof value === "number" && Number.isFinite(value),
+              )
+            )
+              throw new Error("MODEL_RESPONSE_INVALID");
+            const artifact = JSON.stringify({ embedding: vector });
+            if (artifact.length > 100000)
+              throw new Error("MODEL_RESPONSE_INVALID");
+            return artifact;
+          }
           if (
             data.choices?.[0]?.message?.tool_calls?.length ||
             data.output?.some(
@@ -388,8 +504,19 @@ export function openPersonalVault(directory: string): PersonalModelVault {
                   .join("\n");
           if (typeof text !== "string" || !text || text.length > 100000)
             throw new Error("MODEL_RESPONSE_INVALID");
+          if (route.gateway?.capability === "JSON") JSON.parse(text);
           return text;
         },
+      });
+      return {
+        ...build(entry, route),
+        ...(alternatives.length
+          ? {
+              fallbacks: alternatives.map((candidate) =>
+                build(candidate!, summary(candidate!).route),
+              ),
+            }
+          : {}),
       };
     },
   };

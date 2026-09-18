@@ -20,9 +20,11 @@ Inspect the selected route, prompt and context before approving a run. Approval 
 
 No arbitrary shell tools or provider tool calls are executed. The current public-HTTPS destination checks intentionally reject loopback and private-network endpoints; labeling a cloud route as local is not supported.
 
-## Not yet implemented
+## Registry, budget and fallback in 0.0.8
 
-This is an approved execution gateway with named personal routes, not the complete planned AI Gateway. A shared administrator provider/model registry with capability discovery, trusted local/self-hosted route registration, the full six-policy system, monetary budgets and a reconciled billing ledger, approved multi-route fallback, and embedding/agent-tool execution remain future work. Named routes do not authorize automatic fallback. Do not treat the existence of domain policy types or token counters as evidence that these features are available.
+Named registrations now support TEXT, JSON and EMBEDDING capabilities, explicit daily request and USD budget limits (including UNLIMITED), and up to two approved fallback profiles. The persistent ledger reserves before dispatch and reconciles reported usage; unknown usage retains the conservative reservation. Only a definitive no-send result allows fallback. Timeout or uncertain network outcomes never trigger automatic resend. Every fallback route is included in the approval and revalidated before use.
+
+The authenticated MCP endpoint exposes workspace snapshots, additive plan previews and project document creation. It cannot publish plans or approve model sends. Shared administrator discovery, trusted private-network endpoints and arbitrary agent execution remain outside this implementation.
 
 ## Upgrades
 

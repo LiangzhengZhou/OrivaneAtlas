@@ -1,0 +1,7 @@
+# ADR0039 — Category presentation and interface density
+
+Accepted 2026-09-18. Category icon, color and position are workspace-scoped metadata governed by existing category permissions, CAS and the same Activity/Outbox transaction. Icons are at most 16 Unicode code points of plain letters, numbers, symbols, marks, spaces, hyphens and underscores, never markup; colors are exactly six hexadecimal digits after #. Positions are integers from 0 to 2147483647. Equal positions sort by creation time then ID. Updating a position affects only that category, without rewriting or losing memberships.
+
+Old create callers receive empty icon, #7863c5 and position 0. Old update callers preserve existing presentation. SQLite16 and PostgreSQL8 add columns with these defaults without touching existing records, junctions or events. Before production upgrade take a database backup; rollback restores the pre-upgrade backup with the matching old application rather than dropping presentation data. Independent restored databases must retain memberships and presentation.
+
+Interface density is comfortable or compact, stored locally under an encoded workspace/principal tuple. It contains no credentials and does not change user content or server authorization. A root data-density attribute applies consistently across views, with minimum touch targets on coarse pointers. Missing, invalid or inaccessible storage defaults to comfortable; switching actors reads only the new actor's preference.

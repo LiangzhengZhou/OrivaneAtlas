@@ -10,6 +10,7 @@ import type {
   NotebookStore,
   OrganizationStore,
   OutboxEvent,
+  ProjectStore,
   UnitOfWork,
   WorkTransaction,
 } from "@arclattice/application";
@@ -35,6 +36,7 @@ import { libraryStore } from "./library";
 import { inspectSchema, migrate } from "./migrations";
 import { notebookStore } from "./notebook";
 import { organizationStore } from "./organization";
+import { projectStore } from "./project-materials";
 import { workflowPort } from "./workflows";
 
 export { StorageError } from "./database";
@@ -514,6 +516,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
       connected: ConnectedStore,
       library: LibraryStore,
       organization: OrganizationStore,
+      projects: ProjectStore,
     ) => Promise<T>,
     authorize?: (store: AccountStore) => void,
   ): Promise<T> {
@@ -559,6 +562,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
             connectedStore(this.db, context, guard),
             libraryStore(this.db, context, guard),
             organizationStore(this.db, context, guard),
+            projectStore(this.db, context, guard),
           );
           if (receipt)
             this.db

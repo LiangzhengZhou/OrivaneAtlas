@@ -3,8 +3,13 @@ import {
   DomainError,
   evaluateModelProcessing,
 } from "@arclattice/domain";
-import type { AgentRun, ModelPort, ModelUsage } from "./connected";
+import type { AgentRun, ModelPort, ModelRoute, ModelUsage } from "./connected";
 import { type ContentPolicy, contentPolicy } from "./content-policy";
+import {
+  type GatewaySettlement,
+  ModelNotSentError,
+  validateGatewayPolicy,
+} from "./gateway-policy";
 import type { LibraryStore } from "./library";
 import type { NotebookStore } from "./notebook";
 
@@ -99,6 +104,7 @@ export async function validateApprovedContext(
 }
 
 export interface ModelExecutionResult {
+  settlement?: GatewaySettlement;
   usage?: ModelUsage;
   output: string | null;
   error: "MODEL_INTERRUPTED" | "MODEL_REQUEST_FAILED" | null;
@@ -109,7 +115,7 @@ export interface ModelExecutionResult {
 export async function executeApprovedModel(
   actor: ActorContext,
   run: AgentRun,
-  authorize: () => Promise<void>,
+  authorize: (route: ModelRoute) => Promise<void>,
   resolve: () => ModelPort | null,
   signal: AbortSignal,
 ): Promise<ModelExecutionResult> {
@@ -120,6 +126,8 @@ export async function executeApprovedModel(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let rejectAbort: (() => void) | undefined;
   let usage: ModelUsage | undefined;
+  let notSent = true;
+  let routeFingerprint: string | undefined;
   try {
     if (
       run.workspaceId !== actor.workspaceId ||
@@ -140,50 +148,90 @@ export async function executeApprovedModel(
       if (controller.signal.aborted) rejectAbort();
     });
     const operation = async () => {
-      await authorize();
-      if (controller.signal.aborted) throw new Error("ABORTED");
-      const model = resolve();
+      const candidates = [run.route, ...(run.route.fallbackRoutes ?? [])];
       if (
-        !model ||
-        model.route.fingerprint !== run.route.fingerprint ||
-        typeof run.prompt !== "string" ||
-        !run.prompt.trim() ||
-        run.prompt.length > model.route.maxInputChars
+        candidates.length > 3 ||
+        new Set(candidates.map((candidate) => candidate.fingerprint)).size !==
+          candidates.length
       )
-        throw new Error("MODEL_ROUTE_CHANGED");
-      const output = await model.complete(
-        run.prompt,
-        controller.signal,
-        (reported) => {
+        throw new Error("INVALID_APPROVAL");
+      for (const [index, candidate] of candidates.entries()) {
+        await authorize(candidate);
+        if (controller.signal.aborted) throw new Error("ABORTED");
+        const primary = resolve();
+        const model = index === 0 ? primary : primary?.fallbacks?.[index - 1];
+        if (
+          !model ||
+          primary?.route.fingerprint !== run.route.fingerprint ||
+          model.route.fingerprint !== candidate.fingerprint ||
+          typeof run.prompt !== "string" ||
+          !run.prompt.trim() ||
+          run.prompt.length > model.route.maxInputChars
+        )
+          throw new Error("MODEL_ROUTE_CHANGED");
+        if (candidate.gateway) {
+          validateGatewayPolicy(candidate.gateway);
           if (
-            reported.source === "PROVIDER_REPORTED" &&
-            Number.isSafeInteger(reported.inputTokens) &&
-            reported.inputTokens >= 0 &&
-            Number.isSafeInteger(reported.outputTokens) &&
-            reported.outputTokens >= 0
-          ) {
-            usage = {
-              inputTokens: reported.inputTokens,
-              outputTokens: reported.outputTokens,
-              source: "PROVIDER_REPORTED",
-            };
+            !candidate.gateway.enabled ||
+            candidate.gateway.capability !== run.route.gateway?.capability
+          )
+            throw new Error("MODEL_ROUTE_CHANGED");
+        }
+        routeFingerprint = candidate.fingerprint;
+        notSent = false;
+        let output: string;
+        try {
+          output = await model.complete(
+            run.prompt,
+            controller.signal,
+            (reported) => {
+              if (
+                reported.source === "PROVIDER_REPORTED" &&
+                Number.isSafeInteger(reported.inputTokens) &&
+                reported.inputTokens >= 0 &&
+                Number.isSafeInteger(reported.outputTokens) &&
+                reported.outputTokens >= 0
+              ) {
+                usage = {
+                  inputTokens: reported.inputTokens,
+                  outputTokens: reported.outputTokens,
+                  source: "PROVIDER_REPORTED",
+                };
+              }
+            },
+          );
+        } catch (error) {
+          if (error instanceof ModelNotSentError && !usage) {
+            notSent = true;
+            if (!controller.signal.aborted && index + 1 < candidates.length)
+              continue;
           }
-        },
-      );
-      if (
-        controller.signal.aborted ||
-        typeof output !== "string" ||
-        !output ||
-        output.length > 100_000
-      )
-        throw new Error("INVALID_OUTPUT");
-      return output;
+          throw error;
+        }
+        if (
+          controller.signal.aborted ||
+          typeof output !== "string" ||
+          !output ||
+          output.length > 100_000
+        )
+          throw new Error("INVALID_OUTPUT");
+        return output;
+      }
+      throw new Error("MODEL_NOT_CONFIGURED");
     };
     return {
       output: await Promise.race([operation(), aborted]),
       ...(usage ? { usage } : {}),
       error: null,
       interrupted: false,
+      ...(run.route.gateway
+        ? {
+            settlement: {
+              notSent,
+              ...(routeFingerprint ? { routeFingerprint } : {}),
+            },
+          }
+        : {}),
     };
   } catch {
     return {
@@ -193,6 +241,14 @@ export async function executeApprovedModel(
         ? "MODEL_INTERRUPTED"
         : "MODEL_REQUEST_FAILED",
       interrupted: controller.signal.aborted,
+      ...(run.route.gateway
+        ? {
+            settlement: {
+              notSent,
+              ...(routeFingerprint ? { routeFingerprint } : {}),
+            },
+          }
+        : {}),
     };
   } finally {
     clearTimeout(timer);

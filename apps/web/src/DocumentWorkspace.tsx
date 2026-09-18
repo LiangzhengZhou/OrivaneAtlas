@@ -220,15 +220,18 @@ function DocumentPane({
     body !== (base?.bodyMd ?? "") ||
     JSON.stringify(aiPolicy) !==
       JSON.stringify(base?.aiPolicy ?? privateContentPolicy);
-  const draftKey = [
+  const draftKey = JSON.stringify([
+    runtime.serverOrigin,
     runtime.context?.workspaceId ?? "unknown",
     runtime.context?.principalId ?? "unknown",
     request.key,
-  ].join(":");
+  ]);
   const restored = useRef(false);
   useEffect(() => {
+    let active = true;
     restored.current = false;
     void loadDraft(draftKey).then((draft) => {
+      if (!active) return;
       if (!draft) {
         restored.current = true;
         return;
@@ -237,6 +240,9 @@ function DocumentPane({
       setBody(draft.body);
       restored.current = true;
     });
+    return () => {
+      active = false;
+    };
   }, [draftKey]);
   useEffect(() => {
     if (!restored.current || !dirty) return;

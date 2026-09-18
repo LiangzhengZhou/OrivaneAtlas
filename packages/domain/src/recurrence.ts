@@ -1,12 +1,13 @@
 import { DomainError, validateSchedule } from "./index";
 export interface CalendarRule {
   startDate: string;
+  endDate?: string | null;
   timezone: string;
   frequency: "DAILY" | "WEEKLY" | "MONTHLY";
   interval: number;
 }
 export function validateCalendarRule(rule: CalendarRule): void {
-  validateSchedule(rule.startDate, rule.startDate);
+  validateSchedule(rule.startDate, rule.endDate ?? rule.startDate);
   if (
     !rule.startDate ||
     typeof rule.timezone !== "string" ||
@@ -53,7 +54,11 @@ export function occurrenceDays(
   const result: string[] = [];
   const base = new Date(start);
   for (let time = first; time <= last; time += 86400000) {
-    if (time < start) continue;
+    if (
+      time < start ||
+      (rule.endDate && new Date(time).toISOString().slice(0, 10) > rule.endDate)
+    )
+      continue;
     const day = new Date(time),
       elapsed = (time - start) / 86400000;
     const months =

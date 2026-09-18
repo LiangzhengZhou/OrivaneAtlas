@@ -1,5 +1,8 @@
 import type { WorkItem } from "./index";
 
+/** Maximum supported nested project depth, including the project itself. */
+export const MAX_PROJECT_DEPTH = 16;
+
 /** Workspace-scoped, read-only projection with bounded traversal. */
 export function projectAncestors(
   item: WorkItem,

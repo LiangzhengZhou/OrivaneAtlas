@@ -16,6 +16,7 @@ src-tauri/gen/android/app/src/main/jniLibs/
 F:/
 ZProjectBuild/
 test-results/
+test-results-*/
 playwright-report/
 coverage/
 .artifacts/
