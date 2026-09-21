@@ -14,6 +14,48 @@ import { context, service, sqliteHarness } from "./testing";
 
 const harness = sqliteHarness();
 describe("SQLite migrations and recovery", () => {
+  it("upgrades v17 event history with verified rollback backup and preserves outbox references", async () => {
+    const path = harness.file();
+    const raw = new DatabaseSync(path);
+    let before = "";
+    try {
+      raw.exec("PRAGMA foreign_keys=ON");
+      await migrate(raw, path, 100, migrations.slice(0, 17));
+      raw.exec(
+        "INSERT INTO workspace VALUES ('legacy','Legacy'); INSERT INTO principal VALUES ('human','USER','Human'); INSERT INTO workspace_principal VALUES ('legacy','human'); INSERT INTO activity VALUES ('legacy','event','human','removed-edge','WORK_EDGE_REMOVED','2026-09-21T00:00:00Z'); INSERT INTO outbox VALUES ('legacy','out','event','WORK_CHANGED','2026-09-21T00:00:00Z')",
+      );
+      before = (await migrate(raw, path, 100)).backupPath!;
+      expect(inspectSchema(raw)).toBe(18);
+      expect(
+        raw.prepare("SELECT entity_id,from_id,to_id FROM activity").get(),
+      ).toMatchObject({
+        entity_id: "removed-edge",
+        from_id: null,
+        to_id: null,
+      });
+      expect(
+        raw.prepare("SELECT activity_id FROM outbox").get()?.activity_id,
+      ).toBe("event");
+      expect(raw.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    } finally {
+      raw.close();
+    }
+    const rollbackPath = harness.file();
+    await restoreDatabase(before, rollbackPath);
+    const rollback = new DatabaseSync(rollbackPath, { readOnly: true });
+    try {
+      expect(inspectSchema(rollback, migrations.slice(0, 17))).toBe(17);
+      expect(
+        rollback.prepare("SELECT entity_id FROM activity").get()?.entity_id,
+      ).toBe("removed-edge");
+      expect(
+        rollback.prepare("PRAGMA integrity_check").get()?.integrity_check,
+      ).toBe("ok");
+      expect(rollback.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    } finally {
+      rollback.close();
+    }
+  });
   it("upgrades v7 images without changing bytes and independently restores v7 and v8", async () => {
     const path = harness.file();
     const raw = new DatabaseSync(path);

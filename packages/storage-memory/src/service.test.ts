@@ -97,6 +97,57 @@ describe("Work application service", () => {
       service.update(context, a.id, 2, { status: "TODO" }),
     ).rejects.toThrow("DEPENDENCY_EXISTS");
   });
+  it("updates task prerequisites atomically and protects the read set", async () => {
+    const { service } = setup();
+    const prerequisite = await service.create(context, { title: "prepare" });
+    const task = await service.create(context, { title: "deliver" });
+    const updated = await service.update(context, task.id, 1, {
+      prerequisiteIds: [prerequisite.id],
+      expectedPrerequisiteIds: [],
+    });
+    expect(updated.version).toBe(2);
+    let snapshot = await service.snapshot(context);
+    expect(snapshot.edges.map((edge) => [edge.fromId, edge.toId])).toEqual([
+      [prerequisite.id, task.id],
+    ]);
+    await expect(
+      service.update(context, task.id, 2, {
+        prerequisiteIds: [],
+        expectedPrerequisiteIds: [],
+      }),
+    ).rejects.toThrow("VERSION_CONFLICT");
+    await service.update(context, task.id, 2, {
+      prerequisiteIds: [],
+      expectedPrerequisiteIds: [prerequisite.id],
+    });
+    snapshot = await service.snapshot(context);
+    expect(snapshot.edges).toHaveLength(0);
+  });
+  it("rejects project prerequisites and cycles through the inline command", async () => {
+    const { service } = setup();
+    const project = await service.create(context, {
+      title: "project",
+      type: "PROJECT",
+    });
+    const a = await service.create(context, { title: "a" });
+    const b = await service.create(context, { title: "b" });
+    await expect(
+      service.update(context, a.id, 1, {
+        prerequisiteIds: [project.id],
+        expectedPrerequisiteIds: [],
+      }),
+    ).rejects.toThrow("VALIDATION_ERROR");
+    await service.update(context, b.id, 1, {
+      prerequisiteIds: [a.id],
+      expectedPrerequisiteIds: [],
+    });
+    await expect(
+      service.update(context, a.id, 1, {
+        prerequisiteIds: [b.id],
+        expectedPrerequisiteIds: [],
+      }),
+    ).rejects.toThrow("WORK_GRAPH_CYCLE_DETECTED");
+  });
   it("rejects new blockers on already-started work", async () => {
     const { service } = setup();
     const a = await service.create(context, { title: "a" });

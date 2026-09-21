@@ -6,6 +6,13 @@ import {
   projectDescendants,
   type WorkItem,
 } from "./index";
+import {
+  eligibleProjectParents,
+  MAX_PROJECT_DEPTH,
+  projectScope,
+  projectSubtreeHeight,
+  taskOwnership,
+} from "./projects";
 
 const root: WorkItem = { ...work("root"), type: "PROJECT" };
 const child: WorkItem = {
@@ -15,15 +22,15 @@ const child: WorkItem = {
 };
 const task: WorkItem = { ...work("task"), projectId: child.id };
 describe("project projections", () => {
-  it("shared tasks stay visible through any active project and count only once per subtree", () => {
+  it("archive inheritance follows the owner despite active references", () => {
     const shared = { ...task, projectIds: [root.id, child.id] };
     const items = [root, child, shared];
     expect(
       projectDescendants(root, items).filter((i) => i.id === task.id),
     ).toHaveLength(1);
     expect(
-      inheritedArchiveSource(shared, items, (i) => i.id === child.id),
-    ).toBeUndefined();
+      inheritedArchiveSource(shared, items, (i) => i.id === child.id)?.id,
+    ).toBe(child.id);
     expect(
       inheritedArchiveSource(shared, items, (i) => i.id === root.id)?.id,
     ).toBe(root.id);
@@ -92,4 +99,64 @@ describe("project projections", () => {
     expect(projectDescendants(root, items)).toHaveLength(5000);
     expect(projectAncestors(items[5000]!, items)).toHaveLength(5000);
   });
+});
+
+describe("project parent candidates", () => {
+  it("excludes self, descendants, foreign, deleted and cyclic destinations", () => {
+    const sibling = { ...root, id: "sibling" };
+    const cycle = { ...root, id: "cycle", projectId: "cycle" };
+    const items = [
+      root,
+      child,
+      task,
+      sibling,
+      cycle,
+      { ...root, id: "foreign", workspaceId: "elsewhere" },
+      { ...root, id: "deleted", deletedAt: "now" },
+    ];
+    expect(eligibleProjectParents(root, items).map((p) => p.id)).toEqual([
+      "sibling",
+    ]);
+    expect(projectSubtreeHeight(root, items)).toBe(2);
+  });
+  it("reserves room for every descendant when moving a subtree", () => {
+    const chain: WorkItem[] = [{ ...root, id: "level-1" }];
+    for (let depth = 2; depth <= MAX_PROJECT_DEPTH; depth++)
+      chain.push({
+        ...root,
+        id: "level-" + depth,
+        projectId: chain.at(-1)!.id,
+      });
+    const options = eligibleProjectParents(root, [root, child, ...chain]);
+    expect(options.some((p) => p.id === "level-14")).toBe(true);
+    expect(options.some((p) => p.id === "level-15")).toBe(false);
+    expect(
+      eligibleProjectParents(null, chain).some((p) => p.id === "level-16"),
+    ).toBe(false);
+  });
+});
+
+it("separates direct, subtree, references and terminal outcome counts", () => {
+  const linked = { ...work("linked"), projectId: null, projectIds: [root.id] };
+  const done = { ...work("done"), projectId: root.id, status: "DONE" as const };
+  const canceled = {
+    ...work("canceled"),
+    projectId: child.id,
+    status: "CANCELED" as const,
+  };
+  const items = [root, child, task, linked, done, canceled];
+  const direct = projectScope(root, items, "DIRECT");
+  expect(direct.tasks.map((i) => i.id)).toEqual(["done"]);
+  expect(direct.linkedTasks.map((i) => i.id)).toEqual(["linked"]);
+  const subtree = projectScope(root, items, "SUBTREE");
+  expect([subtree.completed, subtree.canceled, subtree.unfinished]).toEqual([
+    1, 1, 1,
+  ]);
+  expect(taskOwnership(linked)).toEqual({
+    ownerProjectId: null,
+    linkedProjectIds: [root.id],
+  });
+  expect(projectDescendants(root, items).some((i) => i.id === "linked")).toBe(
+    false,
+  );
 });

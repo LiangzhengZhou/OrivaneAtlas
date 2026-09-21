@@ -85,6 +85,8 @@ test("Gateway registry policy persists and approved alternatives are visible bef
     ).toBe(200);
     await page.goto(origin);
     const zh = info.project.name.endsWith("zh");
+    if (await page.locator(".mobile-navigation-toggle").isVisible())
+      await page.locator(".mobile-navigation-toggle").click();
     await page
       .locator(".sidebar")
       .getByRole("button", {
@@ -121,6 +123,8 @@ test("Gateway registry policy persists and approved alternatives are visible bef
       page.locator(".personal-ai-settings [role=status]"),
     ).toContainText("v2");
     await page.reload();
+    if (await page.locator(".mobile-navigation-toggle").isVisible())
+      await page.locator(".mobile-navigation-toggle").click();
     await page
       .locator(".sidebar")
       .getByRole("button", {

@@ -1,6 +1,8 @@
 export * from "./agent";
+export * from "./calendar";
 export * from "./data-policy";
 export * from "./governance";
+export * from "./project-lifecycle";
 export * from "./projects";
 export * from "./recurrence";
 
@@ -72,7 +74,7 @@ export interface WorkItem {
   readonly completedAt: string | null;
   readonly deletedAt: string | null;
 }
-/** Scheduled eligibility is read-only; callers supply the UTC calendar date. */
+/** Scheduled eligibility is read-only; callers supply the authoritative calendar date. */
 export function isExecutionActive(item: WorkItem, today?: string): boolean {
   return item.activationPolicy === "AT_SCHEDULED_TIME"
     ? !!today && !!item.startDate && item.startDate <= today
@@ -109,6 +111,8 @@ export interface WorkEdge {
   readonly createdAt: string;
 }
 export type ErrorCode =
+  | "PROJECT_HAS_UNFINISHED_WORK"
+  | "PROJECT_REOPEN_REQUIRED"
   | "RATE_LIMITED"
   | "VALIDATION_ERROR"
   | "NOT_FOUND"
@@ -227,7 +231,7 @@ export function validateEdge(
   }
 }
 export function blockers(
-  item: WorkItem,
+  item: Pick<WorkItem, "id" | "workspaceId">,
   items: readonly WorkItem[],
   edges: readonly WorkEdge[],
 ): string[] {
@@ -248,6 +252,32 @@ export function blockers(
         ? [pair[0]]
         : [];
     });
+}
+export const availabilityStates = [
+  "READY",
+  "WAITING",
+  "BLOCKED",
+  "PAUSED",
+] as const;
+export type AvailabilityState = (typeof availabilityStates)[number];
+export function availability(
+  item: Pick<
+    WorkItem,
+    "id" | "workspaceId" | "activationState" | "activationPolicy" | "startDate"
+  >,
+  items: readonly WorkItem[],
+  edges: readonly WorkEdge[],
+  today?: string,
+): AvailabilityState {
+  if (item.activationState === "INACTIVE" && item.activationPolicy === "MANUAL")
+    return "PAUSED";
+  if (
+    item.activationPolicy === "AT_SCHEDULED_TIME" &&
+    (!today || !item.startDate || item.startDate > today)
+  )
+    return "WAITING";
+  if (blockers(item, items, edges).length > 0) return "BLOCKED";
+  return "READY";
 }
 export function isReady(
   item: WorkItem,

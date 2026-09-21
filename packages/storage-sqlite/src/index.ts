@@ -76,6 +76,9 @@ const edgeFields = {
   createdAt: "created_at",
 } satisfies Record<keyof WorkEdge, string>;
 const activityFields = {
+  fromId: "from_id",
+  toId: "to_id",
+  edgeType: "edge_type",
   workspaceId: "workspace_id",
   id: "id",
   principalId: "principal_id",
@@ -393,6 +396,43 @@ export class SqliteUnitOfWork implements UnitOfWork {
       return hydrate({ ...row } as unknown as WorkItem);
     };
     const tx: WorkTransaction = {
+      calendarSettings: async () => {
+        guard();
+        const row = this.db
+          .prepare(
+            "SELECT version, timezone FROM workspace_calendar WHERE workspace_id=?",
+          )
+          .get(workspaceId);
+        return row
+          ? {
+              version: Number(row.version),
+              timezone: row.timezone === null ? null : String(row.timezone),
+            }
+          : { version: 0, timezone: null };
+      },
+      saveCalendarSettings: async (settings, expected) => {
+        guard();
+        if (settings.version !== expected + 1)
+          throw new DomainError("VERSION_CONFLICT");
+        const result =
+          expected === 0
+            ? this.db
+                .prepare(
+                  "INSERT INTO workspace_calendar (workspace_id,version,timezone) VALUES (?,?,?) ON CONFLICT DO NOTHING",
+                )
+                .run(workspaceId, settings.version, settings.timezone)
+            : this.db
+                .prepare(
+                  "UPDATE workspace_calendar SET version=?,timezone=? WHERE workspace_id=? AND version=?",
+                )
+                .run(
+                  settings.version,
+                  settings.timezone,
+                  workspaceId,
+                  expected,
+                );
+        if (result.changes !== 1) throw new DomainError("VERSION_CONFLICT");
+      },
       ...categoryPort(this.db, workspaceId, guard),
       ...workflowPort(this.db, workspaceId, guard),
       get: async (id) => get(id),
@@ -492,7 +532,12 @@ export class SqliteUnitOfWork implements UnitOfWork {
       appendActivity: async (event) => {
         scope(event);
         member(event.principalId);
-        insert(this.db, "activity", activityFields, event);
+        insert(this.db, "activity", activityFields, {
+          ...event,
+          fromId: event.fromId ?? null,
+          toId: event.toId ?? null,
+          edgeType: event.edgeType ?? null,
+        });
       },
       appendOutbox: async (event) => {
         scope(event);

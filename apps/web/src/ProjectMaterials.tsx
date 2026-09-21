@@ -4,13 +4,15 @@ import type {
   ProjectActivity,
   ProjectMaterial,
 } from "@arclattice/application";
-import type { WorkItem } from "@arclattice/domain";
+import { projectPath, type WorkEdge, type WorkItem } from "@arclattice/domain";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FilePicker } from "./FilePicker";
 
 export function ProjectMaterials({
   projectId,
+  scopeIds,
+  projects,
   materials,
   busy,
   onCreate,
@@ -20,6 +22,8 @@ export function ProjectMaterials({
   onOpen,
 }: {
   projectId: string;
+  scopeIds?: ReadonlySet<string>;
+  projects?: WorkItem[];
   materials: ProjectMaterial[];
   busy: boolean;
   onCreate(input: {
@@ -46,13 +50,21 @@ export function ProjectMaterials({
   const [showDeleted, setShowDeleted] = useState(false);
   const entries = materials.filter(
     (entry) =>
-      entry.projectId === projectId &&
+      (scopeIds
+        ? scopeIds.has(entry.projectId)
+        : entry.projectId === projectId) &&
       entry.kind !== "SPACE" &&
       (showDeleted || !entry.deletedAt),
   );
   return (
     <section className="panel project-summary">
       <h2>{zh ? "项目专属资料" : "Project-owned materials"}</h2>
+      <p className="muted">
+        {zh
+          ? "新资料创建于当前项目："
+          : "New materials are created in the current project: "}
+        {projects?.find((p) => p.id === projectId)?.title}
+      </p>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -159,6 +171,8 @@ export function ProjectMaterials({
                 ? "外部引用"
                 : "Linked"}
             {entry.kind === "FILE" ? ` · ${entry.size} B` : ""}
+            {" · "}
+            {projects?.find((project) => project.id === entry.projectId)?.title}
           </small>
           <button
             type="button"
@@ -182,11 +196,15 @@ export function ProjectMaterials({
 
 export function ProjectHistory({
   projectId,
+  projectIds,
+  edges,
   tasks,
   load,
   loadWork,
 }: {
   projectId: string;
+  projectIds?: string[];
+  edges?: readonly WorkEdge[];
   tasks: WorkItem[];
   load(projectId: string): Promise<ProjectActivity[]>;
   loadWork(): Promise<ActivityEvent[]>;
@@ -194,7 +212,14 @@ export function ProjectHistory({
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
   const [events, setEvents] = useState<
-    { id: string; type: string; occurredAt: string; principalId: string }[]
+    {
+      id: string;
+      type: string;
+      occurredAt: string;
+      principalId: string;
+      fromId?: string | null;
+      toId?: string | null;
+    }[]
   >([]);
   const [error, setError] = useState(false);
   const labels: Record<string, string> = {
@@ -210,13 +235,34 @@ export function ProjectHistory({
   useEffect(() => {
     let active = true;
     const taskIds = new Set([projectId, ...tasks.map((task) => task.id)]);
-    void Promise.all([load(projectId), loadWork()])
+    const edgeIds = new Set((edges ?? []).map((edge) => edge.id));
+    setError(false);
+    void Promise.all([
+      Promise.all((projectIds ?? [projectId]).map(load)),
+      loadWork(),
+    ])
       .then(([materials, work]) => {
         if (active)
           setEvents(
             [
-              ...materials,
-              ...work.filter((entry) => taskIds.has(entry.entityId)),
+              ...materials.flat(),
+              ...work
+                .filter(
+                  (entry) =>
+                    taskIds.has(entry.entityId) ||
+                    edgeIds.has(entry.entityId) ||
+                    (!!entry.fromId && taskIds.has(entry.fromId)) ||
+                    (!!entry.toId && taskIds.has(entry.toId)),
+                )
+                .map((entry) =>
+                  entry.edgeType === "REQUIRES"
+                    ? {
+                        ...entry,
+                        fromId: entry.toId ?? null,
+                        toId: entry.fromId ?? null,
+                      }
+                    : entry,
+                ),
             ].sort((left, right) =>
               right.occurredAt.localeCompare(left.occurredAt),
             ),
@@ -228,7 +274,7 @@ export function ProjectHistory({
     return () => {
       active = false;
     };
-  }, [projectId, tasks, load, loadWork]);
+  }, [projectId, projectIds, tasks, edges, load, loadWork]);
   return (
     <section className="panel project-summary">
       <h2>{zh ? "项目活动" : "Project activity"}</h2>
@@ -239,6 +285,17 @@ export function ProjectHistory({
         <div className="project-material" key={entry.id}>
           <span>
             {labels[entry.type] ?? (zh ? "项目已更新" : "Project updated")}
+            {entry.fromId && entry.toId && (
+              <small>
+                {" "}
+                ·{" "}
+                {tasks.find((task) => task.id === entry.fromId)?.title ??
+                  entry.fromId}{" "}
+                →{" "}
+                {tasks.find((task) => task.id === entry.toId)?.title ??
+                  entry.toId}
+              </small>
+            )}
           </span>
           <small>
             {entry.principalId} ·{" "}
@@ -251,9 +308,11 @@ export function ProjectHistory({
 }
 
 export function ProjectTimeline({
+  items,
   tasks,
   onOpen,
 }: {
+  items: readonly WorkItem[];
   tasks: WorkItem[];
   onOpen(ref: EntityRef): void;
 }) {
@@ -276,6 +335,7 @@ export function ProjectTimeline({
             onClick={() => onOpen({ kind: "WORK", id: task.id })}
           >
             <strong>{task.title}</strong>
+            <small>{projectPath(task, items)}</small>
             <small>
               {task.startDate ?? "—"} →{" "}
               {task.dueDate ?? (zh ? "尚未排期" : "Unscheduled")}

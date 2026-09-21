@@ -21,6 +21,7 @@ const port = Number(process.env.ARCLATTICE_PORT ?? 4317);
 if (!Number.isInteger(port) || port < 1024 || port > 65535)
   throw new Error("Invalid port");
 const host = await createHost({
+  calendarTimezone: process.env.ARCLATTICE_CALENDAR_TIMEZONE ?? "UTC",
   vault: openPersonalVault(resolve(data, "vault")),
   database: resolve(data, "workbench.sqlite"),
   secret: (await readFile(keyFile, "utf8")).trim(),

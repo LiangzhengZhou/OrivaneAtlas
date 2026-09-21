@@ -11,7 +11,12 @@ import { ContentPolicyEditor } from "./ContentPolicyEditor";
 import { FilePicker } from "./FilePicker";
 import { imageAnchor, pendingImage } from "./imageInsertion";
 import { LiveMarkdown } from "./LiveMarkdown";
-import { clearDraft, loadDraft, saveDraft } from "./localDrafts";
+import {
+  clearDraft,
+  draftMatchesBase,
+  loadDraft,
+  saveDraft,
+} from "./localDrafts";
 import { Markdown } from "./Markdown";
 import { downloadText } from "./NoteEditor";
 
@@ -227,6 +232,7 @@ function DocumentPane({
     request.key,
   ]);
   const restored = useRef(false);
+  const recoveryRequired = useRef(false);
   useEffect(() => {
     let active = true;
     restored.current = false;
@@ -235,6 +241,15 @@ function DocumentPane({
       if (!draft) {
         restored.current = true;
         return;
+      }
+      recoveryRequired.current = !draftMatchesBase(
+        draft,
+        baseRef.current?.id ?? request.key,
+        baseRef.current,
+      );
+      if (recoveryRequired.current) {
+        failed.current = true;
+        setError("VERSION_CONFLICT");
       }
       setTitle(draft.title);
       setBody(draft.body);
@@ -245,13 +260,37 @@ function DocumentPane({
     };
   }, [draftKey]);
   useEffect(() => {
-    if (!restored.current || !dirty) return;
+    if (
+      !restored.current ||
+      recoveryRequired.current ||
+      !dirty ||
+      aiPolicy.classification === "SENSITIVE" ||
+      aiPolicy.classification === "SECRET"
+    )
+      return;
     const timer = setTimeout(
-      () => void saveDraft(draftKey, { title, body, updatedAt: Date.now() }),
+      () =>
+        void saveDraft(draftKey, {
+          title,
+          body,
+          updatedAt: Date.now(),
+          savedAt: Date.now(),
+          entityId: base?.id ?? request.key,
+          baseVersion: base?.version ?? 0,
+          baseUpdatedAt: base?.updatedAt ?? null,
+        }),
       250,
     );
     return () => clearTimeout(timer);
-  }, [draftKey, title, body, dirty]);
+  }, [
+    draftKey,
+    title,
+    body,
+    dirty,
+    base,
+    request.key,
+    aiPolicy.classification,
+  ]);
   useEffect(() => {
     callbacks.current.onStatus(dirty, title, base, busy);
   }, [dirty, title, base, busy]);
@@ -271,6 +310,8 @@ function DocumentPane({
   }, [remote, base, busy, dirty, composing]);
   async function save(explicit = false) {
     if (
+      !restored.current ||
+      recoveryRequired.current ||
       gate.current ||
       current.current.composing ||
       (!explicit && failed.current)
@@ -543,6 +584,27 @@ function DocumentPane({
       {error && (
         <div className="error no-print" role="alert">
           <strong>{error}</strong>
+          {recoveryRequired.current && !base && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    zh
+                      ? "将恢复的草稿保存为新文档？"
+                      : "Save the recovered draft as a new document?",
+                  )
+                )
+                  return;
+                recoveryRequired.current = false;
+                failed.current = false;
+                void save(true);
+              }}
+            >
+              {zh ? "确认恢复并保存" : "Confirm recovery and save"}
+            </button>
+          )}
           {error === "VERSION_CONFLICT" && remote && (
             <details>
               <summary>
@@ -562,6 +624,7 @@ function DocumentPane({
                     )
                   )
                     return;
+                  recoveryRequired.current = false;
                   baseRef.current = remote;
                   setBase(remote);
                   failed.current = false;
@@ -589,6 +652,8 @@ function DocumentPane({
                   setBase(remote);
                   setTitle(remote.title);
                   setBody(remote.bodyMd);
+                  setAiPolicy(remote.aiPolicy ?? privateContentPolicy);
+                  void clearDraft(draftKey);
                   failed.current = false;
                   setError("");
                 }}
@@ -776,8 +841,8 @@ function DocumentPane({
       </div>
       <p className="document-footnote no-print">
         {zh
-          ? "停笔 1 秒自动保存 · Ctrl/⌘ S 立即保存 · 未保存草稿仅保留在当前页面内存中"
-          : "Autosave after 1s · Ctrl/⌘ S to save · Unsaved drafts live only in this page’s memory"}
+          ? "停笔 1 秒自动保存 · Ctrl/⌘ S 立即保存 · 普通草稿按服务器、账号和工作区缓存于此设备；敏感内容仅保留在内存中"
+          : "Autosave after 1s · Ctrl/⌘ S to save · Regular drafts are cached on this device by server, account and workspace; sensitive content stays in memory"}
       </p>
     </article>
   );

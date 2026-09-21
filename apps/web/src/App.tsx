@@ -6,6 +6,7 @@ import {
   isExecutionActive,
   isGloballyActiveTask,
   isReady,
+  localCalendarDay,
   priorities,
   projectDescendants,
   type WorkItem,
@@ -47,6 +48,7 @@ import {
   type Snapshot,
   savePreference,
 } from "./bootstrap";
+import { CalendarSettings } from "./CalendarSettings";
 import { AiView, KnowledgeView } from "./ConnectedViews";
 import { DensitySettings } from "./DensitySettings";
 import { type DocumentRequest, DocumentWorkspace } from "./DocumentWorkspace";
@@ -57,8 +59,14 @@ import { PrivateImageContext } from "./Markdown";
 import { downloadText } from "./NoteEditor";
 import { CalendarView, ProjectView } from "./PlanningViews";
 import { ProjectWorkspace } from "./ProjectWorkspace";
-import { TaskEditor } from "./TaskEditor";
+import {
+  type ProjectTab,
+  parseProjectRoute,
+  projectHash,
+} from "./projectRoute";
+import { ThemeSettings } from "./ThemeSettings";
 import { WorkflowManager } from "./WorkflowManager";
+import { WorkItemEditor } from "./WorkItemEditor";
 import { Dependencies, TaskList, WorkBoard } from "./WorkViews";
 
 type View =
@@ -101,19 +109,12 @@ type NavigationView = (typeof navigation)[number]["view"];
 const NAVIGATION_ORDER_KEY = "orivane-atlas.navigation-order";
 const SIDEBAR_COLLAPSED_KEY = "orivane-atlas.sidebar-collapsed";
 function currentView(): View {
-  const hash = location.hash.slice(1);
+  const hash = location.hash.slice(1).split(/[/?]/)[0] ?? "";
   return [...navigation.map((n) => n.view), "settings"].includes(hash)
     ? (hash as View)
     : "overview";
 }
-function localDay() {
-  const d = new Date();
-  return [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, "0"),
-    String(d.getDate()).padStart(2, "0"),
-  ].join("-");
-}
+
 export function App({ runtime }: { runtime: Runtime }) {
   const [context, setContext] = useState(runtime.context);
   return context ? (
@@ -165,8 +166,12 @@ function Workbench({
       ? a(value)
       : t(value);
   const [view, setView] = useState<View>(currentView);
-  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(true);
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [projectRoute, setProjectRoute] = useState(() =>
+    parseProjectRoute(location.hash),
+  );
+  const activeProjectId = projectRoute.projectId;
+  const acceptedHash = useRef(location.hash);
   const [creation, setCreation] = useState<{
     type: "TASK" | "PROJECT";
     parentId: string;
@@ -229,6 +234,7 @@ function Workbench({
     setDraggedNavigation(null);
   }
   const libraryDraft = useRef(false);
+  const projectBriefDirty = useRef(false);
   const [documentRequest, setDocumentRequest] =
     useState<DocumentRequest | null>(null);
   const [documentVisible, setDocumentVisible] = useState(false);
@@ -260,7 +266,7 @@ function Workbench({
   const isArchived = (item: WorkItem) =>
     explicitlyArchived(item) || !!archiveSource(item);
   async function organize(input: OrganizeInput) {
-    if (documentDirty || libraryDraft.current) {
+    if (documentDirty || libraryDraft.current || projectBriefDirty.current) {
       window.alert(t("saveBeforeOrganize"));
       return;
     }
@@ -287,7 +293,7 @@ function Workbench({
     if (!noteEditor) return;
     const entity = typeof noteEditor === "string" ? undefined : noteEditor;
     const kind = entity?.kind ?? (noteEditor as "NOTE" | "JOURNAL");
-    const date = entity?.day ?? localDay();
+    const date = entity?.day ?? calendarDay;
     openDocument({
       key:
         entity?.id ??
@@ -371,11 +377,23 @@ function Workbench({
   }, [runtime]);
   useEffect(() => {
     const listener = () => {
-      if (libraryDraft.current && !window.confirm(a("leave"))) {
-        history.replaceState(null, "", "#library");
+      const nextProject = parseProjectRoute(location.hash);
+      const leavingProject =
+        currentView() !== "projects" ||
+        nextProject.projectId !==
+          parseProjectRoute(acceptedHash.current).projectId;
+      if (
+        (libraryDraft.current ||
+          (projectBriefDirty.current && leavingProject)) &&
+        !window.confirm(a("leave"))
+      ) {
+        history.replaceState(null, "", acceptedHash.current);
         return;
       }
       libraryDraft.current = false;
+      if (leavingProject) projectBriefDirty.current = false;
+      acceptedHash.current = location.hash;
+      setProjectRoute(nextProject);
       setView(currentView());
       setDocumentVisible(false);
       setQuery("");
@@ -425,7 +443,10 @@ function Workbench({
     try {
       await action();
       setSaved(true);
-      await refresh();
+      // The mutation is already committed. Do not hold the modal open on a
+      // secondary snapshot refresh (a slow/offline refresh used to look like
+      // a frozen save and could re-enter the polling path).
+      void refresh().catch(() => undefined);
       return true;
     } catch (cause) {
       setError(errorCode(cause));
@@ -445,11 +466,13 @@ function Workbench({
     (item) => item.type !== "PROJECT" && !isArchived(item),
   );
   const notes = snapshot.notes.filter((note) => !note.deletedAt);
-  const [utcDay, setUtcDay] = useState(() =>
-    new Date().toISOString().slice(0, 10),
+  const calendarTimezone = snapshot.calendarTimezone ?? "UTC";
+  const [calendarInstant, setCalendarInstant] = useState(() =>
+    new Date().toISOString(),
   );
+  const calendarDay = localCalendarDay(calendarInstant, calendarTimezone);
   useEffect(() => {
-    const update = () => setUtcDay(new Date().toISOString().slice(0, 10));
+    const update = () => setCalendarInstant(new Date().toISOString());
     const timer = window.setInterval(update, 30_000);
     window.addEventListener("focus", update);
     return () => {
@@ -458,10 +481,11 @@ function Workbench({
     };
   }, []);
   const ready = items.filter((item) =>
-    isReady(item, allItems, snapshot.edges, utcDay),
+    isReady(item, allItems, snapshot.edges, calendarDay),
   );
   const active = items.filter(
-    (item) => item.status === "IN_PROGRESS" && isExecutionActive(item, utcDay),
+    (item) =>
+      item.status === "IN_PROGRESS" && isExecutionActive(item, calendarDay),
   );
   const done = items.filter((item) => item.status === "DONE");
   const matches = (title: string, body: string) =>
@@ -483,10 +507,10 @@ function Workbench({
       (item) =>
         item.type === "TASK" &&
         (!["tasks", "board"].includes(view) ||
-          isExecutionActive(item, utcDay)) &&
+          isExecutionActive(item, calendarDay)) &&
         (view !== "planning" ||
           activationFilter === "ALL" ||
-          isExecutionActive(item, utcDay) ===
+          isExecutionActive(item, calendarDay) ===
             (activationFilter === "ACTIVE")) &&
         matches(item.title, item.descriptionMd) &&
         (status === "ALL" ||
@@ -510,19 +534,44 @@ function Workbench({
     ...active,
     ...ready.filter((item) => !active.some((a) => a.id === item.id)),
   ];
-  const day = localDay();
+  const day = calendarDay;
   const count = (n: number) => new Intl.NumberFormat(i18n.language).format(n);
   const date = (value: string) =>
     new Intl.DateTimeFormat(i18n.language, {
       month: "short",
       day: "numeric",
     }).format(new Date(value));
+  function navigateProject(
+    id: string | null,
+    tab: ProjectTab = "brief",
+    scope: "DIRECT" | "SUBTREE" = "SUBTREE",
+  ) {
+    if (
+      id !== activeProjectId &&
+      projectBriefDirty.current &&
+      !window.confirm(a("leave"))
+    )
+      return;
+    if (id !== activeProjectId) projectBriefDirty.current = false;
+    const route = { projectId: id, tab, scope };
+    const hash = projectHash(route);
+    acceptedHash.current = hash;
+    setProjectRoute(route);
+    setView("projects");
+    location.hash = hash;
+  }
   function navigate(next: View) {
     setDocumentVisible(false);
-    if (libraryDraft.current && !window.confirm(a("leave"))) return;
+    if (
+      (libraryDraft.current || projectBriefDirty.current) &&
+      !window.confirm(a("leave"))
+    )
+      return;
+    projectBriefDirty.current = false;
     libraryDraft.current = false;
     location.hash = next;
     setView(next);
+    setMobileNavigationOpen(false);
     setSelectedNotes([]);
     setShowArchived(false);
     setFolderFilter(null);
@@ -578,7 +627,7 @@ function Workbench({
   const onStatus = (item: WorkItem, next: WorkStatus) =>
     run(() => service.update(context, item.id, item.version, { status: next }));
   const workProps = {
-    today: utcDay,
+    today: calendarDay,
     allItems,
     edges: snapshot.edges,
     busy,
@@ -859,8 +908,9 @@ function Workbench({
                 {next === "tasks" && (
                   <span className="nav-count">
                     {count(
-                      items.filter((item) => isGloballyActiveTask(item, utcDay))
-                        .length,
+                      items.filter((item) =>
+                        isGloballyActiveTask(item, calendarDay),
+                      ).length,
                     )}
                   </span>
                 )}
@@ -976,6 +1026,9 @@ function Workbench({
             )}
           </div>
         </header>
+        <p className="calendar-timezone muted" data-testid="calendar-timezone">
+          {t("calendarTimezone", { timezone: calendarTimezone })}
+        </p>
         <DocumentWorkspace
           request={documentRequest}
           visible={documentVisible}
@@ -1017,6 +1070,7 @@ function Workbench({
               actor={context}
               controls={view === "settings" && !loading}
             />
+            <ThemeSettings controls={view === "settings" && !loading} />
           </div>
           {loading ? (
             <div className="loading-panel" role="status">
@@ -1217,6 +1271,16 @@ function Workbench({
             <>
               {projects.find((project) => project.id === activeProjectId) ? (
                 <ProjectWorkspace
+                  onStatus={onStatus}
+                  onOrganize={workProps.onOrganize}
+                  briefDirtyRef={projectBriefDirty}
+                  onBriefSave={(base, markdown) =>
+                    run(() =>
+                      service.update(context, base.id, base.version, {
+                        descriptionMd: markdown,
+                      }),
+                    )
+                  }
                   runtime={runtime}
                   run={run}
                   key={activeProjectId}
@@ -1225,8 +1289,13 @@ function Workbench({
                   }
                   snapshot={snapshot}
                   busy={busy}
-                  onBack={() => setActiveProjectId(null)}
-                  onProject={setActiveProjectId}
+                  routeTab={projectRoute.tab}
+                  routeScope={projectRoute.scope}
+                  onRouteChange={(tab, scope) =>
+                    navigateProject(activeProjectId, tab, scope)
+                  }
+                  onBack={() => navigateProject(null)}
+                  onProject={(id) => navigateProject(id)}
                   onOpen={openEntity}
                   onCreate={(type, parentId) => {
                     setCreation({ type, parentId });
@@ -1259,7 +1328,7 @@ function Workbench({
                     isArchived={isArchived}
                     archiveSource={archiveSource}
                     onOrganize={workProps.onOrganize}
-                    onOpen={(project) => setActiveProjectId(project.id)}
+                    onOpen={(project) => navigateProject(project.id)}
                     onTasks={(id) => {
                       navigate("tasks");
                       setProjectFilter(id);
@@ -1268,6 +1337,7 @@ function Workbench({
                     }}
                   />
                   <WorkflowManager
+                    calendarTimezone={calendarTimezone}
                     records={snapshot.workflows ?? []}
                     projects={projects}
                     busy={busy}
@@ -1317,6 +1387,18 @@ function Workbench({
             />
           ) : view === "settings" ? (
             <div className="settings-panel">
+              <CalendarSettings
+                settings={
+                  snapshot.calendarSettings ?? { version: 0, timezone: null }
+                }
+                effective={calendarTimezone}
+                busy={busy}
+                onSave={(version, timezone) =>
+                  run(() =>
+                    service.setCalendarSettings(context, version, timezone),
+                  )
+                }
+              />
               <AppUpdater updates={runtime.updates} />
               <section>
                 <h2>{t("settings:language")}</h2>
@@ -1716,12 +1798,50 @@ function Workbench({
           <span>{t("footerHint")}</span>
         </footer>
       </main>
+      <nav
+        className="mobile-bottom-navigation"
+        aria-label={t("mobileNavigation")}
+      >
+        {(
+          [
+            { view: "tasks", icon: ListTodo },
+            { view: "projects", icon: FolderKanban },
+            { view: "calendar", icon: CalendarDays },
+            { view: "notes", icon: BookOpen },
+          ] as const
+        ).map(({ view: next, icon: Icon }) => (
+          <button
+            key={next}
+            type="button"
+            aria-current={view === next ? "page" : undefined}
+            onClick={() => navigate(next)}
+          >
+            <Icon size={20} aria-hidden="true" />
+            <span>{viewLabel(next)}</span>
+          </button>
+        ))}
+        <button
+          type="button"
+          aria-expanded={mobileNavigationOpen}
+          aria-controls="workspace-navigation"
+          onClick={() => {
+            setMobileNavigationOpen((open) => !open);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        >
+          <PanelLeft size={20} aria-hidden="true" />
+          <span>{t("moreNavigation")}</span>
+        </button>
+      </nav>
       {editor && (
-        <TaskEditor
+        <WorkItemEditor
           key={editor === "new" ? "new" : editor.id + "-" + editor.version}
           item={editor === "new" ? null : editor}
           projects={projects}
+          items={allItems}
           createType={creation.type}
+          edges={snapshot.edges}
+          today={calendarDay}
           initialProjectId={creation.parentId}
           busy={busy}
           error={errorMessage}

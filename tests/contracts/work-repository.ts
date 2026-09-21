@@ -28,6 +28,101 @@ export function repositoryContract(
       };
     }
     const context = { workspaceId: "workspace-a", principalId: "human" };
+    it("validates execution against the resulting atomic prerequisite graph", async () => {
+      const uow = await create();
+      const { api } = service(uow);
+      const source = await api.create(context, { title: "Source" });
+      const target = await api.create(context, {
+        title: "Target",
+        prerequisiteIds: [source.id],
+        activationPolicy: "WHEN_DEPENDENCIES_COMPLETED",
+      });
+      const started = await api.update(context, target.id, target.version, {
+        status: "IN_PROGRESS",
+        prerequisiteIds: [],
+        expectedPrerequisiteIds: [source.id],
+      });
+      expect(started.status).toBe("IN_PROGRESS");
+      expect(started.activationState).toBe("ACTIVE");
+      await expect(
+        api.update(context, target.id, started.version, {
+          prerequisiteIds: [source.id],
+          expectedPrerequisiteIds: [],
+        }),
+      ).rejects.toThrow("WORK_ITEM_BLOCKED");
+      expect((await api.snapshot(context)).edges).toHaveLength(0);
+    });
+    it("persists isolated versioned calendar overrides and gates execution by the effective day", async () => {
+      const uow = await create();
+      const { api } = service(uow);
+      expect((await api.snapshot(context)).calendarTimezone).toBe("UTC");
+      const setting = await api.setCalendarSettings(context, 0, "America/Adak");
+      expect(setting.version).toBe(1);
+      expect((await api.snapshot(context)).calendarTimezone).toBe(
+        "America/Adak",
+      );
+      await expect(api.setCalendarSettings(context, 0, "UTC")).rejects.toThrow(
+        "VERSION_CONFLICT",
+      );
+      await expect(
+        api.setCalendarSettings(context, 1, "Invalid/Zone"),
+      ).rejects.toThrow("VALIDATION_ERROR");
+      const task = await api.create(context, {
+        title: "Local tomorrow",
+        activationPolicy: "AT_SCHEDULED_TIME",
+        startDate: "2026-09-17",
+      });
+      await expect(
+        api.update(context, task.id, task.version, { status: "IN_PROGRESS" }),
+      ).rejects.toThrow("WORK_ITEM_BLOCKED");
+      await api.setCalendarSettings(context, 1, "Pacific/Kiritimati");
+      expect(
+        (
+          await api.update(context, task.id, task.version, {
+            status: "IN_PROGRESS",
+          })
+        ).status,
+      ).toBe("IN_PROGRESS");
+      await api.setCalendarSettings(context, 2, null);
+      expect((await api.snapshot(context)).calendarTimezone).toBe("UTC");
+      expect(
+        (await uow.run("workspace-b", (tx) => tx.calendarSettings())).version,
+      ).toBe(0);
+    });
+    it("creates prerequisites atomically and rolls back invalid edges without leaking a task", async () => {
+      const uow = await create();
+      const { api } = service(uow);
+      const source = await api.create(context, { title: "Source" });
+      const target = await api.create(context, {
+        title: "Target",
+        prerequisiteIds: [source.id],
+        activationPolicy: "WHEN_DEPENDENCIES_COMPLETED",
+      });
+      expect(target.activationState).toBe("INACTIVE");
+      const before = await api.snapshot(context);
+      await expect(
+        api.create(context, {
+          title: "Bad",
+          prerequisiteIds: [source.id, "missing"],
+        }),
+      ).rejects.toThrow();
+      expect(await api.snapshot(context)).toEqual(before);
+      await expect(
+        api.update(context, target.id, target.version, {
+          prerequisiteIds: [source.id, source.id],
+        }),
+      ).rejects.toThrow("VALIDATION_ERROR");
+      const updated = await api.update(context, target.id, target.version, {
+        prerequisiteIds: [],
+        expectedPrerequisiteIds: [source.id],
+      });
+      expect(updated.activationState).toBe("ACTIVE");
+      expect(
+        (await api.snapshot(context)).items.find(
+          (item) => item.id === target.id,
+        ),
+      ).toEqual(updated);
+    });
     function workflows(uow: UnitOfWork) {
       let id = 0;
       return new WorkflowService(
@@ -309,7 +404,203 @@ export function repositoryContract(
         await uow.run(context.workspaceId, (tx) => tx.categories()),
       ).toEqual([]);
     });
-    it("persists multiple memberships, protects secondary projects and preserves them on unrelated edits", async () => {
+
+    it("project pause and completion respect owned outcomes, not references", async () => {
+      const { api } = service(await create());
+      let project = await api.create(context, {
+        type: "PROJECT",
+        title: "Outcome",
+      });
+      const task = await api.create(context, {
+        title: "Work",
+        ownerProjectId: project.id,
+      });
+      await api.create(context, {
+        title: "Reference",
+        linkedProjectIds: [project.id],
+      });
+      project = await api.update(context, project.id, project.version, {
+        projectLifecycle: "ACTIVE",
+      });
+      project = await api.update(context, project.id, project.version, {
+        projectLifecycle: "PAUSED",
+      });
+      expect(project).toMatchObject({
+        status: "IN_PROGRESS",
+        activationState: "INACTIVE",
+      });
+      await expect(
+        api.update(context, project.id, project.version, {
+          projectLifecycle: "COMPLETED",
+        }),
+      ).rejects.toMatchObject({
+        code: "PROJECT_HAS_UNFINISHED_WORK",
+        params: { unfinished: 1 },
+      });
+      await api.update(context, task.id, task.version, { status: "CANCELED" });
+      project = await api.update(context, project.id, project.version, {
+        projectLifecycle: "COMPLETED",
+      });
+      expect(project.status).toBe("DONE");
+      expect(project.completedAt).not.toBe(null);
+      project = await api.update(context, project.id, project.version, {
+        projectLifecycle: "ACTIVE",
+      });
+      expect(project.completedAt).toBe(null);
+      await expect(
+        api.update(context, task.id, 2, { projectLifecycle: "ACTIVE" }),
+      ).rejects.toThrow("VALIDATION_ERROR");
+      await expect(
+        api.update(context, project.id, project.version, {
+          projectLifecycle: "ACTIVE",
+          status: "TODO",
+        }),
+      ).rejects.toThrow("VALIDATION_ERROR");
+    });
+    it("completed ancestors reject introduced unfinished ownership on every write path", async () => {
+      const { api } = service(await create());
+      let root = await api.create(context, { type: "PROJECT", title: "Root" });
+      let child = await api.create(context, {
+        type: "PROJECT",
+        title: "Child",
+        projectId: root.id,
+      });
+      const hidden = await api.create(context, {
+        title: "Deleted",
+        ownerProjectId: child.id,
+      });
+      await api.setDeleted(context, hidden.id, 1, true);
+      await expect(
+        api.update(context, root.id, 1, { status: "DONE" }),
+      ).rejects.toMatchObject({
+        code: "PROJECT_HAS_UNFINISHED_WORK",
+        params: { unfinishedProjects: 1 },
+      });
+      child = await api.update(context, child.id, 1, {
+        projectLifecycle: "CANCELED",
+      });
+      root = await api.update(context, root.id, 1, { status: "DONE" });
+      await expect(
+        api.create(context, { title: "New", ownerProjectId: child.id }),
+      ).rejects.toThrow("PROJECT_REOPEN_REQUIRED");
+      await expect(
+        api.setDeleted(context, hidden.id, 2, false),
+      ).rejects.toThrow("PROJECT_REOPEN_REQUIRED");
+      await expect(
+        api.update(context, child.id, child.version, {
+          projectLifecycle: "ACTIVE",
+        }),
+      ).rejects.toThrow("PROJECT_REOPEN_REQUIRED");
+      const outsider = await api.create(context, { title: "Outside" });
+      await expect(
+        api.update(context, outsider.id, 1, { ownerProjectId: child.id }),
+      ).rejects.toThrow("PROJECT_REOPEN_REQUIRED");
+      expect(
+        (await api.snapshot(context)).items.find((i) => i.id === root.id)
+          ?.status,
+      ).toBe("DONE");
+    });
+    it("explicit reopen/create is versioned and rolls back invalid writes", async () => {
+      const { api } = service(await create());
+      let project = await api.create(context, {
+        type: "PROJECT",
+        title: "Finished",
+      });
+      project = await api.update(context, project.id, 1, {
+        projectLifecycle: "COMPLETED",
+      });
+      await expect(
+        api.create(context, {
+          title: "Invalid",
+          ownerProjectId: project.id,
+          reopenProjectVersion: project.version,
+          startDate: "bad",
+        }),
+      ).rejects.toThrow("VALIDATION_ERROR");
+      expect(
+        (await api.snapshot(context)).items.find((i) => i.id === project.id),
+      ).toEqual(project);
+      await expect(
+        api.create(context, {
+          title: "Stale",
+          ownerProjectId: project.id,
+          reopenProjectVersion: 1,
+        }),
+      ).rejects.toThrow("VERSION_CONFLICT");
+      const task = await api.create(context, {
+        title: "Next",
+        ownerProjectId: project.id,
+        reopenProjectVersion: project.version,
+      });
+      expect(task.projectId).toBe(project.id);
+      expect(
+        (await api.snapshot(context)).items.find((i) => i.id === project.id),
+      ).toMatchObject({
+        status: "IN_PROGRESS",
+        version: project.version + 1,
+        completedAt: null,
+      });
+      await expect(
+        api.create(context, {
+          title: "Retry",
+          ownerProjectId: project.id,
+          reopenProjectVersion: project.version,
+        }),
+      ).rejects.toThrow("VERSION_CONFLICT");
+      expect((await api.snapshot(context)).items).toHaveLength(2);
+    });
+    it("atomic reopen requires update permission and rolls back event failure", async () => {
+      const uow = await create();
+      const { api } = service(uow);
+      const p = await api.create(context, { type: "PROJECT", title: "P" });
+      await api.update(context, p.id, 1, { projectLifecycle: "COMPLETED" });
+      const denied = new WorkService(
+        uow,
+        {
+          require: async (_c, permission) => {
+            if (permission === "work:update") throw new Error("FORBIDDEN");
+          },
+        },
+        { now: () => "2026-09-20T00:00:00Z" },
+        { next: () => "denied" },
+      );
+      await expect(
+        denied.create(context, {
+          title: "No",
+          ownerProjectId: p.id,
+          reopenProjectVersion: 2,
+        }),
+      ).rejects.toThrow("FORBIDDEN");
+      const failing: UnitOfWork = {
+        run: (workspace, operation) =>
+          uow.run(workspace, (tx) =>
+            operation({
+              ...tx,
+              appendOutbox: async () => {
+                throw new Error("outbox failed");
+              },
+            }),
+          ),
+      };
+      await expect(
+        new WorkService(
+          failing,
+          { require: async () => {} },
+          { now: () => "2026-09-20T00:00:00Z" },
+          { next: () => crypto.randomUUID() },
+        ).create(context, {
+          title: "No",
+          ownerProjectId: p.id,
+          reopenProjectVersion: 2,
+        }),
+      ).rejects.toThrow("outbox failed");
+      expect((await api.snapshot(context)).items).toHaveLength(1);
+      expect((await api.snapshot(context)).items[0]).toMatchObject({
+        status: "DONE",
+        version: 2,
+      });
+    });
+    it("preserves legacy memberships and protects only their structural owner", async () => {
       const { api } = service(await create());
       const a = await api.create(context, { title: "A", type: "PROJECT" });
       const b = await api.create(context, { title: "B", type: "PROJECT" });
@@ -323,7 +614,7 @@ export function repositoryContract(
         (await api.snapshot(context)).items.find((i) => i.id === task.id)
           ?.projectIds,
       ).toEqual([a.id, b.id]);
-      await expect(api.setDeleted(context, b.id, 1, true)).rejects.toThrow(
+      await expect(api.setDeleted(context, a.id, 1, true)).rejects.toThrow(
         "DEPENDENCY_EXISTS",
       );
       const updated = await api.update(context, task.id, 1, {
@@ -352,7 +643,7 @@ export function repositoryContract(
       await api.update(context, task.id, 3, { projectIds: [] });
       await api.setDeleted(context, b.id, 1, true);
     });
-    it("restores shared tasks keeping live memberships and dropping deleted projects", async () => {
+    it("restores tasks without promoting a linked project to owner", async () => {
       const { api } = service(await create());
       const a = await api.create(context, { title: "A", type: "PROJECT" });
       const b = await api.create(context, { title: "B", type: "PROJECT" });
@@ -363,8 +654,82 @@ export function repositoryContract(
       await api.setDeleted(context, task.id, 1, true);
       await api.setDeleted(context, a.id, 1, true);
       const restored = await api.setDeleted(context, task.id, 2, false);
-      expect(restored.projectIds).toEqual([b.id]);
-      expect(restored.projectId).toBe(b.id);
+      expect(restored.projectIds).toEqual([a.id, b.id]);
+      expect(restored.projectId).toBe(null);
+    });
+    it("supports independent owner and links without resurrecting deleted references", async () => {
+      const { api } = service(await create());
+      const a = await api.create(context, { title: "Owner", type: "PROJECT" });
+      const b = await api.create(context, {
+        title: "Reference",
+        type: "PROJECT",
+      });
+      const task = await api.create(context, {
+        title: "Owned",
+        ownerProjectId: a.id,
+        linkedProjectIds: [b.id],
+      });
+      expect(task.projectId).toBe(a.id);
+      expect(task.projectIds).toEqual([a.id, b.id]);
+      await api.setDeleted(context, b.id, 1, true);
+      const renamed = await api.update(context, task.id, 1, {
+        title: "Keep links",
+      });
+      expect(renamed.projectIds).toEqual([a.id, b.id]);
+      const unowned = await api.update(context, task.id, 2, {
+        ownerProjectId: null,
+      });
+      expect(unowned.projectId).toBe(null);
+      expect(unowned.projectIds).toEqual([b.id]);
+      const snapshot = await api.snapshot(context);
+      expect(snapshot.items.find((i) => i.id === task.id)?.projectId).toBe(
+        null,
+      );
+      await expect(
+        api.update(context, task.id, 3, {
+          ownerProjectId: a.id,
+          projectIds: [],
+        }),
+      ).rejects.toThrow("VALIDATION_ERROR");
+      await expect(
+        api.create(context, { title: "Bad", linkedProjectIds: [b.id] }),
+      ).rejects.toThrow();
+      await expect(
+        api.update(context, a.id, 1, { linkedProjectIds: [] }),
+      ).rejects.toThrow("VALIDATION_ERROR");
+    });
+    it("scheduling uses the injected host calendar timezone at midnight", async () => {
+      const uow = await create();
+      let id = 0;
+      const clock = {
+        now: () => "2026-09-17T15:30:00Z",
+        calendarTimezone: "Asia/Tokyo",
+      };
+      const api = new WorkService(uow, { require: async () => {} }, clock, {
+        next: () => "zone-" + ++id,
+      });
+      const task = await api.create(context, {
+        title: "Tomorrow UTC, today Tokyo",
+        activationPolicy: "AT_SCHEDULED_TIME",
+        startDate: "2026-09-18",
+      });
+      const utc = new WorkService(
+        uow,
+        { require: async () => {} },
+        { now: clock.now },
+        { next: () => "zone-" + ++id },
+      );
+      await expect(
+        utc.update(context, task.id, 1, { status: "IN_PROGRESS" }),
+      ).rejects.toThrow("WORK_ITEM_BLOCKED");
+      expect((await api.snapshot(context)).calendarTimezone).toBe("Asia/Tokyo");
+      expect(
+        (await api.update(context, task.id, 1, { status: "IN_PROGRESS" }))
+          .status,
+      ).toBe("IN_PROGRESS");
+      expect((await api.snapshot(context)).items[0]?.startDate).toBe(
+        "2026-09-18",
+      );
     });
     it("enforces manual and UTC scheduled eligibility without read mutations", async () => {
       const { api, clock } = service(await create());
@@ -466,6 +831,48 @@ export function repositoryContract(
       expect(
         (await api.setDeleted(context, child.id, 2, false)).projectId,
       ).toBeNull();
+    });
+    it("rejects moving a subtree beyond the maximum depth without changing it", async () => {
+      const { api } = service(await create());
+      let parent = await api.create(context, {
+        title: "level 1",
+        type: "PROJECT",
+      });
+      for (let depth = 2; depth <= 15; depth++)
+        parent = await api.create(context, {
+          title: "level " + depth,
+          type: "PROJECT",
+          projectId: parent.id,
+        });
+      const root = await api.create(context, {
+        title: "move root",
+        type: "PROJECT",
+      });
+      await api.create(context, {
+        title: "move child",
+        type: "PROJECT",
+        projectId: root.id,
+      });
+      const before = await api.snapshot(context);
+      await expect(
+        api.update(context, root.id, root.version, { projectId: parent.id }),
+      ).rejects.toThrow("VALIDATION_ERROR");
+      expect(await api.snapshot(context)).toEqual(before);
+    });
+    it("rejects project endpoints in execution dependencies", async () => {
+      const { api } = service(await create());
+      const project = await api.create(context, {
+        title: "project",
+        type: "PROJECT",
+      });
+      const task = await api.create(context, { title: "task" });
+
+      await expect(api.addEdge(context, project.id, task.id)).rejects.toThrow(
+        "VALIDATION_ERROR",
+      );
+      await expect(api.addEdge(context, task.id, project.id)).rejects.toThrow(
+        "VALIDATION_ERROR",
+      );
     });
     it("serializes racing hierarchy changes so only one direction succeeds", async () => {
       const { api } = service(await create());

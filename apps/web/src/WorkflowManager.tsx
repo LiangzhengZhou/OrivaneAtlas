@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface Props {
+  calendarTimezone?: string;
   records: WorkflowRecord[];
   projects: WorkItem[];
   busy: boolean;
@@ -25,6 +26,7 @@ interface Props {
   ): Promise<boolean>;
 }
 export function WorkflowManager({
+  calendarTimezone = "UTC",
   records,
   projects,
   busy,
@@ -44,14 +46,9 @@ export function WorkflowManager({
   const [error, setError] = useState(false),
     [title, setTitle] = useState(""),
     [startDate, setStartDate] = useState(
-      localCalendarDay(
-        new Date().toISOString(),
-        Intl.DateTimeFormat().resolvedOptions().timeZone,
-      ),
+      localCalendarDay(new Date().toISOString(), calendarTimezone),
     );
-  const [timezone, setTimezone] = useState(
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-    ),
+  const [timezone, setTimezone] = useState(calendarTimezone),
     [frequency, setFrequency] = useState<"DAILY" | "WEEKLY" | "MONTHLY">(
       "DAILY",
     ),

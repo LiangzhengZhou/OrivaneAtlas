@@ -42,6 +42,7 @@ export function DensitySettings({
     <label className="density-settings">
       {chinese ? "界面密度" : "Interface density"}
       <select
+        aria-label={chinese ? "界面密度" : "Interface density"}
         value={density}
         onChange={(event) => {
           const value: InterfaceDensity =

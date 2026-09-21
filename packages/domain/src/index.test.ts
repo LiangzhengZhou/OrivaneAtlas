@@ -2,6 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { edge, work } from "../../../tests/fixtures";
 import {
+  availability,
   blockers,
   dependency,
   isReady,
@@ -97,6 +98,39 @@ describe("Work domain", () => {
     expect(isReady(target, [target], graph)).toBe(false);
     expect(isReady({ ...target, deletedAt: "now" }, [target], [])).toBe(false);
     expect(isReady({ ...target, status: "DONE" }, [target], [])).toBe(false);
+  });
+  it("projects availability without exposing activation internals", () => {
+    const task = work("task");
+    expect(availability(task, [task], [], "2026-09-21")).toBe("READY");
+    expect(
+      availability(
+        { ...task, activationState: "INACTIVE" },
+        [task],
+        [],
+        "2026-09-21",
+      ),
+    ).toBe("PAUSED");
+    expect(
+      availability(
+        {
+          ...task,
+          activationPolicy: "AT_SCHEDULED_TIME",
+          activationState: "SCHEDULED",
+          startDate: "2026-09-22",
+        },
+        [task],
+        [],
+        "2026-09-21",
+      ),
+    ).toBe("WAITING");
+    expect(
+      availability(
+        task,
+        [task, work("pre")],
+        [edge("pre", "task")],
+        "2026-09-21",
+      ),
+    ).toBe("BLOCKED");
   });
   it("property: forward edges preserve DAGs and closing edges are rejected", () => {
     fc.assert(

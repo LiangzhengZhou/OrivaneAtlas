@@ -1,4 +1,5 @@
 import type { EntityRef, KnowledgeLink } from "@arclattice/application";
+import { dependency } from "@arclattice/domain";
 import {
   Background,
   Controls,
@@ -16,12 +17,14 @@ export function GraphCanvas({
   snapshot,
   tasks = false,
   onOpen,
+  onSelect,
   onConnect,
   onRemove,
 }: {
   snapshot: Snapshot;
   tasks?: boolean;
   onOpen: (ref: EntityRef) => void;
+  onSelect?: (ref: EntityRef) => void;
   onConnect: (
     from: EntityRef,
     to: EntityRef,
@@ -92,13 +95,42 @@ export function GraphCanvas({
     const ids = new Set(visible.map((e) => key(e.ref)));
     return (
       tasks
-        ? snapshot.edges.map((e) => ({
-            id: e.id,
-            source: "WORK:" + (e.type === "REQUIRES" ? e.toId : e.fromId),
-            target: "WORK:" + (e.type === "REQUIRES" ? e.fromId : e.toId),
-            directed: e.type !== "RELATED",
-            label: e.type,
-          }))
+        ? [
+            ...snapshot.items
+              .filter(
+                (item) =>
+                  !item.deletedAt &&
+                  item.projectId &&
+                  ["PROJECT", "TASK"].includes(item.type),
+              )
+              .map((item) => ({
+                id: `hierarchy:${item.id}`,
+                source: `WORK:${item.projectId}`,
+                target: `WORK:${item.id}`,
+                directed: false,
+                label:
+                  item.type === "PROJECT"
+                    ? zh
+                      ? "子项目"
+                      : "Subproject"
+                    : zh
+                      ? "所属任务"
+                      : "Owned task",
+                data: { hierarchy: true },
+                style: { strokeDasharray: "5 4", stroke: "#8c93a5" },
+              })),
+            ...snapshot.edges.map((e) => ({
+              id: e.id,
+              source: "WORK:" + (e.type === "REQUIRES" ? e.toId : e.fromId),
+              target: "WORK:" + (e.type === "REQUIRES" ? e.fromId : e.toId),
+              directed: e.type !== "RELATED",
+              label: dependency(e)
+                ? zh
+                  ? "前置于"
+                  : "Prerequisite for"
+                : e.type,
+            })),
+          ]
         : snapshot.links.map((e) => ({
             id: e.id,
             source: key(e.from),
@@ -112,7 +144,7 @@ export function GraphCanvas({
         ...e,
         ...(e.directed ? { markerEnd: { type: MarkerType.ArrowClosed } } : {}),
       }));
-  }, [visible, snapshot, tasks]);
+  }, [visible, snapshot, tasks, zh]);
   const signature = JSON.stringify({
     nodes: visible.map((e) => ({ id: key(e.ref), title: e.title })),
     edges: edges.map((e) => ({ source: e.source, target: e.target })),
@@ -223,9 +255,13 @@ export function GraphCanvas({
         </button>
       </div>
       <p className="muted">
-        {zh
-          ? "拖动节点调整位置，拖动连接点创建关联；双击节点打开，双击连线移除。下方保留可键盘访问的列表。"
-          : "Drag nodes to arrange; connect handles to link. Double-click a node to open, or an edge to remove. Accessible lists remain below."}
+        {tasks
+          ? zh
+            ? "虚线表示项目层级与任务归属；使用下方表单管理执行依赖。拖动节点调整位置，双击节点编辑，双击依赖连线移除。"
+            : "Dashed lines show hierarchy and ownership. Manage execution dependencies below. Drag nodes to arrange; double-click a node to edit or a dependency edge to remove."
+          : zh
+            ? "拖动节点调整位置，拖动连接点创建关联；双击节点打开，双击连线移除。下方保留可键盘访问的列表。"
+            : "Drag nodes to arrange; connect handles to link. Double-click a node to open, or an edge to remove. Accessible lists remain below."}
       </p>
       {error && (
         <p role="alert" className="error">
@@ -239,7 +275,7 @@ export function GraphCanvas({
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
-          nodesConnectable={!pending}
+          nodesConnectable={!pending && !tasks}
           deleteKeyCode={null}
           onNodeDragStop={(_, node) =>
             positions.current.set(node.id, node.position)
@@ -248,7 +284,12 @@ export function GraphCanvas({
             const e = entities.find((e) => key(e.ref) === node.id);
             if (e) onOpen(e.ref);
           }}
+          onNodeClick={(_, node) => {
+            const entity = entities.find((entry) => key(entry.ref) === node.id);
+            if (entity) onSelect?.(entity.ref);
+          }}
           onEdgeDoubleClick={(_, edge) => {
+            if (edge.data?.hierarchy) return;
             if (window.confirm(zh ? "移除此关联？" : "Remove this relation?"))
               void run(() => onRemove(edge.id));
           }}

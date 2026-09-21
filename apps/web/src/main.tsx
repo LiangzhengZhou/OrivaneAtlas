@@ -5,6 +5,7 @@ import { App } from "./App";
 import { bootstrap } from "./bootstrap";
 import "./styles.css";
 import "./workspace.css";
+import "./product.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element missing");

@@ -133,6 +133,32 @@ export function repository(client: PoolClient, workspaceId: string) {
     );
   };
   const port: WorkTransaction = {
+    calendarSettings: () =>
+      schedule(async () => {
+        const row = (
+          await client.query(
+            "SELECT version::float8 AS version,timezone FROM arclattice.workspace_calendar WHERE workspace_id=$1",
+            [workspaceId],
+          )
+        ).rows[0];
+        return row ?? { version: 0, timezone: null };
+      }),
+    saveCalendarSettings: (settings, expected) =>
+      schedule(async () => {
+        if (settings.version !== expected + 1)
+          throw new DomainError("VERSION_CONFLICT");
+        const result =
+          expected === 0
+            ? await client.query(
+                "INSERT INTO arclattice.workspace_calendar (workspace_id,version,timezone) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+                [workspaceId, settings.version, settings.timezone],
+              )
+            : await client.query(
+                "UPDATE arclattice.workspace_calendar SET version=$1,timezone=$2 WHERE workspace_id=$3 AND version=$4",
+                [settings.version, settings.timezone, workspaceId, expected],
+              );
+        if (result.rowCount !== 1) throw new DomainError("VERSION_CONFLICT");
+      }),
     ...categoryPort(client, workspaceId, schedule),
     ...workflowPort(client, workspaceId, schedule),
     get: (id) => schedule(() => get(id)),
@@ -249,7 +275,12 @@ export function repository(client: PoolClient, workspaceId: string) {
           throw new DomainError("NOT_FOUND");
       }),
     appendActivity: (event) => {
-      const copy = { ...event };
+      const copy = {
+        ...event,
+        fromId: event.fromId ?? null,
+        toId: event.toId ?? null,
+        edgeType: event.edgeType ?? null,
+      };
       return schedule(async () => {
         scope(copy);
         await member(copy.principalId);

@@ -33,6 +33,9 @@ export const edgeFields = {
   createdAt: "created_at",
 } satisfies Record<keyof WorkEdge, string>;
 export const activityFields = {
+  fromId: "from_id",
+  toId: "to_id",
+  edgeType: "edge_type",
   workspaceId: "workspace_id",
   id: "id",
   principalId: "principal_id",

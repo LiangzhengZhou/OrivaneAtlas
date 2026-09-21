@@ -273,3 +273,79 @@
   width: 100%;
   accent-color: #7656c6;
 }
+
+.project-brief-editor {
+  max-width: 920px;
+  margin: 24px auto;
+}
+.project-brief-editor .brief-source {
+  width: 100%;
+  min-height: 280px;
+  font-family: ui-monospace, monospace;
+}
+.project-brief-editor .cm-content {
+  min-height: 240px;
+}
+.project-settings-dialog {
+  max-width: 620px;
+}
+
+.project-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.project-breadcrumb button::after {
+  content: " /";
+  padding-inline-start: 0.5rem;
+}
+.project-hierarchy {
+  display: block;
+}
+.project-tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.project-tree-list .project-tree-list {
+  margin-inline-start: 1rem;
+  padding-inline-start: 1rem;
+  border-inline-start: 1px solid var(--border, #d9d7e0);
+}
+.project-hierarchy .project-card {
+  box-shadow: none;
+  border: 0;
+  border-bottom: 1px solid var(--border, #d9d7e0);
+  border-radius: 0;
+  background: transparent;
+  margin: 0;
+}
+.project-tree-toggle {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.3rem;
+  cursor: pointer;
+}
+@media (max-width: 600px) {
+  .project-tree-list .project-tree-list {
+    margin-inline-start: 0.3rem;
+    padding-inline-start: 0.5rem;
+  }
+}
+
+.reopen-project-consent {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.calendar-timezone {
+  margin: 0.25rem 0 1rem;
+  font-size: 0.875rem;
+}

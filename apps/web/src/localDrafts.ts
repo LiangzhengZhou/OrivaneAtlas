@@ -1,4 +1,23 @@
-type Draft = { title: string; body: string; updatedAt: number };
+export type Draft = {
+  title: string;
+  body: string;
+  updatedAt: number;
+  entityId?: string;
+  baseVersion?: number;
+  baseUpdatedAt?: string | null;
+  savedAt?: number;
+};
+export function draftMatchesBase(
+  draft: Draft,
+  entityId: string,
+  base?: { version: number; updatedAt: string },
+): boolean {
+  return (
+    draft.entityId === entityId &&
+    draft.baseVersion === (base?.version ?? 0) &&
+    draft.baseUpdatedAt === (base?.updatedAt ?? null)
+  );
+}
 const dbName = "orivane-atlas-local";
 const storeName = "drafts";
 function openDb(): Promise<IDBDatabase> {

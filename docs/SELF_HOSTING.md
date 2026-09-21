@@ -76,3 +76,9 @@ Older release behavior below applies to 0.0.5/0.0.6 clients and earlier Hosts. V
 - Inspect logs without including credentials, tokens, database contents, or provider configuration.
 
 For development and contribution checks, see [DEVELOPMENT.md](DEVELOPMENT.md).
+
+## Calendar timezone
+
+Set ARCLATTICE_CALENDAR_TIMEZONE to an IANA zone such as Asia/Shanghai before starting the host. The default is UTC. Each workspace can now save a versioned override in Settings; an empty override inherits the host setting. Authenticated snapshots expose the effective timezone and the stored preference. Task execution gates, Today, Calendar and new Journal dates use the same effective timezone. Changes do not rewrite existing dates or recurrence rule timezones. Workspace overrides are included in database backups; keep the host fallback with deployment configuration.
+
+The current source requires SQLite schema 18 / PostgreSQL repository schema 9. The additive upgrade preserves Activity and Outbox and retains endpoints for newly recorded dependency events after removal. Old removed-edge history cannot be reconstructed. SQLite makes a pre-upgrade snapshot; validate restoration to a new file before switching production. Rollback uses matching pre-upgrade code and snapshot, never older code against the upgraded database. Workspace timezone changes require a human session, CSRF and an idempotency key; external Agent/PAT tools cannot change this setting.

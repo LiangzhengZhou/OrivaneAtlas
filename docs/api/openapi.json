@@ -16,6 +16,12 @@
     }
   ],
   "paths": {
+    "/api/work/calendar-settings": {
+      "$ref": "#/components/pathItems/CalendarSettings"
+    },
+    "/api/v1/work/calendar-settings": {
+      "$ref": "#/components/pathItems/CalendarSettings"
+    },
     "/api/mcp": {
       "post": {
         "operationId": "mcp",
@@ -1383,7 +1389,10 @@
                         "type": "array",
                         "uniqueItems": true,
                         "maxItems": 100,
-                        "items": { "type": "string", "maxLength": 240 }
+                        "items": {
+                          "type": "string",
+                          "maxLength": 240
+                        }
                       },
                       "startDate": {
                         "type": "string",
@@ -2981,7 +2990,8 @@
           {
             "integration": []
           }
-        ]
+        ],
+        "description": " New BLOCKS/REQUIRES execution dependencies require TASK endpoints; non-TASK endpoints return VALIDATION_ERROR. Stored legacy edges remain readable and removable."
       }
     },
     "/api/edge/delete": {
@@ -5710,7 +5720,8 @@
           {
             "integration": []
           }
-        ]
+        ],
+        "description": " New BLOCKS/REQUIRES execution dependencies require TASK endpoints; non-TASK endpoints return VALIDATION_ERROR. Stored legacy edges remain readable and removable."
       }
     },
     "/api/v1/edge/delete": {
@@ -7981,6 +7992,55 @@
     }
   },
   "components": {
+    "pathItems": {
+      "CalendarSettings": {
+        "post": {
+          "summary": "Set versioned workspace calendar timezone",
+          "description": "Human session only; work:update authorization. Null inherits host timezone. Existing dates and recurrence zones are unchanged. Activity, Outbox and idempotency receipt commit atomically; stale versions return 409.",
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "in": "header",
+              "required": true,
+              "schema": { "type": "string", "pattern": "^[a-zA-Z0-9-]{16,80}$" }
+            },
+            {
+              "name": "X-CSRF-Token",
+              "in": "header",
+              "required": true,
+              "schema": { "type": "string" }
+            },
+            {
+              "name": "Origin",
+              "in": "header",
+              "required": true,
+              "schema": { "type": "string" }
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CalendarSettings" }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Saved preference",
+              "content": {
+                "application/json": {
+                  "schema": { "$ref": "#/components/schemas/CalendarSettings" }
+                }
+              }
+            },
+            "400": { "description": "Invalid timezone or version" },
+            "403": { "description": "Session, CSRF or permission denied" },
+            "409": { "description": "Version or idempotency conflict" }
+          }
+        }
+      }
+    },
     "securitySchemes": {
       "ownerSession": {
         "type": "apiKey",
@@ -8119,11 +8179,25 @@
           "deletedAt"
         ],
         "properties": {
-          "id": { "type": "string" },
-          "workspaceId": { "type": "string" },
-          "name": { "type": "string", "minLength": 1, "maxLength": 240 },
-          "icon": { "type": "string", "maxLength": 16 },
-          "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
           "position": {
             "type": "integer",
             "minimum": 0,
@@ -8133,14 +8207,29 @@
             "type": "array",
             "maxItems": 100,
             "uniqueItems": true,
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
-          "version": { "type": "integer", "minimum": 1 },
-          "createdBy": { "type": "string" },
-          "updatedBy": { "type": "string" },
-          "createdAt": { "type": "string" },
-          "updatedAt": { "type": "string" },
-          "deletedAt": { "type": ["string", "null"] }
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "deletedAt": {
+            "type": ["string", "null"]
+          }
         }
       },
       "ProjectMaterial": {
@@ -8362,6 +8451,7 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "prerequisiteIds": { "$ref": "#/components/schemas/PrerequisiteIds" },
           "projectIds": {
             "$ref": "#/components/schemas/TaskProjectIds"
           },
@@ -8404,6 +8494,24 @@
           },
           "type": {
             "$ref": "#/components/schemas/WorkType"
+          },
+          "ownerProjectId": {
+            "type": ["string", "null"],
+            "description": "Sole structural task owner. Cannot be combined with legacy projectId/projectIds."
+          },
+          "linkedProjectIds": {
+            "type": "array",
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "Non-structural task references. Omitted fields preserve existing ownership or links."
+          },
+          "reopenProjectVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Explicitly reopen the immediate completed owner/parent and create work atomically. Requires work:update as well as work:create; ancestor projects must already be open."
           }
         },
         "required": ["title"]
@@ -8425,6 +8533,13 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "prerequisiteIds": {
+                "$ref": "#/components/schemas/PrerequisiteIds"
+              },
+              "expectedPrerequisiteIds": {
+                "$ref": "#/components/schemas/PrerequisiteIds",
+                "description": "Canonical set captured when editing began; stale set is rejected even if task version is unchanged."
+              },
               "projectId": {
                 "type": ["string", "null"],
                 "maxLength": 240
@@ -8465,12 +8580,37 @@
               },
               "status": {
                 "$ref": "#/components/schemas/Status"
+              },
+              "ownerProjectId": {
+                "type": ["string", "null"],
+                "description": "Sole structural task owner. Cannot be combined with legacy projectId/projectIds."
+              },
+              "linkedProjectIds": {
+                "type": "array",
+                "maxItems": 100,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                },
+                "description": "Non-structural task references. Omitted fields preserve existing ownership or links."
+              },
+              "projectLifecycle": {
+                "type": "string",
+                "enum": [
+                  "PLANNED",
+                  "ACTIVE",
+                  "PAUSED",
+                  "COMPLETED",
+                  "CANCELED"
+                ],
+                "description": "Project-only explicit lifecycle command. Cannot mix with status or activation fields. Completion requires terminal owned tasks and descendant projects. Legacy status updates use the same guards."
               }
             },
             "required": []
           }
         },
-        "required": ["id", "version", "input"]
+        "required": ["id", "version", "input"],
+        "description": "Versioned task update or project lifecycle/settings update. PROJECT_HAS_UNFINISHED_WORK and PROJECT_REOPEN_REQUIRED return HTTP 409. Task availability does not control project lifecycle."
       },
       "Delete": {
         "type": "object",
@@ -8773,6 +8913,9 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "fromId": { "type": ["string", "null"] },
+          "toId": { "type": ["string", "null"] },
+          "edgeType": { "type": ["string", "null"] },
           "id": {
             "type": "string",
             "maxLength": 240
@@ -8794,7 +8937,8 @@
               "WORK_ITEM_DELETED",
               "WORK_ITEM_RESTORED",
               "WORK_EDGE_ADDED",
-              "WORK_EDGE_REMOVED"
+              "WORK_EDGE_REMOVED",
+              "WORKSPACE_SETTINGS_UPDATED"
             ]
           },
           "occurredAt": {
@@ -8810,17 +8954,44 @@
           "occurredAt"
         ]
       },
+      "PrerequisiteIds": {
+        "type": "array",
+        "uniqueItems": true,
+        "maxItems": 1000,
+        "items": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "description": "TASK-only canonical prerequisite set; cycles, duplicates and deleted endpoints rejected. Applied atomically with task mutation."
+      },
+      "CalendarSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "timezone": { "type": ["string", "null"], "maxLength": 100 }
+        },
+        "required": ["version", "timezone"]
+      },
       "Snapshot": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "calendarSettings": {
+            "$ref": "#/components/schemas/CalendarSettings"
+          },
           "projectMaterials": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/ProjectMaterial" }
+            "items": {
+              "$ref": "#/components/schemas/ProjectMaterial"
+            }
           },
           "categories": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/ProjectCategory" }
+            "items": {
+              "$ref": "#/components/schemas/ProjectCategory"
+            }
           },
           "items": {
             "type": "array",
@@ -8857,6 +9028,10 @@
             "items": {
               "$ref": "#/components/schemas/Organization"
             }
+          },
+          "calendarTimezone": {
+            "type": "string",
+            "description": "Effective workspace calendar timezone: persisted override or host fallback (IANA, host default UTC). Used for task eligibility, Today, overdue, Calendar and new Journal dates; old snapshots without this field use UTC. Existing recurrence rules retain their own zone."
           }
         },
         "required": [
@@ -8942,11 +9117,15 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "gateway": { "$ref": "#/components/schemas/GatewayPolicy" },
+          "gateway": {
+            "$ref": "#/components/schemas/GatewayPolicy"
+          },
           "fallbackRoutes": {
             "type": "array",
             "maxItems": 2,
-            "items": { "$ref": "#/components/schemas/ModelRoute" },
+            "items": {
+              "$ref": "#/components/schemas/ModelRoute"
+            },
             "description": "Resolved same-scope fallback routes approved together with the primary route."
           },
           "fingerprint": {
@@ -9010,7 +9189,9 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "money": { "$ref": "#/components/schemas/GatewayMoney" },
+              "money": {
+                "$ref": "#/components/schemas/GatewayMoney"
+              },
               "id": {
                 "type": "string"
               },
@@ -9435,7 +9616,9 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "gateway": { "$ref": "#/components/schemas/GatewayPolicy" },
+          "gateway": {
+            "$ref": "#/components/schemas/GatewayPolicy"
+          },
           "scope": {
             "type": "string",
             "pattern": "^(personal|(?:WORK|SPACE):[^:]+)$",
@@ -9486,7 +9669,9 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "gateway": { "$ref": "#/components/schemas/GatewayPolicy" },
+          "gateway": {
+            "$ref": "#/components/schemas/GatewayPolicy"
+          },
           "scope": {
             "type": "string",
             "pattern": "^(personal|(?:WORK|SPACE):[^:]+)$",

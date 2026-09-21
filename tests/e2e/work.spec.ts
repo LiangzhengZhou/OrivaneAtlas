@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { test as base, expect, type Page } from "@playwright/test";
+import { localCalendarDay } from "../../packages/domain/src/index";
 
 const resources = Object.fromEntries(
   ["en-US", "zh-CN"].map((locale) => [
@@ -39,6 +40,9 @@ const test = base.extend<{ workbench: { url: string; secret: string } }>({
     const secret = randomBytes(32).toString("hex");
     const port = 1420 + info.parallelIndex;
     const host = await createHost({
+      calendarTimezone: info.title.includes("authoritative calendar")
+        ? "Pacific/Kiritimati"
+        : "UTC",
       database: join(directory, "test.sqlite"),
       secret,
       origin: "http://127.0.0.1:" + port,
@@ -378,7 +382,7 @@ test("project workspace connects materials, children and external dependencies",
     .getByRole("tab", { name: w.desk.projectHub.graph, exact: true })
     .click();
   await expect(page.locator(".edge-row")).toContainText("External approval");
-  await expect(page.locator(".react-flow__node")).toHaveCount(2);
+  await expect(page.locator(".react-flow__node")).toHaveCount(4);
   await expect(
     page.locator(".react-flow__node").filter({ hasText: "Unrelated task" }),
   ).toHaveCount(0);
@@ -518,6 +522,7 @@ test("navigation collapses independently on desktop and mobile", async ({
     fullPage: true,
   });
   await page.setViewportSize({ width: 412, height: 850 });
+  await page.locator(".mobile-navigation-toggle").click();
   await expect(page.locator(".mobile-navigation-toggle")).toHaveAttribute(
     "aria-expanded",
     "true",
@@ -973,7 +978,9 @@ test("multiple project task authoring persists across reload", async ({
     .click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel(w.work.title, { exact: true }).fill("Shared task");
-  await dialog.getByLabel(w.desk.project, { exact: true }).selectOption(a.id);
+  await dialog
+    .getByLabel(w.desk.ownerProject, { exact: true })
+    .selectOption(a.id);
   await dialog
     .getByRole("checkbox", { name: "Project B", exact: true })
     .check();
@@ -1029,10 +1036,6 @@ test("work planning: activation and nested project authoring", async ({
   await dialog
     .getByLabel(w.desk.parentProject, { exact: true })
     .selectOption({ label: "Parent project" });
-  await dialog
-    .getByLabel(w.desk.activationPolicy, { exact: true })
-    .selectOption("AT_SCHEDULED_TIME");
-  await dialog.getByLabel(w.desk.startDate, { exact: true }).fill("2099-01-01");
   await page.screenshot({
     path: info.outputPath("work-planning-editor.png"),
     fullPage: true,
@@ -1058,9 +1061,9 @@ test("work planning: activation and nested project authoring", async ({
   );
   expect(child).toMatchObject({
     projectId: parent.id,
-    activationPolicy: "AT_SCHEDULED_TIME",
-    activationState: "SCHEDULED",
-    startDate: "2099-01-01",
+    activationPolicy: "MANUAL",
+    activationState: "ACTIVE",
+    startDate: null,
   });
   const headers = {
     Origin: workbench.url,
@@ -1593,7 +1596,7 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
   );
   expect(errors).toEqual([]);
 });
-test("organization selection archive delete gradients and readable typography", async ({
+test("organization selection archive delete scannable rows and readable typography", async ({
   page,
   workbench,
 }, info) => {
@@ -1623,15 +1626,14 @@ test("organization selection archive delete gradients and readable typography", 
     "font-size",
     "16px",
   );
-  const backgrounds = await page
+  const heights = await page
     .locator(".task-card")
     .evaluateAll((elements) =>
-      elements.map((e) => getComputedStyle(e).backgroundImage),
+      elements.map((element) => element.getBoundingClientRect().height),
     );
-  expect(new Set(backgrounds).size).toBe(3);
-  expect(backgrounds.every((b) => b.includes("linear-gradient"))).toBe(true);
+  expect(heights.every((height) => height >= 44 && height <= 160)).toBe(true);
   await page.screenshot({
-    path: info.outputPath("task-gradients.png"),
+    path: info.outputPath("task-rows.png"),
     fullPage: true,
   });
   await page
@@ -2149,7 +2151,7 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel(w.work.title, { exact: true }).fill("Ship planning");
   await dialog
-    .getByLabel(w.desk.project, { exact: true })
+    .getByLabel(w.desk.ownerProject, { exact: true })
     .selectOption({ label: "Autumn launch" });
   await dialog.getByLabel(w.desk.startDate).fill("2026-09-14");
   await dialog.getByLabel(w.desk.dueDate).fill("2026-09-21");
@@ -2317,6 +2319,13 @@ async function mutation(page: Page, path: string, value: unknown) {
   return response.json();
 }
 async function nav(page: Page, name: string) {
+  await expect(page.locator(".app-shell")).toBeVisible();
+  const mobileToggle = page.locator(".mobile-navigation-toggle");
+  if (
+    (await mobileToggle.isVisible()) &&
+    (await mobileToggle.getAttribute("aria-expanded")) === "false"
+  )
+    await mobileToggle.click();
   await page
     .locator(".sidebar")
     .getByRole("button", { name: new RegExp("^" + name + "(?: [0-9]+)?$") })
@@ -2752,4 +2761,800 @@ test("localized product layouts, unsaved draft guard and lock", async ({
   await expect(page.getByLabel(w.spaces.username)).toBeVisible();
   await page.reload();
   await expect(page.getByLabel(w.spaces.username)).toBeVisible();
+});
+
+test("project settings preserve brief and task fields; canvas saves Markdown with version protection", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Separate project",
+    descriptionMd: "# Original brief",
+    priority: "HIGH",
+  });
+  const child = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Nested child",
+    projectId: project.id,
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await page
+    .getByRole("button", { name: "Separate project", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: w.desk.projectSettings, exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel(w.work.priority, { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(
+    dialog.getByLabel(w.desk.activationPolicy, { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    dialog.getByLabel(w.work.description, { exact: true }),
+  ).toHaveCount(0);
+  await expect(dialog.locator('option[value="' + child.id + '"]')).toHaveCount(
+    0,
+  );
+  await expect(
+    dialog.locator('option[value="' + project.id + '"]'),
+  ).toHaveCount(0);
+  await dialog
+    .getByLabel(w.work.title, { exact: true })
+    .fill("Renamed project");
+  await dialog
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.locator(".project-workspace > .project-summary h1"),
+  ).toHaveText("Renamed project");
+  let snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.items.find((p: { id: string }) => p.id === project.id),
+  ).toMatchObject({ priority: "HIGH", descriptionMd: "# Original brief" });
+  await page
+    .getByRole("button", { name: w.desk.projectHub.edit, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: w.desk.markdownSource, exact: true })
+    .click();
+  const brief = page.getByLabel(w.work.description, { exact: true });
+  await brief.fill("# Preserved source\n\n- [ ] Not a task\n\n$E=mc^2$");
+  await page.screenshot({
+    path: info.outputPath("project-brief-source.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: w.common.save, exact: true }).click();
+  await expect(brief).toHaveCount(0);
+  snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  const saved = snapshot.items.find((p: { id: string }) => p.id === project.id);
+  expect(saved.descriptionMd).toBe(
+    "# Preserved source\n\n- [ ] Not a task\n\n$E=mc^2$",
+  );
+  expect(
+    snapshot.items.filter((p: { type: string }) => p.type === "TASK"),
+  ).toHaveLength(0);
+  await page
+    .getByRole("button", { name: w.desk.projectHub.edit, exact: true })
+    .click();
+  await brief.fill("Local conflict draft");
+  await mutation(page, "/api/work/update", {
+    id: saved.id,
+    version: saved.version,
+    input: { title: "Remote rename" },
+  });
+  await expect(
+    page.getByText(w.desk.briefVersionConflict, { exact: true }),
+  ).toBeVisible({ timeout: 15000 });
+  await expect(brief).toHaveValue("Local conflict draft");
+  await expect(
+    page.getByRole("button", { name: w.common.save, exact: true }),
+  ).toBeDisabled();
+});
+
+for (const legacy of [false, true])
+  test(`local draft recovery (${legacy ? "legacy" : "stale"}) blocks autosave until explicit resolution`, async ({
+    page,
+    workbench,
+  }, info) => {
+    const w = words(info.project.name);
+    await unlock(page, workbench.url, workbench.secret, w);
+    const note = await mutation(page, "/api/note/save", {
+      id: null,
+      version: 0,
+      input: {
+        kind: "NOTE",
+        title: "Remote authority",
+        bodyMd: "Server text",
+        day: null,
+      },
+    });
+    const session = await (
+      await page.request.get(workbench.url + "/api/session")
+    ).json();
+    const key = JSON.stringify([
+      workbench.url,
+      session.context.workspaceId,
+      session.context.principalId,
+      note.id,
+    ]);
+    await page.evaluate(
+      async ({ key, note, legacy }) => {
+        await new Promise<void>((resolve, reject) => {
+          const open = indexedDB.open("orivane-atlas-local", 1);
+          open.onupgradeneeded = () => open.result.createObjectStore("drafts");
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const db = open.result;
+            const tx = db.transaction("drafts", "readwrite");
+            tx.objectStore("drafts").put(
+              {
+                title: note.title,
+                body: "Stale local text",
+                updatedAt: Date.now(),
+                ...(legacy
+                  ? {}
+                  : {
+                      entityId: note.id,
+                      baseVersion: note.version - 1,
+                      baseUpdatedAt: note.updatedAt,
+                      savedAt: Date.now(),
+                    }),
+              },
+              key,
+            );
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            tx.onerror = () => reject(tx.error);
+          };
+        });
+      },
+      { key, note, legacy },
+    );
+    await page.reload();
+    await nav(page, w.desk.notes);
+    await page
+      .locator(".note-card")
+      .filter({ hasText: "Remote authority" })
+      .click();
+    await expect(pane(page).getByRole("alert")).toContainText(
+      "VERSION_CONFLICT",
+    );
+    await expect(
+      pane(page).getByLabel(w.desk.noteBody, { exact: true }),
+    ).toHaveText("Stale local text");
+    // Both the one-second autosave and an ordinary explicit save must stay blocked.
+    await pane(page)
+      .getByRole("button", { name: w.common.save, exact: true })
+      .click();
+    await page.waitForTimeout(1400);
+    let snapshot = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(
+      snapshot.notes.find((entry: { id: string }) => entry.id === note.id),
+    ).toMatchObject({ bodyMd: "Server text", version: note.version });
+    await pane(page)
+      .locator("details summary")
+      .filter({ hasText: /Compare remote|对照远端/ })
+      .click();
+    await page.screenshot({
+      path: info.outputPath("draft-recovery.png"),
+      fullPage: true,
+    });
+    page.once("dialog", (dialog) => dialog.accept());
+    await pane(page)
+      .getByRole("button", {
+        name: /^(Confirm merge and save my draft|确认合并并保存我的草稿)$/,
+      })
+      .click();
+    await expect
+      .poll(async () => {
+        const s = await (
+          await page.request.get(workbench.url + "/api/snapshot")
+        ).json();
+        return s.notes.find((entry: { id: string }) => entry.id === note.id)
+          .bodyMd;
+      })
+      .toBe("Stale local text");
+  });
+
+test("owner scope separates references and canceled outcomes", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const root = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Scope root",
+  });
+  const child = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Scope child",
+    projectId: root.id,
+  });
+  await mutation(page, "/api/work/create", {
+    title: "Root owned",
+    ownerProjectId: root.id,
+  });
+  const canceled = await mutation(page, "/api/work/create", {
+    title: "Child canceled",
+    ownerProjectId: child.id,
+  });
+  await mutation(page, "/api/work/update", {
+    id: canceled.id,
+    version: canceled.version,
+    input: { status: "CANCELED" },
+  });
+  await mutation(page, "/api/work/create", {
+    title: "Reference only",
+    ownerProjectId: null,
+    linkedProjectIds: [root.id],
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await page.getByRole("button", { name: "Scope root", exact: true }).click();
+  await page
+    .getByRole("tab", { name: w.desk.projectHub.tasks, exact: true })
+    .click();
+  const panel = page.getByRole("tabpanel");
+  await expect(panel).toContainText("Root owned");
+  await expect(panel).toContainText("Child canceled");
+  await expect(panel).toContainText("Reference only");
+  const progress = page.getByTestId("project-progress");
+  await expect(progress).toContainText(
+    w.desk.projectProgress
+      .replace("{{completed}}", "0")
+      .replace("{{canceled}}", "1")
+      .replace("{{unfinished}}", "1"),
+  );
+  await page
+    .getByLabel(w.desk.projectScope, { exact: true })
+    .selectOption("DIRECT");
+  await expect(panel).not.toContainText("Child canceled");
+  await expect(panel).toContainText("Root owned");
+  await expect(panel).toContainText("Reference only");
+  await expect(progress).toContainText(
+    w.desk.projectProgress
+      .replace("{{completed}}", "0")
+      .replace("{{canceled}}", "0")
+      .replace("{{unfinished}}", "1"),
+  );
+  await page.screenshot({
+    path: info.outputPath("ownership-scope.png"),
+    fullPage: true,
+  });
+});
+
+test("project lifecycle completion and explicit atomic reopen are usable", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "Lifecycle project",
+    type: "PROJECT",
+  });
+  const task = await mutation(page, "/api/work/create", {
+    title: "Owned unfinished",
+    ownerProjectId: project.id,
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await page
+    .getByRole("button", { name: "Lifecycle project", exact: true })
+    .click();
+  const settings = () =>
+    page
+      .getByRole("button", { name: w.desk.projectSettings, exact: true })
+      .click();
+  const dialog = page.getByRole("dialog");
+  await settings();
+  await dialog
+    .getByLabel(w.desk.projectLifecycle, { exact: true })
+    .selectOption("COMPLETED");
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: w.common.save, exact: true }),
+  ).toBeDisabled();
+  await dialog
+    .getByLabel(w.desk.projectLifecycle, { exact: true })
+    .selectOption("PAUSED");
+  await dialog
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".project-workspace")).toContainText(
+    w.desk.projectLifecycles.PAUSED,
+  );
+  await mutation(page, "/api/work/update", {
+    id: task.id,
+    version: task.version,
+    input: { status: "CANCELED" },
+  });
+  await expect(page.getByTestId("project-progress")).toContainText(
+    w.desk.projectProgress
+      .replace("{{completed}}", "0")
+      .replace("{{canceled}}", "1")
+      .replace("{{unfinished}}", "0"),
+    { timeout: 10000 },
+  );
+  await settings();
+  await dialog
+    .getByLabel(w.desk.projectLifecycle, { exact: true })
+    .selectOption("COMPLETED");
+  await dialog
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".project-workspace")).toContainText(
+    w.desk.projectLifecycles.COMPLETED,
+  );
+  await page.getByRole("button", { name: w.desk.newTask, exact: true }).click();
+  await dialog
+    .getByLabel(w.work.title, { exact: true })
+    .fill("After explicit reopen");
+  await expect(
+    dialog.getByRole("button", { name: w.common.create, exact: true }),
+  ).toBeDisabled();
+  await dialog.getByLabel(w.desk.reopenConsent, { exact: true }).check();
+  await page.screenshot({
+    path: info.outputPath("project-reopen.png"),
+    fullPage: true,
+  });
+  await dialog
+    .getByRole("button", { name: w.desk.reopenAndCreate, exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".project-workspace")).toContainText(
+    w.desk.projectLifecycles.ACTIVE,
+  );
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.items.filter(
+      (i: { title: string }) => i.title === "After explicit reopen",
+    ),
+  ).toHaveLength(1);
+});
+
+test("project hierarchy and URL preserve scope tabs and browser history", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const root = await mutation(page, "/api/work/create", {
+    title: "Navigation root",
+    type: "PROJECT",
+  });
+  const child = await mutation(page, "/api/work/create", {
+    title: "Navigation child",
+    type: "PROJECT",
+    projectId: root.id,
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await page
+    .getByRole("button", {
+      name: w.desk.collapseProject.replace("{{title}}", "Navigation root"),
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Navigation child", exact: true }),
+  ).toBeHidden();
+  await page
+    .getByRole("button", {
+      name: w.desk.expandProject.replace("{{title}}", "Navigation root"),
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("button", { name: "Navigation child", exact: true })
+    .click();
+  await expect(page).toHaveURL(new RegExp("projects/" + child.id));
+  await page
+    .getByRole("navigation", { name: w.desk.projectBreadcrumb })
+    .getByRole("button", { name: "Navigation root", exact: true })
+    .click();
+  await page
+    .getByRole("tab", { name: w.desk.projectHub.tasks, exact: true })
+    .click();
+  await page
+    .getByLabel(w.desk.projectScope, { exact: true })
+    .selectOption("DIRECT");
+  await expect(page).toHaveURL(/tab=tasks&scope=DIRECT/);
+  await page.reload();
+  await expect(page.locator(".project-workspace h1")).toHaveText(
+    "Navigation root",
+  );
+  await expect(
+    page.getByRole("tab", { name: w.desk.projectHub.tasks, exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByLabel(w.desk.projectScope, { exact: true }),
+  ).toHaveValue("DIRECT");
+  await page.goBack();
+  await expect(
+    page.getByLabel(w.desk.projectScope, { exact: true }),
+  ).toHaveValue("SUBTREE");
+  await page.goForward();
+  await expect(
+    page.getByLabel(w.desk.projectScope, { exact: true }),
+  ).toHaveValue("DIRECT");
+  await page.screenshot({
+    path: info.outputPath("project-route.png"),
+    fullPage: true,
+  });
+  await page
+    .getByRole("tab", { name: w.desk.projectHub.brief, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: w.desk.projectHub.edit, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: w.desk.markdownSource, exact: true })
+    .click();
+  const brief = page.getByLabel(w.work.description, { exact: true });
+  await brief.fill("Unsaved route draft");
+  await page
+    .getByRole("tab", { name: w.desk.projectHub.tasks, exact: true })
+    .click();
+  await page
+    .getByRole("tab", { name: w.desk.projectHub.brief, exact: true })
+    .click();
+  await expect(brief).toHaveValue("Unsaved route draft");
+  const accepted = page.url();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.evaluate(() => {
+    location.hash = "#projects";
+  });
+  await expect(page).toHaveURL(accepted);
+  await expect(brief).toHaveValue("Unsaved route draft");
+});
+
+test("inline prerequisites save atomically with availability and reject stale graph edits", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const source = await mutation(page, "/api/work/create", {
+    title: "Prerequisite source",
+  });
+  const extra = await mutation(page, "/api/work/create", {
+    title: "Concurrent source",
+  });
+  await mutation(page, "/api/work/create", {
+    title: "Project excluded",
+    type: "PROJECT",
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await page.locator(".topbar .compact-create").click();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByLabel(w.work.title, { exact: true })
+    .fill("Inline dependent");
+  const prerequisites = dialog.getByRole("group", {
+    name: w.work.prerequisites,
+    exact: true,
+  });
+  await expect(
+    prerequisites.getByRole("checkbox", { name: "Project excluded" }),
+  ).toHaveCount(0);
+  await prerequisites
+    .getByRole("checkbox", { name: "Prerequisite source", exact: true })
+    .check();
+  await expect(prerequisites.locator("p")).toContainText(w.work.blocked);
+  await dialog
+    .getByRole("button", { name: w.common.create, exact: true })
+    .click();
+  await expect(dialog).toBeHidden();
+  const read = async () =>
+    (await page.request.get(workbench.url + "/api/snapshot")).json();
+  const initial = await read();
+  const task = initial.items.find(
+    (item: { title: string }) => item.title === "Inline dependent",
+  );
+  expect(initial.edges).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ fromId: source.id, toId: task.id }),
+    ]),
+  );
+  const openTask = () =>
+    page
+      .getByRole("button", {
+        name: w.common.openTask.replace("{{title}}", "Inline dependent"),
+        exact: true,
+      })
+      .click();
+  await openTask();
+  await expect(
+    prerequisites.getByRole("checkbox", {
+      name: "Prerequisite source",
+      exact: true,
+    }),
+  ).toBeChecked();
+  await prerequisites
+    .getByRole("checkbox", { name: "Prerequisite source", exact: true })
+    .uncheck();
+  await expect(prerequisites.locator("p")).toContainText(w.work.ready);
+  await dialog
+    .getByLabel(w.desk.activationState, { exact: true })
+    .selectOption("INACTIVE");
+  await expect(prerequisites.locator("p")).toContainText(w.work.paused);
+  await dialog
+    .getByLabel(w.desk.activationPolicy, { exact: true })
+    .selectOption("AT_SCHEDULED_TIME");
+  await dialog.getByLabel(w.desk.startDate, { exact: true }).fill("2099-01-01");
+  await expect(prerequisites.locator("p")).toContainText(w.work.waiting);
+  await dialog
+    .getByLabel(w.desk.activationPolicy, { exact: true })
+    .selectOption("IMMEDIATE");
+  await mutation(page, "/api/edge/create", { fromId: extra.id, toId: task.id });
+  await dialog
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    w.errors.VERSION_CONFLICT,
+  );
+  expect((await read()).edges).toHaveLength(2);
+  await page.screenshot({
+    path: info.outputPath("inline-prerequisites-conflict.png"),
+    fullPage: true,
+  });
+  await dialog
+    .getByRole("button", { name: w.common.close, exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: w.desk.discard, exact: true })
+    .click();
+  await page.reload();
+  await openTask();
+  await prerequisites
+    .getByRole("checkbox", { name: "Concurrent source", exact: true })
+    .uncheck();
+  await dialog
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(dialog).toBeHidden();
+  expect((await read()).edges).toHaveLength(1);
+  const history = await (
+    await page.request.get(workbench.url + "/api/activity")
+  ).json();
+  expect(history).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "WORK_EDGE_REMOVED",
+        fromId: extra.id,
+        toId: task.id,
+      }),
+    ]),
+  );
+});
+
+test("workspace timezone appearance density and mobile navigation persist", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.settings);
+  await page
+    .getByLabel(w.desk.workspaceTimezone, { exact: true })
+    .fill("Asia/Shanghai");
+  await page
+    .locator(".calendar-settings")
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(page.getByTestId("calendar-timezone")).toContainText(
+    "Asia/Shanghai",
+  );
+  await page
+    .getByLabel(w.desk.appearance, { exact: true })
+    .selectOption("dark");
+  await page
+    .getByLabel(
+      info.project.name.endsWith("zh") ? "界面密度" : "Interface density",
+    )
+    .selectOption("compact");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
+  await expect(
+    page.getByLabel(w.desk.workspaceTimezone, { exact: true }),
+  ).toHaveValue("Asia/Shanghai");
+  await page
+    .getByLabel(w.desk.workspaceTimezone, { exact: true })
+    .fill("Invalid/Zone");
+  await page
+    .locator(".calendar-settings")
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(page.locator(".calendar-settings [role=alert]")).toHaveText(
+    w.desk.invalidTimezone,
+  );
+  await page.screenshot({
+    path: info.outputPath("settings-dark.png"),
+    fullPage: true,
+  });
+  await nav(page, w.desk.tasks);
+  await createTask(page, w, "Compact task row");
+  if (info.project.name.startsWith("mobile")) {
+    await expect(page.locator(".mobile-bottom-navigation")).toBeVisible();
+    await page
+      .locator(".mobile-bottom-navigation")
+      .getByRole("button", { name: w.desk.projects, exact: true })
+      .click();
+    await expect(page).toHaveURL(/#projects/);
+    await page
+      .locator(".mobile-bottom-navigation")
+      .getByRole("button", { name: w.desk.tasks, exact: true })
+      .click();
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: info.outputPath("tasks-dark-compact.png"),
+    fullPage: true,
+  });
+});
+
+test("parent tree and canvas inspector expose project and task actions", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const root = await mutation(page, "/api/work/create", {
+    title: "Tree root",
+    type: "PROJECT",
+  });
+  const child = await mutation(page, "/api/work/create", {
+    title: "Tree child",
+    type: "PROJECT",
+    projectId: root.id,
+  });
+  const target = await mutation(page, "/api/work/create", {
+    title: "Tree target",
+    type: "PROJECT",
+  });
+  const task = await mutation(page, "/api/work/create", {
+    title: "Inspect task",
+    ownerProjectId: root.id,
+  });
+  await page.goto(
+    workbench.url + `/#projects/${root.id}?tab=brief&scope=SUBTREE`,
+  );
+  await page
+    .getByRole("button", { name: w.desk.projectSettings, exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  const tree = dialog.getByRole("tree", { name: w.desk.parentTree });
+  await expect(
+    tree.getByRole("treeitem", { name: "Tree root", exact: true }),
+  ).toHaveAttribute("aria-disabled", "true");
+  await expect(
+    tree.getByRole("treeitem", { name: "Tree child", exact: true }),
+  ).toHaveAttribute("aria-disabled", "true");
+  await dialog.getByLabel(w.desk.searchProjects).fill("target");
+  await tree
+    .getByRole("treeitem", { name: "Tree target", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(dialog).toBeHidden();
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.items.find((item: { id: string }) => item.id === root.id)
+      .projectId,
+  ).toBe(target.id);
+  expect(
+    snapshot.items.find((item: { id: string }) => item.id === child.id)
+      .projectId,
+  ).toBe(root.id);
+  await page
+    .getByRole("tab", { name: w.desk.projectHub.graph, exact: true })
+    .click();
+  await page.locator(".inspector-selection").selectOption(task.id);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+  expect(snapshot.edges).toHaveLength(0);
+  const inspector = page.getByRole("complementary", { name: w.desk.inspector });
+  await expect(inspector).toContainText("Inspect task");
+  await inspector
+    .getByLabel(w.work.status, { exact: true })
+    .selectOption("IN_PROGRESS");
+  await expect(
+    inspector.getByLabel(w.work.status, { exact: true }),
+  ).toHaveValue("IN_PROGRESS");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: info.outputPath("canvas-inspector.png"),
+    fullPage: true,
+  });
+});
+
+test.describe("host calendar authority", () => {
+  test.use({ timezoneId: "America/Adak" });
+  test("authoritative calendar unifies Tasks Calendar and Journal across client zones", async ({
+    page,
+    workbench,
+  }, info) => {
+    const w = words(info.project.name);
+    await unlock(page, workbench.url, workbench.secret, w);
+    const instant = new Date().toISOString();
+    const day = localCalendarDay(instant, "Pacific/Kiritimati");
+    expect(localCalendarDay(instant, "America/Adak")).not.toBe(day);
+    const task = await mutation(page, "/api/work/create", {
+      title: "Host calendar task",
+      activationPolicy: "AT_SCHEDULED_TIME",
+      startDate: day,
+      dueDate: day,
+    });
+    await page.reload();
+    await nav(page, w.desk.tasks);
+    await expect(page.locator(".task-card")).toContainText(
+      "Host calendar task",
+    );
+    await expect(page.getByTestId("calendar-timezone")).toContainText(
+      "Pacific/Kiritimati",
+    );
+    await mutation(page, "/api/work/update", {
+      id: task.id,
+      version: task.version,
+      input: { status: "IN_PROGRESS" },
+    });
+    await nav(page, w.desk.calendar);
+    await expect(page.locator(".calendar-day.is-today")).toHaveAttribute(
+      "aria-label",
+      day,
+    );
+    await page.locator(".calendar-day.is-today").click();
+    const body = pane(page).getByLabel(w.desk.noteBody);
+    await body.fill("Journal on the authoritative day");
+    await body.press("Control+s");
+    await expect
+      .poll(async () => {
+        const snapshot = await (
+          await page.request.get(workbench.url + "/api/snapshot")
+        ).json();
+        return snapshot.notes.find(
+          (n: { bodyMd: string }) =>
+            n.bodyMd === "Journal on the authoritative day",
+        )?.day;
+      })
+      .toBe(day);
+    await nav(page, w.desk.calendar);
+    await page.screenshot({
+      path: info.outputPath("calendar-timezone.png"),
+      fullPage: true,
+    });
+  });
 });

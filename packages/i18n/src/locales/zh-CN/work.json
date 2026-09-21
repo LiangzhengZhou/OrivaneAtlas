@@ -37,5 +37,9 @@
     "MEDIUM": "中",
     "HIGH": "高",
     "URGENT": "紧急"
-  }
+  },
+  "prerequisites": "前置任务",
+  "availability": "可用性",
+  "waiting": "等待",
+  "paused": "已暂停"
 }

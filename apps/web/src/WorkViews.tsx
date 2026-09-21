@@ -1,4 +1,5 @@
 import {
+  availability,
   blockers,
   dependency,
   isExecutionActive,
@@ -151,6 +152,13 @@ function Task({
             {t(blocked ? "work:blocked" : "work:ready")}
           </span>
         )}
+        {item.status === "TODO" && !activated && (
+          <span className="readiness waiting">
+            {t(
+              `work:${availability(item, allItems, edges, today).toLowerCase()}`,
+            )}
+          </span>
+        )}
         <span className={`priority priority-${item.priority}`}>
           {t(`work:priorities.${item.priority}`)}
         </span>
@@ -222,12 +230,14 @@ export function WorkBoard({ items, ...props }: WorkProps) {
   );
 }
 export function Dependencies({
+  scopeIds,
   items,
   edges,
   busy,
   onAdd,
   onRemove,
 }: {
+  scopeIds?: ReadonlySet<string>;
   items: readonly WorkItem[];
   edges: readonly WorkEdge[];
   busy: boolean;
@@ -244,7 +254,11 @@ export function Dependencies({
         className="dependency-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!busy)
+          if (
+            !busy &&
+            from !== to &&
+            (!scopeIds || scopeIds.has(from) || scopeIds.has(to))
+          )
             void onAdd(from, to).then((ok) => {
               if (ok) {
                 setFrom("");
@@ -262,11 +276,13 @@ export function Dependencies({
             onChange={(event) => setFrom(event.target.value)}
           >
             <option value="">{t("work:chooseTask")}</option>
-            {items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-              </option>
-            ))}
+            {items
+              .filter((item) => item.type === "TASK" && !item.deletedAt)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
+              ))}
           </select>
         </label>
         <ArrowRight size={19} aria-hidden="true" />
@@ -279,17 +295,25 @@ export function Dependencies({
             onChange={(event) => setTo(event.target.value)}
           >
             <option value="">{t("work:chooseTask")}</option>
-            {items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-              </option>
-            ))}
+            {items
+              .filter((item) => item.type === "TASK" && !item.deletedAt)
+              .map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
+              ))}
           </select>
         </label>
         <button
           type="submit"
           className="button primary"
-          disabled={busy || !from || !to}
+          disabled={
+            busy ||
+            !from ||
+            !to ||
+            from === to ||
+            (!!scopeIds && !scopeIds.has(from) && !scopeIds.has(to))
+          }
         >
           <Plus size={16} aria-hidden="true" />
           {t("work:addDependency")}

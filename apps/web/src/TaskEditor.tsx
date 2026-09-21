@@ -2,57 +2,50 @@ import {
   type ActivationPolicy,
   type ActivationState,
   activationPolicies,
+  availability,
+  dependency,
   type Priority,
   priorities,
-  type WorkItem,
+  taskOwnership,
 } from "@arclattice/domain";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Markdown } from "./Markdown";
+import type { WorkEditorProps } from "./WorkItemEditor";
 
-interface Props {
-  item: WorkItem | null;
-  projects: WorkItem[];
-  createType: "TASK" | "PROJECT";
-  initialProjectId?: string;
-  busy: boolean;
-  error: string | null;
-  onClose(): void;
-  onSave(input: {
-    title: string;
-    descriptionMd: string;
-    priority: Priority;
-    projectId: string | null;
-    projectIds?: readonly string[];
-    startDate: string | null;
-    dueDate: string | null;
-    activationState: ActivationState;
-    activationPolicy: ActivationPolicy;
-  }): Promise<void>;
-  onDelete: (() => Promise<void>) | null;
-}
 export function TaskEditor({
   item,
   projects,
   createType,
+  items = [],
+  edges = [],
+  today,
   initialProjectId = "",
   busy,
   error,
   onClose,
   onSave,
   onDelete,
-}: Props) {
+}: WorkEditorProps) {
   const { t, i18n } = useTranslation(["common", "work"]);
   const dialog = useRef<HTMLDialogElement>(null);
   const [discard, setDiscard] = useState(false);
   const [preview, setPreview] = useState(false);
   const [title, setTitle] = useState(item?.title ?? "");
   const [projectId, setProjectId] = useState(
-    item?.projectId ?? initialProjectId,
+    item ? (item.projectId ?? "") : initialProjectId,
   );
+  const [reopen, setReopen] = useState(false);
+  const owner = projects.find((p) => p.id === projectId);
+  const requiresReopen =
+    owner?.status === "DONE" &&
+    (!item ||
+      (item.projectId !== projectId &&
+        !["DONE", "CANCELED"].includes(item.status)));
+  const reopenBlocked = requiresReopen && (!!item || !reopen);
   const [extraProjects, setExtraProjects] = useState<string[]>([
-    ...(item?.projectIds ?? []).slice(1),
+    ...(item ? taskOwnership(item).linkedProjectIds : []),
   ]);
   const [activationState, setActivationState] = useState<ActivationState>(
     item?.activationState ?? "ACTIVE",
@@ -62,21 +55,73 @@ export function TaskEditor({
   );
   const [startDate, setStartDate] = useState(item?.startDate ?? "");
   const [dueDate, setDueDate] = useState(item?.dueDate ?? "");
+  const [prerequisiteIds, setPrerequisiteIds] = useState<string[]>(() =>
+    item
+      ? edges
+          .filter((edge) => {
+            const pair =
+              edge.type === "BLOCKS"
+                ? [edge.fromId, edge.toId]
+                : edge.type === "REQUIRES"
+                  ? [edge.toId, edge.fromId]
+                  : [];
+            return pair[1] === item.id;
+          })
+          .map((edge) => (edge.type === "BLOCKS" ? edge.fromId : edge.toId))
+      : [],
+  );
+  const [initialPrerequisites] = useState(() =>
+    item
+      ? edges
+          .flatMap((edge) => {
+            const pair = dependency(edge);
+            return pair?.[1] === item.id ? [pair[0]] : [];
+          })
+          .sort()
+      : [],
+  );
+  const [prerequisiteSearch, setPrerequisiteSearch] = useState("");
+  const previewId = item?.id ?? "new-task";
+  const previewWorkspace =
+    item?.workspaceId ?? items[0]?.workspaceId ?? "new-workspace";
+  const previewAvailability = availability(
+    {
+      id: previewId,
+      workspaceId: previewWorkspace,
+      activationPolicy,
+      activationState,
+      startDate: startDate || null,
+    },
+    items,
+    prerequisiteIds.map((fromId) => ({
+      id: `preview:${fromId}`,
+      workspaceId: previewWorkspace,
+      fromId,
+      toId: previewId,
+      type: "BLOCKS" as const,
+      createdBy: "preview",
+      createdAt: "",
+    })),
+    today,
+  );
   const [descriptionMd, setDescription] = useState(item?.descriptionMd ?? "");
   const [priority, setPriority] = useState<Priority>(
     item?.priority ?? "MEDIUM",
   );
   const dirty =
+    reopen ||
     title !== (item?.title ?? "") ||
     descriptionMd !== (item?.descriptionMd ?? "") ||
     priority !== (item?.priority ?? "MEDIUM") ||
-    projectId !== (item?.projectId ?? initialProjectId) ||
+    projectId !== (item ? (item.projectId ?? "") : initialProjectId) ||
     JSON.stringify(extraProjects) !==
-      JSON.stringify((item?.projectIds ?? []).slice(1)) ||
+      JSON.stringify(item ? taskOwnership(item).linkedProjectIds : []) ||
     activationState !== (item?.activationState ?? "ACTIVE") ||
     activationPolicy !== (item?.activationPolicy ?? "MANUAL") ||
     startDate !== (item?.startDate ?? "") ||
-    dueDate !== (item?.dueDate ?? "");
+    dueDate !== (item?.dueDate ?? "") ||
+    JSON.stringify([...prerequisiteIds].sort()) !==
+      JSON.stringify(initialPrerequisites);
   function close() {
     if (dirty) setDiscard(true);
     else onClose();
@@ -109,23 +154,34 @@ export function TaskEditor({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (!busy)
+          if (!busy && !reopenBlocked)
             void onSave({
               title,
+              ...(!item && requiresReopen && reopen
+                ? { reopenProjectVersion: owner!.version }
+                : {}),
               descriptionMd,
               priority,
-              projectId: projectId || null,
+
               ...((item?.type ?? createType) === "TASK"
                 ? {
-                    projectIds: [
-                      ...(projectId ? [projectId] : []),
-                      ...extraProjects.filter((id) => id !== projectId),
-                    ],
-                    projectId: projectId || extraProjects[0] || null,
+                    ownerProjectId: projectId || null,
+                    linkedProjectIds: extraProjects.filter(
+                      (id) => id !== projectId,
+                    ),
                   }
-                : {}),
+                : { projectId: projectId || null }),
               startDate: startDate || null,
               dueDate: dueDate || null,
+              ...(JSON.stringify([...prerequisiteIds].sort()) !==
+              JSON.stringify(initialPrerequisites)
+                ? {
+                    prerequisiteIds,
+                    ...(item
+                      ? { expectedPrerequisiteIds: initialPrerequisites }
+                      : {}),
+                  }
+                : {}),
               activationState:
                 activationPolicy === "MANUAL" && activationState === "SCHEDULED"
                   ? "INACTIVE"
@@ -135,13 +191,7 @@ export function TaskEditor({
         }}
       >
         <div className="dialog-heading">
-          <h2 id="editor-heading">
-            {item
-              ? t("work:detail")
-              : createType === "PROJECT"
-                ? t("desk:newProject")
-                : t("create")}
-          </h2>
+          <h2 id="editor-heading">{item ? t("work:detail") : t("create")}</h2>
           <button
             type="button"
             className="icon-button"
@@ -183,52 +233,57 @@ export function TaskEditor({
             onChange={(event) => setTitle(event.target.value)}
           />
         </label>
-        <label className="field">
-          <span>{t("work:priority")}</span>
-          <select
-            aria-label={t("work:priority")}
-            value={priority}
-            onChange={(event) => setPriority(event.target.value as Priority)}
-          >
-            {priorities.map((value) => (
-              <option key={value} value={value}>
-                {t(`work:priorities.${value}`)}
-              </option>
-            ))}
-          </select>
-        </label>
         {
           <label className="field">
-            <span>
-              {t(
-                (item?.type ?? createType) === "PROJECT"
-                  ? "desk:parentProject"
-                  : "desk:project",
-              )}
-            </span>
+            <span>{t("work:priority")}</span>
             <select
-              aria-label={t(
-                (item?.type ?? createType) === "PROJECT"
-                  ? "desk:parentProject"
-                  : "desk:project",
-              )}
-              value={projectId}
-              onChange={(event) => setProjectId(event.target.value)}
+              aria-label={t("work:priority")}
+              value={priority}
+              onChange={(event) => setPriority(event.target.value as Priority)}
             >
-              <option value="">{t("desk:noProject")}</option>
-              {projects
-                .filter((project) => project.id !== item?.id)
-                .map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.title}
-                  </option>
-                ))}
+              {priorities.map((value) => (
+                <option key={value} value={value}>
+                  {t(`work:priorities.${value}`)}
+                </option>
+              ))}
             </select>
           </label>
         }
+        {
+          <label className="field">
+            <span>{t("desk:ownerProject")}</span>
+            <select
+              aria-label={t("desk:ownerProject")}
+              value={projectId}
+              onChange={(event) => {
+                setProjectId(event.target.value);
+                setReopen(false);
+              }}
+            >
+              <option value="">{t("desk:noProject")}</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        }
+        {requiresReopen && <p>{t("desk:completedProjectHint")}</p>}
+        {!item && requiresReopen && (
+          <label className="reopen-project-consent">
+            <input
+              type="checkbox"
+              checked={reopen}
+              onChange={(event) => setReopen(event.target.checked)}
+            />
+            {t("desk:reopenConsent")}
+          </label>
+        )}
         {(item?.type ?? createType) === "TASK" && (
           <fieldset className="field project-memberships">
-            <legend>{t("desk:additionalProjects")}</legend>
+            <legend>{t("desk:linkedProjects")}</legend>
+            <p className="muted">{t("desk:linkedProjectsHint")}</p>
             {projects
               .filter((p) => p.id !== projectId)
               .map((p) => (
@@ -249,22 +304,66 @@ export function TaskEditor({
               ))}
           </fieldset>
         )}
-        <label className="field">
-          <span>{t("desk:activationPolicy")}</span>
-          <select
-            aria-label={t("desk:activationPolicy")}
-            value={activationPolicy}
-            onChange={(event) =>
-              setActivationPolicy(event.target.value as ActivationPolicy)
-            }
-          >
-            {activationPolicies.map((policy) => (
-              <option key={policy} value={policy}>
-                {t("desk:activationPolicies." + policy)}
-              </option>
-            ))}
-          </select>
-        </label>
+        {
+          <label className="field">
+            <span>{t("desk:activationPolicy")}</span>
+            <select
+              aria-label={t("desk:activationPolicy")}
+              value={activationPolicy}
+              onChange={(event) =>
+                setActivationPolicy(event.target.value as ActivationPolicy)
+              }
+            >
+              {activationPolicies.map((policy) => (
+                <option key={policy} value={policy}>
+                  {t("desk:activationPolicies." + policy)}
+                </option>
+              ))}
+            </select>
+          </label>
+        }
+        {(item?.type ?? createType) === "TASK" && (
+          <fieldset className="field">
+            <legend>{t("work:prerequisites")}</legend>
+            <p className="muted">
+              {t("work:availability")}:{" "}
+              {t(`work:${previewAvailability.toLowerCase()}`)}
+            </p>
+            <input
+              type="search"
+              aria-label={t("work:prerequisites")}
+              value={prerequisiteSearch}
+              onChange={(event) => setPrerequisiteSearch(event.target.value)}
+            />
+            {items
+              .filter(
+                (candidate) =>
+                  candidate.type === "TASK" &&
+                  !candidate.deletedAt &&
+                  candidate.id !== item?.id &&
+                  (prerequisiteIds.includes(candidate.id) ||
+                    candidate.title
+                      .toLocaleLowerCase()
+                      .includes(prerequisiteSearch.toLocaleLowerCase())),
+              )
+              .map((candidate) => (
+                <label key={candidate.id}>
+                  <input
+                    type="checkbox"
+                    checked={prerequisiteIds.includes(candidate.id)}
+                    onChange={(event) =>
+                      setPrerequisiteIds((ids) =>
+                        event.target.checked
+                          ? [...ids, candidate.id]
+                          : ids.filter((id) => id !== candidate.id),
+                      )
+                    }
+                  />{" "}
+                  {candidate.title}
+                </label>
+              ))}
+          </fieldset>
+        )}
         {activationPolicy === "MANUAL" && (
           <label className="field">
             <span>{t("desk:activationState")}</span>
@@ -318,14 +417,18 @@ export function TaskEditor({
             <button
               className={!preview ? "chip active" : "chip"}
               type="button"
-              onClick={() => setPreview(false)}
+              onClick={() => {
+                setPreview(false);
+              }}
             >
               {t("desk:write")}
             </button>
             <button
               className={preview ? "chip active" : "chip"}
               type="button"
-              onClick={() => setPreview(true)}
+              onClick={() => {
+                setPreview(true);
+              }}
             >
               {t("desk:read")}
             </button>
@@ -335,10 +438,9 @@ export function TaskEditor({
           ) : (
             <textarea
               aria-label={t("work:description")}
-              rows={7}
+              rows={10}
               maxLength={200000}
               value={descriptionMd}
-              placeholder={t("work:descriptionPlaceholder")}
               onChange={(event) => setDescription(event.target.value)}
             />
           )}
@@ -382,9 +484,13 @@ export function TaskEditor({
           <button
             type="submit"
             className="button primary"
-            disabled={busy || !title.trim()}
+            disabled={busy || !title.trim() || reopenBlocked}
           >
-            {item ? t("save") : t("create")}
+            {!item && requiresReopen && reopen
+              ? t("desk:reopenAndCreate")
+              : item
+                ? t("save")
+                : t("create")}
           </button>
         </div>
       </form>

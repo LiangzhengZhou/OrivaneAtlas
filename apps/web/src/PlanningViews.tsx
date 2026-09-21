@@ -3,14 +3,21 @@ import type {
   Note,
   ProjectCategory,
 } from "@arclattice/application";
-import { projectDescendants, type WorkItem } from "@arclattice/domain";
+import {
+  calendarMonthInfo,
+  formatCalendarDate,
+  projectLifecycle,
+  projectScope,
+  shiftCalendarMonth,
+  type WorkItem,
+} from "@arclattice/domain";
 import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
   FolderKanban,
 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CategoryManager } from "./CategoryManager";
 
@@ -42,6 +49,7 @@ export function ProjectView({
   const { t } = useTranslation("desk");
   const [showArchived, setShowArchived] = useState(false);
   const [categoryId, setCategoryId] = useState("");
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const visibleProjects = projects.filter(
     (p) =>
       isArchived(p) === showArchived &&
@@ -50,6 +58,139 @@ export function ProjectView({
           (c) =>
             c.id === categoryId && !c.deletedAt && c.projectIds.includes(p.id),
         )),
+  );
+  const renderCard = (project: WorkItem) => {
+    const inherited = archiveSource(project);
+    const scoped = projectScope(project, items, "SUBTREE");
+    const done = scoped.completed;
+    const actionableTotal = scoped.completed + scoped.unfinished;
+    return (
+      <section className="panel project-card" key={project.id}>
+        <div className="panel-heading">
+          {visibleProjects.some((p) => p.projectId === project.id) ? (
+            <button
+              type="button"
+              className="project-tree-toggle"
+              aria-label={t(
+                collapsed.has(project.id) ? "expandProject" : "collapseProject",
+                { title: project.title },
+              )}
+              aria-expanded={!collapsed.has(project.id)}
+              onClick={() =>
+                setCollapsed((old) => {
+                  const next = new Set(old);
+                  if (next.has(project.id)) next.delete(project.id);
+                  else next.add(project.id);
+                  return next;
+                })
+              }
+            >
+              {collapsed.has(project.id) ? "▸" : "▾"}
+            </button>
+          ) : (
+            <FolderKanban size={22} />
+          )}
+          <span className="priority">
+            {t("projectLifecycles." + projectLifecycle(project))}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="project-title"
+          onClick={() => onOpen(project)}
+        >
+          <h2>{project.title}</h2>
+        </button>
+        <p className="project-description">
+          {project.descriptionMd || t("projectEmptyHint")}
+        </p>
+        {project.projectId && (
+          <p className="muted">
+            {t("parentProject")} ·{" "}
+            {projects.find((parent) => parent.id === project.projectId)?.title}
+          </p>
+        )}
+        {project.dueDate && (
+          <p className="muted">
+            {t("dueDate")} · {project.dueDate}
+          </p>
+        )}
+        <div className="progress-label">
+          <span>{t("completion")}</span>
+          <strong>
+            {done} / {actionableTotal}
+          </strong>
+        </div>
+        <progress max={Math.max(actionableTotal, 1)} value={done} />
+        <p className="muted">{t("projectProgress", scoped)}</p>
+        <p className="muted">{t("recursiveProgress")}</p>
+        {inherited && (
+          <p className="muted">
+            {t("inheritedArchive", { title: inherited.title })}
+          </p>
+        )}
+        <div className="project-card-actions">
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => onOpen(project)}
+          >
+            {t("openProject")}
+          </button>
+          <button
+            type="button"
+            className="text-button"
+            disabled={busy || !!inherited}
+            onClick={() =>
+              onOrganize(project, isArchived(project) ? "unarchive" : "archive")
+            }
+          >
+            {t(isArchived(project) ? "unarchive" : "archive")}
+          </button>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => onTasks(project.id)}
+          >
+            {t("projectTasks")}
+            <ArrowUpRight size={16} />
+          </button>
+        </div>
+      </section>
+    );
+  };
+  const visibleIds = new Set(visibleProjects.map((p) => p.id));
+  const seen = new Set<string>();
+  const renderTree = (nodes: WorkItem[]): ReactNode => (
+    <ul className="project-tree-list">
+      {nodes
+        .filter((p) => !seen.has(p.id))
+        .map((project) => {
+          if (seen.has(project.id)) return null;
+          seen.add(project.id);
+          const children = visibleProjects.filter(
+            (p) => p.projectId === project.id && !seen.has(p.id),
+          );
+          const childTree = renderTree(children);
+          return (
+            <li key={project.id}>
+              {renderCard(project)}
+              <div hidden={collapsed.has(project.id)}>{childTree}</div>
+            </li>
+          );
+        })}
+    </ul>
+  );
+  const roots = visibleProjects.filter(
+    (p) => !p.projectId || !visibleIds.has(p.projectId),
+  );
+  const tree = renderTree(roots);
+  const recovered = renderTree(visibleProjects.filter((p) => !seen.has(p.id)));
+  const hierarchy = (
+    <>
+      {tree}
+      {recovered}
+    </>
   );
   return (
     <div className="projects-overview">
@@ -80,94 +221,9 @@ export function ProjectView({
           {t("archivedProjects")} · {projects.filter(isArchived).length}
         </button>
       </div>
-      <div className="project-grid">
+      <div className="project-grid project-hierarchy">
         {visibleProjects.length ? (
-          visibleProjects.map((project) => {
-            const inherited = archiveSource(project);
-            const members = projectDescendants(project, items).filter(
-              (item) => item.type !== "PROJECT",
-            );
-            const done = members.filter(
-              (item) => item.status === "DONE",
-            ).length;
-            return (
-              <section className="panel project-card" key={project.id}>
-                <div className="panel-heading">
-                  <FolderKanban size={22} />
-                  <span className="priority">
-                    {t("work:statuses." + project.status)}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="project-title"
-                  onClick={() => onOpen(project)}
-                >
-                  <h2>{project.title}</h2>
-                </button>
-                <p className="project-description">
-                  {project.descriptionMd || t("projectEmptyHint")}
-                </p>
-                {project.projectId && (
-                  <p className="muted">
-                    {t("parentProject")} ·{" "}
-                    {
-                      projects.find((parent) => parent.id === project.projectId)
-                        ?.title
-                    }
-                  </p>
-                )}
-                {project.dueDate && (
-                  <p className="muted">
-                    {t("dueDate")} · {project.dueDate}
-                  </p>
-                )}
-                <div className="progress-label">
-                  <span>{t("completion")}</span>
-                  <strong>
-                    {done} / {members.length}
-                  </strong>
-                </div>
-                <progress max={Math.max(members.length, 1)} value={done} />
-                <p className="muted">{t("recursiveProgress")}</p>
-                {inherited && (
-                  <p className="muted">
-                    {t("inheritedArchive", { title: inherited.title })}
-                  </p>
-                )}
-                <div className="project-card-actions">
-                  <button
-                    type="button"
-                    className="button secondary"
-                    onClick={() => onOpen(project)}
-                  >
-                    {t("openProject")}
-                  </button>
-                  <button
-                    type="button"
-                    className="text-button"
-                    disabled={busy || !!inherited}
-                    onClick={() =>
-                      onOrganize(
-                        project,
-                        isArchived(project) ? "unarchive" : "archive",
-                      )
-                    }
-                  >
-                    {t(isArchived(project) ? "unarchive" : "archive")}
-                  </button>
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={() => onTasks(project.id)}
-                  >
-                    {t("projectTasks")}
-                    <ArrowUpRight size={16} />
-                  </button>
-                </div>
-              </section>
-            );
-          })
+          hierarchy
         ) : (
           <div className="empty-state">
             <FolderKanban size={32} />
@@ -203,9 +259,7 @@ export function CalendarView({
   const [month, setMonth] = useState(today.slice(0, 7));
   const [selected, setSelected] = useState(today);
   const [mode, setMode] = useState<"day" | "overdue" | "unscheduled">("day");
-  const first = new Date(month + "-01T12:00:00");
-  const days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-  const offset = (first.getDay() + 6) % 7;
+  const { days, offset } = calendarMonthInfo(month);
   const open = (item: WorkItem) => !["DONE", "CANCELED"].includes(item.status);
   const overdue = items.filter(
     (item) => item.dueDate && item.dueDate < today && open(item),
@@ -222,23 +276,18 @@ export function CalendarView({
         ? undated
         : onDay(selected);
   const shift = (by: number) => {
-    const next = new Date(first.getFullYear(), first.getMonth() + by, 1, 12);
-    if (next.getFullYear() < 1 || next.getFullYear() > 9999) return;
-    setMonth(
-      String(next.getFullYear()).padStart(4, "0") +
-        "-" +
-        String(next.getMonth() + 1).padStart(2, "0"),
-    );
+    const next = shiftCalendarMonth(month, by);
+    if (next) setMonth(next);
   };
   return (
     <div className="calendar-layout">
       <section className="panel calendar-panel">
         <div className="panel-heading">
           <h2>
-            {new Intl.DateTimeFormat(i18n.language, {
+            {formatCalendarDate(month + "-01", i18n.language, {
               year: "numeric",
               month: "long",
-            }).format(first)}
+            })}
           </h2>
           <div className="calendar-controls">
             <button
@@ -273,9 +322,9 @@ export function CalendarView({
         <div className="calendar-week">
           {Array.from({ length: 7 }, (_, i) => (
             <span key={i}>
-              {new Intl.DateTimeFormat(i18n.language, {
+              {formatCalendarDate("2026-09-" + (14 + i), i18n.language, {
                 weekday: "short",
-              }).format(new Date(2026, 8, 14 + i))}
+              })}
             </span>
           ))}
         </div>

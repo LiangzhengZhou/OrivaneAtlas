@@ -10,5 +10,7 @@
   "UNAUTHORIZED": "Your session expired. Keep or export unsaved drafts, then unlock again.",
   "UNAVAILABLE": "The server is unavailable. Keep this page open, check the SSH tunnel and retry.",
   "RATE_LIMITED": "Too many attempts. Please try again shortly.",
-  "IDEMPOTENCY_REQUIRED": "The request is missing a retry identifier. Please reopen the page."
+  "IDEMPOTENCY_REQUIRED": "The request is missing a retry identifier. Please reopen the page.",
+  "PROJECT_HAS_UNFINISHED_WORK": "This project still has unfinished owned tasks or subprojects. Complete or cancel them before completing the project.",
+  "PROJECT_REOPEN_REQUIRED": "Reopen the completed owner project (and any completed ancestors) before adding, moving, restoring or reopening unfinished work."
 }

@@ -1,6 +1,7 @@
 import type {
   ActivityEvent,
   AuthorizationService,
+  CalendarSettings,
   CategoryChange,
   OutboxEvent,
   Permission,
@@ -13,6 +14,7 @@ import type { ActorContext, WorkEdge, WorkItem } from "@arclattice/domain";
 import { DomainError } from "@arclattice/domain";
 
 interface MemoryState {
+  calendarSettings: CalendarSettings;
   workflows: Map<string, WorkflowRecord>;
   workflowEvents: WorkflowRecord[];
   categories: Map<string, ProjectCategory>;
@@ -23,6 +25,7 @@ interface MemoryState {
   outbox: OutboxEvent[];
 }
 const emptyState = (): MemoryState => ({
+  calendarSettings: { version: 0, timezone: null },
   workflows: new Map(),
   workflowEvents: [],
   categories: new Map(),
@@ -70,6 +73,19 @@ export class MemoryUnitOfWork implements UnitOfWork {
         );
       };
       const tx: WorkTransaction = {
+        calendarSettings: async () => {
+          assertOpen();
+          return { ...state.calendarSettings };
+        },
+        saveCalendarSettings: async (settings, expected) => {
+          assertOpen();
+          if (
+            state.calendarSettings.version !== expected ||
+            settings.version !== expected + 1
+          )
+            throw new DomainError("VERSION_CONFLICT");
+          state.calendarSettings = { ...settings };
+        },
         workflows: async () => {
           assertOpen();
           return structuredClone([...state.workflows.values()]);

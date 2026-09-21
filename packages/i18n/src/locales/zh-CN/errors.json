@@ -10,5 +10,7 @@
   "UNAUTHORIZED": "会话已过期。请保留或导出未保存的草稿，重新解锁后再继续。",
   "UNAVAILABLE": "暂时无法连接服务器。请保留页面并检查 SSH 隧道，再重试。",
   "RATE_LIMITED": "尝试次数过多，请稍后再试。",
-  "IDEMPOTENCY_REQUIRED": "请求缺少防重复标识，请重新打开页面。"
+  "IDEMPOTENCY_REQUIRED": "请求缺少防重复标识，请重新打开页面。",
+  "PROJECT_HAS_UNFINISHED_WORK": "项目仍有未完成的归属任务或子项目，请先完成或取消这些工作，再完成项目。",
+  "PROJECT_REOPEN_REQUIRED": "新增、移动、恢复或重新打开未完成工作前，请先重新打开已完成的归属项目及其已完成祖先项目。"
 }

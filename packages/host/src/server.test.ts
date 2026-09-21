@@ -33,6 +33,57 @@ async function seedOwner() {
   return host.db.accounts((store) => store.register("owner", verifier, true));
 }
 const origin = "http://127.0.0.1:4317";
+it("workspace calendar settings require a human session, version and atomic receipt", async () => {
+  await login();
+  const input = { version: 0, timezone: "Asia/Shanghai" };
+  const headers = { "Idempotency-Key": randomUUID() };
+  expect(
+    (
+      await call("/api/work/calendar-settings", input, {
+        "X-CSRF-Token": "wrong",
+      })
+    ).status,
+  ).toBe(403);
+  const saved = await call("/api/v1/work/calendar-settings", input, headers);
+  expect(saved.status).toBe(200);
+  expect(await saved.json()).toEqual({ version: 1, timezone: "Asia/Shanghai" });
+  expect(
+    (await call("/api/v1/work/calendar-settings", input, headers)).status,
+  ).toBe(200);
+  expect((await call("/api/work/calendar-settings", input)).status).toBe(409);
+  expect(
+    (
+      await call("/api/work/calendar-settings", {
+        version: 1,
+        timezone: "bad-zone",
+      })
+    ).status,
+  ).toBe(400);
+  expect((await (await call("/api/snapshot")).json()).calendarTimezone).toBe(
+    "Asia/Shanghai",
+  );
+  const tokenResponse = await call("/api/tokens/create", {
+    name: "Calendar test",
+    scope: "read-write",
+  });
+  expect(tokenResponse.status).toBe(201);
+  const token = await tokenResponse.json();
+  expect(
+    (
+      await call(
+        "/api/work/calendar-settings",
+        { version: 1, timezone: "UTC" },
+        { Authorization: "Bearer " + token.secret, Cookie: "" },
+      )
+    ).status,
+  ).toBe(403);
+  const events = await (await call("/api/activity")).json();
+  expect(
+    events.filter(
+      (event: { type: string }) => event.type === "WORKSPACE_SETTINGS_UPDATED",
+    ),
+  ).toHaveLength(1);
+});
 it("project documents and files use atomic receipts, soft deletion and authenticated downloads", async () => {
   await login();
   const project = await (
@@ -2443,4 +2494,22 @@ describe("private HTTP host", () => {
     expect(response.status).toBe(413);
     expect(await response.text()).toBe('{"error":"VALIDATION_ERROR"}');
   });
+});
+
+it("calendar authority is exposed and invalid zones are rejected before creating a database", async () => {
+  await login();
+  expect((await (await call("/api/snapshot")).json()).calendarTimezone).toBe(
+    "UTC",
+  );
+  const database = join(directory, "invalid-zone.sqlite");
+  await expect(
+    createHost({
+      database,
+      secret,
+      origin,
+      webRoot: directory,
+      calendarTimezone: "Not/AZone",
+    }),
+  ).rejects.toThrow("VALIDATION_ERROR");
+  expect(existsSync(database)).toBe(false);
 });

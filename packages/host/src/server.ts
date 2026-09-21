@@ -41,6 +41,7 @@ import {
   type ActorContext,
   DomainError,
   type EdgeType,
+  requireCalendarTimezone,
 } from "@arclattice/domain";
 import { SqliteUnitOfWork } from "@arclattice/storage-sqlite";
 import { v7 } from "uuid";
@@ -51,6 +52,7 @@ import { planDocumentPublisher } from "./plan-documents";
 import { startRecurrenceWorker } from "./recurrence-worker";
 
 export interface HostOptions {
+  calendarTimezone?: string;
   vault?: PersonalModelVault;
   model?: ModelPort | null;
   database: string;
@@ -142,6 +144,9 @@ const SESSION_AGE_SECONDS = {
 const PERMANENT_COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
 
 export async function createHost(options: HostOptions) {
+  const calendarTimezone = requireCalendarTimezone(
+    options.calendarTimezone ?? "UTC",
+  );
   const origin = new URL(options.origin);
   if (
     !(
@@ -178,7 +183,7 @@ export async function createHost(options: HostOptions) {
       displayName: "Inference worker",
     },
   ]);
-  const clock = { now: () => new Date().toISOString() };
+  const clock = { now: () => new Date().toISOString(), calendarTimezone };
   const ids = { next: v7 };
   const inFlight = new Set<Promise<void>>();
   const controllers = new Set<AbortController>();
@@ -1846,13 +1851,17 @@ export async function createHost(options: HostOptions) {
               }
               case "/api/work/create": {
                 keys(value, [
+                  "prerequisiteIds",
                   "assigneePrincipalId",
+                  "reopenProjectVersion",
                   "title",
                   "descriptionMd",
                   "priority",
                   "type",
                   "projectId",
+                  "ownerProjectId",
                   "projectIds",
+                  "linkedProjectIds",
                   "activationState",
                   "activationPolicy",
                   "startDate",
@@ -1860,12 +1869,15 @@ export async function createHost(options: HostOptions) {
                 ]);
                 for (const field of [
                   "projectId",
+                  "ownerProjectId",
                   "startDate",
                   "dueDate",
                   "assigneePrincipalId",
                 ])
                   if (value[field] !== undefined && value[field] !== null)
                     string(value[field]);
+                if (value.reopenProjectVersion !== undefined)
+                  version(value.reopenProjectVersion);
                 string(value.title);
                 if (value.descriptionMd !== undefined)
                   string(value.descriptionMd, 200_000);
@@ -1876,27 +1888,57 @@ export async function createHost(options: HostOptions) {
                   value as unknown as CreateWorkInput,
                 );
               }
+              case "/api/work/calendar-settings": {
+                keys(value, ["version", "timezone"]);
+                if (
+                  typeof value.version !== "number" ||
+                  !Number.isSafeInteger(value.version) ||
+                  value.version < 0
+                )
+                  throw new DomainError("VALIDATION_ERROR", {
+                    field: "version",
+                  });
+                return work.setCalendarSettings(
+                  context,
+                  value.version,
+                  value.timezone === null ? null : string(value.timezone),
+                );
+              }
               case "/api/work/update": {
                 keys(value, ["id", "version", "input"]);
                 const input = object(value.input);
                 keys(input, [
+                  "prerequisiteIds",
+                  "expectedPrerequisiteIds",
                   "assigneePrincipalId",
                   "title",
                   "descriptionMd",
                   "priority",
                   "status",
+                  "projectLifecycle",
                   "projectId",
+                  "ownerProjectId",
                   "projectIds",
+                  "linkedProjectIds",
                   "activationState",
                   "activationPolicy",
                   "startDate",
                   "dueDate",
                 ]);
                 for (const [key, val] of Object.entries(input)) {
-                  if (key === "projectIds") continue;
+                  if (
+                    [
+                      "projectIds",
+                      "linkedProjectIds",
+                      "prerequisiteIds",
+                      "expectedPrerequisiteIds",
+                    ].includes(key)
+                  )
+                    continue;
                   if (
                     [
                       "projectId",
+                      "ownerProjectId",
                       "startDate",
                       "dueDate",
                       "assigneePrincipalId",

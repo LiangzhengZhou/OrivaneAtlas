@@ -1,3 +1,14 @@
+import {
+  localCalendarDay,
+  type ProjectLifecycle,
+  projectLifecyclePatch,
+  projectSubtreeHeight,
+  requireCalendarTimezone,
+  requireOpenProjectOwner,
+  requireProjectCompletable,
+  taskOwnership,
+} from "@arclattice/domain";
+
 export * from "./categories";
 export * from "./project-materials";
 export * from "./workflows";
@@ -48,12 +59,16 @@ export interface AuthorizationService {
   require(context: ActorContext, permission: Permission): Promise<void>;
 }
 export interface Clock {
+  readonly calendarTimezone?: string;
   now(): string;
 }
 export interface IdGenerator {
   next(): string;
 }
 export interface ActivityEvent {
+  readonly fromId?: string | null;
+  readonly toId?: string | null;
+  readonly edgeType?: EdgeType | null;
   readonly id: string;
   readonly workspaceId: string;
   readonly principalId: string;
@@ -64,7 +79,8 @@ export interface ActivityEvent {
     | "WORK_ITEM_DELETED"
     | "WORK_ITEM_RESTORED"
     | "WORK_EDGE_ADDED"
-    | "WORK_EDGE_REMOVED";
+    | "WORK_EDGE_REMOVED"
+    | "WORKSPACE_SETTINGS_UPDATED";
   readonly occurredAt: string;
 }
 export interface OutboxEvent {
@@ -75,11 +91,18 @@ export interface OutboxEvent {
   readonly occurredAt: string;
 }
 export interface WorkSnapshot {
+  readonly calendarSettings?: CalendarSettings;
+  readonly calendarTimezone?: string;
   readonly items: readonly WorkItem[];
   readonly edges: readonly WorkEdge[];
 }
 /** A transaction is already bound to one workspace by UnitOfWork.run. */
 export interface WorkTransaction {
+  calendarSettings(): Promise<CalendarSettings>;
+  saveCalendarSettings(
+    settings: CalendarSettings,
+    expectedVersion: number,
+  ): Promise<void>;
   workflows(): Promise<WorkflowRecord[]>;
   saveWorkflow(record: WorkflowRecord, expectedVersion: number): Promise<void>;
   categories(): Promise<ProjectCategory[]>;
@@ -104,7 +127,17 @@ export interface UnitOfWork {
     operation: (tx: WorkTransaction) => T | Promise<T>,
   ): Promise<T>;
 }
-export interface CreateWorkInput {
+export interface CalendarSettings {
+  readonly version: number;
+  readonly timezone: string | null;
+}
+export interface TaskOwnershipInput {
+  readonly ownerProjectId?: string | null;
+  readonly linkedProjectIds?: readonly string[];
+}
+export interface CreateWorkInput extends TaskOwnershipInput {
+  readonly prerequisiteIds?: readonly string[];
+  readonly reopenProjectVersion?: number;
   readonly assigneePrincipalId?: string | null;
   readonly projectIds?: readonly string[];
   readonly projectId?: string | null;
@@ -117,7 +150,8 @@ export interface CreateWorkInput {
   readonly activationState?: ActivationState;
   readonly activationPolicy?: ActivationPolicy;
 }
-export interface UpdateWorkInput {
+export interface UpdateWorkInput extends TaskOwnershipInput {
+  readonly projectLifecycle?: ProjectLifecycle;
   readonly assigneePrincipalId?: string | null;
   readonly projectIds?: readonly string[];
   readonly projectId?: string | null;
@@ -129,6 +163,9 @@ export interface UpdateWorkInput {
   readonly descriptionMd?: string;
   readonly activationState?: ActivationState;
   readonly activationPolicy?: ActivationPolicy;
+  /** Canonical prerequisite task ids. Applied atomically with the task update. */
+  readonly prerequisiteIds?: readonly string[];
+  readonly expectedPrerequisiteIds?: readonly string[];
 }
 export class WorkService {
   private assignee(value: string | null): string | null {
@@ -146,7 +183,10 @@ export class WorkService {
     private readonly authorization: AuthorizationService,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
-  ) {}
+  ) {
+    if (clock.calendarTimezone !== undefined)
+      requireCalendarTimezone(clock.calendarTimezone);
+  }
 
   async snapshot(
     context: ActorContext,
@@ -154,6 +194,8 @@ export class WorkService {
   ): Promise<WorkSnapshot> {
     await this.authorization.require(context, "work:read");
     return this.uow.run(context.workspaceId, async (tx) => ({
+      calendarTimezone: await this.calendarTimezone(tx),
+      calendarSettings: await tx.calendarSettings(),
       items: await tx.list(includeDeleted),
       edges: await tx.edges(),
     }));
@@ -164,6 +206,11 @@ export class WorkService {
     input: CreateWorkInput,
   ): Promise<WorkItem> {
     await this.authorization.require(context, "work:create");
+    const prerequisiteIds = this.prerequisites(input.prerequisiteIds);
+    if (prerequisiteIds?.length)
+      await this.authorization.require(context, "graph:write");
+    if (input.reopenProjectVersion !== undefined)
+      await this.authorization.require(context, "work:update");
     if (input.projectIds !== undefined && !Array.isArray(input.projectIds))
       throw new DomainError("VALIDATION_ERROR", { field: "projectIds" });
     return this.uow.run(context.workspaceId, async (tx) => {
@@ -189,6 +236,7 @@ export class WorkService {
               projectIds: input.projectIds,
               projectId: input.projectIds[0] ?? null,
             }),
+        ...this.resolveOwnership(input, input.type ?? "TASK"),
         startDate: input.startDate ?? null,
         dueDate: input.dueDate ?? null,
         activationState: requireMember(
@@ -213,12 +261,43 @@ export class WorkService {
         completedAt: null,
         deletedAt: null,
       };
+      if (input.reopenProjectVersion !== undefined)
+        await this.reopenOwner(
+          tx,
+          context,
+          item.projectId,
+          input.reopenProjectVersion,
+          now,
+        );
       await this.validateMemberships(tx, item, input);
+      requireOpenProjectOwner(item, await tx.list());
       await this.validatePlanning(tx, item);
+      if (prerequisiteIds !== undefined && item.type !== "TASK")
+        throw new DomainError("VALIDATION_ERROR", { field: "prerequisiteIds" });
       const normalized = await this.normalizeActivation(tx, item);
       await tx.insert(normalized);
+      for (const fromId of prerequisiteIds ?? []) {
+        const prerequisite = await tx.get(fromId);
+        if (prerequisite.type !== "TASK" || prerequisite.deletedAt)
+          throw new DomainError("VALIDATION_ERROR", {
+            field: "prerequisiteIds",
+          });
+        const edge: WorkEdge = {
+          id: this.ids.next(),
+          workspaceId: context.workspaceId,
+          fromId,
+          toId: item.id,
+          type: "BLOCKS",
+          createdBy: context.principalId,
+          createdAt: now,
+        };
+        validateEdge(edge, await tx.list(), await tx.edges());
+        await tx.addEdge(edge);
+        await this.record(tx, context, edge.id, "WORK_EDGE_ADDED", now, edge);
+      }
       await this.record(tx, context, item.id, "WORK_ITEM_CREATED", now);
-      return normalized;
+      await this.reconcileDependents(tx, context, now);
+      return tx.get(item.id);
     });
   }
 
@@ -229,25 +308,60 @@ export class WorkService {
     input: UpdateWorkInput,
   ): Promise<WorkItem> {
     await this.authorization.require(context, "work:update");
+    this.prerequisites(input.prerequisiteIds);
+    this.prerequisites(input.expectedPrerequisiteIds);
     if (input.projectIds !== undefined && !Array.isArray(input.projectIds))
       throw new DomainError("VALIDATION_ERROR", { field: "projectIds" });
     return this.uow.run(context.workspaceId, async (tx) => {
       const previous = await tx.get(id);
       if (previous.deletedAt) throw new DomainError("NOT_FOUND");
+      if (previous.version !== expectedVersion)
+        throw new DomainError("VERSION_CONFLICT");
+      if (
+        input.projectLifecycle !== undefined &&
+        (previous.type !== "PROJECT" ||
+          input.status !== undefined ||
+          input.activationState !== undefined ||
+          input.activationPolicy !== undefined)
+      )
+        throw new DomainError("VALIDATION_ERROR", {
+          field: "projectLifecycle",
+        });
+      if (
+        previous.type === "PROJECT" &&
+        (input.activationState !== undefined ||
+          input.activationPolicy !== undefined)
+      )
+        throw new DomainError("VALIDATION_ERROR", {
+          field: "projectLifecycle",
+        });
+      if (input.status !== undefined)
+        requireMember(input.status, workStatuses, "status");
+      const lifecycle: Partial<WorkItem> =
+        input.projectLifecycle !== undefined
+          ? projectLifecyclePatch(input.projectLifecycle)
+          : previous.type === "PROJECT" && input.status !== undefined
+            ? projectLifecyclePatch(
+                input.status === "DONE"
+                  ? "COMPLETED"
+                  : input.status === "CANCELED"
+                    ? "CANCELED"
+                    : input.status === "IN_PROGRESS"
+                      ? "ACTIVE"
+                      : "PLANNED",
+              )
+            : {};
       const status = requireMember(
-        input.status ?? previous.status,
+        lifecycle.status ?? input.status ?? previous.status,
         workStatuses,
         "status",
       );
-      if (
-        status !== previous.status &&
-        (status === "IN_PROGRESS" || status === "DONE") &&
-        blockers(previous, await tx.list(), await tx.edges()).length
-      ) {
-        throw new DomainError("WORK_ITEM_BLOCKED");
-      }
       // Reopening a prerequisite would invalidate an already started dependent.
-      if (previous.status === "DONE" && status !== "DONE") {
+      if (
+        previous.type !== "PROJECT" &&
+        previous.status === "DONE" &&
+        status !== "DONE"
+      ) {
         const active = await tx.list();
         const hasStartedDependent = (await tx.edges()).some((edge) => {
           const pair = dependency(edge);
@@ -258,6 +372,47 @@ export class WorkService {
           return target?.status === "IN_PROGRESS" || target?.status === "DONE";
         });
         if (hasStartedDependent) throw new DomainError("DEPENDENCY_EXISTS");
+      }
+      const existingEdges = await tx.edges();
+      const existingPrerequisites = existingEdges
+        .filter((edge) => dependency(edge)?.[1] === id)
+        .map((edge) => dependency(edge)?.[0])
+        .filter((value): value is string => value !== undefined)
+        .sort();
+      const requestedPrerequisites =
+        input.prerequisiteIds === undefined
+          ? existingPrerequisites
+          : [...new Set(input.prerequisiteIds)].sort();
+      if (
+        input.expectedPrerequisiteIds !== undefined &&
+        JSON.stringify(existingPrerequisites) !==
+          JSON.stringify([...new Set(input.expectedPrerequisiteIds)].sort())
+      )
+        throw new DomainError("VERSION_CONFLICT");
+      if (previous.type !== "TASK" && input.prerequisiteIds !== undefined)
+        throw new DomainError("VALIDATION_ERROR", { field: "prerequisiteIds" });
+      if (input.prerequisiteIds !== undefined) {
+        if (
+          JSON.stringify(existingPrerequisites) !==
+          JSON.stringify(requestedPrerequisites)
+        )
+          await this.authorization.require(context, "graph:write");
+        const items = await tx.list();
+        for (const prerequisiteId of requestedPrerequisites) {
+          const prerequisite = items.find(
+            (entry) => entry.id === prerequisiteId,
+          );
+          if (
+            !prerequisite ||
+            prerequisite.type !== "TASK" ||
+            prerequisite.deletedAt
+          )
+            throw new DomainError("VALIDATION_ERROR", {
+              field: "prerequisiteIds",
+            });
+          if (prerequisiteId === id)
+            throw new DomainError("WORK_GRAPH_CYCLE_DETECTED");
+        }
       }
       const now = this.clock.now();
       const item: WorkItem = {
@@ -277,6 +432,7 @@ export class WorkService {
             : input.projectId === undefined
               ? previous.projectId
               : input.projectId,
+        ...this.resolveOwnership(input, previous.type, previous),
         startDate:
           input.startDate === undefined ? previous.startDate : input.startDate,
         dueDate: input.dueDate === undefined ? previous.dueDate : input.dueDate,
@@ -304,25 +460,92 @@ export class WorkService {
           priorities,
           "priority",
         ),
+        ...lifecycle,
         status,
         version: previous.version + 1,
         updatedBy: context.principalId,
         updatedAt: now,
         completedAt: status === "DONE" ? (previous.completedAt ?? now) : null,
       };
-      await this.validateMemberships(tx, item, input);
+      if (
+        item.type === "PROJECT" &&
+        status === "DONE" &&
+        previous.status !== "DONE"
+      )
+        requireProjectCompletable(item, await tx.list());
+      requireOpenProjectOwner(item, await tx.list(), previous);
+      await this.validateMemberships(tx, item, input, previous);
       await this.validatePlanning(tx, item);
+      if (input.prerequisiteIds !== undefined) {
+        const keep = new Set(requestedPrerequisites);
+        for (const edge of existingEdges) {
+          const pair = dependency(edge);
+          if (pair?.[1] === id && !keep.has(pair[0])) {
+            await tx.removeEdge(edge.id);
+            await this.record(
+              tx,
+              context,
+              edge.id,
+              "WORK_EDGE_REMOVED",
+              now,
+              edge,
+            );
+          }
+        }
+        const current = await tx.edges();
+        for (const prerequisiteId of requestedPrerequisites) {
+          if (
+            !current.some(
+              (edge) =>
+                dependency(edge)?.[0] === prerequisiteId &&
+                dependency(edge)?.[1] === id,
+            )
+          ) {
+            const edge: WorkEdge = {
+              id: this.ids.next(),
+              workspaceId: context.workspaceId,
+              fromId: prerequisiteId,
+              toId: id,
+              type: "BLOCKS",
+              createdBy: context.principalId,
+              createdAt: now,
+            };
+            validateEdge(edge, await tx.list(), await tx.edges());
+            await tx.addEdge(edge);
+            await this.record(
+              tx,
+              context,
+              edge.id,
+              "WORK_EDGE_ADDED",
+              now,
+              edge,
+            );
+          }
+        }
+      }
       const normalized = await this.normalizeActivation(tx, item);
       if (
-        (status === "IN_PROGRESS" || status === "DONE") &&
-        !isExecutionActive(normalized, now.slice(0, 10)) &&
-        (status !== previous.status || previous.status === "IN_PROGRESS")
-      )
-        throw new DomainError("WORK_ITEM_BLOCKED");
+        item.type !== "PROJECT" &&
+        (status === "IN_PROGRESS" || status === "DONE")
+      ) {
+        if (
+          (status !== previous.status || input.prerequisiteIds !== undefined) &&
+          blockers(item, await tx.list(), await tx.edges()).length
+        )
+          throw new DomainError("WORK_ITEM_BLOCKED");
+        if (
+          (status !== previous.status || previous.status === "IN_PROGRESS") &&
+          !isExecutionActive(
+            normalized,
+            localCalendarDay(now, await this.calendarTimezone(tx)),
+          )
+        )
+          throw new DomainError("WORK_ITEM_BLOCKED");
+      }
       await tx.replace(normalized, expectedVersion);
       await this.record(tx, context, item.id, "WORK_ITEM_UPDATED", now);
       await this.reconcileDependents(tx, context, now);
-      return normalized;
+      return tx.get(item.id);
     });
   }
 
@@ -340,9 +563,7 @@ export class WorkService {
       const previous = await tx.get(id);
       if (
         deleted &&
-        ((await tx.list()).some(
-          (item) => item.projectId === id || item.projectIds?.includes(id),
-        ) ||
+        ((await tx.list()).some((item) => item.projectId === id) ||
           (await tx.edges()).some(
             (edge) => edge.fromId === id || edge.toId === id,
           ))
@@ -366,18 +587,8 @@ export class WorkService {
         version: previous.version + 1,
       };
       if (!deleted) {
-        if (item.type === "TASK") {
-          const liveProjects = new Set(
-            (await tx.list())
-              .filter((p) => p.type === "PROJECT")
-              .map((p) => p.id),
-          );
-          item.projectIds = (
-            previous.projectIds ??
-            (previous.projectId ? [previous.projectId] : [])
-          ).filter((id) => liveProjects.has(id));
-          item.projectId = item.projectIds[0] ?? null;
-        }
+        requireOpenProjectOwner(item, await tx.list(), previous);
+        // Preserve historical references; never promote a reference to owner.
         await this.validatePlanning(tx, item);
       }
       await tx.replace(item, expectedVersion);
@@ -413,6 +624,15 @@ export class WorkService {
       validateEdge(edge, await tx.list(), await tx.edges());
       const pair = dependency(edge);
       if (pair) {
+        const items = await tx.list();
+        const endpoints = pair.map((id) =>
+          items.find((item) => item.id === id),
+        );
+        if (endpoints.some((item) => item?.type !== "TASK")) {
+          throw new DomainError("VALIDATION_ERROR", {
+            field: "dependencyEndpoints",
+          });
+        }
         const dependent = await tx.get(pair[1]);
         if (
           (dependent.status === "DONE" || dependent.status === "IN_PROGRESS") &&
@@ -421,10 +641,43 @@ export class WorkService {
           throw new DomainError("WORK_ITEM_BLOCKED");
       }
       await tx.addEdge(edge);
-      await this.record(tx, context, edge.id, "WORK_EDGE_ADDED", now);
+      await this.record(tx, context, edge.id, "WORK_EDGE_ADDED", now, edge);
       await this.reconcileDependents(tx, context, now);
       return edge;
     });
+  }
+
+  private async reopenOwner(
+    tx: WorkTransaction,
+    context: ActorContext,
+    projectId: string | null,
+    expectedVersion: number,
+    now: string,
+  ): Promise<void> {
+    if (!projectId || !Number.isInteger(expectedVersion) || expectedVersion < 1)
+      throw new DomainError("VALIDATION_ERROR", {
+        field: "reopenProjectVersion",
+      });
+    const previous = await tx.get(projectId);
+    if (previous.version !== expectedVersion)
+      throw new DomainError("VERSION_CONFLICT");
+    if (
+      previous.type !== "PROJECT" ||
+      previous.deletedAt ||
+      previous.status !== "DONE"
+    )
+      throw new DomainError("PROJECT_REOPEN_REQUIRED");
+    const project = {
+      ...previous,
+      ...projectLifecyclePatch("ACTIVE"),
+      completedAt: null,
+      version: previous.version + 1,
+      updatedAt: now,
+      updatedBy: context.principalId,
+    };
+    requireOpenProjectOwner(project, await tx.list(), previous);
+    await tx.replace(project, expectedVersion);
+    await this.record(tx, context, projectId, "WORK_ITEM_UPDATED", now);
   }
 
   private async validatePlanning(
@@ -445,7 +698,7 @@ export class WorkService {
       if (item.type === "PROJECT") {
         const visited = new Set([item.id]);
         let ancestor: WorkItem | null = project;
-        let depth = 1;
+        let depth = projectSubtreeHeight(item, await tx.list());
         while (ancestor) {
           if (visited.has(ancestor.id))
             throw new DomainError("WORK_GRAPH_CYCLE_DETECTED");
@@ -466,16 +719,70 @@ export class WorkService {
   async removeEdge(context: ActorContext, id: string): Promise<void> {
     await this.authorization.require(context, "graph:write");
     return this.uow.run(context.workspaceId, async (tx) => {
+      const edge = (await tx.edges()).find((entry) => entry.id === id);
+      if (!edge) throw new DomainError("NOT_FOUND");
       await tx.removeEdge(id);
-      await this.record(tx, context, id, "WORK_EDGE_REMOVED", this.clock.now());
+      await this.record(
+        tx,
+        context,
+        id,
+        "WORK_EDGE_REMOVED",
+        this.clock.now(),
+        edge,
+      );
       await this.reconcileDependents(tx, context, this.clock.now());
     });
+  }
+
+  private resolveOwnership(
+    input: CreateWorkInput | UpdateWorkInput,
+    type: WorkType,
+    previous?: WorkItem,
+  ): Partial<WorkItem> {
+    if (
+      input.ownerProjectId === undefined &&
+      input.linkedProjectIds === undefined
+    )
+      return {};
+    if (
+      type !== "TASK" ||
+      input.projectId !== undefined ||
+      input.projectIds !== undefined
+    )
+      throw new DomainError("VALIDATION_ERROR", { field: "ownership" });
+    const owner =
+      input.ownerProjectId === undefined
+        ? (previous?.projectId ?? null)
+        : input.ownerProjectId;
+    const links =
+      input.linkedProjectIds ??
+      (previous ? taskOwnership(previous).linkedProjectIds : []);
+    if (
+      !Array.isArray(links) ||
+      links.length > 100 ||
+      links.some((id) => typeof id !== "string" || !id || id.length > 240) ||
+      new Set(links).size !== links.length
+    )
+      throw new DomainError("VALIDATION_ERROR", { field: "linkedProjectIds" });
+    if (
+      owner !== null &&
+      (typeof owner !== "string" || !owner || owner.length > 240)
+    )
+      throw new DomainError("VALIDATION_ERROR", { field: "ownerProjectId" });
+    return {
+      projectId: owner,
+      projectIds: [
+        ...(owner ? [owner] : []),
+        ...links.filter((id) => id !== owner),
+      ],
+    };
   }
 
   private async validateMemberships(
     tx: WorkTransaction,
     item: WorkItem,
     input: CreateWorkInput | UpdateWorkInput,
+    previous?: WorkItem,
   ) {
     const ids = item.projectIds;
     if (ids === undefined) return;
@@ -491,6 +798,8 @@ export class WorkService {
     )
       throw new DomainError("VALIDATION_ERROR", { field: "projectIds" });
     for (const id of ids) {
+      // Existing reference tombstones remain context, not structural owners.
+      if (id !== item.projectId && previous?.projectIds?.includes(id)) continue;
       const project = await tx.get(id);
       if (
         project.type !== "PROJECT" ||
@@ -501,10 +810,59 @@ export class WorkService {
     }
   }
 
+  async setCalendarSettings(
+    context: ActorContext,
+    expectedVersion: number,
+    timezone: string | null,
+  ): Promise<CalendarSettings> {
+    await this.authorization.require(context, "work:update");
+    const canonical =
+      timezone === null ? null : requireCalendarTimezone(timezone);
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0)
+      throw new DomainError("VALIDATION_ERROR", { field: "version" });
+    return this.uow.run(context.workspaceId, async (tx) => {
+      const settings = { version: expectedVersion + 1, timezone: canonical };
+      await tx.saveCalendarSettings(settings, expectedVersion);
+      await this.record(
+        tx,
+        context,
+        context.workspaceId,
+        "WORKSPACE_SETTINGS_UPDATED",
+        this.clock.now(),
+      );
+      return settings;
+    });
+  }
+
+  private async calendarTimezone(tx: WorkTransaction): Promise<string> {
+    return (
+      (await tx.calendarSettings()).timezone ??
+      this.clock.calendarTimezone ??
+      "UTC"
+    );
+  }
+
+  private prerequisites(
+    value: readonly string[] | undefined,
+  ): string[] | undefined {
+    if (value === undefined) return undefined;
+    if (
+      !Array.isArray(value) ||
+      value.length > 1000 ||
+      value.some(
+        (id) => typeof id !== "string" || !id.trim() || id.length > 240,
+      ) ||
+      new Set(value).size !== value.length
+    )
+      throw new DomainError("VALIDATION_ERROR", { field: "prerequisiteIds" });
+    return [...value].sort();
+  }
+
   private async normalizeActivation(
     tx: WorkTransaction,
     item: WorkItem,
   ): Promise<WorkItem> {
+    if (item.type === "PROJECT") return item;
     let activationState = item.activationState;
     if (item.activationPolicy === "AT_SCHEDULED_TIME") {
       if (!item.startDate)
@@ -539,6 +897,7 @@ export class WorkService {
     const edges = await tx.edges();
     for (const previous of items) {
       if (
+        previous.type === "PROJECT" ||
         previous.activationPolicy !== "WHEN_DEPENDENCIES_COMPLETED" ||
         previous.status !== "TODO"
       )
@@ -567,6 +926,7 @@ export class WorkService {
     entityId: string,
     type: ActivityEvent["type"],
     occurredAt: string,
+    edge?: WorkEdge,
   ): Promise<void> {
     const id = this.ids.next();
     await tx.appendActivity({
@@ -576,6 +936,9 @@ export class WorkService {
       entityId,
       type,
       occurredAt,
+      fromId: edge?.fromId ?? null,
+      toId: edge?.toId ?? null,
+      edgeType: edge?.type ?? null,
     });
     await tx.appendOutbox({
       id: this.ids.next(),

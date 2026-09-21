@@ -377,10 +377,18 @@ export async function bootstrap() {
   }
   const service: Pick<
     WorkService,
-    "snapshot" | "create" | "update" | "setDeleted" | "addEdge" | "removeEdge"
+    | "snapshot"
+    | "create"
+    | "update"
+    | "setDeleted"
+    | "addEdge"
+    | "removeEdge"
+    | "setCalendarSettings"
   > = {
     snapshot: async () =>
       normalizeSnapshot(await request<Snapshot>("/api/snapshot")),
+    setCalendarSettings: async (_context, version, timezone) =>
+      request("/api/work/calendar-settings", { version, timezone }),
     create: (_actor, input) => request("/api/work/create", input),
     update: (_actor, id, version, input) =>
       request("/api/work/update", { id, version, input }),
