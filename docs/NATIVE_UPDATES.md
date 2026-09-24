@@ -22,7 +22,7 @@ open-source signing provider; acceptance requires their independent review.
 ## Android direct APK channel
 
 The app downloads android.json from the same stable release. Required fields:
-channel (stable), packageId (dev.arclattice.app), abi (arm64-v8a), minSdk,
+channel (stable), packageId (app.orivane.atlas), abi (arm64-v8a), minSdk,
 version, versionCode, url, size, sha256, notes. The APK URL must belong to this
 repository's release assets. HTTPS redirect destinations are restricted to
 GitHub's asset hosts. The client checks length, SHA-256, package ID, increasing
@@ -35,6 +35,15 @@ the private build environment, with alias atlas-release. Never commit the
 keystore/password, expose them in process arguments, or regenerate a key for
 each release. Keep an independently protected offline backup before relying on
 this identity for ongoing distribution.
+
+Version 1.1.0 uses the new Android package ID `app.orivane.atlas`. Older
+`dev.arclattice.app` installations require a manual installation and sign-in;
+their in-app updater correctly rejects a different package ID. Keep the old app
+until server synchronization and any local-draft exports have been verified.
+Production-key builds also cannot replace a debug-key build with the same package ID.
+Windows installations containing the current updater public key can verify the
+new signed installer. Historical pre-rotation 1.0.0 builds need a manual reinstall.
+Publish 1.1.0 as a new release without replacing 1.0.0 assets.
 
 ### Migrating from the old debug builds
 
