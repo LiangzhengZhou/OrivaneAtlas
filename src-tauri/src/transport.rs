@@ -52,6 +52,8 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/tokens/revoke",
             "/api/logout",
             "/api/work/create",
+            "/api/work/calendar-settings",
+            "/api/work/navigation-preference",
             "/api/projects/document",
             "/api/projects/link",
             "/api/projects/upload",
@@ -816,6 +818,21 @@ mod tests {
             let csrf = data["csrf"].as_str().unwrap();
             assert_eq!(call("/api/session", None, "").await.unwrap().status, 200);
             assert_eq!(call("/api/snapshot", None, "").await.unwrap().status, 200);
+            let initial = call("/api/sync?cursor=", None, "").await.unwrap();
+            assert_eq!(initial.status, 200);
+            let initial: serde_json::Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(initial.body).unwrap()).unwrap();
+            let calendar = serde_json::json!({"version":initial["snapshot"]["calendarSettings"]["version"],"timezone":"Asia/Shanghai"}).to_string();
+            let calendar = send(&state, origin.clone(), "/api/work/calendar-settings".into(), Some(calendar), csrf.into(), "e47db6fe-2b9d-48a5-aac3-1b5e7e6874d6".into()).await.unwrap();
+            assert_eq!(calendar.status, 200);
+            let mut preference = initial["snapshot"]["navigationPreference"].clone();
+            preference["mobile"]["pinned"] = serde_json::json!(["tasks", "projects"]);
+            let preference = serde_json::json!({"version":preference["version"],"desktop":preference["desktop"],"mobile":preference["mobile"]}).to_string();
+            let navigation = send(&state, origin.clone(), "/api/work/navigation-preference".into(), Some(preference), csrf.into(), "2240e970-dbb9-4881-ac3a-b8675c7ca353".into()).await.unwrap();
+            assert_eq!(navigation.status, 200);
+            let refreshed = call("/api/snapshot", None, "").await.unwrap();
+            let refreshed: serde_json::Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(refreshed.body).unwrap()).unwrap();
+            assert_eq!(refreshed["calendarSettings"]["timezone"], "Asia/Shanghai");
+            assert_eq!(refreshed["navigationPreference"]["mobile"]["pinned"], serde_json::json!(["tasks", "projects"]));
             let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lL8AAAAASUVORK5CYII=";
             let upload = serde_json::json!({"uploadId":"781a8601-a661-451c-9c66-50b880c62c78", "spaceId":null, "name":"native.png", "mime":"image/png", "base64":png, "index":0, "final":true}).to_string();
             let image = send(&state, origin.clone(), "/api/library/upload-chunk".into(), Some(upload), csrf.into(), "bee57582-4255-49bd-af20-75f616c38aa5".into()).await.unwrap();
@@ -942,6 +959,14 @@ mod tests {
         assert!(endpoint("https://example.com", "/api/account/sessions", true).is_err());
         assert!(endpoint("https://example.com", "/api/account/sessions/revoke", true).is_ok());
         assert!(endpoint("https://example.com", "/api/account/sessions/revoke", false).is_err());
+    }
+    #[test]
+    fn workspace_preference_mutations_are_allowed_only_as_post() {
+        for path in ["/api/work/calendar-settings", "/api/work/navigation-preference"] {
+            assert!(endpoint("https://example.com", path, true).is_ok());
+            assert!(endpoint("https://example.com", path, false).is_err());
+        }
+        assert!(endpoint("https://example.com", "/api/work/unknown-preference", true).is_err());
     }
     #[test]
     fn switching_server_discards_cookie() {
