@@ -384,7 +384,10 @@ export async function bootstrap() {
     | "addEdge"
     | "removeEdge"
     | "setCalendarSettings"
+    | "setNavigationPreference"
   > = {
+    setNavigationPreference: async (_context, preference) =>
+      request("/api/work/navigation-preference", preference),
     snapshot: async () =>
       normalizeSnapshot(await request<Snapshot>("/api/snapshot")),
     setCalendarSettings: async (_context, version, timezone) =>
@@ -409,6 +412,24 @@ export async function bootstrap() {
       if (data.snapshot) current = normalizeSnapshot(data.snapshot);
       if (!current) throw new Error("Invalid sync response");
       cursor = data.cursor;
+      if (context && current.calendarSettings?.version === 0) {
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (timezone) {
+          try {
+            await service.setCalendarSettings(context, 0, timezone);
+          } catch (cause) {
+            if (
+              !(cause instanceof DomainError) ||
+              cause.code !== "VERSION_CONFLICT"
+            )
+              throw cause;
+          }
+          if (generation !== serverGeneration)
+            throw new Error("SERVER_CHANGED");
+          current = normalizeSnapshot(await request<Snapshot>("/api/snapshot"));
+          cursor = "";
+        }
+      }
       return current;
     });
     syncQueue = job.catch(() => undefined);

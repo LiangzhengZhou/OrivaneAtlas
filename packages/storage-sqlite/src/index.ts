@@ -21,7 +21,11 @@ import type {
   WorkItem,
   Workspace,
 } from "@arclattice/domain";
-import { DomainError } from "@arclattice/domain";
+import {
+  DomainError,
+  defaultNavigationPreference,
+  normalizeNavigationPreference,
+} from "@arclattice/domain";
 import { accountStore } from "./accounts";
 import { categoryPort } from "./categories";
 import { connectedStore } from "./connected";
@@ -53,7 +57,9 @@ const workFields = {
   priority: "priority",
   executionMode: "execution_mode",
   assigneePrincipalId: "assignee_principal_id",
-  projectId: "project_id",
+  parentProjectId: "parent_project_id",
+  lifecycle: "lifecycle",
+  categoryId: "category_id",
   activationState: "activation_state",
   activationPolicy: "activation_policy",
   startDate: "start_date",
@@ -376,9 +382,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
         .prepare("DELETE FROM task_project WHERE workspace_id=? AND task_id=?")
         .run(workspaceId, item.id);
       if (item.type === "TASK")
-        for (const [position, id] of (
-          item.projectIds ?? (item.projectId ? [item.projectId] : [])
-        ).entries())
+        for (const [position, id] of (item.projectIds ?? []).entries())
           this.db
             .prepare("INSERT INTO task_project VALUES (?,?,?,?)")
             .run(workspaceId, item.id, id, position);
@@ -396,6 +400,48 @@ export class SqliteUnitOfWork implements UnitOfWork {
       return hydrate({ ...row } as unknown as WorkItem);
     };
     const tx: WorkTransaction = {
+      navigationPreference: async (principalId) => {
+        guard();
+        const row = this.db
+          .prepare(
+            "SELECT preference_json FROM user_navigation WHERE workspace_id=? AND principal_id=?",
+          )
+          .get(workspaceId, principalId);
+        return row
+          ? normalizeNavigationPreference(
+              JSON.parse(String(row.preference_json)),
+            )
+          : defaultNavigationPreference();
+      },
+      saveNavigationPreference: async (principalId, preference, expected) => {
+        guard();
+        if (preference.version !== expected + 1)
+          throw new DomainError("VERSION_CONFLICT");
+        const result =
+          expected === 0
+            ? this.db
+                .prepare(
+                  "INSERT INTO user_navigation VALUES (?,?,?,?) ON CONFLICT DO NOTHING",
+                )
+                .run(
+                  workspaceId,
+                  principalId,
+                  preference.version,
+                  JSON.stringify(preference),
+                )
+            : this.db
+                .prepare(
+                  "UPDATE user_navigation SET version=?,preference_json=? WHERE workspace_id=? AND principal_id=? AND version=?",
+                )
+                .run(
+                  preference.version,
+                  JSON.stringify(preference),
+                  workspaceId,
+                  principalId,
+                  expected,
+                );
+        if (result.changes !== 1) throw new DomainError("VERSION_CONFLICT");
+      },
       calendarSettings: async () => {
         guard();
         const row = this.db

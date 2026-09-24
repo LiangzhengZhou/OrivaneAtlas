@@ -1,0 +1,80 @@
+name: Native validation
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - run: pnpm exec tauri build --no-sign --bundles nsis
+      - run: pwsh scripts/check-android-icon.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-validation-installer
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 7
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+      - run: echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tauri android build --debug --target aarch64
+      - run: bash gradlew :app:testArm64DebugUnitTest --no-daemon
+        working-directory: src-tauri/gen/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-validation-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          retention-days: 7
+  published-signature:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify published installer against embedded trust anchor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release-verification
+          gh release download v1.0.0 --repo "$GITHUB_REPOSITORY" --pattern '*.exe' --pattern '*.exe.sig' --dir release-verification
+          node scripts/verify-updater-signature.mjs release-verification/OrivaneAtlas-1.0.0-windows-x64-setup.exe

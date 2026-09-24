@@ -2,6 +2,7 @@ export * from "./agent";
 export * from "./calendar";
 export * from "./data-policy";
 export * from "./governance";
+export * from "./navigation";
 export * from "./project-lifecycle";
 export * from "./projects";
 export * from "./recurrence";
@@ -60,7 +61,9 @@ export interface WorkItem {
   readonly priority: Priority;
   readonly executionMode: ExecutionMode;
   readonly assigneePrincipalId: string | null;
-  readonly projectId: string | null;
+  readonly parentProjectId: string | null;
+  readonly lifecycle: import("./project-lifecycle").ProjectLifecycle | null;
+  readonly categoryId: string | null;
   readonly projectIds?: readonly string[];
   readonly activationState: ActivationState;
   readonly activationPolicy: ActivationPolicy;

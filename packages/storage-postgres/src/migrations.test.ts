@@ -55,7 +55,14 @@ describe("PostgreSQL transactional migrations", () => {
     expect(
       (await h.query(name, "SELECT * FROM arclattice.work_item ORDER BY id"))
         .rows,
-    ).toEqual(before);
+    ).toEqual(
+      before.map(({ project_id: _legacy, ...row }) => ({
+        ...row,
+        parent_project_id: null,
+        lifecycle: row.type === "PROJECT" ? "PLANNED" : null,
+        category_id: null,
+      })),
+    );
     expect(
       (
         await h.query(
@@ -87,7 +94,15 @@ describe("PostgreSQL transactional migrations", () => {
           "SELECT column_name FROM information_schema.columns WHERE table_schema='arclattice' AND table_name='work_item'",
         )
       ).rows.map((r) => r.column_name),
-    ).toEqual(expect.arrayContaining(["project_id", "start_date", "due_date"]));
+    ).toEqual(
+      expect.arrayContaining([
+        "parent_project_id",
+        "start_date",
+        "due_date",
+        "lifecycle",
+        "category_id",
+      ]),
+    );
   });
   it("applies each current migration once when independent hosts start concurrently", async () => {
     const name = await h.database();

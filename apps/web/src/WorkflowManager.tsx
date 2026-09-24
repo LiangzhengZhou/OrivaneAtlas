@@ -308,7 +308,6 @@ export function WorkflowManager({
                 rule: {
                   title,
                   descriptionMd,
-                  projectId: recurrenceProjects[0] ?? null,
                   projectIds: recurrenceProjects,
                   assigneePrincipalId: assignee || null,
                   priority,
@@ -510,7 +509,7 @@ export function WorkflowManager({
                   {rule.priority ?? "MEDIUM"}
                 </p>
                 <p>
-                  {(rule.projectIds ?? (rule.projectId ? [rule.projectId] : []))
+                  {(rule.projectIds ?? [])
                     .map(
                       (id) =>
                         projects.find((project) => project.id === id)?.title ??
@@ -534,10 +533,7 @@ export function WorkflowManager({
                     setPriority(rule.priority ?? "MEDIUM");
                     setActivation(rule.activationState ?? "ACTIVE");
                     setActivationPolicy(rule.activationPolicy ?? "MANUAL");
-                    setRecurrenceProjects(
-                      rule.projectIds ??
-                        (rule.projectId ? [rule.projectId] : []),
-                    );
+                    setRecurrenceProjects(rule.projectIds ?? []);
                   }}
                 >
                   {text("编辑规则", "Edit rule")}

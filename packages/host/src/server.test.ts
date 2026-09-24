@@ -216,7 +216,7 @@ it("background recurrence starts after restart without login and ignores disable
         rule: {
           title: "Background " + actor.id,
           descriptionMd: "",
-          projectId: null,
+          projectIds: [],
           startDate: day,
           timezone: "UTC",
           frequency: "DAILY",
@@ -248,13 +248,13 @@ describe("atomic workbench organization", () => {
       await call("/api/work/create", {
         title: "Child",
         type: "PROJECT",
-        projectId: project.id,
+        parentProjectId: project.id,
       })
     ).json();
     const task = await (
       await call("/api/work/create", {
         title: "Task",
-        projectId: child.id,
+        projectIds: [child.id],
         descriptionMd: "- [ ] Preserve Markdown",
       })
     ).json();
@@ -2131,22 +2131,13 @@ describe("private HTTP host", () => {
     const item = await (
       await call("/api/work/create", {
         title: "Task",
-        projectId: project.id,
+        projectIds: [project.id],
         startDate: "2026-09-14",
         dueDate: "2026-09-30",
       })
     ).json();
-    expect(item.projectId).toBe(project.id);
+    expect(item.projectIds).toEqual([project.id]);
     expect(item.dueDate).toBe("2026-09-30");
-    expect(
-      (
-        await call("/api/work/delete", {
-          id: project.id,
-          version: 1,
-          deleted: true,
-        })
-      ).status,
-    ).toBe(409);
     for (const dueDate of ["2026-02-30", "2026-09-01", "2026-9-30"]) {
       expect(
         (
@@ -2163,7 +2154,7 @@ describe("private HTTP host", () => {
         await call("/api/work/update", {
           id: item.id,
           version: 1,
-          input: { projectId: "foreign" },
+          input: { projectIds: ["foreign"] },
         })
       ).status,
     ).toBe(404);
@@ -2171,10 +2162,10 @@ describe("private HTTP host", () => {
       await call("/api/work/update", {
         id: item.id,
         version: 1,
-        input: { projectId: null, startDate: null, dueDate: null },
+        input: { projectIds: [], startDate: null, dueDate: null },
       })
     ).json();
-    expect(updated.projectId).toBeNull();
+    expect(updated.projectIds).toEqual([]);
     expect(updated.dueDate).toBeNull();
     expect(
       (

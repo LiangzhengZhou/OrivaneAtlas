@@ -5,6 +5,7 @@ import type {
 } from "@arclattice/application";
 import {
   calendarMonthInfo,
+  effectiveCategoryId,
   formatCalendarDate,
   projectLifecycle,
   projectScope,
@@ -48,52 +49,45 @@ export function ProjectView({
 }) {
   const { t } = useTranslation("desk");
   const [showArchived, setShowArchived] = useState(false);
-  const [categoryId, setCategoryId] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const visibleProjects = projects.filter(
-    (p) =>
-      isArchived(p) === showArchived &&
-      (!categoryId ||
-        categories.some(
-          (c) =>
-            c.id === categoryId && !c.deletedAt && c.projectIds.includes(p.id),
-        )),
+    (project) => isArchived(project) === showArchived,
   );
   const renderCard = (project: WorkItem) => {
     const inherited = archiveSource(project);
     const scoped = projectScope(project, items, "SUBTREE");
-    const done = scoped.completed;
     const actionableTotal = scoped.completed + scoped.unfinished;
+    const children = visibleProjects.some(
+      (candidate) => candidate.parentProjectId === project.id,
+    );
     return (
-      <section className="panel project-card" key={project.id}>
-        <div className="panel-heading">
-          {visibleProjects.some((p) => p.projectId === project.id) ? (
-            <button
-              type="button"
-              className="project-tree-toggle"
-              aria-label={t(
-                collapsed.has(project.id) ? "expandProject" : "collapseProject",
-                { title: project.title },
-              )}
-              aria-expanded={!collapsed.has(project.id)}
-              onClick={() =>
-                setCollapsed((old) => {
-                  const next = new Set(old);
-                  if (next.has(project.id)) next.delete(project.id);
-                  else next.add(project.id);
-                  return next;
-                })
-              }
-            >
-              {collapsed.has(project.id) ? "▸" : "▾"}
-            </button>
-          ) : (
-            <FolderKanban size={22} />
-          )}
-          <span className="priority">
-            {t("projectLifecycles." + projectLifecycle(project))}
-          </span>
-        </div>
+      <section
+        className="panel project-card project-compact-row"
+        key={project.id}
+      >
+        {children ? (
+          <button
+            type="button"
+            className="project-tree-toggle"
+            aria-label={t(
+              collapsed.has(project.id) ? "expandProject" : "collapseProject",
+              { title: project.title },
+            )}
+            aria-expanded={!collapsed.has(project.id)}
+            onClick={() =>
+              setCollapsed((old) => {
+                const next = new Set(old);
+                if (next.has(project.id)) next.delete(project.id);
+                else next.add(project.id);
+                return next;
+              })
+            }
+          >
+            {collapsed.has(project.id) ? "▸" : "▾"}
+          </button>
+        ) : (
+          <FolderKanban size={16} />
+        )}
         <button
           type="button"
           className="project-title"
@@ -101,38 +95,26 @@ export function ProjectView({
         >
           <h2>{project.title}</h2>
         </button>
-        <p className="project-description">
-          {project.descriptionMd || t("projectEmptyHint")}
-        </p>
-        {project.projectId && (
-          <p className="muted">
-            {t("parentProject")} ·{" "}
-            {projects.find((parent) => parent.id === project.projectId)?.title}
-          </p>
-        )}
-        {project.dueDate && (
-          <p className="muted">
-            {t("dueDate")} · {project.dueDate}
-          </p>
-        )}
-        <div className="progress-label">
-          <span>{t("completion")}</span>
-          <strong>
-            {done} / {actionableTotal}
-          </strong>
-        </div>
-        <progress max={Math.max(actionableTotal, 1)} value={done} />
-        <p className="muted">{t("projectProgress", scoped)}</p>
-        <p className="muted">{t("recursiveProgress")}</p>
-        {inherited && (
-          <p className="muted">
-            {t("inheritedArchive", { title: inherited.title })}
-          </p>
-        )}
+        <span className="priority">
+          {t("projectLifecycles." + projectLifecycle(project))}
+        </span>
+        <span
+          className="project-compact-progress"
+          title={t("projectProgress", scoped)}
+        >
+          <progress
+            aria-label={t("completion")}
+            max={Math.max(actionableTotal, 1)}
+            value={scoped.completed}
+          />
+          <span>
+            {scoped.completed} / {actionableTotal}
+          </span>
+        </span>
         <div className="project-card-actions">
           <button
             type="button"
-            className="button secondary"
+            className="text-button"
             onClick={() => onOpen(project)}
           >
             {t("openProject")}
@@ -141,6 +123,11 @@ export function ProjectView({
             type="button"
             className="text-button"
             disabled={busy || !!inherited}
+            title={
+              inherited
+                ? t("inheritedArchive", { title: inherited.title })
+                : undefined
+            }
             onClick={() =>
               onOrganize(project, isArchived(project) ? "unarchive" : "archive")
             }
@@ -153,9 +140,14 @@ export function ProjectView({
             onClick={() => onTasks(project.id)}
           >
             {t("projectTasks")}
-            <ArrowUpRight size={16} />
+            <ArrowUpRight size={14} />
           </button>
         </div>
+        {inherited && (
+          <small className="project-archive-explanation">
+            {t("inheritedArchive", { title: inherited.title })}
+          </small>
+        )}
       </section>
     );
   };
@@ -169,7 +161,7 @@ export function ProjectView({
           if (seen.has(project.id)) return null;
           seen.add(project.id);
           const children = visibleProjects.filter(
-            (p) => p.projectId === project.id && !seen.has(p.id),
+            (p) => p.parentProjectId === project.id && !seen.has(p.id),
           );
           const childTree = renderTree(children);
           return (
@@ -182,36 +174,36 @@ export function ProjectView({
     </ul>
   );
   const roots = visibleProjects.filter(
-    (p) => !p.projectId || !visibleIds.has(p.projectId),
+    (p) => !p.parentProjectId || !visibleIds.has(p.parentProjectId),
   );
-  const tree = renderTree(roots);
-  const recovered = renderTree(visibleProjects.filter((p) => !seen.has(p.id)));
-  const hierarchy = (
-    <>
-      {tree}
-      {recovered}
-    </>
-  );
+  const sections = [
+    ...categories
+      .filter((category) => !category.deletedAt)
+      .map((category) => ({ id: category.id, name: category.name })),
+    { id: null, name: t("uncategorized") },
+  ];
+  const hierarchy = sections.map((category) => {
+    const categoryRoots = roots.filter(
+      (project) =>
+        (categories.some(
+          (entry) =>
+            !entry.deletedAt &&
+            entry.id === effectiveCategoryId(project, items),
+        )
+          ? effectiveCategoryId(project, items)
+          : null) === category.id,
+    );
+    if (!categoryRoots.length) return null;
+    return (
+      <section key={category.id ?? "uncategorized"}>
+        <h2>{category.name}</h2>
+        {renderTree(categoryRoots)}
+      </section>
+    );
+  });
   return (
     <div className="projects-overview">
       <div className="organization-toolbar">
-        <label>
-          {t("categories.filter")}
-          <select
-            aria-label={t("categories.filter")}
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-          >
-            <option value="">{t("categories.all")}</option>
-            {categories
-              .filter((c) => !c.deletedAt)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-          </select>
-        </label>
         <button
           type="button"
           className="chip"

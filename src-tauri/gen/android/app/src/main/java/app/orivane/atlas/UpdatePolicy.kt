@@ -1,4 +1,4 @@
-package dev.arclattice.app
+package app.orivane.atlas
 
 /** Pure validation rules, shared by the installer and JVM regression tests. */
 internal object UpdatePolicy {

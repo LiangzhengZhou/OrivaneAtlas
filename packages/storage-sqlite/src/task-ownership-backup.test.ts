@@ -1,3 +1,4 @@
+import { defaultNavigationPreference } from "@arclattice/domain";
 import { expect, test } from "vitest";
 import { restoreDatabase } from "./index";
 import { context, service, sqliteHarness } from "./testing";
@@ -16,6 +17,10 @@ test("backup restores workspace timezone and removed dependency endpoints", asyn
     expectedPrerequisiteIds: [source.id],
   });
   await api.setCalendarSettings(context, 0, "Asia/Shanghai");
+  await api.setNavigationPreference(context, {
+    ...defaultNavigationPreference(),
+    mobile: { pinned: ["projects", "tasks"] },
+  });
   const backup = harness.file();
   await db.backup(backup);
   const file = harness.file();
@@ -25,6 +30,10 @@ test("backup restores workspace timezone and removed dependency endpoints", asyn
     "Asia/Shanghai",
   );
   expect((await service(restored).snapshot(context)).edges).toHaveLength(0);
+  expect(
+    (await service(restored).snapshot(context)).navigationPreference?.mobile
+      .pinned,
+  ).toEqual(["projects", "tasks"]);
   const events = await restored.inspectEvents(context.workspaceId);
   const removed = events.activity.find(
     (event) => event.type === "WORK_EDGE_REMOVED",
@@ -47,8 +56,7 @@ test("backup restores unowned task references and Markdown without owner promoti
   });
   const task = await api.create(context, {
     title: "No owner",
-    ownerProjectId: null,
-    linkedProjectIds: [project.id],
+    projectIds: [project.id],
     descriptionMd: "# Original\r\n\n**unchanged**",
   });
   await api.setDeleted(context, project.id, 1, true);
@@ -65,7 +73,7 @@ test("backup restores unowned task references and Markdown without owner promoti
   const updated = await service(restored).update(context, task.id, 1, {
     title: "After restore",
   });
-  expect(updated.projectId).toBe(null);
+  expect(updated.parentProjectId).toBe(null);
   expect(updated.projectIds).toEqual([project.id]);
   expect(updated.descriptionMd).toBe(task.descriptionMd);
 });
@@ -83,7 +91,7 @@ test("backup preserves paused project lifecycle and explicit completion guards",
   });
   const task = await api.create(context, {
     title: "Pending",
-    ownerProjectId: project.id,
+    projectIds: [project.id],
   });
   const backup = harness.file();
   await db.backup(backup);
@@ -102,6 +110,6 @@ test("backup preserves paused project lifecycle and explicit completion guards",
       await restored.update(context, project.id, 2, {
         projectLifecycle: "COMPLETED",
       })
-    ).status,
-  ).toBe("DONE");
+    ).lifecycle,
+  ).toBe("COMPLETED");
 });

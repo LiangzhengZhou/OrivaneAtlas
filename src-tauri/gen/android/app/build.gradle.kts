@@ -15,7 +15,7 @@ val tauriProperties = Properties().apply {
 
 android {
     compileSdk = 36
-    namespace = "dev.arclattice.app"
+    namespace = "app.orivane.atlas"
     signingConfigs {
         create("atlasRelease") {
             val keyPath = System.getenv("ATLAS_ANDROID_KEYSTORE")
@@ -29,7 +29,7 @@ android {
     }
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "dev.arclattice.app"
+        applicationId = "app.orivane.atlas"
         minSdk = 24
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()

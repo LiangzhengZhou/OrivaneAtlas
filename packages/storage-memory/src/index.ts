@@ -11,9 +11,15 @@ import type {
   WorkTransaction,
 } from "@arclattice/application";
 import type { ActorContext, WorkEdge, WorkItem } from "@arclattice/domain";
-import { DomainError } from "@arclattice/domain";
+import {
+  DomainError,
+  defaultNavigationPreference,
+  type NavigationPreference,
+  normalizeNavigationPreference,
+} from "@arclattice/domain";
 
 interface MemoryState {
+  navigation: Map<string, NavigationPreference>;
   calendarSettings: CalendarSettings;
   workflows: Map<string, WorkflowRecord>;
   workflowEvents: WorkflowRecord[];
@@ -25,6 +31,7 @@ interface MemoryState {
   outbox: OutboxEvent[];
 }
 const emptyState = (): MemoryState => ({
+  navigation: new Map(),
   calendarSettings: { version: 0, timezone: null },
   workflows: new Map(),
   workflowEvents: [],
@@ -66,13 +73,30 @@ export class MemoryUnitOfWork implements UnitOfWork {
           item.type === "TASK"
             ? {
                 ...item,
-                projectIds:
-                  item.projectIds ?? (item.projectId ? [item.projectId] : []),
+                projectIds: item.projectIds ?? [],
               }
             : item,
         );
       };
       const tx: WorkTransaction = {
+        navigationPreference: async (principalId) => {
+          assertOpen();
+          return structuredClone(
+            normalizeNavigationPreference(
+              state.navigation.get(principalId) ??
+                defaultNavigationPreference(),
+            ),
+          );
+        },
+        saveNavigationPreference: async (principalId, preference, expected) => {
+          assertOpen();
+          if (
+            (state.navigation.get(principalId)?.version ?? 0) !== expected ||
+            preference.version !== expected + 1
+          )
+            throw new DomainError("VERSION_CONFLICT");
+          state.navigation.set(principalId, structuredClone(preference));
+        },
         calendarSettings: async () => {
           assertOpen();
           return { ...state.calendarSettings };

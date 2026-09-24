@@ -20,7 +20,7 @@ test("atomic complete plan publishes sorted hierarchy, multi-project task, categ
     version: 1,
     projects: [
       { tempId: "child", title: "Child", parentTempId: "root" },
-      { tempId: "root", title: "Root" },
+      { tempId: "root", title: "Root", lifecycle: "ACTIVE" },
     ],
     categories: [
       {
@@ -38,6 +38,9 @@ test("atomic complete plan publishes sorted hierarchy, multi-project task, categ
         priority: "URGENT",
         assigneePrincipalId: "human",
       },
+    ],
+    milestones: [
+      { tempId: "milestone", title: "Submission", projectTempId: "root" },
     ],
     recurrences: [
       {
@@ -63,9 +66,15 @@ test("atomic complete plan publishes sorted hierarchy, multi-project task, categ
   if (published.payload.kind !== "PLAN") throw new Error("not plan");
   const result = published.payload.result;
   const snapshot = await work.snapshot(context);
-  expect(snapshot.items).toHaveLength(3);
+  expect(snapshot.items).toHaveLength(4);
   expect(
-    snapshot.items.find((item) => item.id === result.child)?.projectId,
+    snapshot.items.find((item) => item.id === result.root)?.lifecycle,
+  ).toBe("ACTIVE");
+  expect(
+    snapshot.items.find((item) => item.id === result.milestone),
+  ).toMatchObject({ type: "MILESTONE", parentProjectId: result.root });
+  expect(
+    snapshot.items.find((item) => item.id === result.child)?.parentProjectId,
   ).toBe(result.root);
   expect(snapshot.items.find((item) => item.id === result.task)).toMatchObject({
     projectIds: [result.root, result.child],
@@ -73,7 +82,7 @@ test("atomic complete plan publishes sorted hierarchy, multi-project task, categ
     priority: "URGENT",
     assigneePrincipalId: "human",
   });
-  expect(published.payload.provenance).toHaveLength(5);
+  expect(published.payload.provenance).toHaveLength(6);
   const occurrences = await service.generate(
     context,
     result.daily!,
@@ -99,7 +108,6 @@ test("atomic complete plan publishes sorted hierarchy, multi-project task, categ
       title: "Edited",
       priority: "LOW",
       projectIds: [],
-      projectId: null,
     },
   });
   await service.backfill(context, missed.id, missed.version, null);
@@ -149,7 +157,6 @@ test("document failure rolls back all work and events; category edits invalidate
   });
   await new CategoryService(db, auth, clock, ids).save(context, {
     name: "Changed",
-    projectIds: [],
     version: 0,
     deleted: false,
   });

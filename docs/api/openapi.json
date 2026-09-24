@@ -16,6 +16,12 @@
     }
   ],
   "paths": {
+    "/api/work/navigation-preference": {
+      "$ref": "#/components/pathItems/NavigationPreference"
+    },
+    "/api/v1/work/navigation-preference": {
+      "$ref": "#/components/pathItems/NavigationPreference"
+    },
     "/api/work/calendar-settings": {
       "$ref": "#/components/pathItems/CalendarSettings"
     },
@@ -1368,7 +1374,6 @@
                     "required": [
                       "title",
                       "descriptionMd",
-                      "projectId",
                       "startDate",
                       "timezone",
                       "frequency",
@@ -1381,9 +1386,6 @@
                       "descriptionMd": {
                         "type": "string",
                         "maxLength": 200000
-                      },
-                      "projectId": {
-                        "type": ["string", "null"]
                       },
                       "projectIds": {
                         "type": "array",
@@ -1589,7 +1591,7 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["version", "name", "projectIds", "deleted"],
+                "required": ["version", "name", "deleted"],
                 "properties": {
                   "icon": {
                     "type": "string",
@@ -1618,14 +1620,6 @@
                     "minLength": 1,
                     "maxLength": 240
                   },
-                  "projectIds": {
-                    "type": "array",
-                    "maxItems": 100,
-                    "uniqueItems": true,
-                    "items": {
-                      "type": "string"
-                    }
-                  },
                   "deleted": {
                     "type": "boolean"
                   }
@@ -1636,7 +1630,7 @@
         },
         "responses": {
           "200": {
-            "description": "Versioned category with ID, workspaceId, name, icon, six-digit hex color, integer position, projectIds, version, createdBy, updatedBy, createdAt, updatedAt and nullable deletedAt. Included as categories[] in workspace snapshots and sync."
+            "description": "Versioned category metadata. Project classification is assigned through Project.categoryId with project version checks. Included as categories[] in workspace snapshots and sync."
           },
           "400": {
             "description": "Invalid name, membership or input"
@@ -7993,6 +7987,44 @@
   },
   "components": {
     "pathItems": {
+      "NavigationPreference": {
+        "post": {
+          "operationId": "setNavigationPreference",
+          "summary": "Save workspace and principal isolated navigation",
+          "description": "Human session only; CSRF and Idempotency-Key required. Versioned update, Activity and Outbox commit atomically. Not an Agent mutation tool.",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NavigationPreference"
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Saved preference",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/NavigationPreference"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Invalid preference"
+            },
+            "403": {
+              "description": "Session or permission denied"
+            },
+            "409": {
+              "description": "Version or idempotency conflict"
+            }
+          }
+        }
+      },
       "CalendarSettings": {
         "post": {
           "summary": "Set versioned workspace calendar timezone",
@@ -8002,26 +8034,35 @@
               "name": "Idempotency-Key",
               "in": "header",
               "required": true,
-              "schema": { "type": "string", "pattern": "^[a-zA-Z0-9-]{16,80}$" }
+              "schema": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9-]{16,80}$"
+              }
             },
             {
               "name": "X-CSRF-Token",
               "in": "header",
               "required": true,
-              "schema": { "type": "string" }
+              "schema": {
+                "type": "string"
+              }
             },
             {
               "name": "Origin",
               "in": "header",
               "required": true,
-              "schema": { "type": "string" }
+              "schema": {
+                "type": "string"
+              }
             }
           ],
           "requestBody": {
             "required": true,
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/CalendarSettings" }
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarSettings"
+                }
               }
             }
           },
@@ -8030,13 +8071,21 @@
               "description": "Saved preference",
               "content": {
                 "application/json": {
-                  "schema": { "$ref": "#/components/schemas/CalendarSettings" }
+                  "schema": {
+                    "$ref": "#/components/schemas/CalendarSettings"
+                  }
                 }
               }
             },
-            "400": { "description": "Invalid timezone or version" },
-            "403": { "description": "Session, CSRF or permission denied" },
-            "409": { "description": "Version or idempotency conflict" }
+            "400": {
+              "description": "Invalid timezone or version"
+            },
+            "403": {
+              "description": "Session, CSRF or permission denied"
+            },
+            "409": {
+              "description": "Version or idempotency conflict"
+            }
           }
         }
       }
@@ -8054,6 +8103,86 @@
       }
     },
     "schemas": {
+      "NavigationViewId": {
+        "type": "string",
+        "enum": [
+          "overview",
+          "tasks",
+          "projects",
+          "focus",
+          "calendar",
+          "notes",
+          "journal",
+          "library",
+          "knowledge",
+          "ai",
+          "dependencies",
+          "account",
+          "admin",
+          "trash",
+          "planning",
+          "board"
+        ]
+      },
+      "NavigationPreference": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "desktop", "mobile"],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "desktop": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["order", "hidden", "pinned"],
+            "properties": {
+              "order": {
+                "type": "array",
+                "minItems": 16,
+                "maxItems": 16,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/NavigationViewId"
+                }
+              },
+              "hidden": {
+                "type": "array",
+                "maxItems": 16,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/NavigationViewId"
+                }
+              },
+              "pinned": {
+                "type": "array",
+                "maxItems": 16,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/NavigationViewId"
+                }
+              }
+            }
+          },
+          "mobile": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["pinned"],
+            "properties": {
+              "pinned": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 4,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/NavigationViewId"
+                }
+              }
+            }
+          }
+        }
+      },
       "GatewayLimit": {
         "oneOf": [
           {
@@ -8170,7 +8299,6 @@
           "icon",
           "color",
           "position",
-          "projectIds",
           "version",
           "createdBy",
           "updatedBy",
@@ -8202,14 +8330,6 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 2147483647
-          },
-          "projectIds": {
-            "type": "array",
-            "maxItems": 100,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            }
           },
           "version": {
             "type": "integer",
@@ -8353,7 +8473,7 @@
           "minLength": 1,
           "maxLength": 240
         },
-        "description": "TASK only. Ordered live projects in the same workspace. Replaces all memberships; first entry is projectId. An explicit legacy projectId edit replaces memberships with zero or one project."
+        "description": "TASK only. Equal project memberships in the same workspace. Replaces all memberships; array order never designates a primary project or owner."
       },
       "Error": {
         "type": "object",
@@ -8451,9 +8571,12 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "prerequisiteIds": { "$ref": "#/components/schemas/PrerequisiteIds" },
+          "prerequisiteIds": {
+            "$ref": "#/components/schemas/PrerequisiteIds"
+          },
           "projectIds": {
-            "$ref": "#/components/schemas/TaskProjectIds"
+            "$ref": "#/components/schemas/TaskProjectIds",
+            "description": "Equal project memberships of a single task."
           },
           "assigneePrincipalId": {
             "type": ["string", "null"],
@@ -8464,11 +8587,6 @@
           },
           "activationPolicy": {
             "$ref": "#/components/schemas/ActivationPolicy"
-          },
-          "projectId": {
-            "type": ["string", "null"],
-            "maxLength": 240,
-            "description": "Live PROJECT in same workspace; parent for PROJECT, primary project otherwise. Cycles are rejected."
           },
           "startDate": {
             "type": ["string", "null"],
@@ -8495,23 +8613,29 @@
           "type": {
             "$ref": "#/components/schemas/WorkType"
           },
-          "ownerProjectId": {
-            "type": ["string", "null"],
-            "description": "Sole structural task owner. Cannot be combined with legacy projectId/projectIds."
-          },
-          "linkedProjectIds": {
-            "type": "array",
-            "maxItems": 100,
-            "uniqueItems": true,
-            "items": {
-              "type": "string"
-            },
-            "description": "Non-structural task references. Omitted fields preserve existing ownership or links."
-          },
           "reopenProjectVersion": {
             "type": "integer",
             "minimum": 1,
             "description": "Explicitly reopen the immediate completed owner/parent and create work atomically. Requires work:update as well as work:create; ancestor projects must already be open."
+          },
+          "parentProjectId": {
+            "type": ["string", "null"],
+            "maxLength": 240,
+            "description": "Live PROJECT in same workspace; parent for PROJECT, primary project otherwise. Cycles are rejected."
+          },
+          "categoryId": {
+            "type": ["string", "null"]
+          },
+          "lifecycle": {
+            "type": ["string", "null"],
+            "enum": [
+              "PLANNED",
+              "ACTIVE",
+              "PAUSED",
+              "COMPLETED",
+              "CANCELED",
+              null
+            ]
           }
         },
         "required": ["title"]
@@ -8540,12 +8664,9 @@
                 "$ref": "#/components/schemas/PrerequisiteIds",
                 "description": "Canonical set captured when editing began; stale set is rejected even if task version is unchanged."
               },
-              "projectId": {
-                "type": ["string", "null"],
-                "maxLength": 240
-              },
               "projectIds": {
-                "$ref": "#/components/schemas/TaskProjectIds"
+                "$ref": "#/components/schemas/TaskProjectIds",
+                "description": "Equal project memberships of a single task."
               },
               "assigneePrincipalId": {
                 "type": ["string", "null"],
@@ -8581,19 +8702,6 @@
               "status": {
                 "$ref": "#/components/schemas/Status"
               },
-              "ownerProjectId": {
-                "type": ["string", "null"],
-                "description": "Sole structural task owner. Cannot be combined with legacy projectId/projectIds."
-              },
-              "linkedProjectIds": {
-                "type": "array",
-                "maxItems": 100,
-                "uniqueItems": true,
-                "items": {
-                  "type": "string"
-                },
-                "description": "Non-structural task references. Omitted fields preserve existing ownership or links."
-              },
               "projectLifecycle": {
                 "type": "string",
                 "enum": [
@@ -8604,6 +8712,27 @@
                   "CANCELED"
                 ],
                 "description": "Project-only explicit lifecycle command. Cannot mix with status or activation fields. Completion requires terminal owned tasks and descendant projects. Legacy status updates use the same guards."
+              },
+              "parentProjectId": {
+                "type": ["string", "null"],
+                "maxLength": 240
+              },
+              "categoryId": {
+                "type": ["string", "null"]
+              },
+              "completionResolution": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["action"],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": ["KEEP", "CANCEL", "INBOX", "MOVE"]
+                  },
+                  "projectId": {
+                    "type": "string"
+                  }
+                }
               }
             },
             "required": []
@@ -8688,11 +8817,9 @@
           "activationPolicy": {
             "$ref": "#/components/schemas/ActivationPolicy"
           },
-          "projectId": {
-            "type": ["string", "null"]
-          },
           "projectIds": {
-            "$ref": "#/components/schemas/TaskProjectIds"
+            "$ref": "#/components/schemas/TaskProjectIds",
+            "description": "Equal project memberships of a single task."
           },
           "startDate": {
             "type": ["string", "null"],
@@ -8757,6 +8884,23 @@
           },
           "deletedAt": {
             "type": ["string", "null"]
+          },
+          "parentProjectId": {
+            "type": ["string", "null"]
+          },
+          "categoryId": {
+            "type": ["string", "null"]
+          },
+          "lifecycle": {
+            "type": ["string", "null"],
+            "enum": [
+              "PLANNED",
+              "ACTIVE",
+              "PAUSED",
+              "COMPLETED",
+              "CANCELED",
+              null
+            ]
           }
         },
         "required": [
@@ -8771,7 +8915,7 @@
           "activationState",
           "activationPolicy",
           "assigneePrincipalId",
-          "projectId",
+          "parentProjectId",
           "startDate",
           "dueDate",
           "version",
@@ -8913,9 +9057,15 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "fromId": { "type": ["string", "null"] },
-          "toId": { "type": ["string", "null"] },
-          "edgeType": { "type": ["string", "null"] },
+          "fromId": {
+            "type": ["string", "null"]
+          },
+          "toId": {
+            "type": ["string", "null"]
+          },
+          "edgeType": {
+            "type": ["string", "null"]
+          },
           "id": {
             "type": "string",
             "maxLength": 240
@@ -8958,7 +9108,11 @@
         "type": "array",
         "uniqueItems": true,
         "maxItems": 1000,
-        "items": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
         "description": "TASK-only canonical prerequisite set; cycles, duplicates and deleted endpoints rejected. Applied atomically with task mutation."
       },
       "CalendarSettings": {
@@ -8970,7 +9124,10 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
-          "timezone": { "type": ["string", "null"], "maxLength": 100 }
+          "timezone": {
+            "type": ["string", "null"],
+            "maxLength": 100
+          }
         },
         "required": ["version", "timezone"]
       },
@@ -8980,6 +9137,9 @@
         "properties": {
           "calendarSettings": {
             "$ref": "#/components/schemas/CalendarSettings"
+          },
+          "navigationPreference": {
+            "$ref": "#/components/schemas/NavigationPreference"
           },
           "projectMaterials": {
             "type": "array",

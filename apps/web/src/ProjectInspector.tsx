@@ -102,21 +102,18 @@ export function ProjectInspector({
             .map((category) => (
               <label key={category.id}>
                 <input
-                  type="checkbox"
+                  type="radio"
+                  name="project-category"
                   disabled={busy}
-                  checked={category.projectIds.includes(item.id)}
-                  onChange={(event) => {
-                    const projectIds = event.target.checked
-                      ? [...category.projectIds, item.id]
-                      : category.projectIds.filter((id) => id !== item.id);
+                  checked={item.categoryId === category.id}
+                  onChange={() => {
                     void run(() =>
-                      runtime.saveCategory({
-                        id: category.id,
-                        version: category.version,
-                        name: category.name,
-                        deleted: false,
-                        projectIds,
-                      }),
+                      runtime.service.update(
+                        runtime.context!,
+                        item.id,
+                        item.version,
+                        { categoryId: category.id },
+                      ),
                     );
                   }}
                 />

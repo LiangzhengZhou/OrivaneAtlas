@@ -18,21 +18,7 @@ export function categoryPort(
             [workspaceId],
           )
         ).rows;
-        const members = (
-          await client.query(
-            "SELECT category_id,project_id FROM arclattice.project_category_member WHERE workspace_id=$1 ORDER BY position",
-            [workspaceId],
-          )
-        ).rows;
-        return rows.map(
-          (row) =>
-            ({
-              ...row,
-              projectIds: members
-                .filter((m) => m.category_id === row.id)
-                .map((m) => m.project_id),
-            }) as ProjectCategory,
-        );
+        return rows as ProjectCategory[];
       }),
     saveCategory: (category, expected) => {
       const c = structuredClone(category);
@@ -80,15 +66,6 @@ export function categoryPort(
           ).rowCount !== 1
         )
           throw new DomainError("VERSION_CONFLICT");
-        await client.query(
-          "DELETE FROM arclattice.project_category_member WHERE workspace_id=$1 AND category_id=$2",
-          [workspaceId, c.id],
-        );
-        for (const [position, id] of c.projectIds.entries())
-          await client.query(
-            "INSERT INTO arclattice.project_category_member VALUES ($1,$2,$3,$4)",
-            [workspaceId, c.id, id, position],
-          );
       });
     },
     appendCategoryChange: (event) => {

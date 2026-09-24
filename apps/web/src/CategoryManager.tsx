@@ -28,14 +28,12 @@ export function CategoryManager({
       };
   const [editing, setEditing] = useState<ProjectCategory>();
   const [name, setName] = useState("");
-  const [projectIds, setProjectIds] = useState<string[]>([]);
   const [icon, setIcon] = useState("");
   const [color, setColor] = useState("#7863c5");
   const [position, setPosition] = useState(0);
   const reset = () => {
     setEditing(undefined);
     setName("");
-    setProjectIds([]);
     setIcon("");
     setColor("#7863c5");
     setPosition(0);
@@ -54,7 +52,6 @@ export function CategoryManager({
               icon,
               color,
               position,
-              projectIds,
               deleted: false,
             })
           ) {
@@ -101,25 +98,6 @@ export function CategoryManager({
             />
           </label>
         </div>
-        <fieldset className="project-memberships">
-          <legend>{t("categories.projects")}</legend>
-          {projects.map((p) => (
-            <label key={p.id}>
-              <input
-                type="checkbox"
-                checked={projectIds.includes(p.id)}
-                onChange={(e) =>
-                  setProjectIds(
-                    e.target.checked
-                      ? [...projectIds, p.id]
-                      : projectIds.filter((id) => id !== p.id),
-                  )
-                }
-              />
-              {p.title}
-            </label>
-          ))}
-        </fieldset>
         <button type="submit" disabled={busy || !name.trim()}>
           {t("categories.save")}
         </button>
@@ -152,17 +130,13 @@ export function CategoryManager({
                 {c.icon} {c.name}
               </span>{" "}
               ·{" "}
-              {
-                c.projectIds.filter((id) => projects.some((p) => p.id === id))
-                  .length
-              }{" "}
+              {projects.filter((project) => project.categoryId === c.id).length}{" "}
               <button
                 type="button"
                 disabled={busy || !!c.deletedAt}
                 onClick={() => {
                   setEditing(c);
                   setName(c.name);
-                  setProjectIds(c.projectIds);
                   setIcon(c.icon ?? "");
                   setColor(c.color ?? "#7863c5");
                   setPosition(c.position ?? 0);
@@ -178,7 +152,6 @@ export function CategoryManager({
                     id: c.id,
                     version: c.version,
                     name: c.name,
-                    projectIds: c.projectIds,
                     deleted: !c.deletedAt,
                   })
                 }

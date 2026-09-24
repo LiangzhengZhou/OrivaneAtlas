@@ -1,4 +1,4 @@
-package dev.arclattice.app
+package app.orivane.atlas
 
 import android.app.Activity
 import android.security.keystore.KeyGenParameterSpec

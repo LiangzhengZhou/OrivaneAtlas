@@ -1,5 +1,10 @@
 import type { WorkTransaction } from "@arclattice/application";
-import { DomainError, type WorkItem } from "@arclattice/domain";
+import {
+  DomainError,
+  defaultNavigationPreference,
+  normalizeNavigationPreference,
+  type WorkItem,
+} from "@arclattice/domain";
 import type { PoolClient } from "pg";
 import { categoryPort } from "./categories";
 import { PostgresStorageError, pgCode } from "./database";
@@ -93,9 +98,7 @@ export function repository(client: PoolClient, workspaceId: string) {
       [workspaceId, item.id],
     );
     if (item.type === "TASK")
-      for (const [position, id] of (
-        item.projectIds ?? (item.projectId ? [item.projectId] : [])
-      ).entries())
+      for (const [position, id] of (item.projectIds ?? []).entries())
         await client.query(
           "INSERT INTO arclattice.task_project VALUES ($1,$2,$3,$4)",
           [workspaceId, item.id, id, position],
@@ -133,6 +136,45 @@ export function repository(client: PoolClient, workspaceId: string) {
     );
   };
   const port: WorkTransaction = {
+    navigationPreference: (principalId) =>
+      schedule(async () => {
+        const row = (
+          await client.query(
+            "SELECT preference_json FROM arclattice.user_navigation WHERE workspace_id=$1 AND principal_id=$2",
+            [workspaceId, principalId],
+          )
+        ).rows[0];
+        return normalizeNavigationPreference(
+          row?.preference_json ?? defaultNavigationPreference(),
+        );
+      }),
+    saveNavigationPreference: (principalId, preference, expected) =>
+      schedule(async () => {
+        if (preference.version !== expected + 1)
+          throw new DomainError("VERSION_CONFLICT");
+        const result =
+          expected === 0
+            ? await client.query(
+                "INSERT INTO arclattice.user_navigation VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+                [
+                  workspaceId,
+                  principalId,
+                  preference.version,
+                  JSON.stringify(preference),
+                ],
+              )
+            : await client.query(
+                "UPDATE arclattice.user_navigation SET version=$1,preference_json=$2 WHERE workspace_id=$3 AND principal_id=$4 AND version=$5",
+                [
+                  preference.version,
+                  JSON.stringify(preference),
+                  workspaceId,
+                  principalId,
+                  expected,
+                ],
+              );
+        if (result.rowCount !== 1) throw new DomainError("VERSION_CONFLICT");
+      }),
     calendarSettings: () =>
       schedule(async () => {
         const row = (

@@ -16,7 +16,10 @@ export function workflowPort(
           )
         ).rows.map(
           (row) =>
-            ({ ...row, payload: JSON.parse(row.payload) }) as WorkflowRecord,
+            ({
+              ...row,
+              payload: readWorkflowPayload(row.payload),
+            }) as WorkflowRecord,
         ),
       ),
     saveWorkflow: (record, expected) => {
@@ -81,4 +84,19 @@ export function workflowPort(
       });
     },
   };
+}
+
+function readWorkflowPayload(json: string): WorkflowRecord["payload"] {
+  const payload = JSON.parse(json);
+  for (const rule of [
+    payload,
+    payload.ruleSnapshot,
+    ...(payload.recurrences ?? []),
+  ]) {
+    if (rule && (rule.kind === "RECURRENCE" || rule.frequency)) {
+      rule.projectIds ??= rule.projectId ? [rule.projectId] : [];
+      delete rule.projectId;
+    }
+  }
+  return payload;
 }

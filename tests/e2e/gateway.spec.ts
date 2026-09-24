@@ -88,7 +88,7 @@ test("Gateway registry policy persists and approved alternatives are visible bef
     if (await page.locator(".mobile-navigation-toggle").isVisible())
       await page.locator(".mobile-navigation-toggle").click();
     await page
-      .locator(".sidebar")
+      .locator(".sidebar nav:visible, .mobile-more-sheet:visible")
       .getByRole("button", {
         name: zh ? "AI 请求" : "AI requests",
         exact: true,
@@ -126,7 +126,7 @@ test("Gateway registry policy persists and approved alternatives are visible bef
     if (await page.locator(".mobile-navigation-toggle").isVisible())
       await page.locator(".mobile-navigation-toggle").click();
     await page
-      .locator(".sidebar")
+      .locator(".sidebar nav:visible, .mobile-more-sheet:visible")
       .getByRole("button", {
         name: zh ? "AI 请求" : "AI requests",
         exact: true,

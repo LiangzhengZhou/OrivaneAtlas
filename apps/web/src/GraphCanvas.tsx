@@ -100,25 +100,30 @@ export function GraphCanvas({
               .filter(
                 (item) =>
                   !item.deletedAt &&
-                  item.projectId &&
+                  (item.parentProjectId || item.projectIds?.length) &&
                   ["PROJECT", "TASK"].includes(item.type),
               )
-              .map((item) => ({
-                id: `hierarchy:${item.id}`,
-                source: `WORK:${item.projectId}`,
-                target: `WORK:${item.id}`,
-                directed: false,
-                label:
-                  item.type === "PROJECT"
-                    ? zh
-                      ? "子项目"
-                      : "Subproject"
-                    : zh
-                      ? "所属任务"
-                      : "Owned task",
-                data: { hierarchy: true },
-                style: { strokeDasharray: "5 4", stroke: "#8c93a5" },
-              })),
+              .flatMap((item) =>
+                (item.type === "TASK"
+                  ? (item.projectIds ?? [])
+                  : [item.parentProjectId]
+                ).map((projectId) => ({
+                  id: `hierarchy:${projectId}:${item.id}`,
+                  source: `WORK:${projectId}`,
+                  target: `WORK:${item.id}`,
+                  directed: false,
+                  label:
+                    item.type === "PROJECT"
+                      ? zh
+                        ? "子项目"
+                        : "Subproject"
+                      : zh
+                        ? "所属任务"
+                        : "Task membership",
+                  data: { hierarchy: true },
+                  style: { strokeDasharray: "5 4", stroke: "#8c93a5" },
+                })),
+              ),
             ...snapshot.edges.map((e) => ({
               id: e.id,
               source: "WORK:" + (e.type === "REQUIRES" ? e.toId : e.fromId),

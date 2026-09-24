@@ -47,12 +47,13 @@ export function ProjectParentTree({
         visible.has(project.id) &&
         !visited.has(project.id) &&
         (parent === null
-          ? !projects.some((entry) => entry.id === project.projectId)
-          : project.projectId === parent),
+          ? !projects.some((entry) => entry.id === project.parentProjectId)
+          : project.parentProjectId === parent),
     );
     return nodes.map((project) => {
       const children = projects.some(
-        (entry) => entry.projectId === project.id && visible.has(entry.id),
+        (entry) =>
+          entry.parentProjectId === project.id && visible.has(entry.id),
       );
       const open = !!query || !collapsed.has(project.id);
       return (

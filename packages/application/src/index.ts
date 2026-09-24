@@ -1,12 +1,13 @@
 import {
   localCalendarDay,
+  type NavigationPreference,
   type ProjectLifecycle,
   projectLifecyclePatch,
+  projectLifecycles,
+  projectScope,
   projectSubtreeHeight,
   requireCalendarTimezone,
-  requireOpenProjectOwner,
-  requireProjectCompletable,
-  taskOwnership,
+  requireNavigationPreference,
 } from "@arclattice/domain";
 
 export * from "./categories";
@@ -91,6 +92,7 @@ export interface OutboxEvent {
   readonly occurredAt: string;
 }
 export interface WorkSnapshot {
+  readonly navigationPreference?: NavigationPreference;
   readonly calendarSettings?: CalendarSettings;
   readonly calendarTimezone?: string;
   readonly items: readonly WorkItem[];
@@ -98,6 +100,12 @@ export interface WorkSnapshot {
 }
 /** A transaction is already bound to one workspace by UnitOfWork.run. */
 export interface WorkTransaction {
+  navigationPreference(principalId: string): Promise<NavigationPreference>;
+  saveNavigationPreference(
+    principalId: string,
+    preference: NavigationPreference,
+    expectedVersion: number,
+  ): Promise<void>;
   calendarSettings(): Promise<CalendarSettings>;
   saveCalendarSettings(
     settings: CalendarSettings,
@@ -131,16 +139,14 @@ export interface CalendarSettings {
   readonly version: number;
   readonly timezone: string | null;
 }
-export interface TaskOwnershipInput {
-  readonly ownerProjectId?: string | null;
-  readonly linkedProjectIds?: readonly string[];
-}
-export interface CreateWorkInput extends TaskOwnershipInput {
+export interface CreateWorkInput {
+  readonly lifecycle?: ProjectLifecycle;
+  readonly categoryId?: string | null;
   readonly prerequisiteIds?: readonly string[];
   readonly reopenProjectVersion?: number;
   readonly assigneePrincipalId?: string | null;
   readonly projectIds?: readonly string[];
-  readonly projectId?: string | null;
+  readonly parentProjectId?: string | null;
   readonly startDate?: string | null;
   readonly dueDate?: string | null;
   readonly title: string;
@@ -150,11 +156,16 @@ export interface CreateWorkInput extends TaskOwnershipInput {
   readonly activationState?: ActivationState;
   readonly activationPolicy?: ActivationPolicy;
 }
-export interface UpdateWorkInput extends TaskOwnershipInput {
+export interface UpdateWorkInput {
+  readonly categoryId?: string | null;
+  readonly completionResolution?: {
+    action: "KEEP" | "CANCEL" | "INBOX" | "MOVE";
+    projectId?: string;
+  };
   readonly projectLifecycle?: ProjectLifecycle;
   readonly assigneePrincipalId?: string | null;
   readonly projectIds?: readonly string[];
-  readonly projectId?: string | null;
+  readonly parentProjectId?: string | null;
   readonly startDate?: string | null;
   readonly dueDate?: string | null;
   readonly title?: string;
@@ -196,6 +207,7 @@ export class WorkService {
     return this.uow.run(context.workspaceId, async (tx) => ({
       calendarTimezone: await this.calendarTimezone(tx),
       calendarSettings: await tx.calendarSettings(),
+      navigationPreference: await tx.navigationPreference(context.principalId),
       items: await tx.list(includeDeleted),
       edges: await tx.edges(),
     }));
@@ -227,16 +239,23 @@ export class WorkService {
           "priority",
         ),
         status: "TODO",
+        lifecycle:
+          input.type === "PROJECT"
+            ? requireMember(
+                input.lifecycle ?? "PLANNED",
+                projectLifecycles,
+                "lifecycle",
+              )
+            : null,
+        categoryId: input.categoryId ?? null,
         executionMode: "MANUAL",
         assigneePrincipalId: this.assignee(input.assigneePrincipalId ?? null),
-        projectId: input.projectId ?? null,
+        parentProjectId: input.parentProjectId ?? null,
         ...(input.projectIds === undefined
           ? {}
           : {
               projectIds: input.projectIds,
-              projectId: input.projectIds[0] ?? null,
             }),
-        ...this.resolveOwnership(input, input.type ?? "TASK"),
         startDate: input.startDate ?? null,
         dueDate: input.dueDate ?? null,
         activationState: requireMember(
@@ -262,15 +281,14 @@ export class WorkService {
         deletedAt: null,
       };
       if (input.reopenProjectVersion !== undefined)
-        await this.reopenOwner(
+        await this.reopenParent(
           tx,
           context,
-          item.projectId,
+          item.parentProjectId,
           input.reopenProjectVersion,
           now,
         );
       await this.validateMemberships(tx, item, input);
-      requireOpenProjectOwner(item, await tx.list());
       await this.validatePlanning(tx, item);
       if (prerequisiteIds !== undefined && item.type !== "TASK")
         throw new DomainError("VALIDATION_ERROR", { field: "prerequisiteIds" });
@@ -329,7 +347,8 @@ export class WorkService {
         });
       if (
         previous.type === "PROJECT" &&
-        (input.activationState !== undefined ||
+        (input.status !== undefined ||
+          input.activationState !== undefined ||
           input.activationPolicy !== undefined)
       )
         throw new DomainError("VALIDATION_ERROR", {
@@ -340,17 +359,7 @@ export class WorkService {
       const lifecycle: Partial<WorkItem> =
         input.projectLifecycle !== undefined
           ? projectLifecyclePatch(input.projectLifecycle)
-          : previous.type === "PROJECT" && input.status !== undefined
-            ? projectLifecyclePatch(
-                input.status === "DONE"
-                  ? "COMPLETED"
-                  : input.status === "CANCELED"
-                    ? "CANCELED"
-                    : input.status === "IN_PROGRESS"
-                      ? "ACTIVE"
-                      : "PLANNED",
-              )
-            : {};
+          : {};
       const status = requireMember(
         lifecycle.status ?? input.status ?? previous.status,
         workStatuses,
@@ -417,22 +426,21 @@ export class WorkService {
       const now = this.clock.now();
       const item: WorkItem = {
         ...previous,
+        categoryId:
+          input.categoryId === undefined
+            ? previous.categoryId
+            : input.categoryId,
         assigneePrincipalId:
           input.assigneePrincipalId === undefined
             ? previous.assigneePrincipalId
             : this.assignee(input.assigneePrincipalId),
         ...(input.projectIds !== undefined
           ? { projectIds: input.projectIds }
-          : input.projectId !== undefined && previous.type === "TASK"
-            ? { projectIds: input.projectId ? [input.projectId] : [] }
-            : {}),
-        projectId:
-          input.projectIds !== undefined
-            ? (input.projectIds[0] ?? null)
-            : input.projectId === undefined
-              ? previous.projectId
-              : input.projectId,
-        ...this.resolveOwnership(input, previous.type, previous),
+          : {}),
+        parentProjectId:
+          input.parentProjectId === undefined
+            ? previous.parentProjectId
+            : input.parentProjectId,
         startDate:
           input.startDate === undefined ? previous.startDate : input.startDate,
         dueDate: input.dueDate === undefined ? previous.dueDate : input.dueDate,
@@ -465,15 +473,26 @@ export class WorkService {
         version: previous.version + 1,
         updatedBy: context.principalId,
         updatedAt: now,
-        completedAt: status === "DONE" ? (previous.completedAt ?? now) : null,
+        completedAt: (
+          previous.type === "PROJECT"
+            ? (lifecycle.lifecycle ?? previous.lifecycle) === "COMPLETED"
+            : status === "DONE"
+        )
+          ? (previous.completedAt ?? now)
+          : null,
       };
       if (
         item.type === "PROJECT" &&
-        status === "DONE" &&
-        previous.status !== "DONE"
+        item.lifecycle === "COMPLETED" &&
+        previous.lifecycle !== "COMPLETED"
       )
-        requireProjectCompletable(item, await tx.list());
-      requireOpenProjectOwner(item, await tx.list(), previous);
+        await this.resolveCompletion(
+          tx,
+          context,
+          item,
+          input.completionResolution,
+          now,
+        );
       await this.validateMemberships(tx, item, input, previous);
       await this.validatePlanning(tx, item);
       if (input.prerequisiteIds !== undefined) {
@@ -563,7 +582,7 @@ export class WorkService {
       const previous = await tx.get(id);
       if (
         deleted &&
-        ((await tx.list()).some((item) => item.projectId === id) ||
+        ((await tx.list()).some((item) => item.parentProjectId === id) ||
           (await tx.edges()).some(
             (edge) => edge.fromId === id || edge.toId === id,
           ))
@@ -573,22 +592,20 @@ export class WorkService {
       const item = {
         ...previous,
         // A deleted project may no longer be a valid destination on restore.
-        projectId:
+        parentProjectId:
           !deleted &&
-          previous.projectId &&
+          previous.parentProjectId &&
           !(await tx.list()).some(
-            (p) => p.id === previous.projectId && p.type === "PROJECT",
+            (p) => p.id === previous.parentProjectId && p.type === "PROJECT",
           )
             ? null
-            : previous.projectId,
+            : previous.parentProjectId,
         deletedAt: deleted ? now : null,
         updatedAt: now,
         updatedBy: context.principalId,
         version: previous.version + 1,
       };
       if (!deleted) {
-        requireOpenProjectOwner(item, await tx.list(), previous);
-        // Preserve historical references; never promote a reference to owner.
         await this.validatePlanning(tx, item);
       }
       await tx.replace(item, expectedVersion);
@@ -647,24 +664,28 @@ export class WorkService {
     });
   }
 
-  private async reopenOwner(
+  private async reopenParent(
     tx: WorkTransaction,
     context: ActorContext,
-    projectId: string | null,
+    parentProjectId: string | null,
     expectedVersion: number,
     now: string,
   ): Promise<void> {
-    if (!projectId || !Number.isInteger(expectedVersion) || expectedVersion < 1)
+    if (
+      !parentProjectId ||
+      !Number.isInteger(expectedVersion) ||
+      expectedVersion < 1
+    )
       throw new DomainError("VALIDATION_ERROR", {
         field: "reopenProjectVersion",
       });
-    const previous = await tx.get(projectId);
+    const previous = await tx.get(parentProjectId);
     if (previous.version !== expectedVersion)
       throw new DomainError("VERSION_CONFLICT");
     if (
       previous.type !== "PROJECT" ||
       previous.deletedAt ||
-      previous.status !== "DONE"
+      previous.lifecycle !== "COMPLETED"
     )
       throw new DomainError("PROJECT_REOPEN_REQUIRED");
     const project = {
@@ -675,9 +696,85 @@ export class WorkService {
       updatedAt: now,
       updatedBy: context.principalId,
     };
-    requireOpenProjectOwner(project, await tx.list(), previous);
     await tx.replace(project, expectedVersion);
-    await this.record(tx, context, projectId, "WORK_ITEM_UPDATED", now);
+    await this.record(tx, context, parentProjectId, "WORK_ITEM_UPDATED", now);
+  }
+
+  private async resolveCompletion(
+    tx: WorkTransaction,
+    context: ActorContext,
+    project: WorkItem,
+    resolution: UpdateWorkInput["completionResolution"],
+    now: string,
+  ): Promise<void> {
+    const scoped = projectScope(project, await tx.list(), "SUBTREE");
+    const unfinished = scoped.tasks.filter(
+      (task) => !["DONE", "CANCELED"].includes(task.status),
+    );
+    const unfinishedProjects = scoped.projects.filter(
+      (entry) =>
+        entry.id !== project.id &&
+        !["COMPLETED", "CANCELED"].includes(entry.lifecycle ?? "PLANNED"),
+    );
+    if (!resolution && (unfinished.length || unfinishedProjects.length))
+      throw new DomainError("PROJECT_HAS_UNFINISHED_WORK", {
+        unfinished: unfinished.length,
+        unfinishedProjects: unfinishedProjects.length,
+      });
+    if (!resolution) return;
+    requireMember(
+      resolution.action,
+      ["KEEP", "CANCEL", "INBOX", "MOVE"] as const,
+      "completionResolution",
+    );
+    if (resolution.action === "KEEP") return;
+    if (resolution.action === "MOVE") {
+      const target = await tx.get(resolution.projectId ?? "");
+      if (
+        target.type !== "PROJECT" ||
+        target.deletedAt ||
+        scoped.projectIds.has(target.id)
+      )
+        throw new DomainError("VALIDATION_ERROR", {
+          field: "completionResolution",
+        });
+    }
+    for (const task of unfinished) {
+      const projectIds = (task.projectIds ?? []).filter(
+        (id) => !scoped.projectIds.has(id),
+      );
+      if (
+        resolution.action === "MOVE" &&
+        !projectIds.includes(resolution.projectId!)
+      )
+        projectIds.push(resolution.projectId!);
+      const updated: WorkItem = {
+        ...task,
+        ...(resolution.action === "CANCEL"
+          ? { status: "CANCELED" as const }
+          : { projectIds }),
+        version: task.version + 1,
+        updatedBy: context.principalId,
+        updatedAt: now,
+      };
+      await tx.replace(updated, task.version);
+      await this.record(tx, context, task.id, "WORK_ITEM_UPDATED", now);
+    }
+    if (resolution.action === "CANCEL") {
+      for (const child of unfinishedProjects) {
+        await tx.replace(
+          {
+            ...child,
+            lifecycle: "CANCELED",
+            version: child.version + 1,
+            updatedBy: context.principalId,
+            updatedAt: now,
+          },
+          child.version,
+        );
+        await this.record(tx, context, child.id, "WORK_ITEM_UPDATED", now);
+      }
+    }
   }
 
   private async validatePlanning(
@@ -685,10 +782,23 @@ export class WorkService {
     item: WorkItem,
   ): Promise<void> {
     validateSchedule(item.startDate, item.dueDate);
-    if (item.projectId !== null) {
-      if (typeof item.projectId !== "string" || item.projectId === item.id)
-        throw new DomainError("VALIDATION_ERROR", { field: "projectId" });
-      const project = await tx.get(item.projectId);
+    if (item.type === "TASK" && item.parentProjectId !== null)
+      throw new DomainError("VALIDATION_ERROR", { field: "parentProjectId" });
+    if (
+      item.categoryId !== null &&
+      (item.type !== "PROJECT" ||
+        !(await tx.categories()).some(
+          (category) => category.id === item.categoryId && !category.deletedAt,
+        ))
+    )
+      throw new DomainError("VALIDATION_ERROR", { field: "categoryId" });
+    if (item.parentProjectId !== null) {
+      if (
+        typeof item.parentProjectId !== "string" ||
+        item.parentProjectId === item.id
+      )
+        throw new DomainError("VALIDATION_ERROR", { field: "parentProjectId" });
+      const project = await tx.get(item.parentProjectId);
       if (
         project.deletedAt ||
         project.type !== "PROJECT" ||
@@ -708,8 +818,8 @@ export class WorkService {
             throw new DomainError("VALIDATION_ERROR", {
               field: "projectDepth",
             });
-          ancestor = ancestor.projectId
-            ? await tx.get(ancestor.projectId)
+          ancestor = ancestor.parentProjectId
+            ? await tx.get(ancestor.parentProjectId)
             : null;
         }
       }
@@ -734,50 +844,6 @@ export class WorkService {
     });
   }
 
-  private resolveOwnership(
-    input: CreateWorkInput | UpdateWorkInput,
-    type: WorkType,
-    previous?: WorkItem,
-  ): Partial<WorkItem> {
-    if (
-      input.ownerProjectId === undefined &&
-      input.linkedProjectIds === undefined
-    )
-      return {};
-    if (
-      type !== "TASK" ||
-      input.projectId !== undefined ||
-      input.projectIds !== undefined
-    )
-      throw new DomainError("VALIDATION_ERROR", { field: "ownership" });
-    const owner =
-      input.ownerProjectId === undefined
-        ? (previous?.projectId ?? null)
-        : input.ownerProjectId;
-    const links =
-      input.linkedProjectIds ??
-      (previous ? taskOwnership(previous).linkedProjectIds : []);
-    if (
-      !Array.isArray(links) ||
-      links.length > 100 ||
-      links.some((id) => typeof id !== "string" || !id || id.length > 240) ||
-      new Set(links).size !== links.length
-    )
-      throw new DomainError("VALIDATION_ERROR", { field: "linkedProjectIds" });
-    if (
-      owner !== null &&
-      (typeof owner !== "string" || !owner || owner.length > 240)
-    )
-      throw new DomainError("VALIDATION_ERROR", { field: "ownerProjectId" });
-    return {
-      projectId: owner,
-      projectIds: [
-        ...(owner ? [owner] : []),
-        ...links.filter((id) => id !== owner),
-      ],
-    };
-  }
-
   private async validateMemberships(
     tx: WorkTransaction,
     item: WorkItem,
@@ -792,14 +858,14 @@ export class WorkService {
       ids.length > 100 ||
       ids.some((id) => typeof id !== "string" || !id || id.length > 240) ||
       new Set(ids).size !== ids.length ||
-      (input.projectIds !== undefined &&
-        input.projectId !== undefined &&
-        input.projectId !== (ids[0] ?? null))
+      (item.type === "TASK" &&
+        input.projectIds !== undefined &&
+        input.parentProjectId != null)
     )
       throw new DomainError("VALIDATION_ERROR", { field: "projectIds" });
     for (const id of ids) {
-      // Existing reference tombstones remain context, not structural owners.
-      if (id !== item.projectId && previous?.projectIds?.includes(id)) continue;
+      if (id !== item.parentProjectId && previous?.projectIds?.includes(id))
+        continue;
       const project = await tx.get(id);
       if (
         project.type !== "PROJECT" ||
@@ -831,6 +897,30 @@ export class WorkService {
         this.clock.now(),
       );
       return settings;
+    });
+  }
+
+  async setNavigationPreference(
+    context: ActorContext,
+    preference: NavigationPreference,
+  ): Promise<NavigationPreference> {
+    await this.authorization.require(context, "work:update");
+    requireNavigationPreference(preference);
+    return this.uow.run(context.workspaceId, async (tx) => {
+      const next = { ...preference, version: preference.version + 1 };
+      await tx.saveNavigationPreference(
+        context.principalId,
+        next,
+        preference.version,
+      );
+      await this.record(
+        tx,
+        context,
+        context.principalId,
+        "WORKSPACE_SETTINGS_UPDATED",
+        this.clock.now(),
+      );
+      return next;
     });
   }
 
@@ -881,8 +971,7 @@ export class WorkService {
       activationState,
       ...(item.type === "TASK"
         ? {
-            projectIds:
-              item.projectIds ?? (item.projectId ? [item.projectId] : []),
+            projectIds: item.projectIds ?? [],
           }
         : {}),
     };

@@ -25,7 +25,7 @@ describe("SQLite migrations and recovery", () => {
         "INSERT INTO workspace VALUES ('legacy','Legacy'); INSERT INTO principal VALUES ('human','USER','Human'); INSERT INTO workspace_principal VALUES ('legacy','human'); INSERT INTO activity VALUES ('legacy','event','human','removed-edge','WORK_EDGE_REMOVED','2026-09-21T00:00:00Z'); INSERT INTO outbox VALUES ('legacy','out','event','WORK_CHANGED','2026-09-21T00:00:00Z')",
       );
       before = (await migrate(raw, path, 100)).backupPath!;
-      expect(inspectSchema(raw)).toBe(18);
+      expect(inspectSchema(raw)).toBe(migrations.length);
       expect(
         raw.prepare("SELECT entity_id,from_id,to_id FROM activity").get(),
       ).toMatchObject({

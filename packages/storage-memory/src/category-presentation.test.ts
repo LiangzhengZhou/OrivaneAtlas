@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 import { MemoryUnitOfWork } from "./index";
 
 const actor = { workspaceId: "workspace-a", principalId: "human" };
-const input = { name: "Research", version: 0, projectIds: [], deleted: false };
+const input = { name: "Research", version: 0, deleted: false };
 const service = (uow: UnitOfWork) =>
   new CategoryService(
     uow,
@@ -46,7 +46,7 @@ test("category presentation defaults, legacy updates, ordering, isolation and CA
   });
   const repeated = await categories.list(actor);
   expect(await categories.list(actor)).toEqual(repeated);
-  expect(reordered.projectIds).toEqual(updated.projectIds);
+  expect(reordered).not.toHaveProperty("projectIds");
 });
 
 test.each([

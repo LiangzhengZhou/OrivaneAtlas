@@ -32,7 +32,6 @@ test("v14 category migration preserves v13 backup and restores category events a
   const category = await service.save(context, {
     version: 0,
     name: "分类",
-    projectIds: [],
     deleted: false,
   });
   const snapshot = h.file();

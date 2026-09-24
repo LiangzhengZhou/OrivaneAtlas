@@ -15,7 +15,7 @@ pub fn run() {
             .setup(|app, api| {
                 use tauri::Manager;
                 let handle =
-                    api.register_android_plugin("dev.arclattice.app", "AtlasUpdatePlugin")?;
+                    api.register_android_plugin("app.orivane.atlas", "AtlasUpdatePlugin")?;
                 app.manage(update::AndroidUpdater(handle));
                 Ok(())
             })
@@ -27,7 +27,7 @@ pub fn run() {
             .setup(|app, api| {
                 use tauri::Manager;
                 let handle =
-                    api.register_android_plugin("dev.arclattice.app", "AtlasSessionPlugin")?;
+                    api.register_android_plugin("app.orivane.atlas", "AtlasSessionPlugin")?;
                 app.manage(transport::Transport::with_vault(
                     session_store::AndroidVault(handle),
                 ));

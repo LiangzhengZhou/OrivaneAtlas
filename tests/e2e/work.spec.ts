@@ -109,6 +109,131 @@ function words(locale: string) {
   return resources[locale.endsWith("zh") ? "zh-CN" : "en-US"];
 }
 
+test("task workspace views and inspector preserve drafts while switching tasks", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await mutation(page, "/api/work/create", { title: "Inspector A" });
+  await mutation(page, "/api/work/create", { title: "Inspector B" });
+  await mutation(page, "/api/work/create", {
+    title: "Later task",
+    activationState: "INACTIVE",
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  const workspace = page.locator(".tasks-workspace");
+  await expect(workspace.getByRole("article")).toHaveCount(2);
+  await workspace
+    .getByRole("tab", { name: w.desk.taskWorkspace.later, exact: true })
+    .click();
+  await expect(workspace.getByRole("article")).toHaveCount(1);
+  await expect(workspace.locator(".view-count span")).toHaveText("1");
+  await workspace
+    .getByRole("tab", { name: w.desk.taskWorkspace.now, exact: true })
+    .click();
+  await workspace
+    .getByRole("article")
+    .filter({ hasText: "Inspector A" })
+    .locator(".task-title")
+    .click();
+  const detail = page.getByRole("dialog");
+  await page.screenshot({
+    path: info.outputPath("task-inspector.png"),
+    fullPage: true,
+  });
+  await detail.getByLabel(w.work.title, { exact: true }).fill("Unsaved A");
+  if (!info.project.name.startsWith("mobile")) {
+    await workspace
+      .getByRole("article")
+      .filter({ hasText: "Inspector B" })
+      .locator(".task-title")
+      .click();
+    await expect(detail.getByLabel(w.work.title, { exact: true })).toHaveValue(
+      "Unsaved A",
+    );
+    await detail
+      .getByRole("button", { name: w.desk.discard, exact: true })
+      .click();
+    await expect(detail.getByLabel(w.work.title, { exact: true })).toHaveValue(
+      "Inspector B",
+    );
+  } else {
+    await detail
+      .getByRole("button", { name: w.common.close, exact: true })
+      .click();
+    await detail
+      .getByRole("button", { name: w.desk.discard, exact: true })
+      .click();
+    await expect(detail).toHaveCount(0);
+  }
+});
+
+test("project milestones are editable and appear in overview and timeline without task-count pollution", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "Paper",
+    type: "PROJECT",
+    lifecycle: "ACTIVE",
+  });
+  for (const title of ["Draft", "Submission", "Revision"])
+    await mutation(page, "/api/work/create", {
+      title,
+      type: "MILESTONE",
+      parentProjectId: project.id,
+      dueDate: "2026-10-01",
+    });
+  await page.reload();
+  await page.evaluate((id) => {
+    location.hash = `projects/${id}`;
+  }, project.id);
+  const workspace = page.locator(".project-workspace");
+  await expect(workspace).toBeVisible();
+  await workspace
+    .getByRole("button", { name: w.desk.newMilestone, exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByLabel(w.work.title, { exact: true })
+    .fill("Accepted");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: w.common.create, exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  for (const title of ["Draft", "Submission", "Revision", "Accepted"])
+    await expect(
+      workspace.getByRole("button", { name: new RegExp(title) }),
+    ).toBeVisible();
+  await workspace.getByRole("button", { name: /Draft/ }).click();
+  const detail = page.getByRole("dialog");
+  await detail.getByLabel(w.work.status, { exact: true }).selectOption("DONE");
+  await detail
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(detail).toHaveCount(0);
+  await expect(workspace.getByRole("button", { name: /Draft/ })).toContainText(
+    "✓",
+  );
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: info.outputPath("milestone-overview.png"),
+    fullPage: true,
+  });
+  await workspace
+    .getByRole("tab", { name: w.desk.projectTimeline, exact: true })
+    .click();
+  for (const title of ["Draft", "Submission", "Revision", "Accepted"])
+    await expect(workspace.getByRole("tabpanel")).toContainText(title);
+  await nav(page, w.desk.tasks);
+  await expect(page.locator(".task-card")).toHaveCount(0);
+});
+
 test("activation separates execution views from task planning", async ({
   page,
   workbench,
@@ -168,13 +293,13 @@ test("activation separates execution views from task planning", async ({
   await expect(page.locator(".view-count span")).toHaveText("4");
   await expect(cards.filter({ hasText: "Active blocked" })).toBeVisible();
   await page.getByLabel(w.desk.status, { exact: true }).selectOption("ALL");
-  await expect(cards).toHaveCount(6);
+  await expect(cards).toHaveCount(9);
   await page
     .getByRole("textbox", { name: w.desk.search })
     .fill("Inactive unassigned");
-  await expect(cards).toHaveCount(0);
+  await expect(cards).toHaveCount(1);
   await nav(page, w.desk.board);
-  await expect(cards).toHaveCount(6);
+  await expect(cards).toHaveCount(4);
   await expect(page.locator(".board-column")).toHaveCount(4);
   for (const title of [
     "Inactive unassigned",
@@ -187,7 +312,7 @@ test("activation separates execution views from task planning", async ({
     fullPage: true,
   });
   await page
-    .getByRole("button", { name: w.desk.manageActivation, exact: true })
+    .getByRole("tab", { name: w.desk.taskWorkspace.all, exact: true })
     .click();
   await expect(cards).toHaveCount(9);
   await page
@@ -199,6 +324,7 @@ test("activation separates execution views from task planning", async ({
     .filter({ hasText: "Inactive unassigned" })
     .locator(".task-title")
     .click();
+  await page.getByRole("dialog").locator(".task-advanced > summary").click();
   await page
     .getByRole("dialog")
     .getByLabel(w.desk.activationState, { exact: true })
@@ -212,6 +338,9 @@ test("activation separates execution views from task planning", async ({
   await nav(page, w.desk.tasks);
   await expect(cards).toHaveCount(5);
   await expect(cards.filter({ hasText: "Inactive unassigned" })).toBeVisible();
+  await page
+    .getByRole("tab", { name: w.desk.taskWorkspace.completed, exact: true })
+    .click();
   await page.getByLabel(w.desk.status, { exact: true }).selectOption("DONE");
   await expect(cards).toHaveCount(1);
   await page.reload();
@@ -304,7 +433,7 @@ test("project workspace connects materials, children and external dependencies",
     .click();
   await expect(dialog).toHaveCount(0);
   await page
-    .getByRole("tab", { name: w.desk.projectHub.children, exact: true })
+    .getByRole("tab", { name: w.desk.projectHub.brief, exact: true })
     .click();
   await page
     .getByRole("tabpanel")
@@ -326,8 +455,8 @@ test("project workspace connects materials, children and external dependencies",
   const task = snapshot.items.find(
     (item: { title: string }) => item.title === "Measure sample",
   );
-  expect(child.projectId).toBe(project.id);
-  expect(task).toMatchObject({ type: "TASK", projectId: child.id });
+  expect(child.parentProjectId).toBe(project.id);
+  expect(task).toMatchObject({ type: "TASK", projectIds: [child.id] });
   const external = await mutation(page, "/api/work/create", {
     title: "External approval",
   });
@@ -410,7 +539,7 @@ test("project owned documents files timeline and activity persist", async ({
   });
   await mutation(page, "/api/work/create", {
     title: "Scheduled experiment",
-    projectId: project.id,
+    projectIds: [project.id],
     startDate: "2026-09-18",
     dueDate: "2026-09-20",
   });
@@ -527,13 +656,13 @@ test("navigation collapses independently on desktop and mobile", async ({
     "aria-expanded",
     "true",
   );
-  await expect(
-    page
-      .locator(".sidebar nav .nav-item span")
-      .filter({ hasText: w.desk.projects })
-      .first(),
-  ).toBeVisible();
-  await page.locator(".mobile-navigation-toggle").click();
+  await expect(page.locator(".mobile-more-sheet")).toBeVisible();
+  await expect(page.locator(".sidebar nav")).toBeHidden();
+  await page.screenshot({
+    path: info.outputPath("navigation-mobile-more-sheet.png"),
+    fullPage: true,
+  });
+  await page.keyboard.press("Escape");
   await expect(page.locator(".sidebar nav")).toBeHidden();
   await expect(page.locator(".mobile-navigation-toggle")).toHaveAttribute(
     "aria-expanded",
@@ -543,7 +672,6 @@ test("navigation collapses independently on desktop and mobile", async ({
     path: info.outputPath("navigation-mobile-collapsed.png"),
     fullPage: true,
   });
-  await page.locator(".mobile-navigation-toggle").click();
   await nav(page, w.desk.notes);
   await page.screenshot({
     path: info.outputPath("navigation-mobile-expanded.png"),
@@ -821,7 +949,7 @@ test("project category management persists, filters and restores", async ({
     : "Position (lowest first)";
   const densityLabel = chinese ? "界面密度" : "Interface density";
   await unlock(page, workbench.url, workbench.secret, w);
-  await mutation(page, "/api/work/create", {
+  const categorizedProject = await mutation(page, "/api/work/create", {
     title: "Categorized project",
     type: "PROJECT",
   });
@@ -839,9 +967,6 @@ test("project category management persists, filters and restores", async ({
   await page.getByLabel(colorLabel, { exact: true }).fill("#123456");
   await page.getByLabel(positionLabel, { exact: true }).fill("9");
   await page
-    .getByRole("checkbox", { name: "Categorized project", exact: true })
-    .check();
-  await page
     .getByRole("button", { name: w.desk.categories.save, exact: true })
     .click();
   await expect(
@@ -855,6 +980,13 @@ test("project category management persists, filters and restores", async ({
     color: "#123456",
     position: 9,
   });
+  await mutation(page, "/api/work/update", {
+    id: categorizedProject.id,
+    version: categorizedProject.version,
+    input: { categoryId: snapshot.categories[0].id },
+  });
+  await page.reload();
+  await page.getByText(w.desk.categories.manage, { exact: true }).click();
   const categoryRow = page
     .locator(".category-manager li")
     .filter({ hasText: "Research" });
@@ -876,10 +1008,14 @@ test("project category management persists, filters and restores", async ({
   await expect(
     page.getByLabel(w.desk.categories.name, { exact: true }),
   ).toHaveValue("");
-  await page
-    .getByLabel(w.desk.categories.filter, { exact: true })
-    .selectOption(snapshot.categories[0].id);
-  await expect(page.locator(".project-card")).toHaveCount(1);
+  await expect(
+    page
+      .locator(".project-hierarchy > section")
+      .filter({
+        has: page.getByRole("heading", { name: "Research", exact: true }),
+      })
+      .locator(".project-card"),
+  ).toHaveCount(1);
   await page.screenshot({
     path: info.outputPath("categories.png"),
     fullPage: true,
@@ -903,12 +1039,10 @@ test("project category management persists, filters and restores", async ({
     color: "#abcdef",
     position: 2,
     deletedAt: null,
-    projectIds: snapshot.categories[0].projectIds,
   });
   await mutation(page, "/api/categories/save", {
     name: "First category",
     version: 0,
-    projectIds: [],
     deleted: false,
     position: 1,
     icon: "⭐",
@@ -929,7 +1063,7 @@ test("project category management persists, filters and restores", async ({
   await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
   await expect(page.locator(".project-card").first()).toHaveCSS(
     "padding-top",
-    "16px",
+    "10px",
   );
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
@@ -979,8 +1113,8 @@ test("multiple project task authoring persists across reload", async ({
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel(w.work.title, { exact: true }).fill("Shared task");
   await dialog
-    .getByLabel(w.desk.ownerProject, { exact: true })
-    .selectOption(a.id);
+    .getByRole("checkbox", { name: "Project A", exact: true })
+    .check();
   await dialog
     .getByRole("checkbox", { name: "Project B", exact: true })
     .check();
@@ -1000,7 +1134,7 @@ test("multiple project task authoring persists across reload", async ({
     snapshot.items.find(
       (item: { title: string }) => item.title === "Shared task",
     ),
-  ).toMatchObject({ projectId: a.id, projectIds: [a.id, b.id] });
+  ).toMatchObject({ parentProjectId: null, projectIds: [a.id, b.id] });
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -1060,7 +1194,7 @@ test("work planning: activation and nested project authoring", async ({
     (item: { title: string }) => item.title === "Child project",
   );
   expect(child).toMatchObject({
-    projectId: parent.id,
+    parentProjectId: parent.id,
     activationPolicy: "MANUAL",
     activationState: "ACTIVE",
     startDate: null,
@@ -1077,7 +1211,7 @@ test("work planning: activation and nested project authoring", async ({
   expect(invalid.status()).toBe(400);
   const createdTask = await request.post(workbench.url + "/api/work/create", {
     headers: { ...headers, "Idempotency-Key": randomUUID() },
-    data: { title: "Nested task", projectId: child.id },
+    data: { title: "Nested task", projectIds: [child.id] },
   });
   expect(createdTask.status()).toBe(200);
   await page.reload();
@@ -1090,7 +1224,7 @@ test("work planning: activation and nested project authoring", async ({
   const childCard = page.locator(".project-card").filter({
     has: page.getByRole("heading", { name: "Child project", exact: true }),
   });
-  await expect(parentCard.locator(".progress-label strong")).toHaveText(
+  await expect(parentCard.locator(".project-compact-progress span")).toHaveText(
     "0 / 1",
   );
   await parentCard
@@ -2151,8 +2285,8 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel(w.work.title, { exact: true }).fill("Ship planning");
   await dialog
-    .getByLabel(w.desk.ownerProject, { exact: true })
-    .selectOption({ label: "Autumn launch" });
+    .getByRole("checkbox", { name: "Autumn launch", exact: true })
+    .check();
   await dialog.getByLabel(w.desk.startDate).fill("2026-09-14");
   await dialog.getByLabel(w.desk.dueDate).fill("2026-09-21");
   await dialog
@@ -2319,13 +2453,43 @@ async function mutation(page: Page, path: string, value: unknown) {
   return response.json();
 }
 async function nav(page: Page, name: string) {
+  for (const locale of ["en-US", "zh-CN"] as const) {
+    if (
+      name === resources[locale].desk.planning ||
+      name === resources[locale].desk.board
+    ) {
+      await page.evaluate(
+        (view) => {
+          location.hash = view;
+        },
+        name === resources[locale].desk.board ? "board" : "planning",
+      );
+      await expect(page.locator(".tasks-workspace")).toBeVisible();
+      if (name === resources[locale].desk.board)
+        await expect(page.locator(".board-column")).toHaveCount(4);
+      return;
+    }
+  }
   await expect(page.locator(".app-shell")).toBeVisible();
   const mobileToggle = page.locator(".mobile-navigation-toggle");
-  if (
-    (await mobileToggle.isVisible()) &&
-    (await mobileToggle.getAttribute("aria-expanded")) === "false"
-  )
-    await mobileToggle.click();
+  if (await mobileToggle.isVisible()) {
+    const pinned = page
+      .locator(".mobile-bottom-navigation")
+      .getByRole("button", { name, exact: true });
+    if (await pinned.count()) {
+      if (await page.locator(".mobile-more-sheet").isVisible())
+        await page.keyboard.press("Escape");
+      await pinned.click();
+    } else {
+      if (!(await page.locator(".mobile-more-sheet").isVisible()))
+        await mobileToggle.click();
+      await page
+        .locator(".mobile-more-sheet")
+        .getByRole("button", { name, exact: true })
+        .click();
+    }
+    return;
+  }
   await page
     .locator(".sidebar")
     .getByRole("button", { name: new RegExp("^" + name + "(?: [0-9]+)?$") })
@@ -2463,11 +2627,17 @@ test("dependencies, filters and board transitions", async ({
   await page.getByLabel(w.desk.priority, { exact: true }).selectOption("HIGH");
   await expect(page.getByRole("article")).toHaveCount(0);
   await page.getByLabel(w.desk.status, { exact: true }).selectOption("ALL");
+  await page
+    .getByRole("tab", { name: w.desk.taskWorkspace.all, exact: true })
+    .click();
   await expect(page.getByRole("article")).toHaveCount(1);
   await page.getByLabel(w.desk.priority, { exact: true }).selectOption("ALL");
   await page.getByRole("textbox", { name: w.desk.search }).fill("Dependent");
   await expect(page.getByRole("article")).toHaveCount(1);
   await nav(page, w.desk.board);
+  await page
+    .getByRole("tab", { name: w.desk.taskWorkspace.all, exact: true })
+    .click();
   if (!info.project.name.startsWith("mobile")) {
     await page
       .getByRole("article")
@@ -2478,6 +2648,7 @@ test("dependencies, filters and board transitions", async ({
             name: new RegExp(w.work.statuses.DONE),
           }),
         }),
+        { sourcePosition: { x: 8, y: 8 }, targetPosition: { x: 12, y: 12 } },
       );
   } else
     await page
@@ -2778,7 +2949,7 @@ test("project settings preserve brief and task fields; canvas saves Markdown wit
   const child = await mutation(page, "/api/work/create", {
     type: "PROJECT",
     title: "Nested child",
-    projectId: project.id,
+    parentProjectId: project.id,
   });
   await page.reload();
   await nav(page, w.desk.projects);
@@ -2971,7 +3142,7 @@ for (const legacy of [false, true])
       .toBe("Stale local text");
   });
 
-test("owner scope separates references and canceled outcomes", async ({
+test("equal membership scope counts shared work and canceled outcomes", async ({
   page,
   workbench,
 }, info) => {
@@ -2984,15 +3155,15 @@ test("owner scope separates references and canceled outcomes", async ({
   const child = await mutation(page, "/api/work/create", {
     type: "PROJECT",
     title: "Scope child",
-    projectId: root.id,
+    parentProjectId: root.id,
   });
   await mutation(page, "/api/work/create", {
     title: "Root owned",
-    ownerProjectId: root.id,
+    projectIds: [root.id],
   });
   const canceled = await mutation(page, "/api/work/create", {
     title: "Child canceled",
-    ownerProjectId: child.id,
+    projectIds: [child.id],
   });
   await mutation(page, "/api/work/update", {
     id: canceled.id,
@@ -3001,8 +3172,7 @@ test("owner scope separates references and canceled outcomes", async ({
   });
   await mutation(page, "/api/work/create", {
     title: "Reference only",
-    ownerProjectId: null,
-    linkedProjectIds: [root.id],
+    projectIds: [root.id],
   });
   await page.reload();
   await nav(page, w.desk.projects);
@@ -3011,6 +3181,9 @@ test("owner scope separates references and canceled outcomes", async ({
     .getByRole("tab", { name: w.desk.projectHub.tasks, exact: true })
     .click();
   const panel = page.getByRole("tabpanel");
+  await panel
+    .getByRole("tab", { name: w.desk.taskWorkspace.all, exact: true })
+    .click();
   await expect(panel).toContainText("Root owned");
   await expect(panel).toContainText("Child canceled");
   await expect(panel).toContainText("Reference only");
@@ -3019,7 +3192,7 @@ test("owner scope separates references and canceled outcomes", async ({
     w.desk.projectProgress
       .replace("{{completed}}", "0")
       .replace("{{canceled}}", "1")
-      .replace("{{unfinished}}", "1"),
+      .replace("{{unfinished}}", "2"),
   );
   await page
     .getByLabel(w.desk.projectScope, { exact: true })
@@ -3031,7 +3204,7 @@ test("owner scope separates references and canceled outcomes", async ({
     w.desk.projectProgress
       .replace("{{completed}}", "0")
       .replace("{{canceled}}", "0")
-      .replace("{{unfinished}}", "1"),
+      .replace("{{unfinished}}", "2"),
   );
   await page.screenshot({
     path: info.outputPath("ownership-scope.png"),
@@ -3051,7 +3224,7 @@ test("project lifecycle completion and explicit atomic reopen are usable", async
   });
   const task = await mutation(page, "/api/work/create", {
     title: "Owned unfinished",
-    ownerProjectId: project.id,
+    projectIds: [project.id],
   });
   await page.reload();
   await nav(page, w.desk.projects);
@@ -3067,7 +3240,9 @@ test("project lifecycle completion and explicit atomic reopen are usable", async
   await dialog
     .getByLabel(w.desk.projectLifecycle, { exact: true })
     .selectOption("COMPLETED");
-  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(
+    dialog.getByRole("group", { name: w.desk.completionResolution.title }),
+  ).toBeVisible();
   await expect(
     dialog.getByRole("button", { name: w.common.save, exact: true }),
   ).toBeDisabled();
@@ -3108,20 +3283,12 @@ test("project lifecycle completion and explicit atomic reopen are usable", async
   await dialog
     .getByLabel(w.work.title, { exact: true })
     .fill("After explicit reopen");
-  await expect(
-    dialog.getByRole("button", { name: w.common.create, exact: true }),
-  ).toBeDisabled();
-  await dialog.getByLabel(w.desk.reopenConsent, { exact: true }).check();
-  await page.screenshot({
-    path: info.outputPath("project-reopen.png"),
-    fullPage: true,
-  });
   await dialog
-    .getByRole("button", { name: w.desk.reopenAndCreate, exact: true })
+    .getByRole("button", { name: w.common.create, exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".project-workspace")).toContainText(
-    w.desk.projectLifecycles.ACTIVE,
+    w.desk.projectLifecycles.COMPLETED,
   );
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
@@ -3146,7 +3313,7 @@ test("project hierarchy and URL preserve scope tabs and browser history", async 
   const child = await mutation(page, "/api/work/create", {
     title: "Navigation child",
     type: "PROJECT",
-    projectId: root.id,
+    parentProjectId: root.id,
   });
   await page.reload();
   await nav(page, w.desk.projects);
@@ -3252,6 +3419,7 @@ test("inline prerequisites save atomically with availability and reject stale gr
   await dialog
     .getByLabel(w.work.title, { exact: true })
     .fill("Inline dependent");
+  await dialog.locator(".task-advanced > summary").click();
   const prerequisites = dialog.getByRole("group", {
     name: w.work.prerequisites,
     exact: true,
@@ -3286,6 +3454,7 @@ test("inline prerequisites save atomically with availability and reject stale gr
       })
       .click();
   await openTask();
+  await dialog.locator(".task-advanced > summary").click();
   await expect(
     prerequisites.getByRole("checkbox", {
       name: "Prerequisite source",
@@ -3328,6 +3497,7 @@ test("inline prerequisites save atomically with availability and reject stale gr
     .click();
   await page.reload();
   await openTask();
+  await dialog.locator(".task-advanced > summary").click();
   await prerequisites
     .getByRole("checkbox", { name: "Concurrent source", exact: true })
     .uncheck();
@@ -3359,13 +3529,13 @@ test("workspace timezone appearance density and mobile navigation persist", asyn
   await nav(page, w.desk.settings);
   await page
     .getByLabel(w.desk.workspaceTimezone, { exact: true })
-    .fill("Asia/Shanghai");
+    .fill("Asia/Tokyo");
   await page
     .locator(".calendar-settings")
     .getByRole("button", { name: w.common.save, exact: true })
     .click();
   await expect(page.getByTestId("calendar-timezone")).toContainText(
-    "Asia/Shanghai",
+    "Asia/Tokyo",
   );
   await page
     .getByLabel(w.desk.appearance, { exact: true })
@@ -3380,7 +3550,7 @@ test("workspace timezone appearance density and mobile navigation persist", asyn
   await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
   await expect(
     page.getByLabel(w.desk.workspaceTimezone, { exact: true }),
-  ).toHaveValue("Asia/Shanghai");
+  ).toHaveValue("Asia/Tokyo");
   await page
     .getByLabel(w.desk.workspaceTimezone, { exact: true })
     .fill("Invalid/Zone");
@@ -3433,7 +3603,7 @@ test("parent tree and canvas inspector expose project and task actions", async (
   const child = await mutation(page, "/api/work/create", {
     title: "Tree child",
     type: "PROJECT",
-    projectId: root.id,
+    parentProjectId: root.id,
   });
   const target = await mutation(page, "/api/work/create", {
     title: "Tree target",
@@ -3441,7 +3611,7 @@ test("parent tree and canvas inspector expose project and task actions", async (
   });
   const task = await mutation(page, "/api/work/create", {
     title: "Inspect task",
-    ownerProjectId: root.id,
+    projectIds: [root.id],
   });
   await page.goto(
     workbench.url + `/#projects/${root.id}?tab=brief&scope=SUBTREE`,
@@ -3470,11 +3640,11 @@ test("parent tree and canvas inspector expose project and task actions", async (
   ).json();
   expect(
     snapshot.items.find((item: { id: string }) => item.id === root.id)
-      .projectId,
+      .parentProjectId,
   ).toBe(target.id);
   expect(
     snapshot.items.find((item: { id: string }) => item.id === child.id)
-      .projectId,
+      .parentProjectId,
   ).toBe(root.id);
   await page
     .getByRole("tab", { name: w.desk.projectHub.graph, exact: true })
@@ -3501,6 +3671,153 @@ test("parent tree and canvas inspector expose project and task actions", async (
   });
 });
 
+test("navigation preferences persist ordered mobile shortcuts and desktop visibility", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.settings);
+  const panel = page.locator(".navigation-settings");
+  await panel
+    .locator(".navigation-choice")
+    .filter({ hasText: w.desk.calendar })
+    .getByRole("checkbox")
+    .uncheck();
+  await panel
+    .locator(".navigation-choice")
+    .filter({ hasText: w.desk.notes })
+    .getByRole("checkbox")
+    .uncheck();
+  await panel.getByRole("button", { name: w.common.save, exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(workbench.url + "/api/snapshot")).json())
+          .navigationPreference.mobile.pinned,
+    )
+    .toEqual(["tasks", "projects"]);
+  await page.reload();
+  await page.setViewportSize({ width: 412, height: 850 });
+  await expect(page.locator(".mobile-bottom-navigation button")).toHaveCount(3);
+  await page.locator(".mobile-bottom-navigation button").last().click();
+  await expect(
+    page
+      .locator(".mobile-more-sheet")
+      .getByRole("button", { name: w.desk.calendar, exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("custom-mobile-navigation.png"),
+    fullPage: true,
+  });
+  await page.keyboard.press("Escape");
+  for (const pinned of [
+    ["tasks", "projects", "calendar"],
+    ["tasks", "projects", "calendar", "notes"],
+  ]) {
+    const current = (
+      await (await page.request.get(workbench.url + "/api/snapshot")).json()
+    ).navigationPreference;
+    await mutation(page, "/api/work/navigation-preference", {
+      ...current,
+      mobile: { pinned },
+    });
+    await page.reload();
+    await expect(page.locator(".mobile-bottom-navigation button")).toHaveCount(
+      pinned.length + 1,
+    );
+    await expect(page.locator(".mobile-navigation-toggle")).toBeVisible();
+  }
+  await page.setViewportSize({ width: 1280, height: 850 });
+  await nav(page, w.desk.settings);
+  const preference = (
+    await (await page.request.get(workbench.url + "/api/snapshot")).json()
+  ).navigationPreference;
+  await mutation(page, "/api/work/navigation-preference", {
+    ...preference,
+    desktop: {
+      ...preference.desktop,
+      hidden: ["journal"],
+      pinned: ["projects"],
+    },
+  });
+  await page.reload();
+  await expect(
+    page
+      .locator(".sidebar nav")
+      .getByRole("button", { name: w.desk.journal, exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator(".sidebar nav .nav-item").first()).toContainText(
+    w.desk.projects,
+  );
+  await panel
+    .getByRole("button", { name: w.desk.restoreNavigation, exact: true })
+    .click();
+  await panel.getByRole("button", { name: w.common.save, exact: true }).click();
+  await expect(
+    page
+      .locator(".sidebar nav")
+      .getByRole("button", { name: w.desk.journal, exact: true }),
+  ).toBeVisible();
+});
+
+test("overview task count excludes non-tasks and clears a previous project filter", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "Scope",
+    type: "PROJECT",
+  });
+  await mutation(page, "/api/work/create", {
+    title: "Inside",
+    projectIds: [project.id],
+  });
+  await mutation(page, "/api/work/create", { title: "Outside" });
+  await mutation(page, "/api/work/create", {
+    title: "Milestone",
+    type: "MILESTONE",
+  });
+  await mutation(page, "/api/work/create", {
+    title: "Later",
+    activationState: "INACTIVE",
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await page
+    .getByRole("combobox", { name: w.desk.project, exact: true })
+    .selectOption(project.id);
+  await expect(page.locator(".task-card")).toHaveCount(1);
+  await nav(page, w.desk.overview);
+  const countLink = page
+    .locator(".home-summary-link")
+    .filter({ hasText: w.desk.openTasks });
+  await expect(countLink.locator("strong")).toHaveText("2");
+  await page.screenshot({
+    path: info.outputPath("upgrade-overview.png"),
+    fullPage: true,
+  });
+  await countLink.click();
+  await expect(page.locator(".task-card")).toHaveCount(2);
+  await expect(
+    page.getByRole("combobox", { name: w.desk.project, exact: true }),
+  ).toHaveValue("ALL");
+  await nav(page, w.desk.projects);
+  await page.screenshot({
+    path: info.outputPath("upgrade-project-tree.png"),
+    fullPage: true,
+  });
+  if (info.project.name.startsWith("mobile")) {
+    await page.locator(".mobile-bottom-navigation button").last().click();
+    await page.screenshot({
+      path: info.outputPath("upgrade-more-sheet.png"),
+      fullPage: false,
+    });
+  }
+});
+
 test.describe("host calendar authority", () => {
   test.use({ timezoneId: "America/Adak" });
   test("authoritative calendar unifies Tasks Calendar and Journal across client zones", async ({
@@ -3511,6 +3828,14 @@ test.describe("host calendar authority", () => {
     await unlock(page, workbench.url, workbench.secret, w);
     const instant = new Date().toISOString();
     const day = localCalendarDay(instant, "Pacific/Kiritimati");
+    const initial = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(initial.calendarTimezone).toBe("America/Adak");
+    await mutation(page, "/api/work/calendar-settings", {
+      version: initial.calendarSettings.version,
+      timezone: "Pacific/Kiritimati",
+    });
     expect(localCalendarDay(instant, "America/Adak")).not.toBe(day);
     const task = await mutation(page, "/api/work/create", {
       title: "Host calendar task",

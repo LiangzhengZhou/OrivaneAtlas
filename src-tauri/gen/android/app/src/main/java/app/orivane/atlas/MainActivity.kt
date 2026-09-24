@@ -1,4 +1,4 @@
-package dev.arclattice.app
+package app.orivane.atlas
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge

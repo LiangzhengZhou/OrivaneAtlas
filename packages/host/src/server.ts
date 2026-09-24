@@ -1716,7 +1716,6 @@ export async function createHost(options: HostOptions) {
                   "id",
                   "version",
                   "name",
-                  "projectIds",
                   "deleted",
                   "icon",
                   "color",
@@ -1737,7 +1736,6 @@ export async function createHost(options: HostOptions) {
                     ...(value.position === undefined
                       ? {}
                       : { position: value.position as number }),
-                    projectIds: value.projectIds as string[],
                     deleted: boolean(value.deleted),
                   },
                 );
@@ -1782,7 +1780,6 @@ export async function createHost(options: HostOptions) {
                 keys(rule, [
                   "title",
                   "descriptionMd",
-                  "projectId",
                   "startDate",
                   "timezone",
                   "frequency",
@@ -1802,7 +1799,6 @@ export async function createHost(options: HostOptions) {
                   "frequency",
                 ])
                   string(rule[field], 200000);
-                if (rule.projectId !== null) string(rule.projectId);
                 for (const field of ["endDate", "assigneePrincipalId"])
                   if (rule[field] !== undefined && rule[field] !== null)
                     string(rule[field]);
@@ -1858,18 +1854,17 @@ export async function createHost(options: HostOptions) {
                   "descriptionMd",
                   "priority",
                   "type",
-                  "projectId",
-                  "ownerProjectId",
+                  "lifecycle",
+                  "categoryId",
+                  "parentProjectId",
                   "projectIds",
-                  "linkedProjectIds",
                   "activationState",
                   "activationPolicy",
                   "startDate",
                   "dueDate",
                 ]);
                 for (const field of [
-                  "projectId",
-                  "ownerProjectId",
+                  "parentProjectId",
                   "startDate",
                   "dueDate",
                   "assigneePrincipalId",
@@ -1904,6 +1899,16 @@ export async function createHost(options: HostOptions) {
                   value.timezone === null ? null : string(value.timezone),
                 );
               }
+              case "/api/work/navigation-preference": {
+                keys(value, ["version", "desktop", "mobile"]);
+                if (credential) throw new DomainError("FORBIDDEN");
+                return work.setNavigationPreference(
+                  context,
+                  value as unknown as Parameters<
+                    WorkService["setNavigationPreference"]
+                  >[1],
+                );
+              }
               case "/api/work/update": {
                 keys(value, ["id", "version", "input"]);
                 const input = object(value.input);
@@ -1916,10 +1921,10 @@ export async function createHost(options: HostOptions) {
                   "priority",
                   "status",
                   "projectLifecycle",
-                  "projectId",
-                  "ownerProjectId",
+                  "categoryId",
+                  "completionResolution",
+                  "parentProjectId",
                   "projectIds",
-                  "linkedProjectIds",
                   "activationState",
                   "activationPolicy",
                   "startDate",
@@ -1929,7 +1934,7 @@ export async function createHost(options: HostOptions) {
                   if (
                     [
                       "projectIds",
-                      "linkedProjectIds",
+                      "completionResolution",
                       "prerequisiteIds",
                       "expectedPrerequisiteIds",
                     ].includes(key)
@@ -1937,8 +1942,8 @@ export async function createHost(options: HostOptions) {
                     continue;
                   if (
                     [
-                      "projectId",
-                      "ownerProjectId",
+                      "parentProjectId",
+                      "categoryId",
                       "startDate",
                       "dueDate",
                       "assigneePrincipalId",

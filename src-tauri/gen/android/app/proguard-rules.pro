@@ -1,7 +1,7 @@
 # Add project specific ProGuard rules here.
--keep class dev.arclattice.app.AtlasUpdatePlugin { *; }
--keep class dev.arclattice.app.AtlasSessionPlugin { *; }
--keep class dev.arclattice.app.SessionSaveArgs { *; }
+-keep class app.orivane.atlas.AtlasUpdatePlugin { *; }
+-keep class app.orivane.atlas.AtlasSessionPlugin { *; }
+-keep class app.orivane.atlas.SessionSaveArgs { *; }
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 #

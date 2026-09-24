@@ -20,13 +20,13 @@ export function projectAncestors(
   );
   const seen = new Set([item.id]);
   const result: WorkItem[] = [];
-  let id = item.projectId;
+  let id = item.type === "TASK" ? null : item.parentProjectId;
   while (id && !seen.has(id)) {
     seen.add(id);
     const parent = projects.get(id);
     if (!parent) break;
     result.push(parent);
-    id = parent.projectId;
+    id = parent.parentProjectId;
   }
   return result;
 }
@@ -41,10 +41,14 @@ export function projectDescendants(
     if (
       item.workspaceId !== project.workspaceId ||
       item.deletedAt ||
-      !item.projectId
+      !(item.type === "TASK" ? item.projectIds?.length : item.parentProjectId)
     )
       continue;
-    for (const parent of item.projectId ? [item.projectId] : []) {
+    for (const parent of item.type === "TASK"
+      ? (item.projectIds ?? [])
+      : item.parentProjectId
+        ? [item.parentProjectId]
+        : []) {
       const siblings = children.get(parent) ?? [];
       siblings.push(item);
       children.set(parent, siblings);
@@ -72,6 +76,22 @@ export function inheritedArchiveSource(
   items: readonly WorkItem[],
   explicitlyArchived: (item: WorkItem) => boolean,
 ): WorkItem | undefined {
+  if (item.type === "TASK") {
+    const memberships = items.filter(
+      (project) =>
+        project.workspaceId === item.workspaceId &&
+        project.type === "PROJECT" &&
+        !project.deletedAt &&
+        item.projectIds?.includes(project.id),
+    );
+    if (!memberships.length) return undefined;
+    const sources = memberships.map((project) =>
+      explicitlyArchived(project)
+        ? project
+        : projectAncestors(project, items).find(explicitlyArchived),
+    );
+    return sources.every(Boolean) ? sources[0] : undefined;
+  }
   return projectAncestors(item, items).find(explicitlyArchived);
 }
 
@@ -86,11 +106,11 @@ export function projectSubtreeHeight(
       item.type !== "PROJECT" ||
       item.deletedAt ||
       item.workspaceId !== project.workspaceId ||
-      !item.projectId
+      !item.parentProjectId
     )
       continue;
-    children.set(item.projectId, [
-      ...(children.get(item.projectId) ?? []),
+    children.set(item.parentProjectId, [
+      ...(children.get(item.parentProjectId) ?? []),
       item,
     ]);
   }
@@ -129,25 +149,23 @@ export function eligibleProjectParents(
     const ancestors = projectAncestors(candidate, items);
     const top = ancestors.at(-1) ?? candidate;
     return (
-      top.projectId === null &&
+      top.parentProjectId === null &&
       ancestors.length + 1 + height <= MAX_PROJECT_DEPTH
     );
   });
 }
 
-/** Compatibility read model: ownership is structural, links provide context only. */
-export function taskOwnership(item: WorkItem): {
-  ownerProjectId: string | null;
-  linkedProjectIds: readonly string[];
-} {
-  return {
-    ownerProjectId: item.projectId,
-    linkedProjectIds: [...new Set(item.projectIds ?? [])].filter(
-      (id) => id !== item.projectId,
-    ),
-  };
-}
 export type ProjectScope = "DIRECT" | "SUBTREE";
+export function effectiveCategoryId(
+  project: WorkItem,
+  items: readonly WorkItem[],
+): string | null {
+  return (
+    [project, ...projectAncestors(project, items)].find(
+      (entry) => entry.categoryId,
+    )?.categoryId ?? null
+  );
+}
 export function projectScope(
   project: WorkItem,
   items: readonly WorkItem[],
@@ -163,16 +181,7 @@ export function projectScope(
   const projectIds = new Set(projects.map((item) => item.id));
   const tasks = live.filter(
     (item) =>
-      item.type === "TASK" &&
-      !!item.projectId &&
-      projectIds.has(item.projectId),
-  );
-  const taskIds = new Set(tasks.map((item) => item.id));
-  const linkedTasks = live.filter(
-    (item) =>
-      item.type === "TASK" &&
-      !taskIds.has(item.id) &&
-      taskOwnership(item).linkedProjectIds.some((id) => projectIds.has(id)),
+      item.type === "TASK" && item.projectIds?.some((id) => projectIds.has(id)),
   );
   const completed = tasks.filter((item) => item.status === "DONE").length;
   const canceled = tasks.filter((item) => item.status === "CANCELED").length;
@@ -180,7 +189,6 @@ export function projectScope(
     projects,
     projectIds,
     tasks,
-    linkedTasks,
     completed,
     canceled,
     unfinished: tasks.length - completed - canceled,
@@ -190,6 +198,21 @@ export function projectPath(
   item: WorkItem,
   items: readonly WorkItem[],
 ): string {
+  if (item.type === "TASK")
+    return items
+      .filter(
+        (project) =>
+          project.workspaceId === item.workspaceId &&
+          project.type === "PROJECT" &&
+          !project.deletedAt &&
+          item.projectIds?.includes(project.id),
+      )
+      .map((project) =>
+        [...projectAncestors(project, items).reverse(), project]
+          .map((entry) => entry.title)
+          .join(" / "),
+      )
+      .join(" · ");
   return projectAncestors(item, items)
     .reverse()
     .map((project) => project.title)

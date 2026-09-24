@@ -14,6 +14,7 @@ import type { WorkEditorProps } from "./WorkItemEditor";
 export function ProjectEditor({
   item,
   projects,
+  categories = [],
   items = [],
   initialProjectId = "",
   busy,
@@ -25,32 +26,33 @@ export function ProjectEditor({
   const { t } = useTranslation(["common", "desk", "work"]);
   const dialog = useRef<HTMLDialogElement>(null);
   const [title, setTitle] = useState(item?.title ?? "");
-  const [parent, setParent] = useState(item?.projectId ?? initialProjectId);
+  const [categoryId, setCategoryId] = useState(item?.categoryId ?? "");
+  const [parent, setParent] = useState(
+    item?.parentProjectId ?? initialProjectId,
+  );
   const [start, setStart] = useState(item?.startDate ?? "");
   const [due, setDue] = useState(item?.dueDate ?? "");
   const [lifecycle, setLifecycle] = useState<ProjectLifecycle>(
     item ? projectLifecycle(item) : "PLANNED",
   );
-  const [reopen, setReopen] = useState(false);
-  const selectedParent = projects.find((p) => p.id === parent);
-  const requiresReopen =
-    selectedParent?.status === "DONE" &&
-    (!item ||
-      (parent !== item.projectId &&
-        !["COMPLETED", "CANCELED"].includes(lifecycle)));
+  const [resolution, setResolution] = useState<
+    "KEEP" | "CANCEL" | "INBOX" | "MOVE" | ""
+  >("");
+  const [destination, setDestination] = useState("");
   const completion = item ? projectCompletion(item, items) : null;
   const incomplete =
     lifecycle === "COMPLETED" &&
-    item?.status !== "DONE" &&
+    item?.lifecycle !== "COMPLETED" &&
     !!completion &&
     (completion.unfinished > 0 || completion.unfinishedProjects > 0);
-  const blocked = incomplete || (requiresReopen && (!!item || !reopen));
+  const blocked =
+    incomplete && (!resolution || (resolution === "MOVE" && !destination));
   const [discard, setDiscard] = useState(false);
   const dirty =
+    categoryId !== (item?.categoryId ?? "") ||
     (item && lifecycle !== projectLifecycle(item)) ||
-    reopen ||
     title !== (item?.title ?? "") ||
-    parent !== (item?.projectId ?? initialProjectId) ||
+    parent !== (item?.parentProjectId ?? initialProjectId) ||
     start !== (item?.startDate ?? "") ||
     due !== (item?.dueDate ?? "");
   const close = () => (dirty ? setDiscard(true) : onClose());
@@ -87,13 +89,20 @@ export function ProjectEditor({
           if (!busy && !invalidParent && !blocked)
             void onSave({
               title,
+              categoryId: categoryId || null,
+              ...(!item ? { lifecycle } : {}),
               ...(item && lifecycle !== projectLifecycle(item)
                 ? { projectLifecycle: lifecycle }
                 : {}),
-              ...(!item && requiresReopen && reopen
-                ? { reopenProjectVersion: selectedParent!.version }
+              ...(incomplete && resolution
+                ? {
+                    completionResolution: {
+                      action: resolution,
+                      ...(destination ? { projectId: destination } : {}),
+                    },
+                  }
                 : {}),
-              projectId: parent || null,
+              parentProjectId: parent || null,
               startDate: start || null,
               dueDate: due || null,
             });
@@ -148,7 +157,6 @@ export function ProjectEditor({
             value={parent}
             onChange={(event) => {
               setParent(event.target.value);
-              setReopen(false);
             }}
           >
             <option value="">{t("desk:noProject")}</option>
@@ -167,6 +175,24 @@ export function ProjectEditor({
           </select>
         </label>
         {invalidParent && <p role="alert">{t("desk:invalidProjectParent")}</p>}
+        {!parent && (
+          <label className="field">
+            <span>{t("desk:categories.filter")}</span>
+            <select
+              value={categoryId}
+              onChange={(event) => setCategoryId(event.target.value)}
+            >
+              <option value="">{t("desk:noProject")}</option>
+              {categories
+                .filter((category) => !category.deletedAt)
+                .map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
         <ProjectParentTree
           projects={projects}
           candidates={candidates}
@@ -174,7 +200,6 @@ export function ProjectEditor({
           disabled={busy}
           onChange={(value) => {
             setParent(value);
-            setReopen(false);
           }}
         />
         {item && (
@@ -205,18 +230,45 @@ export function ProjectEditor({
         )}
         {item && <p className="muted">{t("desk:projectCompletionHint")}</p>}
         {incomplete && (
-          <p role="alert">{t("errors:PROJECT_HAS_UNFINISHED_WORK")}</p>
-        )}
-        {requiresReopen && <p>{t("desk:completedProjectHint")}</p>}
-        {!item && requiresReopen && (
-          <label className="reopen-project-consent">
-            <input
-              type="checkbox"
-              checked={reopen}
-              onChange={(event) => setReopen(event.target.checked)}
-            />
-            {t("desk:reopenConsent")}
-          </label>
+          <fieldset className="field">
+            <legend>{t("desk:completionResolution.title")}</legend>
+            <select
+              value={resolution}
+              onChange={(event) =>
+                setResolution(event.target.value as typeof resolution)
+              }
+            >
+              <option value="">{t("desk:completionResolution.choose")}</option>
+              {(["KEEP", "CANCEL", "INBOX", "MOVE"] as const).map((action) => (
+                <option key={action} value={action}>
+                  {t("desk:completionResolution." + action)}
+                </option>
+              ))}
+            </select>
+            {resolution === "MOVE" && (
+              <select
+                value={destination}
+                onChange={(event) => setDestination(event.target.value)}
+              >
+                <option value="">
+                  {t("desk:completionResolution.choose")}
+                </option>
+                {projects
+                  .filter(
+                    (project) =>
+                      project.id !== item?.id &&
+                      !projectAncestors(project, projects).some(
+                        (ancestor) => ancestor.id === item?.id,
+                      ),
+                  )
+                  .map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.title}
+                    </option>
+                  ))}
+              </select>
+            )}
+          </fieldset>
         )}
         <div className="schedule-fields">
           <label className="field">
@@ -265,13 +317,7 @@ export function ProjectEditor({
             className="button primary"
             disabled={busy || !title.trim() || invalidParent || blocked}
           >
-            {t(
-              !item && requiresReopen && reopen
-                ? "desk:reopenAndCreate"
-                : item
-                  ? "save"
-                  : "create",
-            )}
+            {t(false ? "desk:reopenAndCreate" : item ? "save" : "create")}
           </button>
         </div>
       </form>

@@ -1,9 +1,9 @@
 import type { EntityRef, KnowledgeLink } from "@arclattice/application";
 import {
+  effectiveCategoryId,
   type ProjectScope,
   projectAncestors,
   projectLifecycle,
-  projectPath,
   projectScope,
   type WorkItem,
   type WorkStatus,
@@ -11,6 +11,8 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "./bootstrap";
+import { TasksWorkspace } from "./features/tasks/TasksWorkspace";
+import { selectTasks } from "./features/tasks/task-selectors";
 import { GraphCanvas } from "./GraphCanvas";
 import { ProjectBriefEditor } from "./ProjectBriefEditor";
 import { ProjectInspector } from "./ProjectInspector";
@@ -23,6 +25,9 @@ import { type ProjectTab, projectTabs } from "./projectRoute";
 import { Dependencies } from "./WorkViews";
 
 export function ProjectWorkspace({
+  today,
+  isArchived,
+  archiveSource,
   project,
   routeTab,
   routeScope,
@@ -44,6 +49,9 @@ export function ProjectWorkspace({
   runtime,
   run,
 }: {
+  today: string;
+  isArchived(item: WorkItem): boolean;
+  archiveSource(item: WorkItem): WorkItem | undefined;
   project: WorkItem;
   routeTab: ProjectTab;
   routeScope: ProjectScope;
@@ -55,7 +63,7 @@ export function ProjectWorkspace({
   onBack(): void;
   onProject(id: string): void;
   onOpen(ref: EntityRef): void;
-  onCreate(type: "PROJECT" | "TASK", parentId: string): void;
+  onCreate(type: "PROJECT" | "TASK" | "MILESTONE", parentId: string): void;
   onLink(from: EntityRef, to: EntityRef): Promise<boolean>;
   onUnlink(link: KnowledgeLink): Promise<boolean>;
   onAddEdge(from: string, to: string): Promise<boolean>;
@@ -77,10 +85,23 @@ export function ProjectWorkspace({
   const children =
     scope === "DIRECT"
       ? liveItems.filter(
-          (item) => item.type === "PROJECT" && item.projectId === project.id,
+          (item) =>
+            item.type === "PROJECT" && item.parentProjectId === project.id,
         )
       : scoped.projects.filter((item) => item.id !== project.id);
   const tasks = scoped.tasks;
+  const selectedTasks = selectTasks(
+    liveItems,
+    snapshot.edges,
+    today,
+    isArchived,
+  );
+  const milestones = liveItems.filter(
+    (item) =>
+      item.type === "MILESTONE" &&
+      !!item.parentProjectId &&
+      scoped.projectIds.has(item.parentProjectId),
+  );
   const taskIds = new Set(tasks.map((item) => item.id));
   const projectIds = scoped.projectIds;
   const edges = snapshot.edges.filter(
@@ -139,7 +160,7 @@ export function ProjectWorkspace({
           linked.link.from.id === project.id,
       ),
   );
-  const parent = liveItems.find((item) => item.id === project.projectId);
+  const parent = liveItems.find((item) => item.id === project.parentProjectId);
   return (
     <section className="project-workspace">
       <div className="organization-toolbar">
@@ -175,6 +196,15 @@ export function ProjectWorkspace({
         </nav>
         <h1>{project.title}</h1>
         <p>{t("projectLifecycles." + projectLifecycle(project))}</p>
+        <p>
+          {
+            snapshot.categories?.find(
+              (category) =>
+                !category.deletedAt &&
+                category.id === effectiveCategoryId(project, liveItems),
+            )?.name
+          }
+        </p>
         <label className="field project-scope">
           <span>{t("projectScope")}</span>
           <select
@@ -191,20 +221,6 @@ export function ProjectWorkspace({
             completed: scoped.completed,
             canceled: scoped.canceled,
             unfinished: scoped.unfinished,
-          })}
-        </p>
-        <p className="muted">
-          {t("projectHub.summary", {
-            children: children.length,
-            documents:
-              linked.length +
-              (snapshot.projectMaterials ?? []).filter(
-                (entry) =>
-                  projectIds.has(entry.projectId) &&
-                  entry.kind !== "SPACE" &&
-                  !entry.deletedAt,
-              ).length,
-            tasks: tasks.length,
           })}
         </p>
         <div className="organization-toolbar">
@@ -264,6 +280,69 @@ export function ProjectWorkspace({
         aria-labelledby={`project-tab-${tab}`}
       >
         <div hidden={tab !== "brief"}>
+          <section className="project-next">
+            <h2>{t("taskWorkspace.now")}</h2>
+            {selectedTasks.focusTasks
+              .filter((task) => taskIds.has(task.id))
+              .slice(0, 5)
+              .map((task) => (
+                <button
+                  key={task.id}
+                  type="button"
+                  className="agenda-item"
+                  onClick={() => onOpen({ kind: "WORK", id: task.id })}
+                >
+                  {task.title}
+                </button>
+              ))}
+          </section>
+          <section className="project-milestones">
+            <h2>{t("milestones")}</h2>
+            {milestones.map((milestone) => (
+              <button
+                key={milestone.id}
+                type="button"
+                className="agenda-item"
+                onClick={() => onOpen({ kind: "WORK", id: milestone.id })}
+              >
+                <span>
+                  {milestone.status === "DONE"
+                    ? "✓"
+                    : milestone.status === "IN_PROGRESS"
+                      ? "●"
+                      : "○"}
+                </span>{" "}
+                {milestone.title}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="chip"
+              disabled={busy}
+              onClick={() => onCreate("MILESTONE", project.id)}
+            >
+              {t("newMilestone")}
+            </button>
+          </section>
+          <progress
+            aria-label={t("completion")}
+            max={Math.max(1, scoped.completed + scoped.unfinished)}
+            value={scoped.completed}
+          />
+          <section>
+            <h2>{t("projectHub.children")}</h2>
+            {children.map((child) => (
+              <button
+                type="button"
+                className="agenda-item"
+                key={child.id}
+                onClick={() => onProject(child.id)}
+              >
+                {child.title}
+              </button>
+            ))}
+          </section>
+
           <ProjectBriefEditor
             dirtyRef={briefDirtyRef}
             project={project}
@@ -383,7 +462,11 @@ export function ProjectWorkspace({
           </>
         )}
         {tab === "timeline" && (
-          <ProjectTimeline tasks={tasks} items={liveItems} onOpen={onOpen} />
+          <ProjectTimeline
+            tasks={[...tasks, ...milestones]}
+            items={liveItems}
+            onOpen={onOpen}
+          />
         )}
         {tab === "activity" && (
           <ProjectHistory
@@ -395,60 +478,19 @@ export function ProjectWorkspace({
             loadWork={runtime.activity}
           />
         )}
-        {tab === "children" && (
-          <section className="panel project-summary">
-            {!children.length && <p>{t("projectHub.emptyChildren")}</p>}
-            {children.map((child) => (
-              <button
-                type="button"
-                className="agenda-item"
-                key={child.id}
-                onClick={() => onProject(child.id)}
-              >
-                <strong>{child.title}</strong>
-                <small>
-                  {t("projectLifecycles." + projectLifecycle(child))}
-                </small>
-              </button>
-            ))}
-          </section>
-        )}
         {tab === "tasks" && (
-          <section className="panel project-summary">
-            <p className="muted">
-              {t(scope === "SUBTREE" ? "scopeSubtree" : "scopeDirect")}
-            </p>
-            {!tasks.length && <p>{t("projectHub.emptyTasks")}</p>}
-            {tasks.map((task) => (
-              <button
-                type="button"
-                className="agenda-item"
-                key={task.id}
-                onClick={() => onOpen({ kind: "WORK", id: task.id })}
-              >
-                <strong>{task.title}</strong>
-                <small>{projectPath(task, liveItems)}</small>
-                <small>{t("work:statuses." + task.status)}</small>
-              </button>
-            ))}
-          </section>
-        )}
-        {tab === "tasks" && scoped.linkedTasks.length > 0 && (
-          <section className="panel project-summary">
-            <h2>{t("linkedTasks")}</h2>
-            <p>{t("linkedProjectsHint")}</p>
-            {scoped.linkedTasks.map((task) => (
-              <button
-                type="button"
-                className="agenda-item"
-                key={task.id}
-                onClick={() => onOpen({ kind: "WORK", id: task.id })}
-              >
-                <strong>{task.title}</strong>
-                <small>{projectPath(task, liveItems) || t("noProject")}</small>
-              </button>
-            ))}
-          </section>
+          <TasksWorkspace
+            items={tasks}
+            allItems={liveItems}
+            edges={snapshot.edges}
+            today={today}
+            busy={busy}
+            isArchived={isArchived}
+            archiveSource={archiveSource}
+            onOrganize={onOrganize}
+            onStatus={onStatus}
+            onOpen={(item) => onOpen({ kind: "WORK", id: item.id })}
+          />
         )}
         {tab === "graph" && (
           <>

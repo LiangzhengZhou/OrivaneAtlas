@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { CategoryService } from "@arclattice/application";
 import { expect, test } from "vitest";
 import { categoryPort } from "./categories";
@@ -23,7 +22,6 @@ test("registered PostgreSQL category metadata survives membership-preserving leg
     name: "Study",
     version: 0,
     deleted: false,
-    projectIds: [project.id],
     icon: "📚",
     color: "#aabbcc",
     position: 9,
@@ -33,13 +31,11 @@ test("registered PostgreSQL category metadata survives membership-preserving leg
     name: "Reading",
     version: category.version,
     deleted: false,
-    projectIds: category.projectIds,
   });
   expect(renamed).toMatchObject({
     icon: "📚",
     color: "#aabbcc",
     position: 9,
-    projectIds: [project.id],
   });
   const deleted = await categories.save(context, {
     ...renamed,
@@ -54,8 +50,15 @@ test("registered PostgreSQL category metadata survives membership-preserving leg
     deletedAt: null,
     icon: "📚",
     position: 1,
-    projectIds: [project.id],
   });
+  await service(db).update(context, project.id, project.version, {
+    categoryId: category.id,
+  });
+  expect(
+    (await service(db).snapshot(context)).items.find(
+      (item) => item.id === project.id,
+    )?.categoryId,
+  ).toBe(category.id);
   expect(
     await categories.list({ ...context, workspaceId: "workspace-b" }),
   ).toEqual([]);
@@ -70,12 +73,7 @@ test("v8 category migration preserves old rows, CAS, isolation and transaction r
     "INSERT INTO arclattice.workspace VALUES ('w','Workspace'); INSERT INTO arclattice.principal VALUES ('p','USER','Owner'); INSERT INTO arclattice.workspace_principal VALUES ('w','p'); INSERT INTO arclattice.project_category VALUES ('w','old','Old',1,'p','p','2026','2026',NULL)",
   );
   await harness.client(name, async (client) => {
-    await client.query(
-      readFileSync(
-        new URL("./migrations/0008-category-presentation.sql", import.meta.url),
-        "utf8",
-      ),
-    );
+    await migrate(client, 2000, async () => {});
     const port = categoryPort(client, "w", (operation) => operation());
     const [old] = await port.categories();
     expect(old).toMatchObject({ icon: "", color: "#7863c5", position: 0 });

@@ -160,6 +160,22 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 19,
+    name: "user-navigation",
+    sql: readFileSync(
+      new URL("./migrations/0019-navigation.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 20,
+    name: "project-domain",
+    sql: readFileSync(
+      new URL("./migrations/0020-project-domain.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {
@@ -237,9 +253,11 @@ export function inspectSchema(
     const columns = db.prepare("PRAGMA table_info(work_item)").all();
     if (
       !objects.some((row) => row.name === "work_item_project") ||
-      ["project_id", "start_date", "due_date"].some(
-        (name) => !columns.some((row) => row.name === name),
-      )
+      [
+        version >= 20 ? "parent_project_id" : "project_id",
+        "start_date",
+        "due_date",
+      ].some((name) => !columns.some((row) => row.name === name))
     )
       throw new StorageError("SCHEMA_OBJECT_MISSING");
   }
@@ -283,6 +301,8 @@ export function inspectSchema(
       throw new StorageError("SCHEMA_OBJECT_MISSING");
   }
   if (version >= 12 && !objects.some((row) => row.name === "login_session"))
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (version >= 19 && !objects.some((row) => row.name === "user_navigation"))
     throw new StorageError("SCHEMA_OBJECT_MISSING");
   if (
     version >= 17 &&

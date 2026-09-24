@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { CategoryService } from "@arclattice/application";
 import { expect, test } from "vitest";
@@ -26,7 +25,6 @@ test("registered SQLite categories retain memberships through edits, reorder and
     name: "Study",
     version: 0,
     deleted: false,
-    projectIds: [project.id],
     icon: "📚",
     color: "#aabbcc",
     position: 9,
@@ -36,13 +34,11 @@ test("registered SQLite categories retain memberships through edits, reorder and
     name: "Reading",
     version: category.version,
     deleted: false,
-    projectIds: category.projectIds,
   });
   expect(renamed).toMatchObject({
     icon: "📚",
     color: "#aabbcc",
     position: 9,
-    projectIds: [project.id],
   });
   const deleted = await categories.save(context, {
     ...renamed,
@@ -57,8 +53,15 @@ test("registered SQLite categories retain memberships through edits, reorder and
     deletedAt: null,
     icon: "📚",
     position: 1,
-    projectIds: [project.id],
   });
+  await service(db).update(context, project.id, project.version, {
+    categoryId: category.id,
+  });
+  expect(
+    (await service(db).snapshot(context)).items.find(
+      (item) => item.id === project.id,
+    )?.categoryId,
+  ).toBe(category.id);
   expect(
     await categories.list({ ...context, workspaceId: "workspace-b" }),
   ).toEqual([]);
@@ -74,12 +77,7 @@ test("v16 upgrades category defaults, retains legacy rows and restores presentat
     );
     const backup = harness.file();
     await snapshotToNewFile(db, backup);
-    db.exec(
-      readFileSync(
-        new URL("./migrations/0016-category-presentation.sql", import.meta.url),
-        "utf8",
-      ),
-    );
+    await migrate(db, file, 2000);
     const port = categoryPort(db, "workspace-a", () => {});
     const [old] = await port.categories();
     expect(old).toMatchObject({

@@ -1,4 +1,4 @@
-package dev.arclattice.app
+package app.orivane.atlas
 
 import org.junit.Test
 import org.junit.Assert.assertThrows

@@ -17,7 +17,6 @@ export interface ProjectCategory {
   icon: string;
   color: string;
   position: number;
-  projectIds: string[];
   version: number;
   createdBy: string;
   updatedBy: string;
@@ -55,7 +54,6 @@ export class CategoryService {
       icon?: string;
       color?: string;
       position?: number;
-      projectIds: string[];
       deleted: boolean;
     },
   ) {
@@ -68,12 +66,6 @@ export class CategoryService {
       !Number.isSafeInteger(input.version) ||
       input.version < 0 ||
       typeof input.deleted !== "boolean" ||
-      !Array.isArray(input.projectIds) ||
-      input.projectIds.length > 100 ||
-      input.projectIds.some(
-        (id) => typeof id !== "string" || !id || id.length > 240,
-      ) ||
-      new Set(input.projectIds).size !== input.projectIds.length ||
       (!input.id && (input.version !== 0 || input.deleted))
     )
       throw new DomainError("VALIDATION_ERROR");
@@ -96,15 +88,6 @@ export class CategoryService {
         !input.deleted
       )
         throw new DomainError("VALIDATION_ERROR");
-      const unchanged =
-        old &&
-        JSON.stringify(old.projectIds) === JSON.stringify(input.projectIds);
-      if (!unchanged)
-        for (const id of input.projectIds) {
-          const project = await tx.get(id);
-          if (project.type !== "PROJECT" || project.deletedAt)
-            throw new DomainError("VALIDATION_ERROR");
-        }
       const now = this.clock.now();
       const previous = categoryPresentation(old ?? {});
       const presentation = {
@@ -133,7 +116,6 @@ export class CategoryService {
         icon: presentation.icon,
         color: presentation.color.toLowerCase(),
         position: presentation.position,
-        projectIds: [...input.projectIds],
         version: input.version + 1,
         createdBy: old?.createdBy ?? context.principalId,
         updatedBy: context.principalId,

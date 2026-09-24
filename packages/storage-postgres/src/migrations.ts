@@ -94,6 +94,22 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 10,
+    name: "user-navigation",
+    sql: readFileSync(
+      new URL("./migrations/0010-navigation.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 11,
+    name: "project-domain",
+    sql: readFileSync(
+      new URL("./migrations/0011-project-domain.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")
@@ -189,9 +205,11 @@ export async function inspectSchema(
       !objects.some(
         (row) => row.relname === "work_item_project" && row.relkind === "i",
       ) ||
-      ["project_id", "start_date", "due_date"].some(
-        (name) => !columns.some((row) => row.column_name === name),
-      )
+      [
+        rows.length >= 11 ? "parent_project_id" : "project_id",
+        "start_date",
+        "due_date",
+      ].some((name) => !columns.some((row) => row.column_name === name))
     )
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
   }

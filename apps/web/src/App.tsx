@@ -2,10 +2,8 @@ import type { EntityRef, Note, OrganizeInput } from "@arclattice/application";
 import {
   type ActorContext,
   DomainError,
+  defaultNavigationPreference,
   inheritedArchiveSource,
-  isExecutionActive,
-  isGloballyActiveTask,
-  isReady,
   localCalendarDay,
   priorities,
   projectDescendants,
@@ -17,15 +15,9 @@ import { type LocalePreference, resolveLocale } from "@arclattice/i18n";
 import {
   ArrowUpRight,
   BookOpen,
-  CalendarDays,
   CheckCheck,
-  Columns3,
   Download,
-  FolderKanban,
-  GitBranch,
   GripVertical,
-  Layers2,
-  LayoutDashboard,
   ListTodo,
   LogOut,
   NotebookPen,
@@ -36,12 +28,19 @@ import {
   Settings2,
   ShieldCheck,
   Target,
-  Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AccountView, AdminView } from "./AccountViews";
 import { AppUpdater } from "./AppUpdater";
+import { NavigationSettings } from "./app/NavigationSettings";
+import {
+  currentView,
+  type NavigationView,
+  navigation,
+  SIDEBAR_COLLAPSED_KEY,
+  type View,
+} from "./app/navigation";
 import {
   type Runtime,
   readPreference,
@@ -52,6 +51,9 @@ import { CalendarSettings } from "./CalendarSettings";
 import { AiView, KnowledgeView } from "./ConnectedViews";
 import { DensitySettings } from "./DensitySettings";
 import { type DocumentRequest, DocumentWorkspace } from "./DocumentWorkspace";
+import { MoreSheet } from "./features/mobile/MoreSheet";
+import { TasksWorkspace } from "./features/tasks/TasksWorkspace";
+import { selectTasks } from "./features/tasks/task-selectors";
 import { GraphCanvas } from "./GraphCanvas";
 import { LibraryView } from "./LibraryView";
 import { Login } from "./Login";
@@ -67,53 +69,7 @@ import {
 import { ThemeSettings } from "./ThemeSettings";
 import { WorkflowManager } from "./WorkflowManager";
 import { WorkItemEditor } from "./WorkItemEditor";
-import { Dependencies, TaskList, WorkBoard } from "./WorkViews";
-
-type View =
-  | "library"
-  | "account"
-  | "admin"
-  | "knowledge"
-  | "ai"
-  | "overview"
-  | "focus"
-  | "tasks"
-  | "planning"
-  | "board"
-  | "projects"
-  | "calendar"
-  | "dependencies"
-  | "notes"
-  | "journal"
-  | "trash"
-  | "settings";
-const navigation = [
-  { view: "library", icon: BookOpen },
-  { view: "account", icon: ShieldCheck },
-  { view: "admin", icon: LayoutDashboard },
-  { view: "knowledge", icon: Layers2 },
-  { view: "ai", icon: ShieldCheck },
-  { view: "overview", icon: LayoutDashboard },
-  { view: "focus", icon: Target },
-  { view: "tasks", icon: ListTodo },
-  { view: "planning", icon: FolderKanban },
-  { view: "board", icon: Columns3 },
-  { view: "projects", icon: FolderKanban },
-  { view: "calendar", icon: CalendarDays },
-  { view: "dependencies", icon: GitBranch },
-  { view: "notes", icon: BookOpen },
-  { view: "journal", icon: NotebookPen },
-  { view: "trash", icon: Trash2 },
-] as const;
-type NavigationView = (typeof navigation)[number]["view"];
-const NAVIGATION_ORDER_KEY = "orivane-atlas.navigation-order";
-const SIDEBAR_COLLAPSED_KEY = "orivane-atlas.sidebar-collapsed";
-function currentView(): View {
-  const hash = location.hash.slice(1).split(/[/?]/)[0] ?? "";
-  return [...navigation.map((n) => n.view), "settings"].includes(hash)
-    ? (hash as View)
-    : "overview";
-}
+import { Dependencies, TaskList } from "./WorkViews";
 
 export function App({ runtime }: { runtime: Runtime }) {
   const [context, setContext] = useState(runtime.context);
@@ -173,7 +129,7 @@ function Workbench({
   const activeProjectId = projectRoute.projectId;
   const acceptedHash = useRef(location.hash);
   const [creation, setCreation] = useState<{
-    type: "TASK" | "PROJECT";
+    type: "TASK" | "PROJECT" | "MILESTONE";
     parentId: string;
   }>({ type: "TASK", parentId: "" });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -183,25 +139,6 @@ function Workbench({
       return false;
     }
   });
-  const [navigationOrder, setNavigationOrder] = useState<NavigationView[]>(
-    () => {
-      const fallback = navigation.map((item) => item.view);
-      try {
-        const saved = JSON.parse(
-          localStorage.getItem(NAVIGATION_ORDER_KEY) ?? "null",
-        );
-        if (!Array.isArray(saved)) return fallback;
-        return [
-          ...saved.filter((value): value is NavigationView =>
-            fallback.includes(value),
-          ),
-          ...fallback.filter((value) => !saved.includes(value)),
-        ];
-      } catch {
-        return fallback;
-      }
-    },
-  );
   const [draggedNavigation, setDraggedNavigation] =
     useState<NavigationView | null>(null);
   function toggleSidebar() {
@@ -217,20 +154,18 @@ function Workbench({
   }
   function moveNavigation(target: NavigationView) {
     if (!draggedNavigation || draggedNavigation === target) return;
-    setNavigationOrder((current) => {
-      const next = [...current];
-      const from = next.indexOf(draggedNavigation);
-      const to = next.indexOf(target);
-      if (from < 0 || to < 0) return current;
-      next.splice(from, 1);
-      next.splice(to, 0, draggedNavigation);
-      try {
-        localStorage.setItem(NAVIGATION_ORDER_KEY, JSON.stringify(next));
-      } catch {
-        /* best effort UI preference */
-      }
-      return next;
-    });
+    const order = [...navigationPreference.desktop.order];
+    const from = order.indexOf(draggedNavigation);
+    const to = order.indexOf(target);
+    if (from < 0 || to < 0) return;
+    order.splice(from, 1);
+    order.splice(to, 0, draggedNavigation);
+    void run(() =>
+      service.setNavigationPreference(context, {
+        ...navigationPreference,
+        desktop: { ...navigationPreference.desktop, order },
+      }),
+    );
     setDraggedNavigation(null);
   }
   const libraryDraft = useRef(false);
@@ -253,6 +188,14 @@ function Workbench({
     organization: [],
   });
   const [query, setQuery] = useState("");
+  const navigationPreference =
+    snapshot.navigationPreference ?? defaultNavigationPreference();
+  const navigationOrder = [
+    ...navigationPreference.desktop.pinned,
+    ...navigationPreference.desktop.order.filter(
+      (id) => !navigationPreference.desktop.pinned.includes(id),
+    ),
+  ].filter((id) => !navigationPreference.desktop.hidden.includes(id));
   const [showArchived, setShowArchived] = useState(false);
   const [selectedNotes, setSelectedNotes] = useState<string[]>([]);
   const [folderFilter, setFolderFilter] = useState<string | null>(null);
@@ -277,14 +220,31 @@ function Workbench({
       return;
     if (await run(() => runtime.organize(input))) setSelectedNotes([]);
   }
-  const [status, setStatus] = useState(() =>
-    currentView() === "tasks" ? "UNFINISHED" : "ALL",
-  );
+  const [status, setStatus] = useState(() => {
+    const requested = new URLSearchParams(location.hash.split("?")[1]).get(
+      "status",
+    );
+    return requested && workStatuses.includes(requested as WorkStatus)
+      ? requested
+      : currentView() === "tasks"
+        ? "UNFINISHED"
+        : "ALL";
+  });
   const [activationFilter, setActivationFilter] = useState("ALL");
   const [priority, setPriority] = useState("ALL");
   const [sort, setSort] = useState("updated");
   const [projectFilter, setProjectFilter] = useState("ALL");
-  const [editor, setEditor] = useState<WorkItem | "new" | null>(null);
+  const [editor, setEditorState] = useState<WorkItem | "new" | null>(null);
+  const setEditor = (next: WorkItem | "new" | null) => {
+    if (next && editor && next !== editor) {
+      const change = new CustomEvent("atlas:task-detail-change", {
+        cancelable: true,
+        detail: () => setEditorState(next),
+      });
+      if (!window.dispatchEvent(change)) return;
+    }
+    setEditorState(next);
+  };
   const [noteEditor, setNoteEditor] = useState<
     Note | "NOTE" | "JOURNAL" | null
   >(null);
@@ -397,7 +357,16 @@ function Workbench({
       setView(currentView());
       setDocumentVisible(false);
       setQuery("");
-      setStatus(currentView() === "tasks" ? "UNFINISHED" : "ALL");
+      const requestedStatus = new URLSearchParams(
+        location.hash.split("?")[1],
+      ).get("status");
+      setStatus(
+        requestedStatus && workStatuses.includes(requestedStatus as WorkStatus)
+          ? requestedStatus
+          : currentView() === "tasks"
+            ? "UNFINISHED"
+            : "ALL",
+      );
       setActivationFilter("ALL");
       setPriority("ALL");
     };
@@ -480,14 +449,24 @@ function Workbench({
       window.removeEventListener("focus", update);
     };
   }, []);
-  const ready = items.filter((item) =>
-    isReady(item, allItems, snapshot.edges, calendarDay),
+  const taskSelection = selectTasks(
+    allItems,
+    snapshot.edges,
+    calendarDay,
+    isArchived,
   );
-  const active = items.filter(
-    (item) =>
-      item.status === "IN_PROGRESS" && isExecutionActive(item, calendarDay),
+  const done = taskSelection.completedTasks;
+  const displayedTasks = showArchived
+    ? selectTasks(
+        allItems,
+        snapshot.edges,
+        calendarDay,
+        (item) => !isArchived(item),
+      )
+    : taskSelection;
+  const executionActiveIds = new Set(
+    displayedTasks.activeTasks.map((item) => item.id),
   );
-  const done = items.filter((item) => item.status === "DONE");
   const matches = (title: string, body: string) =>
     (title + " " + body)
       .toLocaleLowerCase(i18n.language)
@@ -498,29 +477,23 @@ function Workbench({
       ? projectDescendants(selectedProject, allItems).map((i) => i.id)
       : [],
   );
-  const visible = (
-    showArchived
-      ? allItems.filter((item) => item.type !== "PROJECT" && isArchived(item))
-      : items
-  )
+  const visible = displayedTasks.tasks
     .filter(
       (item) =>
         item.type === "TASK" &&
-        (!["tasks", "board"].includes(view) ||
-          isExecutionActive(item, calendarDay)) &&
-        (view !== "planning" ||
-          activationFilter === "ALL" ||
-          isExecutionActive(item, calendarDay) ===
+        (activationFilter === "ALL" ||
+          executionActiveIds.has(item.id) ===
             (activationFilter === "ACTIVE")) &&
         matches(item.title, item.descriptionMd) &&
-        (status === "ALL" ||
+        (view === "tasks" ||
+          status === "ALL" ||
           (status === "UNFINISHED"
             ? ["TODO", "IN_PROGRESS"].includes(item.status)
             : item.status === status)) &&
         (priority === "ALL" || item.priority === priority) &&
         (projectFilter === "ALL" ||
           (projectFilter === "NONE"
-            ? !item.projectId
+            ? !item.projectIds?.length
             : projectMemberIds.has(item.id))),
     )
     .sort((a, b) =>
@@ -530,10 +503,7 @@ function Workbench({
           ? a.title.localeCompare(b.title, i18n.language)
           : b.updatedAt.localeCompare(a.updatedAt),
     );
-  const focus = [
-    ...active,
-    ...ready.filter((item) => !active.some((a) => a.id === item.id)),
-  ];
+  const focus = taskSelection.focusTasks;
   const day = calendarDay;
   const count = (n: number) => new Intl.NumberFormat(i18n.language).format(n);
   const date = (value: string) =>
@@ -560,7 +530,7 @@ function Workbench({
     setView("projects");
     location.hash = hash;
   }
-  function navigate(next: View) {
+  function navigate(next: View, requestedStatus?: WorkStatus) {
     setDocumentVisible(false);
     if (
       (libraryDraft.current || projectBriefDirty.current) &&
@@ -569,14 +539,16 @@ function Workbench({
       return;
     projectBriefDirty.current = false;
     libraryDraft.current = false;
-    location.hash = next;
+    location.hash =
+      next + (requestedStatus ? "?status=" + requestedStatus : "");
     setView(next);
     setMobileNavigationOpen(false);
     setSelectedNotes([]);
     setShowArchived(false);
     setFolderFilter(null);
+    setProjectFilter("ALL");
     setQuery("");
-    setStatus(next === "tasks" ? "UNFINISHED" : "ALL");
+    setStatus(requestedStatus ?? (next === "tasks" ? "UNFINISHED" : "ALL"));
     setActivationFilter("ALL");
     setPriority("ALL");
     setSaved(false);
@@ -625,7 +597,17 @@ function Workbench({
     else open("new");
   }
   const onStatus = (item: WorkItem, next: WorkStatus) =>
-    run(() => service.update(context, item.id, item.version, { status: next }));
+    run(async () => {
+      const updated = await service.update(context, item.id, item.version, {
+        status: next,
+      });
+      setSnapshot((current) => ({
+        ...current,
+        items: current.items.map((entry) =>
+          entry.id === item.id ? { ...entry, ...(updated as WorkItem) } : entry,
+        ),
+      }));
+    });
   const workProps = {
     today: calendarDay,
     allItems,
@@ -861,7 +843,7 @@ function Workbench({
             mobileNavigationOpen ? "collapseSidebar" : "expandSidebar",
           )}
           aria-expanded={mobileNavigationOpen}
-          aria-controls="workspace-navigation"
+          aria-controls="mobile-more-sheet"
           onClick={() => setMobileNavigationOpen((value) => !value)}
         >
           <PanelLeft size={20} />
@@ -907,11 +889,7 @@ function Workbench({
                 <span>{viewLabel(next)}</span>
                 {next === "tasks" && (
                   <span className="nav-count">
-                    {count(
-                      items.filter((item) =>
-                        isGloballyActiveTask(item, calendarDay),
-                      ).length,
-                    )}
+                    {count(taskSelection.openActiveTasks.length)}
                   </span>
                 )}
                 {next === "notes" && (
@@ -1122,19 +1100,17 @@ function Workbench({
             <AiView runtime={runtime} snapshot={snapshot} />
           ) : view === "overview" ? (
             <>
-              <div className="metric-grid">
+              <div className="home-summary">
                 {[
                   {
                     label: "openTasks",
-                    value: items.filter(
-                      (i) => !["DONE", "CANCELED"].includes(i.status),
-                    ).length,
+                    value: taskSelection.openActiveTasks.length,
                     icon: ListTodo,
                     next: "tasks",
                   },
                   {
-                    label: "readyNow",
-                    value: ready.length,
+                    label: "focus",
+                    value: focus.length,
                     icon: Target,
                     next: "focus",
                   },
@@ -1142,7 +1118,7 @@ function Workbench({
                     label: "completed",
                     value: done.length,
                     icon: CheckCheck,
-                    next: "board",
+                    next: "tasks",
                   },
                   {
                     label: "savedNotes",
@@ -1152,10 +1128,15 @@ function Workbench({
                   },
                 ].map(({ label, value, icon: Icon, next }) => (
                   <button
-                    className="metric-card"
+                    className="home-summary-link"
                     type="button"
                     key={label}
-                    onClick={() => navigate(next as View)}
+                    onClick={() =>
+                      navigate(
+                        next as View,
+                        label === "completed" ? "DONE" : undefined,
+                      )
+                    }
                   >
                     <div>
                       <span>{t(label)}</span>
@@ -1224,14 +1205,16 @@ function Workbench({
                   <div className="progress-label">
                     <span>{t("completion")}</span>
                     <strong>
-                      {items.length
-                        ? Math.round((done.length / items.length) * 100)
+                      {taskSelection.tasks.length
+                        ? Math.round(
+                            (done.length / taskSelection.tasks.length) * 100,
+                          )
                         : 0}
                       %
                     </strong>
                   </div>
                   <progress
-                    max={Math.max(items.length, 1)}
+                    max={Math.max(taskSelection.tasks.length, 1)}
                     value={done.length}
                   />
                 </section>
@@ -1271,6 +1254,9 @@ function Workbench({
             <>
               {projects.find((project) => project.id === activeProjectId) ? (
                 <ProjectWorkspace
+                  today={calendarDay}
+                  isArchived={isArchived}
+                  archiveSource={archiveSource}
                   onStatus={onStatus}
                   onOrganize={workProps.onOrganize}
                   briefDirtyRef={projectBriefDirty}
@@ -1387,6 +1373,17 @@ function Workbench({
             />
           ) : view === "settings" ? (
             <div className="settings-panel">
+              <NavigationSettings
+                key={navigationPreference.version}
+                preference={navigationPreference}
+                busy={busy}
+                label={viewLabel}
+                onSave={(preference) =>
+                  run(() =>
+                    service.setNavigationPreference(context, preference),
+                  )
+                }
+              />
               <CalendarSettings
                 settings={
                   snapshot.calendarSettings ?? { version: 0, timezone: null }
@@ -1523,9 +1520,9 @@ function Workbench({
           ) : (
             <>
               <div className="list-toolbar">
-                <div className="view-count">
+                <div className={view === "tasks" ? "list-title" : "view-count"}>
                   <h2>{t(view)}</h2>
-                  <span>
+                  <span hidden={view === "tasks"}>
                     {count(
                       view === "notes" || view === "journal"
                         ? notes.filter(
@@ -1554,28 +1551,10 @@ function Workbench({
                   <kbd>/</kbd>
                 </label>
               </div>
-              {["tasks", "board", "planning"].includes(view) && (
+              {view === "tasks" && (
                 <section className="task-query-panel">
-                  <div className="task-scope-heading">
-                    <p>
-                      {t(
-                        view === "planning"
-                          ? "planningHint"
-                          : "activeTasksHint",
-                      )}
-                    </p>
-                    {view !== "planning" && (
-                      <button
-                        type="button"
-                        className="chip"
-                        onClick={() => navigate("planning")}
-                      >
-                        {t("manageActivation")}
-                      </button>
-                    )}
-                  </div>
                   <div className="filter-bar">
-                    {view === "planning" && (
+                    {view === "tasks" && (
                       <label>
                         <span>{t("activationState")}</span>
                         <select
@@ -1769,17 +1748,36 @@ function Workbench({
                     <p>{t("focusEmptyHint")}</p>
                   </div>
                 )
-              ) : view === "board" ? (
-                <>
-                  <p className="board-hint">{t("boardDragHint")}</p>
-                  <WorkBoard items={visible} {...workProps} />
-                </>
+              ) : view === "tasks" ? (
+                <TasksWorkspace
+                  key={location.hash}
+                  {...workProps}
+                  items={visible}
+                  includeArchived={showArchived}
+                  initialTab={
+                    status === "DONE"
+                      ? "completed"
+                      : status === "ALL" ||
+                          new URLSearchParams(location.hash.split("?")[1]).get(
+                            "tab",
+                          ) === "all"
+                        ? "all"
+                        : "now"
+                  }
+                  initialBoard={
+                    new URLSearchParams(location.hash.split("?")[1]).get(
+                      "view",
+                    ) === "board"
+                  }
+                />
               ) : visible.length ? (
                 <TaskList items={visible} {...workProps} />
               ) : (
                 <div className="empty-state">
                   <ListTodo size={30} />
-                  <h2>{t(items.length ? "noResults" : "firstTask")}</h2>
+                  <h2>
+                    {t(taskSelection.tasks.length ? "noResults" : "firstTask")}
+                  </h2>
                   <p>{t("tasksHint")}</p>
                   <button
                     className="button secondary"
@@ -1802,42 +1800,64 @@ function Workbench({
         className="mobile-bottom-navigation"
         aria-label={t("mobileNavigation")}
       >
-        {(
-          [
-            { view: "tasks", icon: ListTodo },
-            { view: "projects", icon: FolderKanban },
-            { view: "calendar", icon: CalendarDays },
-            { view: "notes", icon: BookOpen },
-          ] as const
-        ).map(({ view: next, icon: Icon }) => (
-          <button
-            key={next}
-            type="button"
-            aria-current={view === next ? "page" : undefined}
-            onClick={() => navigate(next)}
-          >
-            <Icon size={20} aria-hidden="true" />
-            <span>{viewLabel(next)}</span>
-          </button>
-        ))}
+        {navigationPreference.mobile.pinned
+          .map((id) => navigation.find((item) => item.view === id)!)
+          .filter(
+            (item) =>
+              item.view !== "admin" ||
+              !runtime.account ||
+              runtime.account.role === "ADMIN",
+          )
+          .map(({ view: next, icon: Icon }) => (
+            <button
+              key={next}
+              type="button"
+              aria-current={view === next ? "page" : undefined}
+              onClick={() => navigate(next)}
+            >
+              <Icon size={20} aria-hidden="true" />
+              <span>{viewLabel(next)}</span>
+            </button>
+          ))}
         <button
           type="button"
           aria-expanded={mobileNavigationOpen}
           aria-controls="workspace-navigation"
           onClick={() => {
             setMobileNavigationOpen((open) => !open);
-            window.scrollTo({ top: 0, behavior: "smooth" });
           }}
         >
           <PanelLeft size={20} aria-hidden="true" />
           <span>{t("moreNavigation")}</span>
         </button>
       </nav>
+      {mobileNavigationOpen && (
+        <MoreSheet
+          entries={[
+            ...navigation
+              .filter(
+                ({ view: next }) =>
+                  !navigationPreference.mobile.pinned.includes(next),
+              )
+              .filter(
+                ({ view: next }) =>
+                  next !== "admin" ||
+                  !runtime.account ||
+                  runtime.account.role === "ADMIN",
+              )
+              .map(({ view: next }) => ({ id: next, label: viewLabel(next) })),
+            { id: "settings", label: viewLabel("settings") },
+          ]}
+          onNavigate={(next) => navigate(next as View)}
+          onClose={() => setMobileNavigationOpen(false)}
+        />
+      )}
       {editor && (
         <WorkItemEditor
           key={editor === "new" ? "new" : editor.id + "-" + editor.version}
           item={editor === "new" ? null : editor}
           projects={projects}
+          categories={snapshot.categories ?? []}
           items={allItems}
           createType={creation.type}
           edges={snapshot.edges}

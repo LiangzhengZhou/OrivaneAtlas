@@ -22,7 +22,7 @@ import {
 import { type CSSProperties, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-interface WorkProps {
+export interface WorkProps {
   today: string;
   items: readonly WorkItem[];
   allItems: readonly WorkItem[];
@@ -123,9 +123,12 @@ function Task({
         >
           <Trash2 size={18} />
         </button>
-        {item.projectId && (
+        {!!item.projectIds?.length && (
           <span className="task-project">
-            {allItems.find((project) => project.id === item.projectId)?.title}
+            {allItems
+              .filter((project) => item.projectIds?.includes(project.id))
+              .map((project) => project.title)
+              .join(" · ")}
           </span>
         )}
         {item.dueDate && (

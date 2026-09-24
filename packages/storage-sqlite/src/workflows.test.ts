@@ -34,7 +34,7 @@ test("v15 workflow upgrade and snapshots restore records and transactional event
     rule: {
       title: "Daily",
       descriptionMd: "Preserve **Markdown**",
-      projectId: null,
+      projectIds: [],
       startDate: "2026-09-16",
       timezone: "UTC",
       frequency: "DAILY",

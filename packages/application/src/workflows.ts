@@ -9,7 +9,9 @@ import {
   MAX_PROJECT_DEPTH,
   occurrenceDays,
   type Priority,
+  type ProjectLifecycle,
   priorities,
+  projectLifecycles,
   requireMember,
   requireTitle,
   validateCalendarRule,
@@ -34,6 +36,7 @@ export interface TaskDefaults {
 }
 
 export interface ManifestTask extends TaskDefaults {
+  type?: "TASK" | "MILESTONE";
   tempId: string;
   title: string;
   descriptionMd: string;
@@ -44,6 +47,8 @@ export interface ManifestTask extends TaskDefaults {
   projectTempIds?: string[];
 }
 export interface ManifestProject {
+  lifecycle?: ProjectLifecycle;
+  categoryId?: string | null;
   tempId: string;
   title: string;
   descriptionMd: string;
@@ -151,7 +156,6 @@ export interface RecurrencePayload extends TaskDefaults {
   kind: "RECURRENCE";
   title: string;
   descriptionMd: string;
-  projectId: string | null;
   startDate: string;
   endDate?: string | null;
   timezone: string;
@@ -267,6 +271,7 @@ export function parseManifest(value: unknown): ManifestTask[] {
   const tasks = manifest.tasks.map((value) => {
     const task = object(value);
     fields(task, [
+      "type",
       "tempId",
       "title",
       "descriptionMd",
@@ -310,6 +315,11 @@ export function parseManifest(value: unknown): ManifestTask[] {
       throw new DomainError("VALIDATION_ERROR");
     return {
       ...taskDefaults(task),
+      type: requireMember(
+        (task.type ?? "TASK") as "TASK" | "MILESTONE",
+        ["TASK", "MILESTONE"] as const,
+        "type",
+      ),
       tempId: task.tempId,
       title: requireTitle(task.title),
       descriptionMd: (task.descriptionMd ?? "") as string,
@@ -346,6 +356,7 @@ export function parseProjectPlan(value: unknown): ParsedPlan {
   fields(manifest, [
     "version",
     "tasks",
+    "milestones",
     "projects",
     "categories",
     "recurrences",
@@ -353,7 +364,18 @@ export function parseProjectPlan(value: unknown): ParsedPlan {
     "documents",
   ]);
   if (manifest.version !== 1) throw new DomainError("VALIDATION_ERROR");
-  const rawTasks = manifest.tasks === undefined ? [] : manifest.tasks;
+  if (
+    (manifest.tasks !== undefined && !Array.isArray(manifest.tasks)) ||
+    (manifest.milestones !== undefined && !Array.isArray(manifest.milestones))
+  )
+    throw new DomainError("VALIDATION_ERROR");
+  const rawTasks = [
+    ...((manifest.tasks ?? []) as unknown[]),
+    ...((manifest.milestones ?? []) as unknown[]).map((entry) => ({
+      ...object(entry),
+      type: "MILESTONE",
+    })),
+  ];
   const tasks =
     Array.isArray(rawTasks) && rawTasks.length === 0
       ? []
@@ -363,7 +385,14 @@ export function parseProjectPlan(value: unknown): ParsedPlan {
     throw new DomainError("VALIDATION_ERROR");
   const projects = rawProjects.map((value) => {
     const project = object(value);
-    fields(project, ["tempId", "title", "descriptionMd", "parentTempId"]);
+    fields(project, [
+      "tempId",
+      "title",
+      "descriptionMd",
+      "parentTempId",
+      "lifecycle",
+      "categoryId",
+    ]);
     if (
       typeof project.tempId !== "string" ||
       !/^[A-Za-z0-9_-]{1,80}$/.test(project.tempId)
@@ -371,6 +400,15 @@ export function parseProjectPlan(value: unknown): ParsedPlan {
       throw new DomainError("VALIDATION_ERROR");
     return {
       tempId: project.tempId,
+      lifecycle: requireMember(
+        (project.lifecycle ?? "PLANNED") as ProjectLifecycle,
+        projectLifecycles,
+        "lifecycle",
+      ),
+      categoryId:
+        project.categoryId == null
+          ? null
+          : references([project.categoryId])[0]!,
       title: requireTitle(
         typeof project.title === "string" ? project.title : "",
       ),
@@ -434,7 +472,6 @@ export function parseProjectPlan(value: unknown): ParsedPlan {
       "tempId",
       "title",
       "descriptionMd",
-      "projectId",
       "projectTempIds",
       "startDate",
       "endDate",
@@ -448,8 +485,6 @@ export function parseProjectPlan(value: unknown): ParsedPlan {
       tempId: identifier(entry.tempId),
       title: requireTitle(typeof entry.title === "string" ? entry.title : ""),
       descriptionMd: markdown(entry.descriptionMd),
-      projectId:
-        entry.projectId == null ? null : references([entry.projectId])[0]!,
       projectTempIds: references(entry.projectTempIds, true),
       startDate: entry.startDate as string,
       endDate: (entry.endDate ?? null) as string | null,
@@ -618,8 +653,6 @@ export class WorkflowService {
       ...plan.recurrences,
     ])
       for (const id of entry.projectIds ?? []) projectIds.add(id);
-    for (const rule of plan.recurrences)
-      if (rule.projectId) projectIds.add(rule.projectId);
     for (const document of plan.documents)
       if (document.projectId) projectIds.add(document.projectId);
     for (const id of projectIds) {
@@ -634,7 +667,7 @@ export class WorkflowService {
       if (seen.has(cursor)) throw new DomainError("WORK_GRAPH_CYCLE_DETECTED");
       seen.add(cursor);
       parentDepth++;
-      cursor = (await tx.get(cursor)).projectId;
+      cursor = (await tx.get(cursor)).parentProjectId;
     }
     const depths = new Map<string, number>();
     for (const project of plan.projects) {
@@ -806,7 +839,9 @@ export class WorkflowService {
           title: project.title,
           descriptionMd: project.descriptionMd,
           type: "PROJECT",
-          projectId:
+          lifecycle: project.lifecycle ?? "PLANNED",
+          categoryId: project.categoryId ?? null,
+          parentProjectId:
             (project.parentTempId
               ? projectResult[project.parentTempId]
               : plan.payload.projectId) ?? null,
@@ -844,32 +879,44 @@ export class WorkflowService {
           version: old?.version ?? 0,
           name: category.name,
           deleted: false,
-          projectIds: [
-            ...new Set([
-              ...(old?.projectIds ?? []),
-              ...memberships(
-                category.projectIds,
-                category.projectTempIds,
-                null,
-              ),
-            ]),
-          ],
         });
+        for (const projectId of memberships(
+          category.projectIds,
+          category.projectTempIds,
+          null,
+        )) {
+          const project = await tx.get(projectId);
+          await work.update(context, project.id, project.version, {
+            categoryId: created.id,
+          });
+        }
         result[category.tempId] = created.id;
       }
       for (const task of tasks) {
+        const memberIds = memberships(
+          task.projectIds,
+          task.projectTempIds ??
+            (task.projectTempId ? [task.projectTempId] : []),
+          plan.payload.projectId,
+        );
+        if (task.type === "MILESTONE" && memberIds.length !== 1)
+          throw new DomainError("VALIDATION_ERROR", {
+            field: "milestoneProject",
+          });
+        const defaults = taskDefaults(
+          task as unknown as Record<string, unknown>,
+        );
+        delete defaults.projectIds;
         const item = await work.create(context, {
-          ...taskDefaults(task as unknown as Record<string, unknown>),
+          ...defaults,
+          type: task.type ?? "TASK",
           title: task.title,
           descriptionMd: task.descriptionMd,
           startDate: task.startDate,
           dueDate: task.dueDate,
-          projectIds: memberships(
-            task.projectIds,
-            task.projectTempIds ??
-              (task.projectTempId ? [task.projectTempId] : []),
-            plan.payload.projectId,
-          ),
+          ...(task.type === "MILESTONE"
+            ? { parentProjectId: memberIds[0]! }
+            : { projectIds: memberIds }),
         });
         result[task.tempId] = item.id;
       }
@@ -890,11 +937,10 @@ export class WorkflowService {
           deleted: false,
           rule: {
             ...rule,
-            projectId: null,
             projectIds: memberships(
               rule.projectIds,
               projectTempIds,
-              rule.projectId ?? plan.payload.projectId,
+              plan.payload.projectId,
             ),
           },
         });
@@ -1020,16 +1066,8 @@ export class WorkflowService {
         (old && old.payload.kind !== "RECURRENCE")
       )
         throw new DomainError("VERSION_CONFLICT");
-      const projectIds =
-        rule.projectIds ?? (rule.projectId ? [rule.projectId] : []);
-      if (
-        rule.projectIds !== undefined &&
-        rule.projectId &&
-        rule.projectIds[0] !== rule.projectId
-      )
-        throw new DomainError("VALIDATION_ERROR");
+      const projectIds = rule.projectIds ?? [];
       rule.projectIds = projectIds;
-      rule.projectId = projectIds[0] ?? null;
       for (const projectId of projectIds) {
         const project = await tx.get(projectId);
         if (project.deletedAt || project.type !== "PROJECT")
@@ -1124,7 +1162,6 @@ export class WorkflowService {
                 ...taskDefaults(rule as unknown as Record<string, unknown>),
                 title: rule.title,
                 descriptionMd: rule.descriptionMd,
-                projectId: rule.projectId,
                 startDate: day,
                 dueDate: day,
               })
@@ -1195,7 +1232,6 @@ export class WorkflowService {
         ...taskDefaults(rule as unknown as Record<string, unknown>),
         title: rule.title,
         descriptionMd: rule.descriptionMd,
-        projectId: rule.projectId,
         startDate: old.payload.day,
         dueDate: old.payload.day,
       });

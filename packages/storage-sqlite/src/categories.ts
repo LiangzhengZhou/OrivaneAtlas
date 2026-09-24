@@ -17,18 +17,7 @@ export function categoryPort(
           "SELECT id, workspace_id AS workspaceId, name, icon, color, position, version, created_by AS createdBy, updated_by AS updatedBy, created_at AS createdAt, updated_at AS updatedAt, deleted_at AS deletedAt FROM project_category WHERE workspace_id=? ORDER BY position,created_at,id",
         )
         .all(workspaceId);
-      return rows.map(
-        (row) =>
-          ({
-            ...row,
-            projectIds: db
-              .prepare(
-                "SELECT project_id FROM project_category_member WHERE workspace_id=? AND category_id=? ORDER BY position",
-              )
-              .all(workspaceId, String(row.id))
-              .map((r) => String(r.project_id)),
-          }) as unknown as ProjectCategory,
-      );
+      return rows as unknown as ProjectCategory[];
     },
     saveCategory: async (c, expected) => {
       guard();
@@ -79,16 +68,6 @@ export function categoryPort(
           ).changes !== 1
       )
         throw new DomainError("VERSION_CONFLICT");
-      db.prepare(
-        "DELETE FROM project_category_member WHERE workspace_id=? AND category_id=?",
-      ).run(workspaceId, c.id);
-      for (const [position, id] of c.projectIds.entries())
-        db.prepare("INSERT INTO project_category_member VALUES (?,?,?,?)").run(
-          workspaceId,
-          c.id,
-          id,
-          position,
-        );
     },
     appendCategoryChange: async (e) => {
       guard();
