@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "./bootstrap";
 import { ContentPolicyEditor } from "./ContentPolicyEditor";
+import { exportHtml, exportMarkdownZip, exportPdf } from "./documentExports";
 import { FilePicker } from "./FilePicker";
 import { imageAnchor, pendingImage } from "./imageInsertion";
 import { LiveMarkdown } from "./LiveMarkdown";
@@ -507,8 +508,26 @@ function DocumentPane({
         >
           {t("exportMarkdown")}
         </button>
-        <button className="chip" type="button" onClick={() => window.print()}>
+        <button className="chip" type="button" onClick={exportPdf}>
           {s("pdf")}
+        </button>
+        <button
+          className="chip"
+          type="button"
+          onClick={() =>
+            void exportHtml(title || "document", body, runtime.loadImage)
+          }
+        >
+          {zh ? "导出 HTML" : "Export HTML"}
+        </button>
+        <button
+          className="chip"
+          type="button"
+          onClick={() =>
+            void exportMarkdownZip(title || "document", body, runtime.loadImage)
+          }
+        >
+          {zh ? "导出 ZIP（含图片）" : "Export ZIP with images"}
         </button>
         {base && (
           <button

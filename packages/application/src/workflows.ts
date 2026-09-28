@@ -175,6 +175,56 @@ export interface OccurrencePayload {
   backfilledAt: string | null;
   ruleSnapshot?: RecurrencePayload;
 }
+export interface RecurrenceStats {
+  dueCount: number;
+  completedCount: number;
+  missedCount: number;
+  backfilledCount: number;
+  completionRate: number;
+  currentStreak: number;
+  longestStreak: number;
+}
+export function recurrenceStats(
+  occurrences: readonly OccurrencePayload[],
+  completedTaskIds: ReadonlySet<string>,
+  today: string,
+): RecurrenceStats {
+  const due = occurrences.filter((entry) => entry.day <= today);
+  const completed = due.filter(
+    (entry) => !!entry.taskId && completedTaskIds.has(entry.taskId),
+  );
+  const backfilled = due.filter((entry) => entry.status === "BACKFILLED");
+  const days = new Set(completed.map((entry) => entry.day));
+  const sorted = [...days].sort();
+  let currentStreak = 0;
+  let longestStreak = 0;
+  let streak = 0;
+  for (let index = 0; index < sorted.length; index++) {
+    const previous = sorted[index - 1];
+    const current = sorted[index];
+    const adjacent = previous
+      ? Date.parse(`${current}T00:00:00Z`) -
+          Date.parse(`${previous}T00:00:00Z`) ===
+        86400000
+      : false;
+    streak = index === 0 || adjacent ? streak + 1 : 1;
+    longestStreak = Math.max(longestStreak, streak);
+  }
+  const latest = sorted.at(-1);
+  if (latest === today) currentStreak = streak;
+  return {
+    dueCount: due.length,
+    completedCount: completed.length,
+    missedCount: due.filter(
+      (entry) =>
+        entry.status === "MISSED" && !completedTaskIds.has(entry.taskId ?? ""),
+    ).length,
+    backfilledCount: backfilled.length,
+    completionRate: due.length ? completed.length / due.length : 0,
+    currentStreak,
+    longestStreak,
+  };
+}
 export interface WorkflowRecord {
   id: string;
   workspaceId: string;

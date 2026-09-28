@@ -1326,6 +1326,7 @@ function Workbench({
                     calendarTimezone={calendarTimezone}
                     records={snapshot.workflows ?? []}
                     projects={projects}
+                    items={allItems}
                     busy={busy}
                     preview={(projectId, manifest) =>
                       run(() => runtime.previewPlan(projectId, manifest))

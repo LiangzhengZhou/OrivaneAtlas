@@ -481,6 +481,20 @@ body {
   flex: 1;
   min-width: 100px;
 }
+.navigation-settings .organization-toolbar {
+  gap: 12px;
+  padding: 8px 0;
+  align-items: center;
+}
+.navigation-settings .organization-toolbar > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.navigation-settings .organization-toolbar > button {
+  min-width: 32px;
+}
 .navigation-choice {
   display: inline-flex;
   gap: 6px;

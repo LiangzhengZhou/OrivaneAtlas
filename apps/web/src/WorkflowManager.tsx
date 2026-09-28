@@ -1,4 +1,8 @@
-import type { WorkflowRecord, WorkflowService } from "@arclattice/application";
+import {
+  recurrenceStats,
+  type WorkflowRecord,
+  type WorkflowService,
+} from "@arclattice/application";
 import { localCalendarDay, type WorkItem } from "@arclattice/domain";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,6 +11,7 @@ interface Props {
   calendarTimezone?: string;
   records: WorkflowRecord[];
   projects: WorkItem[];
+  items: WorkItem[];
   busy: boolean;
   preview(projectId: string | null, manifest: unknown): Promise<boolean>;
   publish(id: string, version: number): Promise<boolean>;
@@ -29,6 +34,7 @@ export function WorkflowManager({
   calendarTimezone = "UTC",
   records,
   projects,
+  items,
   busy,
   preview,
   publish,
@@ -496,6 +502,20 @@ export function WorkflowManager({
             if (r.payload.kind !== "RECURRENCE") return null;
             const rule = r.payload,
               today = localCalendarDay(new Date().toISOString(), rule.timezone);
+            const occurrencePayloads = records.flatMap((o) =>
+              o.payload.kind === "OCCURRENCE" && o.payload.definitionId === r.id
+                ? [o.payload]
+                : [],
+            );
+            const stats = recurrenceStats(
+              occurrencePayloads,
+              new Set(
+                items
+                  .filter((item) => item.status === "DONE")
+                  .map((item) => item.id),
+              ),
+              today,
+            );
             return (
               <article className="workflow-proposal" key={r.id}>
                 <h3>{rule.title}</h3>
@@ -542,6 +562,12 @@ export function WorkflowManager({
                   {rule.schedulerThrough
                     ? `${t("workflows.schedulerThrough")}: ${rule.schedulerThrough}`
                     : t("workflows.schedulerWaiting")}
+                </p>
+                <p className="workflow-stats">
+                  {text("完成", "Completed")} {stats.completedCount}/
+                  {stats.dueCount} · {text("完成率", "Rate")}{" "}
+                  {Math.round(stats.completionRate * 100)}% ·{" "}
+                  {text("连续", "Streak")} {stats.currentStreak}
                 </p>
                 <p>
                   {t(`workflows.${rule.frequency}`)} · {rule.interval} ·{" "}
