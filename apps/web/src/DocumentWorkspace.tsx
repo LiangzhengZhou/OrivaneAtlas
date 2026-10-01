@@ -2,14 +2,19 @@ import {
   type LibraryEntry,
   type Note,
   privateContentPolicy,
+  scopedKnowledgeDocuments,
 } from "@arclattice/application";
 import type { EditorView } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { showToast } from "./app/ToastHost";
 import type { Runtime, Snapshot } from "./bootstrap";
 import { ContentPolicyEditor } from "./ContentPolicyEditor";
 import { exportHtml, exportMarkdownZip, exportPdf } from "./documentExports";
 import { FilePicker } from "./FilePicker";
+import { DiffViewer } from "./features/documents/DiffViewer";
+import { mergeMarkdown } from "./features/documents/merge";
+import { WikiRelations } from "./features/knowledge/WikiRelations";
 import { imageAnchor, pendingImage } from "./imageInsertion";
 import { LiveMarkdown } from "./LiveMarkdown";
 import {
@@ -27,6 +32,7 @@ export type DocumentRequest = {
   entity?: Note | LibraryEntry | undefined;
   day?: string | undefined;
   spaceId?: string | null | undefined;
+  projectId?: string | undefined;
 };
 type Tab = DocumentRequest & {
   dirty?: boolean;
@@ -42,6 +48,7 @@ export function DocumentWorkspace({
   onVisibility,
   snapshot,
   onDirty,
+  onActive,
 }: {
   request: DocumentRequest | null;
   visible: boolean;
@@ -51,6 +58,7 @@ export function DocumentWorkspace({
   onVisibility: () => void;
   snapshot: Snapshot;
   onDirty: (dirty: boolean) => void;
+  onActive: (request: DocumentRequest | null) => void;
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
@@ -58,6 +66,13 @@ export function DocumentWorkspace({
     [active, setActive] = useState("");
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  useEffect(
+    () =>
+      onActive(
+        visible ? (tabs.find((tab) => tab.key === active) ?? null) : null,
+      ),
+    [tabs, active, visible, onActive],
+  );
   useEffect(
     () => onDirty(tabs.some((t) => t.dirty || t.busy)),
     [tabs, onDirty],
@@ -149,6 +164,43 @@ export function DocumentWorkspace({
       {tabs.map((tab) => (
         <div key={tab.key} hidden={!visible || active !== tab.key}>
           <DocumentPane
+            snapshot={snapshot}
+            onWikiCreated={(entity) => {
+              const key = `DOCUMENT:${entity.id}`;
+              setTabs((old) => [
+                ...old,
+                {
+                  key,
+                  kind: "DOCUMENT",
+                  entity,
+                  spaceId: entity.spaceId,
+                  projectId: tab.projectId,
+                },
+              ]);
+              setActive(key);
+            }}
+            onWikiOpen={(id) => {
+              const entity = snapshot.library.find(
+                (entry) => entry.id === id && !entry.deletedAt,
+              );
+              if (!entity) return;
+              const key = `DOCUMENT:${id}`;
+              setTabs((old) =>
+                old.some((entry) => entry.key === key)
+                  ? old
+                  : [
+                      ...old,
+                      {
+                        key,
+                        kind: "DOCUMENT",
+                        entity,
+                        spaceId: entity.spaceId,
+                        projectId: tab.projectId,
+                      },
+                    ],
+              );
+              setActive(key);
+            }}
             request={tab}
             runtime={runtime}
             remote={[...snapshot.notes, ...snapshot.library].find(
@@ -176,6 +228,9 @@ export function DocumentWorkspace({
   );
 }
 function DocumentPane({
+  snapshot,
+  onWikiCreated,
+  onWikiOpen,
   request,
   runtime,
   onSaved,
@@ -183,6 +238,9 @@ function DocumentPane({
   onStatus,
   remote,
 }: {
+  snapshot: Snapshot;
+  onWikiCreated(entity: LibraryEntry): void;
+  onWikiOpen(id: string): void;
   request: DocumentRequest;
   runtime: Runtime;
   onSaved: () => void;
@@ -463,24 +521,29 @@ function DocumentPane({
   return (
     <article className="document-pane">
       <div className="document-toolbar no-print">
-        {(["live", "source", "read"] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            className={"chip " + (mode === value ? "active" : "")}
-            onClick={() => setMode(value)}
-          >
-            {value === "live"
-              ? zh
-                ? "实时预览"
-                : "Live preview"
-              : value === "source"
+        <details className="document-mode-menu">
+          <summary>
+            {mode === "read" ? t("read") : zh ? "编辑" : "Edit"} ▾
+          </summary>
+          {(["live", "source", "read"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              className={"chip " + (mode === value ? "active" : "")}
+              onClick={() => setMode(value)}
+            >
+              {value === "live"
                 ? zh
-                  ? "源码"
-                  : "Source"
-                : t("read")}
-          </button>
-        ))}
+                  ? "实时预览"
+                  : "Live preview"
+                : value === "source"
+                  ? zh
+                    ? "源码"
+                    : "Source"
+                  : t("read")}
+            </button>
+          ))}
+        </details>
         <span className="action-spacer" />
         <span role="status">
           {busy
@@ -493,86 +556,97 @@ function DocumentPane({
                 ? "已保存"
                 : "Saved"}
         </span>
-        <button
-          className="button secondary"
-          type="button"
-          disabled={busy}
-          onClick={() => void save(true)}
-        >
-          {c("save")}
-        </button>
-        <button
-          className="chip"
-          type="button"
-          onClick={() => downloadText((title || "document") + ".md", body)}
-        >
-          {t("exportMarkdown")}
-        </button>
-        <button className="chip" type="button" onClick={exportPdf}>
-          {s("pdf")}
-        </button>
-        <button
-          className="chip"
-          type="button"
-          onClick={() =>
-            void exportHtml(title || "document", body, runtime.loadImage)
-          }
-        >
-          {zh ? "导出 HTML" : "Export HTML"}
-        </button>
-        <button
-          className="chip"
-          type="button"
-          onClick={() =>
-            void exportMarkdownZip(title || "document", body, runtime.loadImage)
-          }
-        >
-          {zh ? "导出 ZIP（含图片）" : "Export ZIP with images"}
-        </button>
-        {base && (
-          <button
-            className="chip"
-            type="button"
-            disabled={busy}
-            onClick={() =>
-              void guarded(async () =>
-                setHistory(
-                  history.length
-                    ? []
-                    : await (library
-                        ? runtime.libraryRevisions(base.id)
-                        : runtime.revisions(base.id)),
-                ),
-              )
-            }
-          >
-            {t("revisions")}
-          </button>
-        )}
-        {base && (
-          <button
-            className="chip"
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              if (
-                !window.confirm(
-                  zh ? "将文档移入回收站？" : "Move document to trash?",
+        <details className="document-actions-menu">
+          <summary aria-label={zh ? "文档操作" : "Document actions"}>
+            ···
+          </summary>
+          <details>
+            <summary>{zh ? "导出" : "Export"}</summary>
+            <button
+              className="chip"
+              type="button"
+              onClick={() => downloadText((title || "document") + ".md", body)}
+            >
+              {t("exportMarkdown")}
+            </button>
+            <button className="chip" type="button" onClick={exportPdf}>
+              {s("pdf")}
+            </button>
+            <button
+              className="chip"
+              type="button"
+              onClick={() =>
+                void exportHtml(title || "document", body, runtime.loadImage)
+              }
+            >
+              {zh ? "导出 HTML" : "Export HTML"}
+            </button>
+            <button
+              className="chip"
+              type="button"
+              onClick={() =>
+                void exportMarkdownZip(
+                  title || "document",
+                  body,
+                  runtime.loadImage,
                 )
-              )
-                return;
-              void guarded(async () => {
-                await (library
-                  ? runtime.deleteLibrary(base.id, base.version, true)
-                  : runtime.deleteNote(base.id, base.version, true));
-                onSaved();
-                onClose();
-              });
-            }}
-          >
-            {c("delete")}
-          </button>
-        )}
+              }
+            >
+              {zh ? "导出 ZIP（含图片）" : "Export ZIP with images"}
+            </button>
+          </details>
+          {base && (
+            <button
+              className="chip"
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void guarded(async () =>
+                  setHistory(
+                    history.length
+                      ? []
+                      : await (library
+                          ? runtime.libraryRevisions(base.id)
+                          : runtime.revisions(base.id)),
+                  ),
+                )
+              }
+            >
+              {t("revisions")}
+            </button>
+          )}
+          {base && (
+            <button
+              className="chip"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                void guarded(async () => {
+                  await (library
+                    ? runtime.deleteLibrary(base.id, base.version, true)
+                    : runtime.deleteNote(base.id, base.version, true));
+                  onSaved();
+                  showToast(
+                    zh ? "文档已移入回收站" : "Document moved to trash",
+                    async () => {
+                      await (library
+                        ? runtime.deleteLibrary(
+                            base.id,
+                            base.version + 1,
+                            false,
+                          )
+                        : runtime.deleteNote(base.id, base.version + 1, false));
+                      onSaved();
+                    },
+                  );
+                  onClose();
+                });
+              }}
+            >
+              {c("delete")}
+            </button>
+          )}
+        </details>
       </div>
       {base?.deletedAt && (
         <div className="connected-notice">
@@ -631,6 +705,26 @@ function DocumentPane({
               </summary>
               <h3>{remote.title}</h3>
               <Markdown text={remote.bodyMd} />
+              <DiffViewer before={remote.bodyMd} after={body} />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  const merged = mergeMarkdown(
+                    base?.bodyMd ?? "",
+                    body,
+                    remote.bodyMd,
+                  );
+                  setBody(merged.text);
+                  baseRef.current = remote;
+                  setBase(remote);
+                  failed.current = false;
+                  setError("");
+                  recoveryRequired.current = merged.conflicts > 0;
+                }}
+              >
+                {zh ? "三方合并" : "Merge"}
+              </button>
               <button
                 type="button"
                 disabled={busy || !!remote.deletedAt}
@@ -745,23 +839,14 @@ function DocumentPane({
           }
         }}
       />
-      <div className="document-meta no-print">
-        {request.kind} {request.day} ·{" "}
-        {base ? "v" + base.version : zh ? "草稿" : "Draft"} ·{" "}
-        {t("characters", { count: body.length })} ·{" "}
-        {aiPolicy.aiAccess === "DENY"
-          ? zh
-            ? "AI 禁止读取"
-            : "AI access denied"
-          : zh
-            ? "AI 需审批且符合数据许可"
-            : "AI requires approval and data permission"}
-      </div>
-      <ContentPolicyEditor
-        value={aiPolicy}
-        onChange={setAiPolicy}
-        disabled={busy}
-      />
+      <details className="document-policy no-print">
+        <summary>{zh ? "AI 权限" : "AI permissions"}</summary>
+        <ContentPolicyEditor
+          value={aiPolicy}
+          onChange={setAiPolicy}
+          disabled={busy}
+        />
+      </details>
       <details className="document-tools no-print">
         <summary>
           {zh ? "导入、图片与修订" : "Import, images and revisions"}
@@ -820,7 +905,7 @@ function DocumentPane({
             <summary>
               v{revision.version} · {revision.updatedAt}
             </summary>
-            <Markdown text={revision.bodyMd} />
+            <DiffViewer before={revision.bodyMd} after={body} />
             <button
               className="chip"
               type="button"
@@ -841,7 +926,66 @@ function DocumentPane({
         </p>
       )}
       <div hidden={mode === "read"} className="no-print">
+        {base && "spaceId" in base && base.kind === "DOCUMENT" && (
+          <label className="field">
+            {zh ? "父文档" : "Parent document"}
+            <select
+              aria-label={zh ? "父文档" : "Parent document"}
+              value={base.parentDocumentId ?? ""}
+              disabled={busy || dirty}
+              onChange={(event) => {
+                const parentDocumentId = event.target.value || null;
+                void guarded(async () => {
+                  const previous = baseRef.current;
+                  if (!previous || !("spaceId" in previous)) return;
+                  const saved = await runtime.saveLibrary(
+                    previous.id,
+                    previous.version,
+                    {
+                      kind: previous.kind,
+                      spaceId: previous.spaceId,
+                      title: previous.title,
+                      bodyMd: previous.bodyMd,
+                      parentDocumentId,
+                      ...(previous.aliases
+                        ? { aliases: previous.aliases }
+                        : {}),
+                      ...(previous.aiPolicy
+                        ? { aiPolicy: previous.aiPolicy }
+                        : {}),
+                    },
+                  );
+                  baseRef.current = saved;
+                  setBase(saved);
+                  onSaved();
+                });
+              }}
+            >
+              <option value="">{zh ? "顶层" : "Top level"}</option>
+              {snapshot.library
+                .filter(
+                  (entry) =>
+                    entry.kind === "DOCUMENT" &&
+                    !entry.deletedAt &&
+                    entry.spaceId === base.spaceId &&
+                    entry.id !== base.id,
+                )
+                .map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.title}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
         <LiveMarkdown
+          wikiPages={scopedKnowledgeDocuments({
+            ...snapshot,
+            projectId: request.projectId,
+            currentSpaceId: request.spaceId ?? undefined,
+            workspaceId: runtime.context?.workspaceId,
+            workspaceFallback: true,
+          })}
           value={body}
           source={mode === "source"}
           label={library ? s("body") : t("noteBody")}
@@ -858,11 +1002,26 @@ function DocumentPane({
         <h1 className="print-only">{title}</h1>
         <Markdown text={body} />
       </div>
-      <p className="document-footnote no-print">
-        {zh
-          ? "停笔 1 秒自动保存 · Ctrl/⌘ S 立即保存 · 普通草稿按服务器、账号和工作区缓存于此设备；敏感内容仅保留在内存中"
-          : "Autosave after 1s · Ctrl/⌘ S to save · Regular drafts are cached on this device by server, account and workspace; sensitive content stays in memory"}
-      </p>
+      {request.kind === "DOCUMENT" && base && (
+        <WikiRelations
+          documentId={base.id}
+          snapshot={snapshot}
+          onOpen={onWikiOpen}
+          busy={busy}
+          onCreate={(title) =>
+            void guarded(async () => {
+              const entity = await runtime.saveLibrary(null, 0, {
+                kind: "DOCUMENT",
+                spaceId: "spaceId" in base ? base.spaceId : null,
+                title,
+                bodyMd: "",
+              });
+              onSaved();
+              onWikiCreated(entity);
+            })
+          }
+        />
+      )}
     </article>
   );
 }

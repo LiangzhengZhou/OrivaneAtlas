@@ -152,27 +152,14 @@ export function ProjectEditor({
         </label>
         <label className="field">
           <span>{t("desk:parentProject")}</span>
-          <select
+          <output
+            className="parent-selection"
             aria-label={t("desk:parentProject")}
-            value={parent}
-            onChange={(event) => {
-              setParent(event.target.value);
-            }}
           >
-            <option value="">{t("desk:noProject")}</option>
-            {invalidParent && (
-              <option value={parent} disabled>
-                {t("desk:invalidProjectParent")}
-              </option>
-            )}
-            {candidates.map((p) => (
-              <option key={p.id} value={p.id}>
-                {[...projectAncestors(p, projects).reverse(), p]
-                  .map((node) => node.title)
-                  .join(" / ")}
-              </option>
-            ))}
-          </select>
+            {parent
+              ? projects.find((project) => project.id === parent)?.title
+              : t("desk:noProject")}
+          </output>
         </label>
         {invalidParent && <p role="alert">{t("desk:invalidProjectParent")}</p>}
         {!parent && (

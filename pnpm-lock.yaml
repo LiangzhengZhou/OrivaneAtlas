@@ -54,6 +54,9 @@ importers:
       '@arclattice/storage-memory':
         specifier: workspace:*
         version: link:../../packages/storage-memory
+      '@codemirror/autocomplete':
+        specifier: ^6.20.0
+        version: 6.20.3
       '@codemirror/commands':
         specifier: ^6.11.0
         version: 6.11.0
@@ -187,6 +190,9 @@ importers:
       '@arclattice/domain':
         specifier: workspace:*
         version: link:../domain
+      '@arclattice/wiki-core':
+        specifier: workspace:*
+        version: link:../wiki-core
       pg:
         specifier: 8.23.0
         version: 8.23.0
@@ -203,6 +209,11 @@ importers:
       '@arclattice/domain':
         specifier: workspace:*
         version: link:../domain
+      '@arclattice/wiki-core':
+        specifier: workspace:*
+        version: link:../wiki-core
+
+  packages/wiki-core: {}
 
 packages:
 

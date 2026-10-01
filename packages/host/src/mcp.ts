@@ -48,6 +48,61 @@ export const mcpTools = [
       openWorldHint: false,
     },
   },
+  ...[
+    {
+      name: "search_documents",
+      properties: { query: text, projectId: text, currentSpaceId: text },
+      required: ["query"],
+      read: true,
+    },
+    {
+      name: "read_document",
+      properties: { id: text },
+      required: ["id"],
+      read: true,
+    },
+    {
+      name: "get_project",
+      properties: { id: text },
+      required: ["id"],
+      read: true,
+    },
+    {
+      name: "list_project_tasks",
+      properties: { projectId: text },
+      required: ["projectId"],
+      read: true,
+    },
+    {
+      name: "create_task",
+      properties: { title: text, projectIds: { type: "array", items: text } },
+      required: ["title"],
+      read: false,
+    },
+    {
+      name: "propose_document_edit",
+      properties: { id: text, markdown: text },
+      required: ["id", "markdown"],
+      read: false,
+    },
+    {
+      name: "link_documents",
+      properties: { fromId: text, toId: text },
+      required: ["fromId", "toId"],
+      read: false,
+    },
+  ].map((capability) => ({
+    name: capability.name,
+    description: capability.read
+      ? "Authorized application capability. Read credential required."
+      : "Application capability requiring explicit human approval; unapproved MCP execution is rejected.",
+    inputSchema: objectSchema(capability.properties, capability.required),
+    annotations: {
+      readOnlyHint: capability.read,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+  })),
 ] as const;
 
 export interface McpRequest {

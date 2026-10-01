@@ -1,12 +1,21 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type {
   ActivityEvent,
+  AgentSessionStore,
+  LibraryStore,
   OutboxEvent,
+  ProjectStore,
   UnitOfWork,
   WorkTransaction,
 } from "@arclattice/application";
-import type { Principal, Workspace } from "@arclattice/domain";
+import {
+  type ActorContext,
+  DomainError,
+  type Principal,
+  type Workspace,
+} from "@arclattice/domain";
 import { Pool, type PoolClient, type PoolConfig } from "pg";
+import { agentSessionStore } from "./agent-session";
 import {
   begin,
   lockWorkspace,
@@ -15,7 +24,9 @@ import {
   translateError,
 } from "./database";
 import { activityFields, outboxFields, projection } from "./fields";
+import { libraryStore } from "./library";
 import { type BeforeUpgrade, migrate, migrations } from "./migrations";
+import { projectStore } from "./project-materials";
 import { repository } from "./repository";
 
 export { PostgresStorageError } from "./database";
@@ -204,6 +215,53 @@ export class PostgresUnitOfWork implements UnitOfWork {
         try {
           return await operation(handle.port);
         } finally {
+          await handle.finish();
+        }
+      }),
+    );
+  }
+  knowledge<T>(
+    actor: ActorContext,
+    operation: (
+      uow: UnitOfWork,
+      library: LibraryStore,
+      projects: ProjectStore,
+      sessions: AgentSessionStore,
+    ) => Promise<T>,
+  ): Promise<T> {
+    return this.accept(() =>
+      this.transaction(async (client) => {
+        await lockWorkspace(client, actor.workspaceId);
+        if (
+          !(
+            await client.query(
+              "SELECT 1 FROM arclattice.workspace_principal WHERE workspace_id=$1 AND principal_id=$2",
+              [actor.workspaceId, actor.principalId],
+            )
+          ).rowCount
+        )
+          throw new DomainError("FORBIDDEN");
+        const handle = repository(client, actor.workspaceId);
+        let active = true;
+        const guard = () => {
+          if (!active) throw new PostgresStorageError("TRANSACTION_CLOSED");
+        };
+        try {
+          return await operation(
+            {
+              run: async (workspaceId, callback) => {
+                guard();
+                if (workspaceId !== actor.workspaceId)
+                  throw new DomainError("FORBIDDEN");
+                return callback(handle.port);
+              },
+            },
+            libraryStore(client, actor, guard),
+            projectStore(client, actor, guard),
+            agentSessionStore(client, actor, guard),
+          );
+        } finally {
+          active = false;
           await handle.finish();
         }
       }),

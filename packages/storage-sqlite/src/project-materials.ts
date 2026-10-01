@@ -8,15 +8,29 @@ export function projectStore(
   context: ActorContext,
   guard: () => void,
 ): ProjectStore {
+  const decode = (row: Record<string, unknown>): ProjectMaterial => {
+    const material: ProjectMaterial = JSON.parse(String(row.payload));
+    if (row.role !== null && row.role !== undefined) {
+      if (
+        row.role !== "PRIMARY" &&
+        row.role !== "SUPPORTING" &&
+        row.role !== "REFERENCE"
+      )
+        throw new DomainError("VALIDATION_ERROR");
+      material.role = row.role;
+      material.inheritToChildren = row.inherit_to_children === 1;
+    }
+    return material;
+  };
   const get = async (id: string): Promise<ProjectMaterial> => {
     guard();
     const row = db
       .prepare(
-        "SELECT payload FROM project_material WHERE workspace_id=? AND id=?",
+        "SELECT material.payload,binding.role,binding.inherit_to_children FROM project_material material LEFT JOIN project_knowledge_binding binding ON binding.workspace_id=material.workspace_id AND binding.id=material.id WHERE material.workspace_id=? AND material.id=?",
       )
       .get(context.workspaceId, id);
     if (!row) throw new DomainError("NOT_FOUND");
-    return JSON.parse(String(row.payload));
+    return decode(row);
   };
   return {
     get,
@@ -24,10 +38,10 @@ export function projectStore(
       guard();
       return db
         .prepare(
-          "SELECT payload FROM project_material WHERE workspace_id=? ORDER BY id",
+          "SELECT material.payload,binding.role,binding.inherit_to_children FROM project_material material LEFT JOIN project_knowledge_binding binding ON binding.workspace_id=material.workspace_id AND binding.id=material.id WHERE material.workspace_id=? ORDER BY material.id",
         )
         .all(context.workspaceId)
-        .map((row) => JSON.parse(String(row.payload)));
+        .map(decode);
     },
     async save(material, expected, base64) {
       guard();
@@ -71,6 +85,30 @@ export function projectStore(
       )
         throw new DomainError("VERSION_CONFLICT");
       const eventId = randomUUID();
+      db.prepare(
+        "DELETE FROM project_knowledge_binding WHERE workspace_id=? AND id=?",
+      ).run(context.workspaceId, material.id);
+      if (
+        material.kind === "SPACE" &&
+        material.targetId &&
+        !material.deletedAt
+      ) {
+        db.prepare(
+          "INSERT INTO project_knowledge_binding VALUES (?,?,?,?,?,?,?,?,?,?)",
+        ).run(
+          context.workspaceId,
+          material.id,
+          material.projectId,
+          material.targetId,
+          material.ownership,
+          material.role ??
+            (material.ownership === "OWNED" ? "PRIMARY" : "REFERENCE"),
+          material.inheritToChildren ? 1 : 0,
+          material.version,
+          material.updatedBy,
+          material.updatedAt,
+        );
+      }
       db.prepare(
         "INSERT INTO project_material_activity VALUES (?,?,?,?,?,?,?)",
       ).run(

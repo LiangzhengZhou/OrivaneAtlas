@@ -110,6 +110,57 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 12,
+    name: "wiki-links",
+    sql: readFileSync(
+      new URL("./migrations/0012-wiki-links.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 13,
+    name: "project-knowledge-binding",
+    sql: readFileSync(
+      new URL(
+        "./migrations/0013-project-knowledge-binding.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  },
+  {
+    version: 14,
+    name: "wiki-version-validation",
+    sql: readFileSync(
+      new URL("./migrations/0014-wiki-version-validation.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 15,
+    name: "document-metadata",
+    sql: readFileSync(
+      new URL("./migrations/0015-document-metadata.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 16,
+    name: "knowledge-runtime",
+    sql: readFileSync(
+      new URL("./migrations/0016-knowledge-runtime.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 17,
+    name: "agent-session",
+    sql: readFileSync(
+      new URL("./migrations/0017-agent-session.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")
@@ -213,6 +264,32 @@ export async function inspectSchema(
     )
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
   }
+  const knowledgeTables = [
+    ...(rows.length >= 12 ? ["library_entry", "document_wiki_link"] : []),
+    ...(rows.length >= 13 ? ["project_knowledge_binding"] : []),
+    ...(rows.length >= 15 ? ["document_alias", "document_hierarchy"] : []),
+    ...(rows.length >= 16
+      ? [
+          "library_revision",
+          "library_asset",
+          "project_material",
+          "knowledge_activity",
+          "knowledge_outbox",
+          "project_material_activity",
+          "project_material_outbox",
+          "library_asset_upload",
+          "library_asset_chunk",
+        ]
+      : []),
+    ...(rows.length >= 17 ? ["agent_session"] : []),
+  ];
+  if (
+    knowledgeTables.some(
+      (name) =>
+        !objects.some((row) => row.relname === name && row.relkind === "r"),
+    )
+  )
+    throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
   return rows.length;
 }
 

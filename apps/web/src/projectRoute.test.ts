@@ -12,7 +12,7 @@ it("round trips project identity, tab and scope without losing Unicode", () => {
 it("falls back safely for unknown tabs, scope and malformed escapes", () => {
   expect(parseProjectRoute("#projects/abc?tab=no&scope=no")).toEqual({
     projectId: "abc",
-    tab: "brief",
+    tab: "overview",
     scope: "SUBTREE",
   });
   expect(parseProjectRoute("#projects/%ZZ").projectId).toBe(null);

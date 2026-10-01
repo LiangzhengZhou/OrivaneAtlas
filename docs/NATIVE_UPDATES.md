@@ -1,5 +1,22 @@
 # Native signing and updates
 
+## 2.0.0 release validation
+
+Windows GNU Cargo check and release-profile tests passed (15 passed, 1 strict-host
+fixture ignored); Android release JVM tests3/3 passed. Use the existing toolchain
+environment when it is installed outside the default Rustup/Cargo directories.
+For GNU Windows library tests, set `ATLAS_NATIVE_TEST_MANIFEST=1` for
+`cargo test --release --locked --manifest-path src-tauri/Cargo.toml`, then clear it;
+the existing build.rs opt-in provides Common Controls v6 to the test executable.
+Default debug-profile cdylib export limits are not a reason to remove tests.
+
+Before native packaging, run `node scripts/package-native-notices.mjs`; Tauri
+resources and generated Android assets include the checked-in license notices.
+Regenerate Tauri Android version metadata from the main config; 2.0.0 uses
+versionCode2000000. Windows updater signature and Android v2/v3 production
+certificate verification are required. These checks do not replace installed-app
+upgrade acceptance or Android physical-device testing, which remain unverified.
+
 The local native UI checks only the official stable release channel. Business
 servers cannot change update origins or provide executable URLs. Web browsers
 do not receive native installation permissions. No shell or general filesystem

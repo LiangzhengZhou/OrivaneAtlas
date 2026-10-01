@@ -1,0 +1,21 @@
+[data-content-mode="reading"] {
+  max-width: 880px;
+}
+[data-content-mode="standard"] {
+  max-width: 1180px;
+}
+[data-content-mode="wide"] {
+  max-width: 1500px;
+}
+[data-content-mode="full"] {
+  max-width: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

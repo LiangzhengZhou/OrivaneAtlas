@@ -1039,6 +1039,9 @@ export class WorkService {
   }
 }
 export * from "./accounts";
+export * from "./agent-session";
+export * from "./ai-capabilities";
+export * from "./ai-context";
 export * from "./content-policy";
 export * from "./gateway-policy";
 export * from "./library";
@@ -1053,4 +1056,8 @@ export type {
   PersonalModelVault,
 } from "./personal-ai";
 export { type AiTextEdit, parseAiTextEdits } from "./personal-ai";
+export * from "./project-knowledge-scope";
+export * from "./provider-adapter";
+export * from "./retrieval";
+export * from "./trusted-ai-endpoint";
 export type { AppUpdateInfo, AppUpdateProgress, AppUpdates } from "./updates";

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { LibraryEntry, LibraryStore } from "@arclattice/application";
 import { type ActorContext, DomainError } from "@arclattice/domain";
+import { indexDocument, normalizeWikiTitle } from "@arclattice/wiki-core";
 
 export function libraryStore(
   db: DatabaseSync,
@@ -16,7 +17,21 @@ export function libraryStore(
       )
       .get(context.workspaceId, id);
     if (!row) throw new DomainError("NOT_FOUND");
-    return JSON.parse(String(row.payload));
+    const entry = JSON.parse(String(row.payload)) as LibraryEntry;
+    return {
+      ...entry,
+      aliases: [
+        ...new Set([
+          ...(entry.aliases ?? []),
+          ...db
+            .prepare(
+              "SELECT alias FROM document_alias WHERE workspace_id=? AND document_id=? ORDER BY normalized_alias",
+            )
+            .all(context.workspaceId, id)
+            .map((row) => String(row.alias)),
+        ]),
+      ],
+    };
   };
   function event(id: string, version: number, type: string) {
     const eventId = randomUUID();
@@ -37,6 +52,24 @@ export function libraryStore(
   }
   return {
     get,
+    async wikiLinks() {
+      guard();
+      return db
+        .prepare(
+          "SELECT source_document_id, target_document_id, target_text, alias, heading FROM document_wiki_link WHERE workspace_id=? ORDER BY source_document_id,id",
+        )
+        .all(context.workspaceId)
+        .map((row) => ({
+          sourceDocumentId: String(row.source_document_id),
+          targetDocumentId:
+            row.target_document_id === null
+              ? null
+              : String(row.target_document_id),
+          targetText: String(row.target_text),
+          alias: row.alias === null ? null : String(row.alias),
+          heading: row.heading === null ? null : String(row.heading),
+        }));
+    },
     async list() {
       guard();
       return db
@@ -44,7 +77,84 @@ export function libraryStore(
           "SELECT payload FROM library_entry WHERE workspace_id=? ORDER BY id",
         )
         .all(context.workspaceId)
-        .map((r) => JSON.parse(String(r.payload)) as LibraryEntry);
+        .map((r) => {
+          const entry = JSON.parse(String(r.payload)) as LibraryEntry;
+          return {
+            ...entry,
+            aliases: [
+              ...new Set([
+                ...(entry.aliases ?? []),
+                ...db
+                  .prepare(
+                    "SELECT alias FROM document_alias WHERE workspace_id=? AND document_id=? ORDER BY normalized_alias",
+                  )
+                  .all(context.workspaceId, entry.id)
+                  .map((row) => String(row.alias)),
+              ]),
+            ],
+          };
+        });
+    },
+    async rebuildWikiIndex() {
+      guard();
+      const before = await this.list();
+      for (const link of await this.wikiLinks!()) {
+        const target = before.find(
+          (entry) => entry.id === link.targetDocumentId && !entry.deletedAt,
+        );
+        if (
+          target &&
+          normalizeWikiTitle(target.title) !==
+            normalizeWikiTitle(link.targetText)
+        )
+          db.prepare(
+            "INSERT INTO document_alias VALUES (?,?,?,?,?,?) ON CONFLICT(workspace_id,normalized_alias) DO NOTHING",
+          ).run(
+            context.workspaceId,
+            target.id,
+            link.targetText,
+            normalizeWikiTitle(link.targetText),
+            target.createdAt,
+            target.createdBy,
+          );
+      }
+      const entries = await this.list();
+      const documents = entries.filter(
+        (entry) =>
+          entry.kind === "DOCUMENT" &&
+          !entry.deletedAt &&
+          entries.some(
+            (space) =>
+              space.id === entry.spaceId &&
+              space.kind === "SPACE" &&
+              !space.deletedAt,
+          ),
+      );
+      db.prepare("DELETE FROM document_wiki_link WHERE workspace_id=?").run(
+        context.workspaceId,
+      );
+      for (const document of documents)
+        for (const link of indexDocument(
+          document.id,
+          document.bodyMd,
+          documents.filter(
+            (candidate) => candidate.spaceId === document.spaceId,
+          ),
+        ))
+          db.prepare(
+            "INSERT INTO document_wiki_link VALUES (?,?,?,?,?,?,?,?,?)",
+          ).run(
+            context.workspaceId,
+            randomUUID(),
+            document.id,
+            link.targetDocumentId,
+            link.targetText,
+            link.alias,
+            link.heading,
+            document.version,
+            document.updatedAt,
+          );
+      event("wiki-index", 1, "WIKI_INDEX_REBUILT");
     },
     async save(entry, expected) {
       guard();
@@ -96,6 +206,96 @@ export function libraryStore(
         entry.version,
         JSON.stringify(entry),
       );
+      if (entry.kind === "DOCUMENT") {
+        db.prepare(
+          "DELETE FROM document_alias WHERE workspace_id=? AND document_id=?",
+        ).run(context.workspaceId, entry.id);
+        for (const alias of entry.aliases ?? [])
+          db.prepare("INSERT INTO document_alias VALUES (?,?,?,?,?,?)").run(
+            context.workspaceId,
+            entry.id,
+            alias,
+            normalizeWikiTitle(alias),
+            entry.createdAt,
+            entry.createdBy,
+          );
+        db.prepare(
+          "INSERT INTO document_hierarchy VALUES (?,?,?) ON CONFLICT(workspace_id,document_id) DO UPDATE SET parent_document_id=excluded.parent_document_id",
+        ).run(context.workspaceId, entry.id, entry.parentDocumentId ?? null);
+        const previousLinks = db
+          .prepare(
+            "SELECT target_text, target_document_id FROM document_wiki_link WHERE workspace_id=? AND source_document_id=? AND target_document_id IS NOT NULL",
+          )
+          .all(context.workspaceId, entry.id);
+        const documents = db
+          .prepare("SELECT payload FROM library_entry WHERE workspace_id=?")
+          .all(context.workspaceId)
+          .map((row) => JSON.parse(String(row.payload)) as LibraryEntry)
+          .filter(
+            (document) => document.kind === "DOCUMENT" && !document.deletedAt,
+          );
+        db.prepare(
+          "DELETE FROM document_wiki_link WHERE workspace_id=? AND source_document_id=?",
+        ).run(context.workspaceId, entry.id);
+        if (!entry.deletedAt) {
+          const candidates = documents.filter(
+            (document) => document.spaceId === entry.spaceId,
+          );
+          for (const link of indexDocument(
+            entry.id,
+            entry.bodyMd,
+            candidates,
+          )) {
+            const previous = previousLinks.find(
+              (old) => String(old.target_text) === link.targetText,
+            );
+            const stableTarget =
+              previous &&
+              candidates.some(
+                (candidate) => candidate.id === previous.target_document_id,
+              )
+                ? String(previous.target_document_id)
+                : link.targetDocumentId;
+            db.prepare(
+              "INSERT INTO document_wiki_link VALUES (?,?,?,?,?,?,?,?,?)",
+            ).run(
+              context.workspaceId,
+              randomUUID(),
+              entry.id,
+              stableTarget,
+              link.targetText,
+              link.alias,
+              link.heading,
+              entry.version,
+              entry.updatedAt,
+            );
+          }
+          for (const link of db
+            .prepare(
+              "SELECT id, source_document_id, target_text FROM document_wiki_link WHERE workspace_id=? AND target_document_id IS NULL",
+            )
+            .all(context.workspaceId)) {
+            const source = documents.find(
+              (document) => document.id === link.source_document_id,
+            );
+            if (
+              source?.spaceId === entry.spaceId &&
+              [entry.title, ...(entry.aliases ?? [])].some(
+                (title) =>
+                  normalizeWikiTitle(String(link.target_text)) ===
+                  normalizeWikiTitle(title),
+              )
+            )
+              db.prepare(
+                "UPDATE document_wiki_link SET target_document_id=? WHERE workspace_id=? AND id=?",
+              ).run(entry.id, context.workspaceId, String(link.id));
+          }
+        }
+        if (entry.deletedAt)
+          db.prepare(
+            "UPDATE document_wiki_link SET target_document_id=NULL WHERE workspace_id=? AND target_document_id=?",
+          ).run(context.workspaceId, entry.id);
+      }
       event(entry.id, entry.version, "LIBRARY_CHANGED");
     },
     async revisions(id) {

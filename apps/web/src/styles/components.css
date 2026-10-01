@@ -1,0 +1,86 @@
+.button,
+.chip,
+input,
+select {
+  min-height: var(--control-height);
+}
+.primary {
+  color: var(--on-accent);
+  box-shadow: none;
+}
+.panel {
+  padding: var(--panel-padding);
+  border-radius: var(--radius-md);
+}
+.icon-button:hover {
+  background: var(--surface-hover);
+}
+.today-panel {
+  background: var(--surface-subtle);
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
+.document-workspace {
+  background: var(--surface);
+  color: var(--text-primary);
+}
+.react-flow {
+  --xy-node-background-color-default: var(--surface-raised);
+  --xy-node-color-default: var(--text-primary);
+  --xy-node-border-default: 1px solid var(--border-strong);
+  --xy-controls-button-background-color-default: var(--surface-raised);
+  --xy-controls-button-color-default: var(--text-primary);
+  --xy-minimap-background-color-default: var(--surface);
+}
+.toast-host {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  z-index: 200;
+  display: grid;
+  gap: 8px;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px #0002;
+}
+@media (max-width: 767px) {
+  .toast-host {
+    right: 12px;
+    left: 12px;
+    bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+}
+.diff-removed {
+  background: #dc262615;
+}
+.diff-added {
+  background: #16a34a15;
+}
+.assistant-pane {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(400px, 100vw);
+  overflow: auto;
+  padding: 20px;
+  z-index: 150;
+  background: var(--surface);
+  border-left: 1px solid var(--border-default);
+  box-shadow: -8px 0 30px #0001;
+}
+.assistant-pane header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.assistant-pane .markdown {
+  min-height: 0;
+}

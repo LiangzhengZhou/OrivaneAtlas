@@ -1,0 +1,155 @@
+import { GripVertical, LogOut, PanelLeft, Settings2 } from "lucide-react";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { type NavigationView, navigation, type View } from "./navigation";
+
+export function Sidebar({
+  collapsed,
+  mobileOpen,
+  canAdmin,
+  activeView,
+  navigationOrder,
+  taskCount,
+  noteCount,
+  label,
+  onNavigate,
+  onToggleMobile,
+  onDragNavigation,
+  onMoveNavigation,
+  onLogout,
+}: {
+  collapsed: boolean;
+  mobileOpen: boolean;
+  canAdmin: boolean;
+  activeView: View;
+  navigationOrder: readonly NavigationView[];
+  taskCount: string;
+  noteCount: string;
+  label(value: string): string;
+  onNavigate(view: View): void;
+  onToggleMobile(): void;
+  onDragNavigation(view: NavigationView): void;
+  onMoveNavigation(view: NavigationView): void;
+  onLogout(): void;
+}) {
+  const { t } = useTranslation("desk");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const groups = [
+    {
+      label: t("workspace"),
+      views: ["overview", "focus", "tasks", "projects", "calendar"],
+    },
+    { label: t("knowledge"), views: ["notes", "journal", "library"] },
+    { label: "Atlas", views: ["ai"] },
+  ];
+  return (
+    <aside className="sidebar" id="workspace-sidebar">
+      <div className="brand">
+        <img
+          className="brand-logo"
+          src="/orivane-atlas.png"
+          alt="Orivane Atlas"
+        />
+      </div>
+      <button
+        type="button"
+        className="icon-button mobile-navigation-toggle"
+        aria-label={t(mobileOpen ? "collapseSidebar" : "expandSidebar")}
+        aria-expanded={mobileOpen}
+        aria-controls="mobile-more-sheet"
+        onClick={() => onToggleMobile()}
+      >
+        <PanelLeft size={20} />
+      </button>
+      <div className="workspace-switch">
+        <span className="workspace-avatar">A</span>
+        <div>
+          <strong>{t("personal")}</strong>
+        </div>
+      </div>
+      <nav id="workspace-navigation" aria-label={t("workspace")}>
+        {groups.map((group) => (
+          <section key={group.label}>
+            <p className="section-label">{group.label}</p>
+            {navigationOrder
+              .filter((next) => group.views.includes(next))
+              .map((next) => navigation.find((item) => item.view === next)!)
+              .filter(Boolean)
+              .filter((n) => n.view !== "admin" || canAdmin)
+              .map(({ view: next, icon: Icon }) => (
+                <button
+                  type="button"
+                  key={next}
+                  className={
+                    "nav-item " + (activeView === next ? "active" : "")
+                  }
+                  aria-current={activeView === next ? "page" : undefined}
+                  aria-label={label(next)}
+                  onClick={() => onNavigate(next)}
+                  draggable={!collapsed}
+                  onDragStart={() => onDragNavigation(next)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => onMoveNavigation(next)}
+                  title={collapsed ? label(next) : undefined}
+                >
+                  <GripVertical
+                    className="nav-drag-handle"
+                    size={14}
+                    aria-hidden="true"
+                  />
+                  <Icon size={18} />
+                  <span>{label(next)}</span>
+                  {next === "tasks" && (
+                    <span className="nav-count">{taskCount}</span>
+                  )}
+                  {next === "notes" && (
+                    <span className="nav-count">{noteCount}</span>
+                  )}
+                </button>
+              ))}
+          </section>
+        ))}
+      </nav>
+      <div className="sidebar-bottom">
+        <button
+          className={"nav-item " + (activeView === "settings" ? "active" : "")}
+          type="button"
+          onClick={() => setMenuOpen((open) => !open)}
+          aria-label={t("workspaceMenu")}
+          aria-expanded={menuOpen}
+          title={collapsed ? t("workspaceMenu") : undefined}
+        >
+          <Settings2 size={18} />
+          <span>{t("workspaceMenu")}</span>
+        </button>
+        {menuOpen && (
+          <div
+            className="workspace-menu"
+            role="menu"
+            aria-label={t("workspaceMenu")}
+          >
+            {(["account", "admin", "settings", "trash"] as const)
+              .filter((next) => next !== "admin" || canAdmin)
+              .map((next) => (
+                <button
+                  type="button"
+                  role="menuitem"
+                  key={next}
+                  onClick={() => {
+                    onNavigate(next);
+                    setMenuOpen(false);
+                  }}
+                >
+                  {label(next)}
+                </button>
+              ))}
+            <button type="button" role="menuitem" onClick={onLogout}>
+              <LogOut size={16} />
+              {t("lock")}
+            </button>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}

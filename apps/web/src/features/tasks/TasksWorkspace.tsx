@@ -7,11 +7,13 @@ export function TasksWorkspace({
   initialTab = "now",
   initialBoard = false,
   includeArchived = false,
+  onDependencies,
   ...props
 }: WorkProps & {
   initialTab?: "now" | "later" | "scheduled" | "completed" | "all";
   initialBoard?: boolean;
   includeArchived?: boolean;
+  onDependencies?: () => void;
 }) {
   const { t } = useTranslation("desk");
   const [tab, setTab] = useState(initialTab);
@@ -74,6 +76,11 @@ export function TasksWorkspace({
           {t("taskWorkspace.board")}
         </button>
       </div>
+      {onDependencies && (
+        <button type="button" className="chip" onClick={onDependencies}>
+          {t("dependencies")}
+        </button>
+      )}
       {board ? (
         <WorkBoard {...props} items={items} />
       ) : (

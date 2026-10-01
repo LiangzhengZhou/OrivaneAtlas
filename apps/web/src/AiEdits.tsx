@@ -1,7 +1,7 @@
 import { type AgentRun, parseAiTextEdits } from "@arclattice/application";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Markdown } from "./Markdown";
+import { DiffViewer } from "./features/documents/DiffViewer";
 export function AiEdits({
   run,
   busy,
@@ -47,15 +47,15 @@ export function AiEdits({
             {zh ? "应用此修改" : "Apply this edit"}
           </label>
           <h4>{zh ? "原文" : "Original"}</h4>
-          <Markdown
-            text={
+          <DiffViewer
+            before={
               run.context?.find(
                 (c) => c.ref.id === edit.id && c.ref.kind === edit.kind,
               )?.bodyMd ?? ""
             }
+            after={edit.bodyMd}
           />
           <h4>{zh ? "建议全文" : "Proposed full text"}</h4>
-          <Markdown text={edit.bodyMd} />
         </details>
       ))}
       <button

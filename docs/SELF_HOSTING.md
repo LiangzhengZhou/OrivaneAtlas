@@ -2,7 +2,7 @@
 
 Orivane Atlas is a server-backed workspace. The server stores authoritative workspace data; web, Windows, and Android clients connect to that server. Clients may keep local drafts, but this is not a complete offline replica or conflict-free sync engine.
 
-Version 0.0.8 requires matching server code, SQLite schema 17 and PostgreSQL repository schema 8. Upgrade the server before clients. Back up the database and separate provider vault and validate restoration to a new file. Native clients now retain up to 20 encrypted account sessions across servers, revalidate identity when switching, and isolate drafts by server and account. The historical 0.0.7 account limitations below describe the older release.
+Version 2.0.0 targets SQLite schema24 and PostgreSQL knowledge schema17. The shipped account/HTTP Host uses SQLite; PostgreSQL knowledge adapter parity does not imply a PostgreSQL account server. Upgrade the server before clients, back up the database and separate provider vault, and validate restoration to a new target. Read [Migration to 2.0](MIGRATION_2.0.md) first. Native clients retain up to 20 encrypted account sessions across servers, revalidate identity when switching, and isolate drafts by server and account. Historical 0.0.7 account limitations below describe the older release. Native packages are rebuilt for 2.0.0; publishing them does not deploy or migrate your server.
 
 ## Requirements
 
@@ -53,7 +53,11 @@ Use published release artifacts only after verifying their source, version, and 
 
 ## Troubleshooting
 
-### Durable sessions (0.0.7)
+### Historical 0.0.7 account/session notes
+
+The following 0.0.5–0.0.7 notes are historical, not current 2.0 limitations or
+instructions to delete current sessions. For current schema and upgrade behavior,
+use [Migration to 2.0](MIGRATION_2.0.md) and the version requirements above.
 
 The updated SQLite Host applies migration 12 and stores hashed, revocable login sessions across Host restarts. Policies are one, seven or thirty days, or PERMANENT (new-source default); changes affect new logins only. PERMANENT has no server expiry but browsers receive a renewable one-year cookie. Clearing browser data, losing native secure storage or letting the browser cookie expire still requires login. Old process-local sessions require one new login after upgrade. Existing native cookie storage is compatible; no client rebuild is required for server persistence.
 
@@ -81,4 +85,4 @@ For development and contribution checks, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 Set ARCLATTICE_CALENDAR_TIMEZONE to an IANA zone such as Asia/Shanghai before starting the host. The default is UTC. Each workspace can now save a versioned override in Settings; an empty override inherits the host setting. Authenticated snapshots expose the effective timezone and the stored preference. Task execution gates, Today, Calendar and new Journal dates use the same effective timezone. Changes do not rewrite existing dates or recurrence rule timezones. Workspace overrides are included in database backups; keep the host fallback with deployment configuration.
 
-The current source requires SQLite schema 18 / PostgreSQL repository schema 9. The additive upgrade preserves Activity and Outbox and retains endpoints for newly recorded dependency events after removal. Old removed-edge history cannot be reconstructed. SQLite makes a pre-upgrade snapshot; validate restoration to a new file before switching production. Rollback uses matching pre-upgrade code and snapshot, never older code against the upgraded database. Workspace timezone changes require a human session, CSRF and an idempotency key; external Agent/PAT tools cannot change this setting.
+The current source requires SQLite schema24 / PostgreSQL knowledge schema17. The additive upgrade preserves Activity and Outbox and retains endpoints for newly recorded dependency events after removal. Old removed-edge history cannot be reconstructed. SQLite makes a pre-upgrade snapshot; validate restoration to a new file before switching production. Rollback uses matching pre-upgrade code and snapshot, never older code against the upgraded database. Workspace timezone changes require a human session, CSRF and an idempotency key; external Agent/PAT tools cannot change this setting.

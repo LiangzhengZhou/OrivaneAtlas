@@ -3,14 +3,18 @@ import type {
   AccountSession,
   ActivityEvent,
   AgentRun,
+  AgentSession,
+  AiContextItem,
   ApiCredential,
   AppUpdateProgress,
   AppUpdates,
   CategoryService,
+  DocumentWikiLink,
   EntityRef,
   KnowledgeLink,
   LibraryEntry,
   LibraryInput,
+  ModelEvent,
   ModelRoute,
   Note,
   NoteInput,
@@ -20,6 +24,7 @@ import type {
   PersonalModelSummary,
   ProjectActivity,
   ProjectCategory,
+  ProjectKnowledgeBinding,
   ProjectMaterial,
   WorkflowRecord,
   WorkflowService,
@@ -153,6 +158,7 @@ export function savePreference(value: LocalePreference) {
   }
 }
 export interface Snapshot extends WorkSnapshot {
+  wikiLinks?: DocumentWikiLink[];
   projectMaterials: ProjectMaterial[];
   categories?: ProjectCategory[];
   workflows?: WorkflowRecord[];
@@ -591,6 +597,22 @@ export async function bootstrap() {
       }),
     revokeToken: (id: string) => request("/api/tokens/revoke", { id }),
     library: () => request<LibraryEntry[]>("/api/library"),
+    createProjectSpace: (input: {
+      projectId: string;
+      title: string;
+      inheritToChildren: boolean;
+    }) => request<ProjectKnowledgeBinding>("/api/projects/space/create", input),
+    linkProjectSpace: (input: {
+      projectId: string;
+      spaceId: string;
+      inheritToChildren: boolean;
+    }) => request<ProjectKnowledgeBinding>("/api/projects/space/link", input),
+    createProjectDocument: (input: {
+      projectId: string;
+      spaceId: string;
+      title: string;
+      bodyMd: string;
+    }) => request<LibraryEntry>("/api/projects/document/create", input),
     projectDocument: (input: {
       projectId: string;
       title: string;
@@ -683,15 +705,29 @@ export async function bootstrap() {
     propose: (
       prompt: string,
       scope = "personal",
-      sources: { kind: EntityRef["kind"]; id: string; version: number }[] = [],
+      sources: {
+        kind: EntityRef["kind"];
+        id: string;
+        version: number;
+        source?: AiContextItem["source"];
+      }[] = [],
       profileId = "default",
+      retrievalContext?: { projectId?: string; currentSpaceId?: string },
+      session?: { sessionId: string; sessionVersion: number },
     ) =>
       request<AgentRun>("/api/ai/propose", {
         prompt,
         scope,
         sources,
         profileId,
+        ...(retrievalContext ? { retrievalContext } : {}),
+        ...(session ?? {}),
       }),
+    agentSessions: () => request<AgentSession[]>("/api/ai/sessions"),
+    aiEvents: (id: string) =>
+      request<ModelEvent[]>("/api/ai/events?id=" + encodeURIComponent(id)),
+    createAgentSession: (title: string) =>
+      request<AgentSession>("/api/ai/sessions/create", { title }),
     applyAi: (id: string, version: number, indices: number[]) =>
       request("/api/ai/apply", { id, version, indices }),
     decide: (id: string, version: number, approve: boolean) =>

@@ -1,3 +1,7 @@
+import {
+  autocompletion,
+  type CompletionContext,
+} from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxTree } from "@codemirror/language";
@@ -20,6 +24,7 @@ import {
 import katex from "katex";
 import { useContext, useEffect, useLayoutEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { useTranslation } from "react-i18next";
 import { externalValue, pendingImage } from "./imageInsertion";
 import { Markdown, PrivateImageContext } from "./Markdown";
 
@@ -249,6 +254,7 @@ export function LiveMarkdown({
   onComposition,
   editorRef,
   onImages,
+  wikiPages = [],
 }: {
   value: string;
   source: boolean;
@@ -258,8 +264,16 @@ export function LiveMarkdown({
   onComposition: (active: boolean) => void;
   editorRef: { current: EditorView | null };
   onImages?: (files: File[]) => void;
+  wikiPages?: readonly {
+    id: string;
+    title: string;
+    aliases?: readonly string[];
+  }[];
 }) {
   const parent = useRef<HTMLDivElement>(null);
+  const { i18n } = useTranslation();
+  const language = useRef(i18n.language);
+  language.current = i18n.language;
   const load = useContext(PrivateImageContext);
   const loaderConfig = useRef(new Compartment());
   const initialLoader = useRef(load);
@@ -267,6 +281,8 @@ export function LiveMarkdown({
   callbacks.current = { onChange, onSave, onComposition, onImages };
   const mode = useRef(new Compartment());
   const initial = useRef({ value, source, label });
+  const pages = useRef(wikiPages);
+  pages.current = wikiPages;
   useEffect(() => {
     if (!parent.current) return;
     const view = new EditorView({
@@ -275,6 +291,65 @@ export function LiveMarkdown({
         doc: initial.current.value,
         extensions: [
           markdown(),
+          autocompletion({
+            override: [
+              (context: CompletionContext) => {
+                const wiki = context.matchBefore(/\[\[[^\]\n]*/);
+                if (wiki)
+                  return {
+                    from: wiki.from + 2,
+                    options: pages.current.flatMap((page, index) =>
+                      [page.title, ...(page.aliases ?? [])].map((title) => ({
+                        label: title,
+                        ...(title === page.title ? {} : { detail: page.title }),
+                        type: "text",
+                        boost: -index,
+                        apply: `${title}]]`,
+                      })),
+                    ),
+                  };
+                const slash = context.matchBefore(/(?:^|\s)\/[\w]*/);
+                if (!slash) return null;
+                const from = slash.from + (slash.text.startsWith("/") ? 0 : 1);
+                return {
+                  from,
+                  options: [
+                    { label: "Heading", apply: "## " },
+                    { label: "Task", apply: "- [ ] " },
+                    { label: "Quote", apply: "> " },
+                    { label: "Code", apply: "```\n\n```" },
+                    {
+                      label: "Table",
+                      apply: "| Column | Column |\n| --- | --- |\n|  |  |",
+                    },
+                    { label: "Image", apply: "![Description](path)" },
+                    { label: "Link document", apply: "[[" },
+                    {
+                      label: "Ask Atlas",
+                      apply: () =>
+                        window.dispatchEvent(new CustomEvent("atlas:open")),
+                    },
+                  ].map((option) => ({
+                    ...option,
+                    displayLabel: language.current.startsWith("zh")
+                      ? ((
+                          {
+                            Heading: "标题",
+                            Task: "任务",
+                            Quote: "引用",
+                            Code: "代码块",
+                            Table: "表格",
+                            Image: "图片",
+                            "Link document": "链接文档",
+                            "Ask Atlas": "询问 Atlas",
+                          } as Record<string, string>
+                        )[option.label] ?? option.label)
+                      : option.label,
+                  })),
+                };
+              },
+            ],
+          }),
           loaderConfig.current.of(imageLoader.of(initialLoader.current)),
           history(),
           pendingImage,

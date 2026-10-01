@@ -27,20 +27,20 @@
 }
 .document-workspace {
   min-width: 0;
-  background: #fff;
+  background: var(--surface);
 }
 .document-tabs {
   display: flex;
   gap: 4px;
   padding: 8px 18px 0;
   overflow-x: auto;
-  border-bottom: 1px solid #e3e5ee;
-  background: #f9fafc;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-subtle);
 }
 .document-tab {
   display: flex;
   flex-shrink: 0;
-  border: 1px solid #e3e5ee;
+  border: 1px solid var(--border-default);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
   max-width: 280px;
@@ -56,8 +56,8 @@
   white-space: nowrap;
 }
 .document-tab button[aria-selected="true"] {
-  background: #fff;
-  color: #6756a5;
+  background: var(--surface);
+  color: var(--accent);
   font-weight: 600;
 }
 .document-pane {
@@ -70,7 +70,7 @@
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 0;
-  border-bottom: 1px solid #edf0f5;
+  border-bottom: 1px solid var(--surface-subtle);
   font-size: 15px;
 }
 .document-title {
@@ -81,18 +81,16 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: #222d40;
+  color: var(--text-primary);
   font-size: 32px;
   font-weight: 650;
   outline: none;
 }
-.document-meta,
-.document-tools,
-.document-footnote {
+.document-tools {
   max-width: 920px;
   margin: 12px auto;
   font-size: 15px;
-  color: #7d8497;
+  color: var(--text-muted);
 }
 .document-tools input {
   max-width: 100%;
@@ -115,7 +113,7 @@
 }
 .live-markdown .cm-content {
   padding: 12px 0 100px;
-  caret-color: #6f5aa8;
+  caret-color: var(--accent);
 }
 .live-markdown .cm-line {
   padding: 0;
@@ -142,12 +140,12 @@
   font-style: italic;
 }
 .md-live-inlinecode {
-  background: #f1edf8;
+  background: var(--surface-subtle);
   border-radius: 3px;
-  color: #704f91;
+  color: var(--text-secondary);
 }
 .md-live-link {
-  color: #6859a3;
+  color: var(--accent);
   text-decoration: underline;
 }
 .md-live-widget {
@@ -228,7 +226,7 @@
   box-sizing: border-box;
 }
 .app-updater {
-  background: var(--surface, #fff);
+  background: var(--surface);
   border: 1px solid #e5e1f0;
   border-radius: 20px;
   box-shadow: 0 8px 28px #30234d08;

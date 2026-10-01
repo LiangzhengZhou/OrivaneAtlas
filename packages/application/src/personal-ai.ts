@@ -1,8 +1,10 @@
 import { type ActorContext, DomainError } from "@arclattice/domain";
 import type { AgentRun, EntityRef, ModelPort, ModelRoute } from "./connected";
 import type { GatewayPolicy } from "./gateway-policy";
+import type { TrustedAiEndpoint } from "./trusted-ai-endpoint";
 
 export interface PersonalModelInput {
+  supportsStreaming?: boolean;
   gateway?: GatewayPolicy;
   profileId?: string;
   scope: string;
@@ -18,6 +20,7 @@ export interface PersonalModelSummary extends Omit<PersonalModelInput, "key"> {
 }
 /** Private host port. Keys must never enter entity storage, receipts or public responses. */
 export interface PersonalModelVault {
+  setTrustedEndpoints?(entries: readonly TrustedAiEndpoint[]): void;
   list(actor: ActorContext): PersonalModelSummary[];
   save(
     actor: ActorContext,

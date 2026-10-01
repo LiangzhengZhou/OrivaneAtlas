@@ -1,4 +1,5 @@
 import type { EntityRef, Note, OrganizeInput } from "@arclattice/application";
+import { privateContentPolicy } from "@arclattice/application";
 import {
   type ActorContext,
   DomainError,
@@ -17,7 +18,6 @@ import {
   BookOpen,
   CheckCheck,
   Download,
-  GripVertical,
   ListTodo,
   LogOut,
   NotebookPen,
@@ -25,14 +25,14 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Settings2,
-  ShieldCheck,
   Target,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AccountView, AdminView } from "./AccountViews";
 import { AppUpdater } from "./AppUpdater";
+import { AppShell } from "./app/AppShell";
+import { CommandPalette } from "./app/CommandPalette";
 import { NavigationSettings } from "./app/NavigationSettings";
 import {
   currentView,
@@ -41,6 +41,10 @@ import {
   SIDEBAR_COLLAPSED_KEY,
   type View,
 } from "./app/navigation";
+import { Sidebar } from "./app/Sidebar";
+import { ToastHost } from "./app/ToastHost";
+import { Topbar } from "./app/Topbar";
+import { WorkspaceRouter } from "./app/WorkspaceRouter";
 import {
   type Runtime,
   readPreference,
@@ -48,13 +52,15 @@ import {
   savePreference,
 } from "./bootstrap";
 import { CalendarSettings } from "./CalendarSettings";
-import { AiView, KnowledgeView } from "./ConnectedViews";
+import { KnowledgeView } from "./ConnectedViews";
 import { DensitySettings } from "./DensitySettings";
 import { type DocumentRequest, DocumentWorkspace } from "./DocumentWorkspace";
+import { AiSettingsView } from "./features/ai/AiSettingsView";
+import { AssistantPane } from "./features/ai/AssistantPane";
 import { MoreSheet } from "./features/mobile/MoreSheet";
+import { ProjectDependencyGraph } from "./features/projects/ProjectDependencyGraph";
 import { TasksWorkspace } from "./features/tasks/TasksWorkspace";
 import { selectTasks } from "./features/tasks/task-selectors";
-import { GraphCanvas } from "./GraphCanvas";
 import { LibraryView } from "./LibraryView";
 import { Login } from "./Login";
 import { PrivateImageContext } from "./Markdown";
@@ -123,6 +129,26 @@ function Workbench({
       : t(value);
   const [view, setView] = useState<View>(currentView);
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  useEffect(() => {
+    const open = () => setAssistantOpen(true);
+    const shortcut = (event: KeyboardEvent) => {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLocaleLowerCase() === "j"
+      ) {
+        event.preventDefault();
+        setAssistantOpen((old) => !old);
+      }
+    };
+    window.addEventListener("atlas:open", open);
+    window.addEventListener("keydown", shortcut);
+    return () => {
+      window.removeEventListener("atlas:open", open);
+      window.removeEventListener("keydown", shortcut);
+    };
+  }, []);
   const [projectRoute, setProjectRoute] = useState(() =>
     parseProjectRoute(location.hash),
   );
@@ -173,9 +199,14 @@ function Workbench({
   const [documentRequest, setDocumentRequest] =
     useState<DocumentRequest | null>(null);
   const [documentVisible, setDocumentVisible] = useState(false);
+  const [activeDocumentContext, setActiveDocumentContext] =
+    useState<DocumentRequest | null>(null);
   const [documentDirty, setDocumentDirty] = useState(false);
   function openDocument(request: DocumentRequest) {
-    setDocumentRequest(request);
+    setDocumentRequest({
+      ...request,
+      ...(activeProjectId ? { projectId: activeProjectId } : {}),
+    });
     setDocumentVisible(true);
   }
   const [snapshot, setSnapshot] = useState<Snapshot>({
@@ -354,6 +385,7 @@ function Workbench({
       if (leavingProject) projectBriefDirty.current = false;
       acceptedHash.current = location.hash;
       setProjectRoute(nextProject);
+      if (nextProject.projectId) void refresh().catch(() => undefined);
       setView(currentView());
       setDocumentVisible(false);
       setQuery("");
@@ -375,6 +407,23 @@ function Workbench({
   }, [a]);
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLocaleLowerCase() === "k"
+      ) {
+        event.preventDefault();
+        setCommandOpen((old) => !old);
+        return;
+      }
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLocaleLowerCase() === "n"
+      ) {
+        event.preventDefault();
+        if (view === "notes") setNoteEditor("NOTE");
+        else open("new");
+        return;
+      }
       if (
         editor ||
         noteEditor ||
@@ -513,7 +562,7 @@ function Workbench({
     }).format(new Date(value));
   function navigateProject(
     id: string | null,
-    tab: ProjectTab = "brief",
+    tab: ProjectTab = "overview",
     scope: "DIRECT" | "SUBTREE" = "SUBTREE",
   ) {
     if (
@@ -818,198 +867,195 @@ function Workbench({
       </>
     );
   };
+  const assistantDocument = documentVisible
+    ? (activeDocumentContext?.entity ?? null)
+    : null;
   return (
-    <div
-      className={
-        "app-shell " +
-        (sidebarCollapsed ? "sidebar-collapsed " : "") +
-        (mobileNavigationOpen
-          ? "mobile-navigation-open"
-          : "mobile-navigation-closed")
-      }
-    >
-      <aside className="sidebar" id="workspace-sidebar">
-        <div className="brand">
-          <img
-            className="brand-logo"
-            src="/orivane-atlas.png"
-            alt="Orivane Atlas"
-          />
-        </div>
-        <button
-          type="button"
-          className="icon-button mobile-navigation-toggle"
-          aria-label={t(
-            mobileNavigationOpen ? "collapseSidebar" : "expandSidebar",
-          )}
-          aria-expanded={mobileNavigationOpen}
-          aria-controls="mobile-more-sheet"
-          onClick={() => setMobileNavigationOpen((value) => !value)}
-        >
-          <PanelLeft size={20} />
-        </button>
-        <div className="workspace-switch">
-          <span className="workspace-avatar">A</span>
-          <div>
-            <strong>{t("personal")}</strong>
-            <small>{t("privateWorkspace")}</small>
-          </div>
-        </div>
-        <nav id="workspace-navigation" aria-label={t("workspace")}>
-          <p className="section-label">{t("workspace")}</p>
-          {navigationOrder
-            .map((next) => navigation.find((item) => item.view === next)!)
-            .filter(Boolean)
-            .filter(
-              (n) =>
-                n.view !== "admin" ||
-                !runtime.account ||
-                runtime.account.role === "ADMIN",
-            )
-            .map(({ view: next, icon: Icon }) => (
-              <button
-                type="button"
-                key={next}
-                className={"nav-item " + (view === next ? "active" : "")}
-                aria-current={view === next ? "page" : undefined}
-                aria-label={viewLabel(next)}
-                onClick={() => navigate(next)}
-                draggable
-                onDragStart={() => setDraggedNavigation(next)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => moveNavigation(next)}
-                title={sidebarCollapsed ? viewLabel(next) : undefined}
-              >
-                <GripVertical
-                  className="nav-drag-handle"
-                  size={14}
-                  aria-hidden="true"
-                />
-                <Icon size={18} />
-                <span>{viewLabel(next)}</span>
-                {next === "tasks" && (
-                  <span className="nav-count">
-                    {count(taskSelection.openActiveTasks.length)}
-                  </span>
-                )}
-                {next === "notes" && (
-                  <span className="nav-count">
-                    {count(notes.filter((n) => n.kind === "NOTE").length)}
-                  </span>
-                )}
-              </button>
-            ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="storage-card">
-            <ShieldCheck size={18} />
-            <strong>{t("protected")}</strong>
-            <p>{t("remoteHint")}</p>
-          </div>
-          <button
-            className={"nav-item " + (view === "settings" ? "active" : "")}
-            type="button"
-            onClick={() => navigate("settings")}
-            aria-label={t("settings")}
-          >
-            <Settings2 size={18} />
-            <span>{t("settings")}</span>
-          </button>
-        </div>
-      </aside>
+    <AppShell collapsed={sidebarCollapsed} mobileOpen={mobileNavigationOpen}>
+      <ToastHost />
+      {commandOpen && (
+        <CommandPalette
+          snapshot={snapshot}
+          onClose={() => setCommandOpen(false)}
+          onCreate={() => open("new")}
+          onOpen={(ref) => {
+            if (ref.kind === "WORK") {
+              const item = snapshot.items.find((entry) => entry.id === ref.id);
+              if (item) setEditor(item);
+            } else if (ref.kind === "NOTE") {
+              const entity = snapshot.notes.find(
+                (entry) => entry.id === ref.id,
+              );
+              if (entity)
+                openDocument({ key: entity.id, kind: entity.kind, entity });
+            } else {
+              const entity = snapshot.library.find(
+                (entry) => entry.id === ref.id,
+              );
+              if (entity)
+                openDocument({
+                  key: entity.id,
+                  kind: entity.kind,
+                  entity,
+                  spaceId: entity.spaceId,
+                });
+            }
+          }}
+        />
+      )}
+      {assistantOpen && (
+        <AssistantPane
+          runtime={runtime}
+          projectId={
+            documentVisible
+              ? activeDocumentContext?.projectId
+              : (activeProjectId ?? undefined)
+          }
+          currentSpaceId={
+            assistantDocument && "spaceId" in assistantDocument
+              ? assistantDocument.kind === "SPACE"
+                ? assistantDocument.id
+                : (assistantDocument.spaceId ?? undefined)
+              : undefined
+          }
+          onClose={() => setAssistantOpen(false)}
+          context={
+            assistantDocument && activeDocumentContext
+              ? [
+                  {
+                    ref: {
+                      kind:
+                        activeDocumentContext.kind === "JOURNAL"
+                          ? "NOTE"
+                          : activeDocumentContext.kind,
+                      id: assistantDocument.id,
+                    },
+                    title: assistantDocument.title,
+                    version: assistantDocument.version,
+                    source: "current",
+                    tokenEstimate: Math.ceil(
+                      assistantDocument.bodyMd.length / 4,
+                    ),
+                    permission:
+                      assistantDocument.aiPolicy ?? privateContentPolicy,
+                  },
+                ]
+              : []
+          }
+        />
+      )}
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        mobileOpen={mobileNavigationOpen}
+        canAdmin={!runtime.account || runtime.account.role === "ADMIN"}
+        activeView={view}
+        navigationOrder={navigationOrder}
+        taskCount={count(taskSelection.openActiveTasks.length)}
+        noteCount={count(notes.filter((note) => note.kind === "NOTE").length)}
+        label={viewLabel}
+        onNavigate={navigate}
+        onToggleMobile={() => setMobileNavigationOpen((value) => !value)}
+        onDragNavigation={setDraggedNavigation}
+        onMoveNavigation={moveNavigation}
+        onLogout={() => {
+          if (
+            (documentDirty ||
+              libraryDraft.current ||
+              projectBriefDirty.current ||
+              editor) &&
+            !window.confirm(t("discardHint"))
+          )
+            return;
+          void run(() => runtime.logout()).then((ok) => {
+            if (ok) onLogout();
+          });
+        }}
+      />
       <main className="workspace-main">
-        <header className="topbar">
-          <div className="breadcrumb">
-            <span>{t("personal")}</span>
-            <span>/</span>
-            <strong>{viewLabel(view)}</strong>
-          </div>
-          <div className="topbar-actions">
-            <button
-              className="icon-button sidebar-toggle"
-              type="button"
-              aria-label={
-                sidebarCollapsed ? t("expandSidebar") : t("collapseSidebar")
-              }
-              aria-expanded={!sidebarCollapsed}
-              aria-controls="workspace-sidebar"
-              onClick={toggleSidebar}
-            >
-              <PanelLeft size={17} />
-            </button>
-            <span
-              className={
-                "mode-badge " + (error || syncOffline ? "offline" : "")
-              }
-              title={t(
-                view === "library" || view === "account" || view === "admin"
-                  ? "spaces:refresh"
-                  : "connected:syncHint",
-              )}
-            >
-              <span />
-              {loading
-                ? t("connecting")
-                : syncOffline
-                  ? t("connected:offline")
-                  : error
-                    ? t("attention")
-                    : busy
-                      ? t("saving")
-                      : saved
-                        ? t("saved")
-                        : view === "library" ||
-                            view === "account" ||
-                            view === "admin"
-                          ? t("spaces:connected")
-                          : t("connected:synced")}
-            </span>
-            <button
-              className="icon-button"
-              type="button"
-              aria-label={t("refresh")}
-              disabled={busy}
-              onClick={() => void refresh()}
-            >
-              <RefreshCw size={17} />
-            </button>
-            {!(
-              [
-                "settings",
-                "trash",
-                "knowledge",
-                "ai",
-                "library",
-                "account",
-                "admin",
-              ] as string[]
-            ).includes(view) && (
-              <button
-                className="button primary compact-create"
-                type="button"
-                disabled={busy || loading}
-                onClick={create}
-              >
-                <Plus size={17} />
-                {t(
-                  view === "notes"
-                    ? "newNote"
-                    : view === "journal"
-                      ? "todayJournal"
-                      : view === "projects"
-                        ? "newProject"
-                        : "newTask",
-                )}
-              </button>
+        <Topbar workspace={t("personal")} location={viewLabel(view)}>
+          <button
+            className="icon-button sidebar-toggle"
+            type="button"
+            aria-label={
+              sidebarCollapsed ? t("expandSidebar") : t("collapseSidebar")
+            }
+            aria-expanded={!sidebarCollapsed}
+            aria-controls="workspace-sidebar"
+            onClick={toggleSidebar}
+          >
+            <PanelLeft size={17} />
+          </button>
+          <span
+            className={"mode-badge " + (error || syncOffline ? "offline" : "")}
+            title={t(
+              view === "library" || view === "account" || view === "admin"
+                ? "spaces:refresh"
+                : "connected:syncHint",
             )}
-          </div>
-        </header>
+          >
+            <span />
+            {loading
+              ? t("connecting")
+              : syncOffline
+                ? t("connected:offline")
+                : error
+                  ? t("attention")
+                  : busy
+                    ? t("saving")
+                    : saved
+                      ? t("saved")
+                      : view === "library" ||
+                          view === "account" ||
+                          view === "admin"
+                        ? t("spaces:connected")
+                        : t("connected:synced")}
+          </span>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label={t("refresh")}
+            disabled={busy}
+            onClick={() => void refresh()}
+          >
+            <RefreshCw size={17} />
+          </button>
+          {!(
+            [
+              "settings",
+              "trash",
+              "knowledge",
+              "ai",
+              "library",
+              "account",
+              "admin",
+            ] as string[]
+          ).includes(view) && (
+            <button
+              className="button primary compact-create"
+              type="button"
+              disabled={busy || loading}
+              onClick={create}
+            >
+              <Plus size={17} />
+              {t(
+                view === "notes"
+                  ? "newNote"
+                  : view === "journal"
+                    ? "todayJournal"
+                    : view === "projects"
+                      ? "newProject"
+                      : "newTask",
+              )}
+            </button>
+          )}
+        </Topbar>
         <p className="calendar-timezone muted" data-testid="calendar-timezone">
           {t("calendarTimezone", { timezone: calendarTimezone })}
         </p>
         <DocumentWorkspace
           request={documentRequest}
           visible={documentVisible}
+          onActive={setActiveDocumentContext}
           runtime={runtime}
           snapshot={snapshot}
           onDirty={setDocumentDirty}
@@ -1017,7 +1063,7 @@ function Workbench({
           onBrowse={() => setDocumentVisible(false)}
           onVisibility={() => setDocumentVisible(true)}
         />
-        <div className="content" hidden={documentVisible}>
+        <WorkspaceRouter view={view} hidden={documentVisible}>
           {errorMessage && !editor && !noteEditor && (
             <div className="error" role="alert">
               {errorMessage}
@@ -1055,7 +1101,11 @@ function Workbench({
               {t("connecting")}
             </div>
           ) : view === "library" ? (
-            <LibraryView runtime={runtime} onOpen={openDocument} />
+            <LibraryView
+              runtime={runtime}
+              onOpen={openDocument}
+              onKnowledge={() => navigate("knowledge")}
+            />
           ) : view === "account" ? (
             <AccountView
               runtime={runtime}
@@ -1097,7 +1147,23 @@ function Workbench({
               }}
             />
           ) : view === "ai" ? (
-            <AiView runtime={runtime} snapshot={snapshot} />
+            <section>
+              <button
+                type="button"
+                className="button primary"
+                onClick={() => setAssistantOpen(true)}
+              >
+                {i18n.language.startsWith("zh") ? "询问 Atlas" : "Ask Atlas"}
+              </button>
+              <details>
+                <summary>
+                  {i18n.language.startsWith("zh")
+                    ? "AI 设置与活动"
+                    : "AI settings and activity"}
+                </summary>
+                <AiSettingsView runtime={runtime} snapshot={snapshot} />
+              </details>
+            </section>
           ) : view === "overview" ? (
             <>
               <div className="home-summary">
@@ -1496,17 +1562,12 @@ function Workbench({
             </div>
           ) : view === "dependencies" ? (
             <>
-              <GraphCanvas
+              <ProjectDependencyGraph
                 snapshot={snapshot}
-                tasks
                 onOpen={(ref) => {
                   const item = snapshot.items.find((i) => i.id === ref.id);
                   if (item) setEditor(item);
                 }}
-                onConnect={(from, to) =>
-                  run(() => service.addEdge(context, from.id, to.id))
-                }
-                onRemove={(id) => run(() => service.removeEdge(context, id))}
               />
               <Dependencies
                 items={allItems}
@@ -1751,6 +1812,7 @@ function Workbench({
                 )
               ) : view === "tasks" ? (
                 <TasksWorkspace
+                  onDependencies={() => navigate("dependencies")}
                   key={location.hash}
                   {...workProps}
                   items={visible}
@@ -1791,11 +1853,7 @@ function Workbench({
               )}
             </>
           )}
-        </div>
-        <footer className="workspace-footer">
-          <span>Orivane Atlas · {t("privateWorkspace")}</span>
-          <span>{t("footerHint")}</span>
-        </footer>
+        </WorkspaceRouter>
       </main>
       <nav
         className="mobile-bottom-navigation"
@@ -1899,6 +1957,6 @@ function Workbench({
           }
         />
       )}
-    </div>
+    </AppShell>
   );
 }

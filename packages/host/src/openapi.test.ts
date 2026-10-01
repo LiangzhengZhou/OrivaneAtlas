@@ -30,7 +30,8 @@ it("OpenAPI references resolve and versioned aliases preserve unique operations"
     }
   };
   walk(spec);
-  expect(spec.info.version).toBe("0.6.0");
+  const release = JSON.parse(readFileSync(resolve("package.json"), "utf8"));
+  expect(spec.info.version).toBe(release.version);
   for (const [path, item] of Object.entries(spec.paths)) {
     if (path.startsWith("/api/v1/")) continue;
     const alias = spec.paths[path.replace("/api/", "/api/v1/")];

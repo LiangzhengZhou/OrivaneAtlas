@@ -55,6 +55,11 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/work/calendar-settings",
             "/api/work/navigation-preference",
             "/api/projects/document",
+            "/api/projects/spaces",
+            "/api/projects/space/create",
+            "/api/projects/space/link",
+            "/api/projects/space/unlink",
+            "/api/projects/document/create",
             "/api/projects/link",
             "/api/projects/upload",
             "/api/projects/delete",
@@ -63,11 +68,15 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/edge/create",
             "/api/edge/delete",
             "/api/library/save",
+            "/api/library/rebuild-index",
             "/api/library/delete",
             "/api/library/upload-chunk",
             "/api/ai/providers/save",
             "/api/ai/providers/remove",
             "/api/ai/propose",
+            "/api/ai/sessions/create",
+            "/api/ai/capability",
+            "/api/ai/trusted-endpoints/save",
             "/api/ai/apply",
             "/api/ai/decide",
             "/api/link/create",
@@ -97,6 +106,9 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/library/asset",
             "/api/ai/providers",
             "/api/ai",
+            "/api/ai/sessions",
+            "/api/ai/events",
+            "/api/ai/trusted-endpoints",
             "/api/activity",
             "/api/projects/file",
             "/api/projects/activity",
@@ -967,6 +979,20 @@ mod tests {
             assert!(endpoint("https://example.com", path, false).is_err());
         }
         assert!(endpoint("https://example.com", "/api/work/unknown-preference", true).is_err());
+    }
+    #[test]
+    fn project_knowledge_endpoints_are_allowed_only_as_post() {
+        for path in [
+            "/api/projects/spaces",
+            "/api/projects/space/create",
+            "/api/projects/space/link",
+            "/api/projects/space/unlink",
+            "/api/projects/document/create",
+        ] {
+            assert!(endpoint("https://example.com", path, true).is_ok());
+            assert!(endpoint("https://example.com", path, false).is_err());
+        }
+        assert!(endpoint("https://example.com", "/api/projects/space/unknown", true).is_err());
     }
     #[test]
     fn switching_server_discards_cookie() {

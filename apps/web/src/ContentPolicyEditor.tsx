@@ -34,13 +34,9 @@ export function ContentPolicyEditor({
             })
           }
         >
-          <option value="DENY">{zh ? "禁止" : "Deny"}</option>
-          <option value="ASK">{zh ? "逐次询问" : "Ask each time"}</option>
-          <option value="ALLOW">
-            {zh
-              ? "允许（仍需运行审批）"
-              : "Allow (run approval still required)"}
-          </option>
+          <option value="DENY">{zh ? "永不" : "Never"}</option>
+          <option value="ASK">{zh ? "询问" : "Ask"}</option>
+          <option value="ALLOW">{zh ? "允许" : "Allowed"}</option>
         </select>
       </label>
       <label>

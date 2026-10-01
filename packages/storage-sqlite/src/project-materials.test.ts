@@ -188,4 +188,48 @@ describe("project owned materials", () => {
       },
     );
   });
+  it("supports multiple owned, linked and inherited knowledge spaces", async () => {
+    const db = await harness.create();
+    const parent = await service(db).create(context, {
+      type: "PROJECT",
+      title: "Parent",
+    });
+    const child = await service(db).create(context, {
+      type: "PROJECT",
+      title: "Child",
+      parentProjectId: parent.id,
+    });
+    await db.request(
+      context,
+      null,
+      async (uow, _notes, _connected, library, _organization, projects) => {
+        const app = new ProjectService(
+          uow,
+          projects,
+          library,
+          authorization,
+          clock,
+          ids,
+        );
+        const primary = await app.createProjectSpace(context, {
+          projectId: parent.id,
+          title: "Primary",
+          inheritToChildren: true,
+        });
+        await app.createProjectSpace(context, {
+          projectId: parent.id,
+          title: "Architecture",
+          role: "SUPPORTING",
+          inheritToChildren: true,
+        });
+        await app.linkProjectSpace(context, {
+          projectId: child.id,
+          spaceId: primary.spaceId,
+        });
+        const spaces = await app.listProjectSpaces(context, child.id, true);
+        expect(spaces.map((space) => space.spaceId)).toContain(primary.spaceId);
+        expect(spaces.some((space) => space.ownership === "LINKED")).toBe(true);
+      },
+    );
+  });
 });

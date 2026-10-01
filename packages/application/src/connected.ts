@@ -1,4 +1,5 @@
 import { type ActorContext, DomainError } from "@arclattice/domain";
+import type { AiContextItem } from "./ai-context";
 import {
   type GatewayMoney,
   type GatewayPolicy,
@@ -7,6 +8,7 @@ import {
   settleGatewayMoney,
 } from "./gateway-policy";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
+import type { ModelProviderAdapter } from "./provider-adapter";
 
 export interface EntityRef {
   kind: "NOTE" | "WORK" | "SPACE" | "DOCUMENT";
@@ -48,6 +50,8 @@ export type RunStatus =
   | "REJECTED"
   | "INTERRUPTED";
 export interface AgentRun extends ConnectedEntity {
+  sessionId?: string;
+  sessionVersion?: number;
   attempt?: {
     money?: GatewayMoney;
     id: string;
@@ -59,6 +63,9 @@ export interface AgentRun extends ConnectedEntity {
     usage?: ModelUsage;
   };
   context?: {
+    source?: AiContextItem["source"];
+    tokenEstimate?: number;
+    permission?: AiContextItem["permission"];
     ref: EntityRef;
     version: number;
     title: string;
@@ -88,6 +95,7 @@ export interface ModelUsage {
   source: "PROVIDER_REPORTED";
 }
 export interface ModelPort {
+  providerAdapter?: ModelProviderAdapter;
   fallbacks?: ModelPort[];
   route: ModelRoute;
   complete(
@@ -173,6 +181,7 @@ export class ConnectedService {
     prompt: string,
     route: ModelRoute,
     sources: NonNullable<AgentRun["context"]> = [],
+    session: Pick<AgentRun, "sessionId" | "sessionVersion"> = {},
   ) {
     await this.auth.require(context, "work:create");
     if (
@@ -183,6 +192,7 @@ export class ConnectedService {
       throw new DomainError("VALIDATION_ERROR");
     const run: AgentRun = {
       ...this.base(context),
+      ...session,
       prompt,
       context: sources,
       route,

@@ -4,7 +4,7 @@ AI is optional. Current installers connect to your own server; credentials and m
 
 ## Configure and use
 
-Add a personal provider in the AI settings. The current adapter accepts a public HTTPS endpoint with the Chat Completions or Responses protocol. Settings can apply to your personal workspace, a project or a knowledge space. Each scope supports multiple named profiles, each with its own provider, model and version. Existing configurations remain the default profile. Use **Open / create profile** to add a profile, then explicitly select it for a request. Unknown or deleted named profiles never fall back to another provider. Approval and dispatch use the profile recorded on the run, not whichever profile is currently selected in the UI. API keys are kept in the server's separate encrypted vault, never in Markdown, database receipts or browser storage. Back up the vault and its master key separately using your own secure operational procedure.
+Add a personal provider in the AI settings. Adapters accept public HTTPS endpoints using Chat Completions or Responses; bounded local/private Ollama, LM Studio and vLLM bases additionally require exact administrator-managed endpoint trust. Settings can apply to your personal workspace, a project or a knowledge space. Each scope supports multiple named profiles, each with its own provider, model and version. Existing configurations remain the default profile. Use **Open / create profile** to add a profile, then explicitly select it for a request. Unknown or deleted named profiles never fall back to another provider. Approval and dispatch use the profile recorded on the run, not whichever profile is currently selected in the UI. API keys are kept in the server's separate encrypted vault, never in Markdown, database receipts or browser storage. Back up the vault and its master key separately using your own secure operational procedure.
 
 In a note or knowledge document, expand **AI data permission**. Existing content defaults to **Deny / Local only / Private**. To propose a cloud request, explicitly allow an appropriate processing boundary and choose **Ask** or **Allow**. A document and its containing space must both permit processing. Even **Allow** does not bypass the current per-run review step. Changing UI language never changes document text.
 
@@ -18,13 +18,26 @@ Inspect the selected route, prompt and context before approving a run. Approval 
 - If a provider reports valid input/output token counts, the counts are persisted with the attempt, including known consumption from a rejected response. Missing counters remain unknown, not zero. These records are not a monetary invoice.
 - Integration Bearer credentials cannot configure server providers, change document AI policies or approve model sends. An AI-produced document edit preserves existing policy.
 
-No arbitrary shell tools or provider tool calls are executed. The current public-HTTPS destination checks intentionally reject loopback and private-network endpoints; labeling a cloud route as local is not supported.
+No arbitrary shell tools or autonomous provider tool calls are executed. Untrusted loopback/private destinations remain rejected. Trust is normalized exact endpoint matching, checked again after DNS and at real sends; metadata/link-local/unspecified targets remain rejected. Revocation prevents later sends. Trust does not relabel a cloud route as local or override content policies.
 
-## Registry, budget and fallback in 0.0.8
+## Registry, budget and fallback
 
 Named registrations now support TEXT, JSON and EMBEDDING capabilities, explicit daily request and USD budget limits (including UNLIMITED), and up to two approved fallback profiles. The persistent ledger reserves before dispatch and reconciles reported usage; unknown usage retains the conservative reservation. Only a definitive no-send result allows fallback. Timeout or uncertain network outcomes never trigger automatic resend. Every fallback route is included in the approval and revalidated before use.
 
-The authenticated MCP endpoint exposes workspace snapshots, additive plan previews and project document creation. It cannot publish plans or approve model sends. Shared administrator discovery, trusted private-network endpoints and arbitrary agent execution remain outside this implementation.
+The authenticated MCP endpoint exposes workspace snapshots, additive plan previews and project document creation, plus authorized shared capability reads. It cannot publish plans, manufacture write approval or approve model sends. Assistant/MCP share the capability Application implementations described in [permissions](agent/ai-capabilities.md); capabilities never access SQL directly. Arbitrary agent execution remains unsupported.
+
+## Assistant runtime in 2.0
+
+Project search, Wiki completion, Knowledge Graph and retrieval share the same
+knowledge scope resolver. Retrieval combines full text, aliases, Wiki neighbors,
+backlinks and recency; permissions filter server-loaded AiContext before approval.
+Context versions and successful conversation history are revalidated at dispatch.
+
+Provider adapters emit actual SSE text deltas and usage when streaming is enabled;
+non-streaming adapters explicitly use complete without fabricated deltas. The UI
+consumes bounded transient events; AgentSession persists final conversation messages
+and resumes through the authorized API. AgentRun remains one execution/audit record.
+Embedding indexing is optional and autonomous model tools are not advertised.
 
 ## Upgrades
 

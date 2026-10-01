@@ -1,102 +1,3 @@
-:root {
-  font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif;
-  color: #242939;
-  background: #f7f8fc;
-  font-synthesis: none;
-  font-size: 16px;
-  line-height: 1.6;
-  --accent: #6454ce;
-  --border: #e5e7ef;
-  --muted: #737a8d;
-  --surface: #fff;
-}
-* {
-  box-sizing: border-box;
-}
-body {
-  margin: 0;
-}
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-button {
-  cursor: pointer;
-}
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-button,
-input,
-select,
-textarea {
-  outline-offset: 4px;
-}
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid #8979ed;
-}
-a {
-  color: var(--accent);
-}
-h1,
-h2,
-h3,
-p {
-  margin: 0;
-}
-h1 {
-  font-size: 30px;
-  line-height: 1.4;
-  font-weight: 650;
-  letter-spacing: -0.7px;
-}
-h2 {
-  font-size: 18px;
-  font-weight: 650;
-}
-h3 {
-  font-size: 16px;
-}
-svg {
-  flex-shrink: 0;
-}
-input,
-select,
-textarea {
-  border: 1px solid #dcdfea;
-  border-radius: 8px;
-  padding: 9px 12px;
-  color: inherit;
-  background: white;
-  min-width: 0;
-}
-textarea {
-  resize: vertical;
-  line-height: 1.8;
-}
-input::placeholder,
-textarea::placeholder {
-  color: #9399a8;
-}
-button {
-  color: inherit;
-}
-kbd {
-  font: 11px inherit;
-  border: 1px solid currentColor;
-  border-radius: 4px;
-  padding: 0 5px;
-  opacity: 0.55;
-}
-::selection {
-  background: #e0dafc;
-}
 .app-shell {
   display: grid;
   grid-template-columns: 238px minmax(0, 1fr);
@@ -122,8 +23,7 @@ kbd {
 }
 .sidebar-collapsed .workspace-switch > div,
 .sidebar-collapsed .section-label,
-.sidebar-collapsed .nav-item span,
-.sidebar-collapsed .storage-card {
+.sidebar-collapsed .nav-item span {
   display: none;
 }
 .sidebar-collapsed .nav-item {
@@ -161,17 +61,9 @@ kbd {
   align-items: center;
   font-size: 21px;
   font-weight: 650;
-  color: #fff;
+  color: var(--on-accent);
   letter-spacing: -0.4px;
   white-space: nowrap;
-}
-.brand-mark {
-  width: 33px;
-  height: 36px;
-  background: #7762de;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
 }
 .workspace-switch {
   display: flex;
@@ -194,7 +86,7 @@ kbd {
   font-size: 17px;
 }
 .workspace-switch strong {
-  color: #e5e8f2;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 500;
   display: block;
@@ -259,29 +151,6 @@ kbd {
   overflow-y: auto;
   flex-shrink: 1;
 }
-.storage-card {
-  font-size: 14px;
-  padding: 15px;
-  border: 1px solid #ffffff10;
-  border-radius: 10px;
-  line-height: 1.7;
-  background: #ffffff03;
-  margin-bottom: 12px;
-}
-.storage-card svg {
-  color: #a694ee;
-  vertical-align: middle;
-  margin-right: 8px;
-}
-.storage-card strong {
-  font-weight: 500;
-  color: #cbd2e4;
-}
-.storage-card p {
-  color: #929eb6;
-  font-size: 14px;
-  margin-top: 8px;
-}
 .workspace-main {
   min-width: 0;
   display: flex;
@@ -341,12 +210,12 @@ kbd {
   min-width: 0;
 }
 .project-workspace [role="tab"][aria-selected="true"] {
-  color: #5945bf;
-  background: #eeeafa;
-  box-shadow: inset 0 -2px #7762de;
+  color: var(--accent);
+  background: var(--surface-active);
+  box-shadow: inset 0 -2px var(--accent);
 }
 .sidebar .mobile-navigation-toggle:hover {
-  color: #fff;
+  color: var(--on-accent);
   background: #ffffff20;
 }
 .project-workspace select {
@@ -363,7 +232,7 @@ kbd {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fafaff;
+  background: var(--surface-subtle);
   color: var(--muted);
 }
 .plan-tree,
@@ -380,7 +249,7 @@ kbd {
 .plan-tree-node {
   border-left: 3px solid #a694ee;
   padding: 9px 12px;
-  background: #f7f5ff;
+  background: var(--surface-subtle);
   border-radius: 6px;
 }
 .plan-tree-project,
@@ -469,20 +338,20 @@ kbd {
 }
 .primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: 0 3px 8px #6454ce19;
 }
 .primary:hover:not(:disabled) {
-  background: #5747bc;
+  background: var(--accent-hover);
 }
 .secondary {
-  background: white;
-  border-color: #dfe1eb;
+  background: var(--surface);
+  border-color: var(--border-default);
   color: #52596d;
 }
 .secondary:hover:not(:disabled) {
-  background: #faf9ff;
-  border-color: #afa2e9;
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 .danger {
   background: #fff5f3;
@@ -500,8 +369,8 @@ kbd {
   border-radius: 6px;
 }
 .icon-button:hover {
-  background: #edeaf8;
-  color: #6454ce;
+  background: var(--surface-hover);
+  color: var(--accent);
 }
 .text-button {
   background: transparent;
@@ -521,7 +390,7 @@ kbd {
 }
 .metric-card {
   border: 1px solid var(--border);
-  background: white;
+  background: var(--surface);
   padding: 21px 23px;
   text-align: left;
   border-radius: 12px;
@@ -562,7 +431,7 @@ kbd {
   gap: 24px;
 }
 .panel {
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 24px;
@@ -591,14 +460,14 @@ kbd {
   flex-wrap: wrap;
 }
 .today-panel {
-  border: 1px solid #e1dbef;
+  border: 1px solid var(--border-default);
   border-radius: 12px;
-  background: #eeebf6;
+  background: var(--surface-subtle);
   padding: 25px 27px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  color: #57506e;
+  color: var(--text-secondary);
 }
 .today-panel > svg {
   color: #9d8cbe;
@@ -607,19 +476,19 @@ kbd {
 .today-panel h2 {
   font-size: 20px;
   letter-spacing: -0.3px;
-  color: #47415d;
+  color: var(--text-primary);
 }
 .today-panel p {
   font-size: 15px;
   line-height: 1.9;
-  color: #868096;
+  color: var(--text-muted);
   margin: 12px 0 23px;
 }
 .today-panel .button {
-  background: #f8f6ff;
-  border-color: #dad3e9;
+  background: var(--surface);
+  border-color: var(--border-default);
   font-size: 15px;
-  color: #726184;
+  color: var(--text-secondary);
 }
 .progress-label {
   margin-top: auto;
@@ -662,7 +531,7 @@ progress::-webkit-progress-value {
 }
 .note-card {
   text-align: left;
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 11px;
   padding: 22px;
@@ -673,7 +542,7 @@ progress::-webkit-progress-value {
 }
 .note-card:hover {
   border-color: #b8a6df;
-  background: #fdfcff;
+  background: var(--surface-hover);
 }
 .note-card-top {
   display: flex;
@@ -732,7 +601,7 @@ progress::-webkit-progress-value {
   justify-content: space-between;
   gap: 20px;
   padding: 16px 38px;
-  border-top: 1px solid #e9eaf1;
+  border-top: 1px solid var(--border-subtle);
   color: #a0a5b3;
   font-size: 13px;
 }
@@ -760,7 +629,7 @@ progress::-webkit-progress-value {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0 10px;
@@ -802,7 +671,7 @@ progress::-webkit-progress-value {
 .task-list {
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: white;
+  background: var(--surface);
   overflow: hidden;
 }
 .task-card {
@@ -812,13 +681,13 @@ progress::-webkit-progress-value {
   justify-content: space-between;
   gap: 20px;
   min-width: 0;
-  border-bottom: 1px solid #eef0f6;
+  border-bottom: 1px solid var(--border-subtle);
 }
 .task-card:last-child {
   border-bottom: 0;
 }
 .task-card:hover {
-  background: #fdfcff;
+  background: var(--surface-hover);
 }
 .task-main {
   display: flex;
@@ -832,14 +701,14 @@ progress::-webkit-progress-value {
   padding: 0;
   text-align: left;
   font-size: 16px;
-  color: #3c4253;
+  color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 .task-title:hover {
   color: var(--accent);
 }
 .completed .task-title {
-  color: #626879;
+  color: var(--text-muted);
   text-decoration: line-through;
 }
 .task-meta {
@@ -908,7 +777,7 @@ svg.status-dot {
 .status-select {
   font-size: 14px;
   padding: 4px 6px;
-  background: #fafbfe;
+  background: var(--surface-subtle);
   border-color: #ebedf4;
   max-width: 116px;
 }
@@ -921,8 +790,8 @@ svg.status-dot {
   min-height: 400px;
 }
 .board-column {
-  border: 1px solid #e7e8f0;
-  background: #f0f2f8;
+  border: 1px solid var(--border-default);
+  background: var(--surface-subtle);
   border-radius: 10px;
   padding: 13px;
   min-height: 350px;
@@ -946,8 +815,8 @@ svg.status-dot {
   background: #e4e7f0;
 }
 .board .task-card {
-  background: white;
-  border: 1px solid #e5e7f0;
+  background: var(--surface);
+  border: 1px solid var(--border-default);
   border-radius: 8px;
   padding: 14px 12px;
   display: block;
@@ -977,9 +846,9 @@ svg.status-dot {
   margin: 0 0 15px;
 }
 .empty-state {
-  border: 1px dashed #dfe1ec;
+  border: 1px dashed var(--border-default);
   border-radius: 12px;
-  background: #fafbfe;
+  background: var(--surface-subtle);
   min-height: 300px;
   padding: 55px 28px;
   text-align: center;
@@ -1020,7 +889,7 @@ svg.status-dot {
   line-height: 1.8;
 }
 .dependencies {
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 25px;
@@ -1068,7 +937,7 @@ svg.status-dot {
   color: #a0a5b3;
 }
 .trash-list {
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0 22px;
@@ -1078,7 +947,7 @@ svg.status-dot {
   gap: 15px;
   align-items: center;
   padding: 18px 0;
-  border-bottom: 1px solid #eceef4;
+  border-bottom: 1px solid var(--border-subtle);
 }
 .trash-list > div > span {
   flex: 1;
@@ -1088,7 +957,7 @@ svg.status-dot {
   color: #a6a3b6;
 }
 .settings-panel {
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 8px 28px;
@@ -1096,7 +965,7 @@ svg.status-dot {
 }
 .settings-panel section {
   padding: 25px 0;
-  border-bottom: 1px solid #eceef4;
+  border-bottom: 1px solid var(--border-subtle);
 }
 .settings-panel section:last-child {
   border: 0;
@@ -1139,7 +1008,7 @@ svg.status-dot {
   color: #343b4d;
   box-shadow: 0 30px 100px #17223835;
   overflow: auto;
-  background: #fff;
+  background: var(--surface);
 }
 .task-dialog::backdrop {
   background: #20273c70;
@@ -1159,7 +1028,7 @@ svg.status-dot {
   align-items: center;
   gap: 10px;
   margin-top: 24px;
-  border-top: 1px solid #edeef5;
+  border-top: 1px solid var(--border-subtle);
   padding-top: 20px;
 }
 .action-spacer {
@@ -1270,7 +1139,7 @@ svg.status-dot {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  background: white;
+  background: var(--surface);
 }
 .login-story {
   background: #202638;
@@ -1401,10 +1270,6 @@ svg.status-dot {
     font-size: 17px;
     gap: 7px;
   }
-  .brand-mark {
-    width: 27px;
-    height: 30px;
-  }
   .workspace-switch {
     padding: 10px 8px;
   }
@@ -1414,9 +1279,6 @@ svg.status-dot {
   .nav-item {
     font-size: 15px;
     gap: 9px;
-  }
-  .storage-card {
-    padding: 10px;
   }
   .content {
     padding: 24px 20px;
@@ -1548,8 +1410,7 @@ svg.status-dot {
     font-size: 19px;
   }
   .workspace-switch,
-  .section-label,
-  .sidebar-bottom .storage-card {
+  .section-label {
     display: none;
   }
   .sidebar nav {

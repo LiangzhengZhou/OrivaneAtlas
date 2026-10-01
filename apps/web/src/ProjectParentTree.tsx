@@ -18,13 +18,20 @@ export function ProjectParentTree({
   const { t } = useTranslation("desk");
   const searchId = useId();
   const [query, setQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () => new Set(projects.map((project) => project.id)),
+  );
+  const [recent, setRecent] = useState<string[]>([]);
   const allowed = new Set(candidates.map((project) => project.id));
+  const path = (project: WorkItem) =>
+    [...projectAncestors(project, projects).reverse(), project]
+      .map((entry) => entry.title)
+      .join(" / ");
   const visible = new Set<string>();
   for (const project of projects) {
     if (
       !query ||
-      project.title.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+      path(project).toLocaleLowerCase().includes(query.toLocaleLowerCase())
     ) {
       visible.add(project.id);
       for (const ancestor of projectAncestors(project, projects))
@@ -38,6 +45,12 @@ export function ProjectParentTree({
       else next.add(id);
       return next;
     });
+  const select = (id: string) => {
+    onChange(id);
+    setRecent((old) =>
+      [id, ...old.filter((entry) => entry !== id)].slice(0, 5),
+    );
+  };
   const branch = (
     parent: string | null,
     visited: Set<string>,
@@ -109,10 +122,15 @@ export function ProjectParentTree({
                 }
               }}
               onClick={() => {
-                if (!disabled && allowed.has(project.id)) onChange(project.id);
+                if (!disabled && allowed.has(project.id)) select(project.id);
               }}
             >
-              <span>{project.title}</span>
+              <span>
+                {project.title}
+                {!!query && (
+                  <small className="parent-tree-path">{path(project)}</small>
+                )}
+              </span>
               {value === project.id && <span aria-hidden="true">✓</span>}
             </button>
           </div>
@@ -144,6 +162,30 @@ export function ProjectParentTree({
       >
         {t("noProject")}
       </button>
+      {recent.length > 0 && !query && (
+        <div className="parent-tree-recent">
+          <small>{t("recentProjects")}</small>
+          {recent.map((id) => {
+            const project = projects.find((entry) => entry.id === id);
+            return project && allowed.has(id) ? (
+              <button
+                className="text-button"
+                type="button"
+                key={id}
+                onClick={() => select(id)}
+              >
+                {path(project)}
+              </button>
+            ) : null;
+          })}
+        </div>
+      )}
+      {value && projects.find((project) => project.id === value) && (
+        <p className="muted" aria-live="polite">
+          {t("selectedProject")}:{" "}
+          {path(projects.find((project) => project.id === value)!)}
+        </p>
+      )}
       <ul role="tree" aria-label={t("parentTree")}>
         {branch(null, new Set())}
       </ul>

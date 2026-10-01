@@ -11,9 +11,13 @@ import { FilePicker } from "./FilePicker";
 
 export function ProjectMaterials({
   projectId,
+  library,
+  onCreateSpace,
+  onLinkSpace,
   scopeIds,
   projects,
   materials,
+  inheritedSpaces = [],
   busy,
   onCreate,
   onUpload,
@@ -21,13 +25,31 @@ export function ProjectMaterials({
   onDownload,
   onOpen,
 }: {
+  library: {
+    id: string;
+    kind: string;
+    title: string;
+    deletedAt: string | null;
+  }[];
+  onCreateSpace(input: {
+    projectId: string;
+    title: string;
+    inheritToChildren: boolean;
+  }): Promise<boolean>;
+  onLinkSpace(input: {
+    projectId: string;
+    spaceId: string;
+    inheritToChildren: boolean;
+  }): Promise<boolean>;
   projectId: string;
   scopeIds?: ReadonlySet<string>;
   projects?: WorkItem[];
   materials: ProjectMaterial[];
+  inheritedSpaces?: ProjectMaterial[];
   busy: boolean;
   onCreate(input: {
     projectId: string;
+    spaceId: string;
     title: string;
     bodyMd: string;
   }): Promise<boolean>;
@@ -48,17 +70,130 @@ export function ProjectMaterials({
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
+  const [spaceTitle, setSpaceTitle] = useState("");
+  const [spaceQuery, setSpaceQuery] = useState("");
+  const [selectedSpace, setSelectedSpace] = useState("");
+  const spaces = materials.filter(
+    (entry) =>
+      entry.projectId === projectId &&
+      entry.kind === "SPACE" &&
+      !entry.deletedAt,
+  );
   const entries = materials.filter(
     (entry) =>
       (scopeIds
         ? scopeIds.has(entry.projectId)
         : entry.projectId === projectId) &&
-      entry.kind !== "SPACE" &&
       (showDeleted || !entry.deletedAt),
   );
   return (
     <section className="panel project-summary">
       <h2>{zh ? "项目专属资料" : "Project-owned materials"}</h2>
+      {!spaces.length && (
+        <p>{zh ? "尚无项目知识" : "No project knowledge yet"}</p>
+      )}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onCreateSpace({
+            projectId,
+            title: spaceTitle,
+            inheritToChildren: true,
+          }).then((ok) => {
+            if (ok) setSpaceTitle("");
+          });
+        }}
+      >
+        <input
+          aria-label={zh ? "知识空间名称" : "Wiki space title"}
+          required
+          value={spaceTitle}
+          onChange={(event) => setSpaceTitle(event.target.value)}
+        />
+        <button type="submit" className="button primary" disabled={busy}>
+          {zh ? "创建 Wiki" : "Create Wiki"}
+        </button>
+      </form>
+      <details>
+        <summary>{zh ? "链接现有空间" : "Link existing space"}</summary>
+        <input
+          aria-label={zh ? "搜索空间" : "Search spaces"}
+          value={spaceQuery}
+          onChange={(event) => setSpaceQuery(event.target.value)}
+        />
+        {library
+          .filter(
+            (entry) =>
+              entry.kind === "SPACE" &&
+              !entry.deletedAt &&
+              entry.title
+                .toLocaleLowerCase()
+                .includes(spaceQuery.toLocaleLowerCase()) &&
+              !spaces.some((space) => space.targetId === entry.id),
+          )
+          .slice(0, 20)
+          .map((entry) => (
+            <button
+              type="button"
+              key={entry.id}
+              className="text-button"
+              disabled={busy}
+              onClick={() =>
+                void onLinkSpace({
+                  projectId,
+                  spaceId: entry.id,
+                  inheritToChildren: false,
+                })
+              }
+            >
+              {entry.title}
+            </button>
+          ))}
+      </details>
+      {(["OWNED", "LINKED"] as const).map((ownership) => (
+        <section key={ownership}>
+          <h3>
+            {ownership === "OWNED"
+              ? zh
+                ? "项目空间"
+                : "Project spaces"
+              : zh
+                ? "链接空间"
+                : "Linked spaces"}
+          </h3>
+          {spaces
+            .filter((space) => space.ownership === ownership)
+            .map((space) => (
+              <button
+                type="button"
+                className="chip"
+                key={space.id}
+                aria-pressed={selectedSpace === space.targetId}
+                onClick={() => setSelectedSpace(space.targetId ?? "")}
+              >
+                {space.role === "PRIMARY" ? "★ " : ""}
+                {space.title}
+              </button>
+            ))}
+        </section>
+      ))}
+      {inheritedSpaces.length > 0 && (
+        <section aria-label={zh ? "继承空间" : "Inherited spaces"}>
+          <h3>{zh ? "继承空间" : "Inherited spaces"}</h3>
+          {inheritedSpaces.map((space) => (
+            <button
+              type="button"
+              className="chip"
+              key={space.id}
+              onClick={() =>
+                space.targetId && onOpen({ kind: "SPACE", id: space.targetId })
+              }
+            >
+              {space.title}
+            </button>
+          ))}
+        </section>
+      )}
       <p className="muted">
         {zh
           ? "新资料创建于当前项目："
@@ -68,7 +203,12 @@ export function ProjectMaterials({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          void onCreate({ projectId, title, bodyMd }).then((ok) => {
+          const spaceId =
+            selectedSpace ||
+            spaces.find((space) => space.role === "PRIMARY")?.targetId ||
+            spaces[0]?.targetId;
+          if (!spaceId) return;
+          void onCreate({ projectId, spaceId, title, bodyMd }).then((ok) => {
             if (ok) {
               setTitle("");
               setBody("");
@@ -93,7 +233,11 @@ export function ProjectMaterials({
             onChange={(event) => setBody(event.target.value)}
           />
         </label>
-        <button className="button primary" type="submit" disabled={busy}>
+        <button
+          className="button primary"
+          type="submit"
+          disabled={busy || !spaces.length}
+        >
           {zh ? "创建专属文档" : "Create owned document"}
         </button>
       </form>
@@ -160,6 +304,7 @@ export function ProjectMaterials({
                 onOpen({ kind: entry.kind, id: entry.targetId });
             }}
           >
+            {entry.kind === "SPACE" ? "◈ " : ""}
             {entry.title}
           </button>
           <small>

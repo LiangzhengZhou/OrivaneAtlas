@@ -7,6 +7,7 @@ src-tauri/gen/android/.gradle/
 src-tauri/gen/android/build/
 src-tauri/gen/android/local.properties
 src-tauri/gen/android/app/src/main/jniLibs/
+src-tauri/gen/android/app/src/main/assets/third-party/
 *.apk
 *.aab
 *.msi
@@ -40,6 +41,7 @@ AGENTS.md
 docs/HANDOFF.md
 docs/PROJECT_STATUS.md
 docs/HANDOFF_TEMPLATE.md
+docs/LOCAL_RELEASE_PLAYBOOK.md
 CURRENT_IMPLEMENTATION_AUDIT.md
 GAP_ANALYSIS.md
 MOBILE_ICON_ISSUE.md

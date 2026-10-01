@@ -1,12 +1,5 @@
 import type { ProjectScope } from "@arclattice/domain";
-export const projectTabs = [
-  "brief",
-  "tasks",
-  "timeline",
-  "documents",
-  "graph",
-  "activity",
-] as const;
+export const projectTabs = ["overview", "tasks", "knowledge"] as const;
 export type ProjectTab = (typeof projectTabs)[number];
 export interface ProjectRoute {
   projectId: string | null;
@@ -16,7 +9,7 @@ export interface ProjectRoute {
 export function parseProjectRoute(hash: string): ProjectRoute {
   const fallback: ProjectRoute = {
     projectId: null,
-    tab: "brief",
+    tab: "overview",
     scope: "SUBTREE",
   };
   const match = /^#projects(?:\/([^?]+))?(?:\?(.*))?$/.exec(hash);
@@ -25,12 +18,18 @@ export function parseProjectRoute(hash: string): ProjectRoute {
     const id = decodeURIComponent(match[1]);
     if (!id || id.length > 240) return fallback;
     const query = new URLSearchParams(match[2]);
-    const tab = query.get("tab") === "children" ? "brief" : query.get("tab");
+    const legacyTab = query.get("tab");
+    const tab =
+      legacyTab === "children" || legacyTab === "brief"
+        ? "overview"
+        : legacyTab === "documents" || legacyTab === "graph"
+          ? "knowledge"
+          : legacyTab;
     return {
       projectId: id,
       tab: projectTabs.includes(tab as ProjectTab)
         ? (tab as ProjectTab)
-        : "brief",
+        : "overview",
       scope: query.get("scope") === "DIRECT" ? "DIRECT" : "SUBTREE",
     };
   } catch {

@@ -27,7 +27,9 @@ pnpm test:e2e
 
 Useful focused commands are pnpm lint, pnpm typecheck, and pnpm format. Run end-to-end tests on an isolated development machine and never use production data for tests.
 
-After building, validate the 900px layout with `pnpm exec playwright test --config playwright.narrow.config.ts --grep "inline prerequisites|workspace timezone appearance|parent tree and canvas"`. Run this separately from the default suite because the disposable hosts share ports 1420/1421. Tests save screenshots for visual review; they do not replace native-device acceptance.
+After building, validate the 900px layout with `pnpm exec playwright test --config playwright.narrow.config.ts --grep "inline prerequisites|workspace timezone appearance|parent picker excludes"`. Run this separately from the default suite because the disposable hosts share ports 1420/1421. Tests save screenshots for visual review; they do not replace native-device acceptance.
+
+Browser tests follow the current product structure: Project Overview / Tasks / Knowledge, document actions in the Edit and overflow menus, and settings in the Workspace & account menu (mobile More sheet). Knowledge graph tests use saved Markdown Wiki links, not task/project hierarchy or general KnowledgeLink relations. Assistant approval uses the test model adapter; external provider credentials and network requests are unnecessary. Do not restore removed UI to satisfy stale locators.
 
 Biome honors Git ignore rules and excludes generated native schemas and the preserved refactor backup; maintained source and architecture boundaries remain checked. Do not reformat backup copies or generated schemas to fix source lint. For native transport integration coverage, set `ATLAS_NATIVE_TEST_EXE` to the locally built Rust release test executable before running `pnpm check`; without that fixture, report the native integration coverage as skipped. Browser native mocks are not real-device validation.
 

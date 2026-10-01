@@ -1,5 +1,9 @@
 # Final stabilization domain audit
 
+> Historical audit from 1.x. The bundle, navigation and schema observations below
+> are superseded for 2.0 by [current architecture](ARCHITECTURE.md) and the
+> [runtime audit](UNIFIED_UPGRADE.md). They do not describe a second supported UI.
+
 2026-09-24. Applies to the uncommitted upgrade on HEAD 40f1868, not the deployed server.
 
 | Surface | Classification | Final semantics |

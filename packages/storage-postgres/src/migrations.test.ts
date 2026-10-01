@@ -26,6 +26,143 @@ const run = (name: string, plan = migrations, backup?: () => Promise<void>) =>
   h.client(name, (client) => migrate(client, 2000, backup, plan));
 
 describe("PostgreSQL transactional migrations", () => {
+  it("upgrades v14 preserving Wiki content and backfills knowledge bindings into the runtime repository", async () => {
+    const name = await h.database();
+    await run(name, migrations.slice(0, 14));
+    await h.query(
+      name,
+      "INSERT INTO arclattice.workspace VALUES ('w','W'); INSERT INTO arclattice.principal VALUES ('p','USER','P'); INSERT INTO arclattice.workspace_principal VALUES ('w','p')",
+    );
+    await h.query(
+      name,
+      "INSERT INTO arclattice.work_item (workspace_id,id,type,title,description_md,status,priority,execution_mode,version,created_by,updated_by,created_at,updated_at,lifecycle) VALUES ('w','project','PROJECT','Original','# Keep','TODO','MEDIUM','MANUAL',1,'p','p','2026-10-01','2026-10-01','PLANNED')",
+    );
+    const payload = JSON.stringify({
+      id: "s",
+      workspaceId: "w",
+      kind: "SPACE",
+      title: "Legacy wiki",
+      spaceId: null,
+      bodyMd: "# Original",
+      version: 1,
+    });
+    await h.query(
+      name,
+      "INSERT INTO arclattice.library_entry VALUES ('w','s',1,$1)",
+      [payload],
+    );
+    await h.query(
+      name,
+      "INSERT INTO arclattice.project_knowledge_binding VALUES ('w','binding','project','s','OWNED','PRIMARY',true,1,'p','2026-10-01')",
+    );
+    let gate = false;
+    await run(name, migrations, async () => {
+      gate = true;
+    });
+    expect(gate).toBe(true);
+    expect(
+      (await h.query(name, "SELECT payload FROM arclattice.library_entry"))
+        .rows[0]?.payload,
+    ).toBe(payload);
+    const material = JSON.parse(
+      (await h.query(name, "SELECT payload FROM arclattice.project_material"))
+        .rows[0]?.payload,
+    );
+    expect(material).toMatchObject({
+      projectId: "project",
+      targetId: "s",
+      kind: "SPACE",
+      ownership: "OWNED",
+      role: "PRIMARY",
+      inheritToChildren: true,
+      title: "Legacy wiki",
+    });
+    expect(await h.client(name, (client) => inspectSchema(client))).toBe(17);
+  });
+  it("upgrades v11 with Wiki and knowledge binding tables while preserving existing work", async () => {
+    const name = await h.database();
+    await run(name, migrations.slice(0, 11));
+    await h.query(
+      name,
+      "INSERT INTO arclattice.workspace VALUES ('w','Workspace'); INSERT INTO arclattice.principal VALUES ('p','USER','Owner'); INSERT INTO arclattice.workspace_principal VALUES ('w','p')",
+    );
+    await h.query(
+      name,
+      "INSERT INTO arclattice.work_item (workspace_id,id,type,title,description_md,status,priority,execution_mode,version,created_by,updated_by,created_at,updated_at,lifecycle) VALUES ('w','project','PROJECT','Original project','# Original','TODO','MEDIUM','MANUAL',1,'p','p','2026-10-01','2026-10-01','PLANNED')",
+    );
+    const before = (await h.query(name, "SELECT * FROM arclattice.work_item"))
+      .rows;
+    let backedUp = false;
+    await run(name, migrations, async () => {
+      backedUp = true;
+    });
+    expect(backedUp).toBe(true);
+    expect(
+      (await h.query(name, "SELECT * FROM arclattice.work_item")).rows,
+    ).toEqual(before);
+    await h.query(
+      name,
+      "INSERT INTO arclattice.library_entry VALUES ('w','source',1,'{}'); INSERT INTO arclattice.document_wiki_link VALUES ('w','link','source',NULL,'Future','Alias',NULL,1,'2026-10-01')",
+    );
+    for (const [id, ownership, role, inherited] of [
+      ["owned", "OWNED", "PRIMARY", true],
+      ["linked", "LINKED", "REFERENCE", false],
+    ] as const) {
+      await h.query(
+        name,
+        "INSERT INTO arclattice.project_knowledge_binding VALUES ('w',$1,'project',$1,$2,$3,$4,1,'p','2026-10-01')",
+        [id, ownership, role, inherited],
+      );
+    }
+    expect(
+      (
+        await h.query(
+          name,
+          "SELECT target_document_id,target_text,alias FROM arclattice.document_wiki_link",
+        )
+      ).rows,
+    ).toEqual([
+      { target_document_id: null, target_text: "Future", alias: "Alias" },
+    ]);
+    expect(
+      (
+        await h.query(
+          name,
+          "SELECT ownership,role,inherit_to_children FROM arclattice.project_knowledge_binding ORDER BY id",
+        )
+      ).rows,
+    ).toEqual([
+      { ownership: "LINKED", role: "REFERENCE", inherit_to_children: false },
+      { ownership: "OWNED", role: "PRIMARY", inherit_to_children: true },
+    ]);
+    await expect(
+      h.query(
+        name,
+        "INSERT INTO arclattice.document_wiki_link VALUES ('w','invalid','source',NULL,'Future',NULL,NULL,0,'2026-10-01')",
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
+  });
+  it("upgrades v13 Wiki version validation without rewriting existing links", async () => {
+    const name = await h.database();
+    await run(name, migrations.slice(0, 13));
+    await h.query(
+      name,
+      "INSERT INTO arclattice.library_entry VALUES ('w','source',1,'{}'); INSERT INTO arclattice.document_wiki_link VALUES ('w','link','source',NULL,'Future','Alias',NULL,1,'2026-10-01')",
+    );
+    const before = (
+      await h.query(name, "SELECT * FROM arclattice.document_wiki_link")
+    ).rows;
+    await run(name, migrations, async () => {});
+    expect(
+      (await h.query(name, "SELECT * FROM arclattice.document_wiki_link")).rows,
+    ).toEqual(before);
+  });
+  it("rejects missing knowledge tables despite intact migration history", async () => {
+    const name = await h.database();
+    await run(name);
+    await h.query(name, "DROP TABLE arclattice.project_knowledge_binding");
+    await expect(h.open(name)).rejects.toThrow("SCHEMA_OBJECT_MISSING");
+  });
   it("v5 backfills task memberships without rewriting legacy rows", async () => {
     const name = await h.database();
     await run(name, migrations.slice(0, 4));

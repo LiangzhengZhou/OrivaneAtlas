@@ -25,6 +25,20 @@ export interface ProjectMaterial {
   updatedBy: string;
   updatedAt: string;
   deletedAt: string | null;
+  role?: "PRIMARY" | "SUPPORTING" | "REFERENCE";
+  inheritToChildren?: boolean;
+}
+export interface ProjectKnowledgeBinding {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  spaceId: string;
+  ownership: "OWNED" | "LINKED";
+  role: "PRIMARY" | "SUPPORTING" | "REFERENCE";
+  inheritToChildren: boolean;
+  version: number;
+  createdBy: string;
+  updatedAt: string;
 }
 export interface ProjectActivity {
   id: string;
@@ -84,6 +98,208 @@ export class ProjectService {
       updatedAt: this.clock.now(),
       deletedAt: null,
     };
+  }
+  private binding(material: ProjectMaterial): ProjectKnowledgeBinding | null {
+    if (material.kind !== "SPACE" || !material.targetId || material.deletedAt)
+      return null;
+    return {
+      id: material.id,
+      workspaceId: material.workspaceId,
+      projectId: material.projectId,
+      spaceId: material.targetId,
+      ownership: material.ownership,
+      role:
+        material.role ??
+        (material.ownership === "OWNED" ? "PRIMARY" : "REFERENCE"),
+      inheritToChildren: material.inheritToChildren ?? false,
+      version: material.version,
+      createdBy: material.updatedBy,
+      updatedAt: material.updatedAt,
+    };
+  }
+  async listProjectSpaces(
+    context: ActorContext,
+    projectId: string,
+    includeInherited = false,
+  ): Promise<ProjectKnowledgeBinding[]> {
+    await this.authorization.require(context, "work:read");
+    await this.project(context, projectId);
+    const direct = (await this.store.list())
+      .filter((material) => material.projectId === projectId)
+      .map((material) => this.binding(material))
+      .filter((binding): binding is ProjectKnowledgeBinding => !!binding);
+    if (!includeInherited) return direct;
+    const projects = await this.uow.run(context.workspaceId, (tx) => tx.list());
+    const ancestorIds = new Set<string>();
+    let cursor = projects.find((item) => item.id === projectId);
+    while (cursor?.parentProjectId) {
+      ancestorIds.add(cursor.parentProjectId);
+      cursor = projects.find((item) => item.id === cursor?.parentProjectId);
+    }
+    const inherited = (await this.store.list())
+      .filter(
+        (material) =>
+          ancestorIds.has(material.projectId) && material.inheritToChildren,
+      )
+      .map((material) => this.binding(material))
+      .filter((binding): binding is ProjectKnowledgeBinding => !!binding)
+      .filter(
+        (binding) => !direct.some((entry) => entry.spaceId === binding.spaceId),
+      )
+      .map((binding) => ({ ...binding, ownership: "LINKED" as const }));
+    return [...direct, ...inherited];
+  }
+  async createProjectSpace(
+    context: ActorContext,
+    input: {
+      projectId: string;
+      title: string;
+      role?: ProjectKnowledgeBinding["role"];
+      inheritToChildren?: boolean;
+    },
+  ) {
+    await this.authorization.require(context, "work:create");
+    if (
+      input.role &&
+      !["PRIMARY", "SUPPORTING", "REFERENCE"].includes(input.role)
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    if (
+      input.role === "PRIMARY" &&
+      (await this.listProjectSpaces(context, input.projectId)).some(
+        (entry) => entry.role === "PRIMARY",
+      )
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    const project = await this.project(context, input.projectId);
+    const library = new LibraryService(
+      this.library,
+      this.authorization,
+      this.clock,
+      this.ids,
+    );
+    const entry = await library.save(context, null, 0, {
+      kind: "SPACE",
+      spaceId: null,
+      title: input.title,
+      bodyMd: "",
+    });
+    const hasPrimary = (await this.store.list()).some(
+      (material) =>
+        this.binding(material)?.role === "PRIMARY" &&
+        material.projectId === project.id,
+    );
+    const material = {
+      ...this.material(context, project.id, "SPACE", entry.title, entry.id),
+      role: input.role ?? (hasPrimary ? "SUPPORTING" : "PRIMARY"),
+      inheritToChildren: input.inheritToChildren ?? false,
+    };
+    await this.store.save(material, 0);
+    return this.binding(material)!;
+  }
+  async linkProjectSpace(
+    context: ActorContext,
+    input: {
+      projectId: string;
+      spaceId: string;
+      role?: ProjectKnowledgeBinding["role"];
+      inheritToChildren?: boolean;
+    },
+  ) {
+    await this.authorization.require(context, "work:create");
+    if (
+      input.role &&
+      !["PRIMARY", "SUPPORTING", "REFERENCE"].includes(input.role)
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    if (
+      input.role === "PRIMARY" &&
+      (await this.listProjectSpaces(context, input.projectId)).some(
+        (entry) => entry.role === "PRIMARY",
+      )
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    await this.project(context, input.projectId);
+    const space = await this.library.get(input.spaceId);
+    if (space.deletedAt || space.kind !== "SPACE")
+      throw new DomainError("NOT_FOUND");
+    const existing = (await this.store.list()).some(
+      (material) =>
+        material.projectId === input.projectId &&
+        material.kind === "SPACE" &&
+        material.targetId === input.spaceId &&
+        !material.deletedAt,
+    );
+    if (existing) throw new DomainError("VALIDATION_ERROR");
+    const material = {
+      ...this.material(
+        context,
+        input.projectId,
+        "SPACE",
+        space.title,
+        space.id,
+      ),
+      ownership: "LINKED" as const,
+      role: input.role ?? "REFERENCE",
+      inheritToChildren: input.inheritToChildren ?? false,
+    };
+    await this.store.save(material, 0);
+    return this.binding(material)!;
+  }
+  async unlinkProjectSpace(
+    context: ActorContext,
+    bindingId: string,
+    version: number,
+  ) {
+    const material = await this.store.get(bindingId);
+    if (material.kind !== "SPACE" || material.ownership !== "LINKED")
+      throw new DomainError("FORBIDDEN");
+    return this.setDeleted(context, bindingId, version, true);
+  }
+  async createProjectDocument(
+    context: ActorContext,
+    input: {
+      projectId: string;
+      spaceId: string;
+      title: string;
+      bodyMd: string;
+      provenance?: "HUMAN" | "EXTERNAL_AI";
+    },
+  ) {
+    await this.authorization.require(context, "work:create");
+    await this.project(context, input.projectId);
+    const binding = (await this.store.list()).find(
+      (material) =>
+        material.projectId === input.projectId &&
+        material.kind === "SPACE" &&
+        material.targetId === input.spaceId &&
+        !material.deletedAt,
+    );
+    if (!binding) throw new DomainError("FORBIDDEN");
+    const library = new LibraryService(
+      this.library,
+      this.authorization,
+      this.clock,
+      this.ids,
+      input.provenance ?? "HUMAN",
+    );
+    const document = await library.save(context, null, 0, {
+      kind: "DOCUMENT",
+      spaceId: input.spaceId,
+      title: input.title,
+      bodyMd: input.bodyMd,
+    });
+    await this.store.save(
+      this.material(
+        context,
+        input.projectId,
+        "DOCUMENT",
+        document.title,
+        document.id,
+      ),
+      0,
+    );
+    return document;
   }
   async createDocument(
     context: ActorContext,

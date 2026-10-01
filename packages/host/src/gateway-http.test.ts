@@ -44,10 +44,26 @@ test("HTTP approvals bind fallback registry and settle actual backup usage; sent
           ? {
               ...actual,
               complete: primary,
+              providerAdapter: {
+                ...actual.providerAdapter!,
+                capabilities: {
+                  ...actual.providerAdapter!.capabilities,
+                  streaming: false,
+                },
+                complete: primary,
+              },
               fallbacks:
                 actual.fallbacks?.map((model) => ({
                   ...model,
                   complete: backup,
+                  providerAdapter: {
+                    ...model.providerAdapter!,
+                    capabilities: {
+                      ...model.providerAdapter!.capabilities,
+                      streaming: false,
+                    },
+                    complete: backup,
+                  },
                 })) ?? [],
             }
           : null;

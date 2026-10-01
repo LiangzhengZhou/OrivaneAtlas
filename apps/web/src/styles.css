@@ -67,7 +67,7 @@ input[type="checkbox"] {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: white;
+  background: var(--surface);
   overflow: hidden;
 }
 .selectable-note:has(input:checked) {
@@ -165,7 +165,7 @@ input[type="checkbox"] {
   border-top: 1px solid var(--border);
 }
 .task-query-panel {
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
@@ -208,7 +208,7 @@ input[type="checkbox"] {
   color: #286648;
 }
 .activation-badge.inactive {
-  background: #edf0f5;
+  background: var(--surface-subtle);
   color: #596476;
 }
 .calendar-layout {
@@ -248,7 +248,7 @@ input[type="checkbox"] {
   min-width: 0;
   padding: 8px;
   border: 1px solid #e9ece5;
-  background: #fff;
+  background: var(--surface);
   color: inherit;
   border-radius: 8px;
   text-align: start;
@@ -340,7 +340,7 @@ input[type="checkbox"] {
 .connected-panel {
   min-width: 0;
   padding: 24px;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid #e2e7dc;
   border-radius: 16px;
   overflow-wrap: anywhere;
@@ -370,7 +370,7 @@ input[type="checkbox"] {
   font: inherit;
   border: 1px solid #ccd5c3;
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
 }
 .connected-panel textarea {
   resize: vertical;
@@ -677,7 +677,7 @@ input[type="checkbox"] {
   padding: 18px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: var(--surface, #fff);
+  background: var(--surface);
   cursor: pointer;
   min-width: 0;
   transition:
@@ -772,7 +772,7 @@ input[type="checkbox"] {
   margin: 4px 6px 4px 0;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: white;
+  background: var(--surface);
   color: var(--accent);
   font: inherit;
   cursor: pointer;

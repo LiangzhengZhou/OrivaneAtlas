@@ -5,6 +5,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type {
   AccountStore,
   ActivityEvent,
+  AgentSessionStore,
   ConnectedStore,
   LibraryStore,
   NotebookStore,
@@ -27,6 +28,7 @@ import {
   normalizeNavigationPreference,
 } from "@arclattice/domain";
 import { accountStore } from "./accounts";
+import { agentSessionStore } from "./agent-session";
 import { categoryPort } from "./categories";
 import { connectedStore } from "./connected";
 import {
@@ -167,6 +169,25 @@ export class SqliteUnitOfWork implements UnitOfWork {
       this.db
         .prepare(
           "INSERT INTO instance_setting (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        )
+        .run(key, value);
+    }, receipt);
+  }
+  compareInstanceSetting(
+    key: string,
+    expected: string | null,
+    value: string,
+    receipt: NonNullable<Parameters<SqliteUnitOfWork["accounts"]>[1]>,
+  ): Promise<void> {
+    return this.accounts(() => {
+      const previous = this.db
+        .prepare("SELECT value FROM instance_setting WHERE key=?")
+        .get(key);
+      if ((previous ? String(previous.value) : null) !== expected)
+        throw new DomainError("VERSION_CONFLICT");
+      this.db
+        .prepare(
+          "INSERT INTO instance_setting VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         )
         .run(key, value);
     }, receipt);
@@ -608,6 +629,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
       library: LibraryStore,
       organization: OrganizationStore,
       projects: ProjectStore,
+      sessions: AgentSessionStore,
     ) => Promise<T>,
     authorize?: (store: AccountStore) => void,
   ): Promise<T> {
@@ -654,6 +676,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
             libraryStore(this.db, context, guard),
             organizationStore(this.db, context, guard),
             projectStore(this.db, context, guard),
+            agentSessionStore(this.db, context, guard),
           );
           if (receipt)
             this.db

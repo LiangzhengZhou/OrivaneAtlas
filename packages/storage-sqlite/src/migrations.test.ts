@@ -14,6 +14,65 @@ import { context, service, sqliteHarness } from "./testing";
 
 const harness = sqliteHarness();
 describe("SQLite migrations and recovery", () => {
+  it("upgrades v22 to persistent metadata and sessions while preserving documents and restoring the old database", async () => {
+    const path = harness.file(),
+      raw = new DatabaseSync(path);
+    let backup = "";
+    const payload = JSON.stringify({
+      id: "doc",
+      workspaceId: "w",
+      kind: "DOCUMENT",
+      spaceId: "s",
+      title: "Original",
+      bodyMd: "# Unchanged\r\n[[Future]]",
+      version: 1,
+    });
+    try {
+      await migrate(raw, path, 100, migrations.slice(0, 22));
+      raw.exec(
+        "INSERT INTO workspace VALUES ('w','W'); INSERT INTO principal VALUES ('p','USER','P'); INSERT INTO workspace_principal VALUES ('w','p')",
+      );
+      raw
+        .prepare("INSERT INTO library_entry VALUES ('w','doc',1,?)")
+        .run(payload);
+      backup = (await migrate(raw, path, 100)).backupPath!;
+      expect(inspectSchema(raw)).toBe(24);
+      expect(
+        raw.prepare("SELECT payload FROM library_entry").get()?.payload,
+      ).toBe(payload);
+      for (const table of [
+        "document_alias",
+        "document_hierarchy",
+        "agent_session",
+      ])
+        expect(raw.prepare("SELECT COUNT(*) n FROM " + table).get()?.n).toBe(0);
+      expect(raw.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    } finally {
+      raw.close();
+    }
+    const restored = harness.file();
+    await restoreDatabase(backup, restored);
+    const old = new DatabaseSync(restored, { readOnly: true });
+    try {
+      expect(inspectSchema(old, migrations.slice(0, 22))).toBe(22);
+      expect(
+        old.prepare("SELECT payload FROM library_entry").get()?.payload,
+      ).toBe(payload);
+    } finally {
+      old.close();
+    }
+  });
+  it("rejects a missing knowledge binding table despite intact migration history", async () => {
+    const path = harness.file();
+    const raw = new DatabaseSync(path);
+    try {
+      await migrate(raw, path, 100);
+      raw.exec("DROP TABLE project_knowledge_binding");
+      expect(() => inspectSchema(raw)).toThrow("SCHEMA_OBJECT_MISSING");
+    } finally {
+      raw.close();
+    }
+  });
   it("upgrades v17 event history with verified rollback backup and preserves outbox references", async () => {
     const path = harness.file();
     const raw = new DatabaseSync(path);

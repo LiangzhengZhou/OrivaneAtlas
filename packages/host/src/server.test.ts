@@ -84,6 +84,313 @@ it("workspace calendar settings require a human session, version and atomic rece
     ),
   ).toHaveLength(1);
 });
+it("project space listing validates inheritance and preserves binding roles", async () => {
+  await login();
+  const parent = await (
+    await call("/api/work/create", { title: "Parent", type: "PROJECT" })
+  ).json();
+  const child = await (
+    await call("/api/work/create", {
+      title: "Child",
+      type: "PROJECT",
+      parentProjectId: parent.id,
+    })
+  ).json();
+  const created = await call("/api/projects/space/create", {
+    projectId: parent.id,
+    title: "Inherited wiki",
+    inheritToChildren: true,
+  });
+  expect(created.status).toBe(200);
+  const binding = await created.json();
+  expect(binding.role).toBe("PRIMARY");
+  const input = { projectId: child.id, includeInherited: true };
+  const inherited = await call("/api/v1/projects/spaces", input);
+  expect(inherited.status).toBe(200);
+  expect(await inherited.json()).toEqual([
+    expect.objectContaining({
+      spaceId: binding.spaceId,
+      inheritToChildren: true,
+    }),
+  ]);
+  expect(
+    await (await call("/api/projects/spaces", { projectId: child.id })).json(),
+  ).toEqual([]);
+  expect(
+    (await call("/api/projects/spaces", { ...input, includeInherited: "yes" }))
+      .status,
+  ).toBe(400);
+  expect(
+    (await call("/api/projects/spaces", { ...input, unknown: true })).status,
+  ).toBe(400);
+  expect(
+    (
+      await call("/api/projects/space/create", {
+        projectId: parent.id,
+        title: "Invalid",
+        inheritToChildren: "yes",
+      })
+    ).status,
+  ).toBe(400);
+});
+it("dispatches shared capabilities through authorization, human approval and application persistence", async () => {
+  await login();
+  const project = await (
+    await call("/api/work/create", {
+      title: "Capability project",
+      type: "PROJECT",
+    })
+  ).json();
+  const input = {
+    name: "create_task",
+    input: { title: "Capability task", projectIds: [project.id] },
+  };
+  expect((await call("/api/ai/capability", input)).status).toBe(403);
+  const headers = { "Idempotency-Key": randomUUID() };
+  const saved = await call(
+    "/api/ai/capability",
+    { ...input, approved: true },
+    headers,
+  );
+  expect(saved.status).toBe(200);
+  const task = await saved.json();
+  const replay = await (
+    await call("/api/ai/capability", { ...input, approved: true }, headers)
+  ).json();
+  expect(replay.id).toBe(task.id);
+  const list = await (
+    await call("/api/ai/capability", {
+      name: "list_project_tasks",
+      input: { projectId: project.id },
+    })
+  ).json();
+  expect(list.map((entry: { id: string }) => entry.id)).toContain(task.id);
+  const rpc = (name: string, args: unknown) => ({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: { name, arguments: args },
+  });
+  const read = await call("/api/mcp", rpc("get_project", { id: project.id }));
+  expect(read.status).toBe(200);
+  expect(JSON.parse((await read.json()).result.content[0].text).id).toBe(
+    project.id,
+  );
+  expect((await call("/api/mcp", rpc("create_task", input.input))).status).toBe(
+    403,
+  );
+  const snapshot = await (await call("/api/snapshot")).json();
+  expect(
+    snapshot.items.filter(
+      (entry: { title: string }) => entry.title === "Capability task",
+    ),
+  ).toHaveLength(1);
+});
+it("persists administrator endpoint trust and never reactivates revoked trust on receipt replay", async () => {
+  await host.close();
+  const vault = openPersonalVault(join(directory, "trust-vault"));
+  await start(undefined, undefined, vault);
+  await login();
+  const input = {
+    version: 0,
+    entries: [
+      {
+        id: "local",
+        title: "Local model",
+        provider: "VLLM",
+        origin: "http://127.0.0.1:11434/v1/",
+        enabled: true,
+      },
+    ],
+  };
+  const headers = { "Idempotency-Key": randomUUID() };
+  expect(
+    (await call("/api/ai/trusted-endpoints/save", input, headers)).status,
+  ).toBe(200);
+  const trust = await (await call("/api/ai/trusted-endpoints")).json();
+  expect(trust.version).toBe(1);
+  const account = await host.db.accounts((store) => store.find("owner"));
+  const actor = {
+    workspaceId: account!.workspaceId,
+    principalId: account!.principalId,
+  };
+  const model = {
+    scope: "personal" as const,
+    endpoint: input.entries[0]!.origin,
+    protocol: "chat" as const,
+    model: "local",
+    key: "test-only",
+    maxRunsPerDay: 1,
+  };
+  expect(() => vault.save(actor, 0, model)).not.toThrow();
+  await host.close();
+  const reopened = openPersonalVault(join(directory, "trust-vault"));
+  await start(undefined, undefined, reopened);
+  await login();
+  expect(
+    (await (await call("/api/ai/trusted-endpoints")).json()).entries,
+  ).toHaveLength(1);
+  expect(
+    (await call("/api/ai/trusted-endpoints/save", { version: 1, entries: [] }))
+      .status,
+  ).toBe(200);
+  expect(
+    (await call("/api/ai/trusted-endpoints/save", input, headers)).status,
+  ).toBe(200);
+  expect(
+    (await (await call("/api/ai/trusted-endpoints")).json()).entries,
+  ).toEqual([]);
+  expect(() => reopened.save(actor, 1, model)).toThrow();
+  const token = await (
+    await call("/api/tokens/create", {
+      name: "Trust test",
+      scope: "read-write",
+    })
+  ).json();
+  expect(
+    (
+      await call("/api/ai/trusted-endpoints", undefined, {
+        Cookie: "",
+        Authorization: "Bearer " + token.secret,
+      })
+    ).status,
+  ).toBe(403);
+});
+it("records capability calls and proposals inside the authorized persisted conversation", async () => {
+  await login();
+  const conversation = await (
+    await call("/api/ai/sessions/create", { title: "Tools" })
+  ).json();
+  const result = await call("/api/ai/capability", {
+    name: "create_task",
+    input: { title: "Session task" },
+    approved: true,
+    sessionId: conversation.id,
+    sessionVersion: conversation.version,
+  });
+  expect(result.status).toBe(200);
+  const session = (await (await call("/api/ai/sessions")).json())[0];
+  expect(
+    session.messages.map((message: { kind: string }) => message.kind),
+  ).toEqual(["TOOL_CALL", "TOOL_RESULT"]);
+  expect(session.messages[1].text).toContain("Session task");
+  expect(
+    (
+      await call("/api/ai/capability", {
+        name: "create_task",
+        input: { title: "Stale task" },
+        approved: true,
+        sessionId: conversation.id,
+        sessionVersion: conversation.version,
+      })
+    ).status,
+  ).toBe(409);
+  expect((await (await call("/api/snapshot")).json()).items).toHaveLength(1);
+  const policy = {
+    classification: "PRIVATE",
+    processingBoundary: "ANY",
+    aiAccess: "ALLOW",
+  };
+  const space = await (
+    await call("/api/library/save", {
+      id: null,
+      version: 0,
+      input: {
+        kind: "SPACE",
+        spaceId: null,
+        title: "Capability wiki",
+        bodyMd: "",
+        aiPolicy: policy,
+      },
+    })
+  ).json();
+  const document = await (
+    await call("/api/library/save", {
+      id: null,
+      version: 0,
+      input: {
+        kind: "DOCUMENT",
+        spaceId: space.id,
+        title: "Capability document",
+        bodyMd: "Original",
+        aiPolicy: policy,
+      },
+    })
+  ).json();
+  const other = await (
+    await call("/api/library/save", {
+      id: null,
+      version: 0,
+      input: {
+        kind: "DOCUMENT",
+        spaceId: space.id,
+        title: "Other document",
+        bodyMd: "",
+        aiPolicy: policy,
+      },
+    })
+  ).json();
+  expect(
+    (
+      await call("/api/ai/capability", {
+        name: "read_document",
+        input: { id: document.id },
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await call("/api/ai/capability", {
+        name: "link_documents",
+        input: { fromId: document.id, toId: other.id },
+      })
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await call("/api/ai/capability", {
+        name: "link_documents",
+        input: { fromId: document.id, toId: other.id },
+        approved: true,
+      })
+    ).status,
+  ).toBe(200);
+  const proposal = await call("/api/ai/capability", {
+    name: "propose_document_edit",
+    input: { id: document.id, markdown: "Proposed" },
+    approved: true,
+    sessionId: session.id,
+    sessionVersion: session.version,
+  });
+  expect(proposal.status).toBe(200);
+  expect(
+    (await (await call("/api/ai/sessions")).json())[0].messages.at(-1).kind,
+  ).toBe("PROPOSAL");
+  expect(
+    (await (await call("/api/library")).json()).find(
+      (entry: { id: string }) => entry.id === document.id,
+    ).bodyMd,
+  ).toBe("Original");
+  const rpc = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: { name: "read_document", arguments: { id: document.id } },
+  };
+  expect((await call("/api/mcp", rpc)).status).toBe(200);
+  await call("/api/library/save", {
+    id: space.id,
+    version: space.version,
+    input: {
+      kind: "SPACE",
+      spaceId: null,
+      title: space.title,
+      bodyMd: "",
+      aiPolicy: { ...policy, aiAccess: "DENY" },
+    },
+  });
+  expect((await call("/api/mcp", rpc)).status).toBe(403);
+});
 it("project documents and files use atomic receipts, soft deletion and authenticated downloads", async () => {
   await login();
   const project = await (
@@ -165,7 +472,18 @@ it("MCP exposes constrained tools and writes only after normal authorization and
   const list = await (await call("/api/mcp", rpc("tools/list"))).json();
   expect(
     list.result.tools.map((entry: { name: string }) => entry.name),
-  ).toEqual(["workspace_snapshot", "plan_preview", "project_document_create"]);
+  ).toEqual([
+    "workspace_snapshot",
+    "plan_preview",
+    "project_document_create",
+    "search_documents",
+    "read_document",
+    "get_project",
+    "list_project_tasks",
+    "create_task",
+    "propose_document_edit",
+    "link_documents",
+  ]);
   const project = await (
     await call("/api/work/create", { title: "MCP project", type: "PROJECT" })
   ).json();
@@ -1793,6 +2111,190 @@ describe("private HTTP host", () => {
     timeoutMs: 2000,
     maxRunsPerDay: 2,
   };
+  it("persists and resumes an Assistant session through Host restarts and approved requests", async () => {
+    await host.close();
+    const complete = vi.fn(
+      async (_prompt: string, _signal: AbortSignal) => "Session answer",
+    );
+    const model = {
+      route: { ...route, maxInputChars: 16000, maxRunsPerDay: 10 },
+      complete,
+    };
+    await start(undefined, model);
+    await login();
+    const sessionResponse = await call("/api/ai/sessions/create", {
+      title: "Session",
+    });
+    expect(sessionResponse.status).toBe(200);
+    const session = await sessionResponse.json();
+    const run = await (
+      await call("/api/ai/propose", {
+        prompt: "First",
+        sessionId: session.id,
+        sessionVersion: session.version,
+      })
+    ).json();
+    expect(run.sessionId).toBe(session.id);
+    await call("/api/ai/decide", {
+      id: run.id,
+      version: run.version,
+      approve: true,
+    });
+    await vi.waitFor(async () =>
+      expect(
+        (await (await call("/api/ai/sessions")).json())[0].messages,
+      ).toHaveLength(2),
+    );
+    await host.close();
+    await start(undefined, model);
+    await login();
+    const resumed = (await (await call("/api/ai/sessions")).json())[0];
+    expect(
+      resumed.messages.map((message: { text: string }) => message.text),
+    ).toEqual(["First", "Session answer"]);
+    const next = await (
+      await call("/api/ai/propose", {
+        prompt: "Continue",
+        sessionId: resumed.id,
+        sessionVersion: resumed.version,
+      })
+    ).json();
+    expect(next.prompt).toContain("Session answer");
+    expect(complete).toHaveBeenCalledTimes(1);
+    await call("/api/ai/decide", {
+      id: next.id,
+      version: next.version,
+      approve: true,
+    });
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(2));
+    expect(complete.mock.calls[1]?.[0]).toContain("Session answer");
+    await vi.waitFor(async () =>
+      expect(
+        (await (await call("/api/ai/sessions")).json())[0].messages,
+      ).toHaveLength(4),
+    );
+    const current = (await (await call("/api/ai/sessions")).json())[0];
+    const rejected = await (
+      await call("/api/ai/propose", {
+        prompt: "Rejected private question",
+        sessionId: current.id,
+        sessionVersion: current.version,
+      })
+    ).json();
+    expect(
+      (
+        await call("/api/ai/decide", {
+          id: rejected.id,
+          version: rejected.version,
+          approve: false,
+        })
+      ).status,
+    ).toBe(200);
+    const after = (await (await call("/api/ai/sessions")).json())[0];
+    expect(after.messages.at(-1).kind).toBe("ERROR");
+    const retry = await (
+      await call("/api/ai/propose", {
+        prompt: "Safe continuation",
+        sessionId: after.id,
+        sessionVersion: after.version,
+      })
+    ).json();
+    expect(retry.prompt).not.toContain("Rejected private question");
+    expect(retry.prompt).toContain("Session answer");
+  });
+  it("retrieves permitted project knowledge into a version-bound model approval manifest", async () => {
+    await host.close();
+    const complete = vi.fn(async () => "Answer");
+    await start(undefined, {
+      route: { ...route, maxInputChars: 16000 },
+      complete,
+    });
+    await login();
+    const project = await (
+      await call("/api/work/create", { type: "PROJECT", title: "Retrieval" })
+    ).json();
+    const binding = await (
+      await call("/api/projects/space/create", {
+        projectId: project.id,
+        title: "Wiki",
+        role: "PRIMARY",
+      })
+    ).json();
+    const policy = {
+      classification: "PRIVATE",
+      processingBoundary: "ANY",
+      aiAccess: "ASK",
+    };
+    const space = (await (await call("/api/library")).json()).find(
+      (entry: { id: string }) => entry.id === binding.spaceId,
+    );
+    expect(space).toBeDefined();
+    expect(
+      (
+        await call("/api/library/save", {
+          id: space.id,
+          version: space.version,
+          input: { ...space, aiPolicy: policy },
+        })
+      ).status,
+    ).toBe(400);
+    const save = async (
+      id: string | null,
+      version: number,
+      title: string,
+      bodyMd: string,
+      kind = "DOCUMENT",
+      aiPolicy: unknown = policy,
+    ) =>
+      (
+        await call("/api/library/save", {
+          id,
+          version,
+          input: {
+            kind,
+            spaceId: kind === "SPACE" ? null : space.id,
+            title,
+            bodyMd,
+            aiPolicy,
+          },
+        })
+      ).json();
+    await save(space.id, space.version, space.title, "", "SPACE");
+    const document = await save(null, 0, "Storage", "storage runtime");
+    await save(null, 0, "Denied storage", "private storage", "DOCUMENT", {
+      classification: "PRIVATE",
+      processingBoundary: "LOCAL_ONLY",
+      aiAccess: "DENY",
+    });
+    const proposalResponse = await call("/api/ai/propose", {
+      prompt: "storage",
+      retrievalContext: { projectId: project.id },
+    });
+    expect(proposalResponse.status).toBe(200);
+    const proposal = await proposalResponse.json();
+    expect(proposal.context).toHaveLength(1);
+    expect(proposal.context[0]).toMatchObject({
+      ref: { kind: "DOCUMENT", id: document.id },
+      source: "retrieved",
+      permission: policy,
+      version: 1,
+      tokenEstimate: 4,
+    });
+    expect(proposal.prompt).toContain("storage runtime");
+    expect(complete).not.toHaveBeenCalled();
+    await save(document.id, document.version, document.title, "changed");
+    await call("/api/ai/decide", {
+      id: proposal.id,
+      version: proposal.version,
+      approve: true,
+    });
+    await vi.waitFor(async () => {
+      expect((await (await call("/api/ai")).json()).runs[0].status).toBe(
+        "FAILED",
+      );
+    });
+    expect(complete).not.toHaveBeenCalled();
+  });
   it("syncs conditional snapshots, knowledge backlinks and soft-deleted endpoints", async () => {
     expect((await call("/api/sync")).status).toBe(401);
     await login();

@@ -12,6 +12,7 @@ import {
 } from "./gateway-policy";
 import type { LibraryStore } from "./library";
 import type { NotebookStore } from "./notebook";
+import { adaptModelProvider, type ModelEvent } from "./provider-adapter";
 
 /** All currently supported remote adapters are conservatively cloud routes. */
 export function validateContextPolicy(
@@ -118,6 +119,7 @@ export async function executeApprovedModel(
   authorize: (route: ModelRoute) => Promise<void>,
   resolve: () => ModelPort | null,
   signal: AbortSignal,
+  onEvent?: (event: ModelEvent) => void,
 ): Promise<ModelExecutionResult> {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -180,28 +182,71 @@ export async function executeApprovedModel(
         routeFingerprint = candidate.fingerprint;
         notSent = false;
         let output: string;
+        let providerEventReceived = false;
         try {
-          output = await model.complete(
-            run.prompt,
-            controller.signal,
-            (reported) => {
-              if (
-                reported.source === "PROVIDER_REPORTED" &&
-                Number.isSafeInteger(reported.inputTokens) &&
-                reported.inputTokens >= 0 &&
-                Number.isSafeInteger(reported.outputTokens) &&
-                reported.outputTokens >= 0
-              ) {
-                usage = {
-                  inputTokens: reported.inputTokens,
-                  outputTokens: reported.outputTokens,
-                  source: "PROVIDER_REPORTED",
-                };
+          const adapter = adaptModelProvider(model);
+          const reportUsage = (reported: ModelUsage) => {
+            if (
+              reported.source === "PROVIDER_REPORTED" &&
+              Number.isSafeInteger(reported.inputTokens) &&
+              reported.inputTokens >= 0 &&
+              Number.isSafeInteger(reported.outputTokens) &&
+              reported.outputTokens >= 0
+            )
+              usage = { ...reported };
+          };
+          if (adapter.capabilities.streaming) {
+            output = "";
+            let completed = false;
+            for await (const event of adapter.stream(
+              run.prompt,
+              controller.signal,
+            )) {
+              providerEventReceived = true;
+              if (controller.signal.aborted) throw new Error("ABORTED");
+              if (event.type === "error")
+                throw new Error("MODEL_STREAM_FAILED");
+              if (event.type === "text-delta") {
+                output += event.text;
+                if (output.length > 100000) throw new Error("INVALID_OUTPUT");
               }
-            },
-          );
+              if (event.type === "usage") reportUsage(event.usage);
+              if (event.type === "completed") completed = true;
+              if (
+                (event.type === "tool-call" || event.type === "tool-result") &&
+                !adapter.capabilities.tools
+              )
+                throw new Error("UNSUPPORTED_TOOL");
+              onEvent?.(event);
+            }
+            if (!completed) throw new Error("INCOMPLETE_STREAM");
+            if (candidate.gateway?.capability === "JSON") JSON.parse(output);
+          } else
+            output = await adapter.complete(
+              run.prompt,
+              controller.signal,
+              (reported) => {
+                if (
+                  reported.source === "PROVIDER_REPORTED" &&
+                  Number.isSafeInteger(reported.inputTokens) &&
+                  reported.inputTokens >= 0 &&
+                  Number.isSafeInteger(reported.outputTokens) &&
+                  reported.outputTokens >= 0
+                ) {
+                  usage = {
+                    inputTokens: reported.inputTokens,
+                    outputTokens: reported.outputTokens,
+                    source: "PROVIDER_REPORTED",
+                  };
+                }
+              },
+            );
         } catch (error) {
-          if (error instanceof ModelNotSentError && !usage) {
+          if (
+            error instanceof ModelNotSentError &&
+            !usage &&
+            !providerEventReceived
+          ) {
             notSent = true;
             if (!controller.signal.aborted && index + 1 < candidates.length)
               continue;
@@ -234,6 +279,12 @@ export async function executeApprovedModel(
         : {}),
     };
   } catch {
+    onEvent?.({
+      type: "error",
+      error: controller.signal.aborted
+        ? "MODEL_INTERRUPTED"
+        : "MODEL_REQUEST_FAILED",
+    });
     return {
       output: null,
       ...(usage ? { usage } : {}),

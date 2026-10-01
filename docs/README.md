@@ -10,7 +10,13 @@ This directory contains public documentation for people who want to run, underst
 - [Categories, reviewed plans and recurrence](WORKFLOWS.md) - use the new project workflows and understand their current limits.
 - [AI execution and data permission](AI_GATEWAY.md) - configure a provider, review requests and understand privacy and usage guarantees.
 - [Storage](STORAGE.md) - persistence model and backup boundaries.
-- [Architecture](architecture/arclattice-v0-architecture.md) - product architecture and layer boundaries.
+- [2.0 changelog](../CHANGELOG.md) - major upgrade and compatibility changes.
+- [Migration to 2.0](MIGRATION_2.0.md) - append-only upgrades, preservation and rollback.
+- [Release notes](RELEASE_2.0.0.md) - major upgrade, native checks and compatibility boundaries.
+- [Unified upgrade audit](UNIFIED_UPGRADE.md) - runtime integration and verification boundaries.
+- [Current architecture](ARCHITECTURE.md) - implemented frontend, application, storage, AI and graph layers.
+- [Historical architecture baseline](architecture/arclattice-v0-architecture.md) - design history and future ideas.
+- [Third-party notices](../THIRD_PARTY_NOTICES.md) - dependency attribution and distribution limits.
 
 The ADR files record public technical decisions. They are reference material, not a task queue.
 

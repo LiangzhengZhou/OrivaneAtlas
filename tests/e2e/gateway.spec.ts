@@ -94,6 +94,11 @@ test("Gateway registry policy persists and approved alternatives are visible bef
         exact: true,
       })
       .click();
+    await page
+      .getByText(zh ? "AI 设置与活动" : "AI settings and activity", {
+        exact: true,
+      })
+      .click();
     await page.locator(".personal-ai-settings > summary").click();
     await expect(
       page.getByLabel(
@@ -123,6 +128,12 @@ test("Gateway registry policy persists and approved alternatives are visible bef
       page.locator(".personal-ai-settings [role=status]"),
     ).toContainText("v2");
     await page.reload();
+    await page.goto(origin + "/#ai");
+    await page
+      .getByText(zh ? "AI 设置与活动" : "AI settings and activity", {
+        exact: true,
+      })
+      .click();
     if (await page.locator(".mobile-navigation-toggle").isVisible())
       await page.locator(".mobile-navigation-toggle").click();
     await page

@@ -157,6 +157,58 @@ test("sends only after authorization and uses current approved route", async () 
   );
   expect(f.model.complete).toHaveBeenCalledOnce();
 });
+test("consumes provider streaming inside authorization/usage boundaries and never retries unknown sends", async () => {
+  for (const fail of [false, true]) {
+    const f = fixture();
+    const backupRoute = { ...f.model.route, fingerprint: "backup" };
+    f.run.route.fallbackRoutes = [backupRoute];
+    const backup = vi.fn(async () => "backup");
+    f.model.fallbacks = [{ route: backupRoute, complete: backup }];
+    f.model.providerAdapter = {
+      capabilities: {
+        tools: false,
+        jsonSchema: false,
+        vision: false,
+        streaming: true,
+        embedding: false,
+      },
+      complete: async () => {
+        throw new Error("must not complete");
+      },
+      listModels: async () => ["model"],
+      async *stream() {
+        yield { type: "text-delta", text: "hello " };
+        yield {
+          type: "usage",
+          usage: {
+            inputTokens: 5,
+            outputTokens: 2,
+            source: "PROVIDER_REPORTED",
+          },
+        };
+        if (fail) throw new Error("unknown send outcome");
+        yield { type: "text-delta", text: "world" };
+        yield { type: "completed" };
+      },
+    };
+    const events: string[] = [];
+    const result = await executeApprovedModel(
+      actor,
+      f.run,
+      f.authorize,
+      f.resolve,
+      f.controller.signal,
+      (event) => events.push(event.type),
+    );
+    expect(result.output).toBe(fail ? null : "hello world");
+    expect(result.usage?.inputTokens).toBe(5);
+    expect(result.error).toBe(fail ? "MODEL_REQUEST_FAILED" : null);
+    expect(f.model.complete).not.toHaveBeenCalled();
+    expect(f.authorize).toHaveBeenCalledTimes(1);
+    expect(backup).not.toHaveBeenCalled();
+    expect(events).toContain(fail ? "error" : "completed");
+  }
+});
 test("keeps provider-reported usage, including a response rejected after consumption", async () => {
   for (const fail of [false, true]) {
     const f = fixture();

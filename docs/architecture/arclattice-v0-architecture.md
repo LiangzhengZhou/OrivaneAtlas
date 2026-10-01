@@ -1,10 +1,18 @@
 # ArcLattice — Personal OS v0 Architecture Specification
 
-> Status: Draft / Architecture Baseline  
+> Status: Historical v0 design baseline; not the current product implementation.
 > Purpose: 作为项目的 v0 架构规范，供人类开发者与 AI Agent 共同推进实现。  
 > Working name: **ArcLattice**  
 > Naming status: provisional working name; complete trademark/domain/package-name checks before public branding.  
 > Product direction: Markdown-first、Local-or-Server、AI-native、Open Source 的 Personal OS。
+
+> Implementation status: This document is a design baseline, not a completion
+> checklist. The unified upgrade's runtime wiring, knowledge persistence parity
+> and verification boundaries are recorded in
+> [UNIFIED_UPGRADE.md](../UNIFIED_UPGRADE.md), ADR0049 and ADR0050.
+> For Orivane Atlas 2.0, use [current architecture](../ARCHITECTURE.md).
+> References below to old graph/document/project flows or planned local-only
+> systems describe historical proposals, not a parallel supported UI/runtime.
 
 ---
 

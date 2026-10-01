@@ -10,6 +10,7 @@
   "dependencies": {
     "@arclattice/application": "workspace:*",
     "@arclattice/domain": "workspace:*",
+    "@arclattice/wiki-core": "workspace:*",
     "pg": "8.23.0"
   },
   "devDependencies": {

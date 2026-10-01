@@ -28,3 +28,14 @@ pnpm check
 ~~~
 
 Tests use isolated temporary directories and must not touch user databases. Schema changes require a migration plus backup and restore validation.
+
+Knowledge storage currently uses SQLite schema24 and PostgreSQL schema17.
+SQLite0021/0022 index Wiki links and map existing ProjectMaterial SPACE rows into
+knowledge bindings without rewriting payloads. PostgreSQL0012/0013 create the
+corresponding tables;0014 enforces positive Wiki versions. SQLite0023/0024 and
+PostgreSQL0015/0016/0017 persist aliases, same-Space document hierarchy and
+actor-owned AgentSessions. PostgreSQL Library/ProjectMaterial/Session adapters
+execute through the actor-bound knowledge transaction port; valid legacy bindings
+are backfilled into project_material. Shared application scenarios verify both
+backends, including independent-transaction round trips. See [implementation and
+compatibility details](UNIFIED_UPGRADE.md) and [ADR0049](adr/0049-project-knowledge-and-wiki-index.md).

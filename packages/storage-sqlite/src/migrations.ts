@@ -176,6 +176,41 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 21,
+    name: "wiki-links",
+    sql: readFileSync(
+      new URL("./migrations/0021-wiki-links.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 22,
+    name: "project-knowledge-binding",
+    sql: readFileSync(
+      new URL(
+        "./migrations/0022-project-knowledge-binding.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  },
+  {
+    version: 23,
+    name: "document-metadata",
+    sql: readFileSync(
+      new URL("./migrations/0023-document-metadata.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 24,
+    name: "agent-session",
+    sql: readFileSync(
+      new URL("./migrations/0024-agent-session.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {
@@ -303,6 +338,25 @@ export function inspectSchema(
   if (version >= 12 && !objects.some((row) => row.name === "login_session"))
     throw new StorageError("SCHEMA_OBJECT_MISSING");
   if (version >= 19 && !objects.some((row) => row.name === "user_navigation"))
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (
+    version >= 21 &&
+    !objects.some((row) => row.name === "document_wiki_link")
+  )
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (
+    version >= 22 &&
+    !objects.some((row) => row.name === "project_knowledge_binding")
+  )
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (
+    version >= 23 &&
+    ["document_alias", "document_hierarchy"].some(
+      (name) => !objects.some((row) => row.name === name),
+    )
+  )
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (version >= 24 && !objects.some((row) => row.name === "agent_session"))
     throw new StorageError("SCHEMA_OBJECT_MISSING");
   if (
     version >= 17 &&

@@ -8,11 +8,14 @@ import { Markdown } from "./Markdown";
 export function LibraryView({
   runtime,
   onOpen,
+  onKnowledge,
 }: {
   runtime: Runtime;
   onOpen: (request: DocumentRequest) => void;
+  onKnowledge?: () => void;
 }) {
   const { t } = useTranslation("spaces");
+  const { t: desk } = useTranslation("desk");
   const [entries, setEntries] = useState<LibraryEntry[]>([]),
     [spaceId, setSpaceId] = useState<string | null>(null),
     [query, setQuery] = useState(""),
@@ -58,6 +61,29 @@ export function LibraryView({
       e.spaceId === spaceId &&
       (e.title + " " + e.bodyMd).toLowerCase().includes(query.toLowerCase()),
   );
+  const hierarchy = (document: LibraryEntry) => {
+    const ancestors: string[] = [];
+    const visited = new Set([document.id]);
+    let parentId = document.parentDocumentId;
+    while (parentId && !visited.has(parentId)) {
+      visited.add(parentId);
+      const parent = entries.find(
+        (entry) =>
+          entry.id === parentId &&
+          !entry.deletedAt &&
+          entry.spaceId === document.spaceId,
+      );
+      if (!parent) break;
+      ancestors.unshift(parent.title);
+      parentId = parent.parentDocumentId;
+    }
+    return ancestors;
+  };
+  docs.sort((left, right) =>
+    [...hierarchy(left), left.title]
+      .join("/")
+      .localeCompare([...hierarchy(right), right.title].join("/")),
+  );
   function open(entity?: LibraryEntry) {
     const kind = entity?.kind ?? (space ? "DOCUMENT" : "SPACE");
     onOpen({
@@ -75,6 +101,15 @@ export function LibraryView({
         </p>
       )}
       <div className="library-toolbar action-row">
+        {onKnowledge && (
+          <button
+            type="button"
+            className="button secondary"
+            onClick={onKnowledge}
+          >
+            {desk("knowledge")}
+          </button>
+        )}
         <button
           className="button secondary"
           type="button"
@@ -134,10 +169,14 @@ export function LibraryView({
                 className="note-card"
                 type="button"
                 key={doc.id}
+                style={{ marginInlineStart: `${hierarchy(doc).length * 16}px` }}
                 onClick={() => open(doc)}
               >
                 <BookOpen size={20} />
                 <h3>{doc.title}</h3>
+                {hierarchy(doc).length > 0 && (
+                  <small>{hierarchy(doc).join(" / ")}</small>
+                )}
                 <p>{doc.bodyMd.slice(0, 140)}</p>
                 <footer>
                   {t(doc.provenance)} · v{doc.version}

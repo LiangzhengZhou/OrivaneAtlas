@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orivane Atlas workspace API",
-    "version": "0.6.0",
+    "version": "2.0.0",
     "description": "HTTPS self-hosted accounts with isolated workspaces. Registration is PENDING until admin approval. Legacy-key session alone binds ADMIN to original workspace. Cookie + CSRF or 30/90/365-day or non-expiring revocable Bearer credentials: write allows create/update/delete and responses may include the affected entity (not append-only or confidential blind-write); read-write explicitly permits all private workspace content reads. Bearer forbids admin/accounts/tokens/backup/server AI. Business POSTs use atomic durable Idempotency-Key receipts and current versions. Claim/password/token issuance consume keys without replaying secret responses (409 on consumed key). Passwords and secret-response plaintext are never in receipts. Registration requires a key but deduplicates by unique normalized username (retry after success can return 400). Login/logout/read-only backup do not use receipts. No server AI configuration needed for local AI uploads. No email recovery/MFA/offline replication/public sharing or autonomous tools. PDF is client browser print, not a PDF-generation API. Legacy /api and versioned /api/v1 aliases have identical behavior. Personal encrypted provider settings support Chat Completions and Responses. Explicit review authorizes one call with selected versioned documents; results never auto-apply. SQLite backup excludes the separate provider vault and its master key."
   },
   "servers": [
@@ -16,6 +16,36 @@
     }
   ],
   "paths": {
+    "/api/projects/spaces": {
+      "$ref": "#/components/pathItems/ProjectSpaces"
+    },
+    "/api/v1/projects/spaces": {
+      "$ref": "#/components/pathItems/ProjectSpaces"
+    },
+    "/api/projects/space/create": {
+      "$ref": "#/components/pathItems/CreateProjectSpace"
+    },
+    "/api/v1/projects/space/create": {
+      "$ref": "#/components/pathItems/CreateProjectSpace"
+    },
+    "/api/projects/space/link": {
+      "$ref": "#/components/pathItems/LinkProjectSpace"
+    },
+    "/api/v1/projects/space/link": {
+      "$ref": "#/components/pathItems/LinkProjectSpace"
+    },
+    "/api/projects/space/unlink": {
+      "$ref": "#/components/pathItems/UnlinkProjectSpace"
+    },
+    "/api/v1/projects/space/unlink": {
+      "$ref": "#/components/pathItems/UnlinkProjectSpace"
+    },
+    "/api/projects/document/create": {
+      "$ref": "#/components/pathItems/CreateProjectDocument"
+    },
+    "/api/v1/projects/document/create": {
+      "$ref": "#/components/pathItems/CreateProjectDocument"
+    },
     "/api/work/navigation-preference": {
       "$ref": "#/components/pathItems/NavigationPreference"
     },
@@ -3617,6 +3647,15 @@
                         "version": {
                           "type": "integer",
                           "minimum": 1
+                        },
+                        "source": {
+                          "enum": [
+                            "current",
+                            "selected",
+                            "retrieved",
+                            "linked",
+                            "mentioned"
+                          ]
                         }
                       },
                       "required": ["kind", "id", "version"]
@@ -3627,6 +3666,26 @@
                     "pattern": "^[a-zA-Z0-9_-]{1,64}$",
                     "default": "default",
                     "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
+                  },
+                  "retrievalContext": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "currentSpaceId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": []
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "sessionVersion": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "required": ["prompt"]
@@ -6347,6 +6406,15 @@
                         "version": {
                           "type": "integer",
                           "minimum": 1
+                        },
+                        "source": {
+                          "enum": [
+                            "current",
+                            "selected",
+                            "retrieved",
+                            "linked",
+                            "mentioned"
+                          ]
                         }
                       },
                       "required": ["kind", "id", "version"]
@@ -6357,6 +6425,26 @@
                     "pattern": "^[a-zA-Z0-9_-]{1,64}$",
                     "default": "default",
                     "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
+                  },
+                  "retrievalContext": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "currentSpaceId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": []
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "sessionVersion": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "required": ["prompt"]
@@ -7983,10 +8071,1231 @@
         ],
         "description": "Cookie + CSRF or write/read-write Bearer. Idempotency-Key required. Entire batch rolls back on stale entity or organization version, missing/deleted entity, foreign workspace or invalid entry. Maximum100 distinct IDs. organizationVersion0 means no metadata. Archive/unarchive require WORK including PROJECT; preserve status, dependencies and descendant records. Descendants inherit ancestor archive in work-view projections; explicit descendant unarchive does not override an archived ancestor. Restore ancestors first. Move requires NOTE (including JOURNAL), folder up to80 characters trimmed; empty means Unfiled. Journal kind/day and all Markdown remain unchanged. Delete is recoverable soft deletion for non-project entries; project deletion uses the Work API with child protection. Snapshot includes organization metadata; use its version on subsequent operations. No autonomous Agent tool is added."
       }
+    },
+    "/api/ai/sessions": {
+      "get": {
+        "summary": "List the authenticated actor's persisted conversations",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentSession"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/sessions": {
+      "get": {
+        "summary": "List the authenticated actor's persisted conversations",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentSession"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/ai/sessions/create": {
+      "post": {
+        "summary": "Create an actor-owned conversation",
+        "description": "Human session and CSRF required. Session changes and Activity/Outbox are atomic.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  }
+                },
+                "required": ["title"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/sessions/create": {
+      "post": {
+        "summary": "Create an actor-owned conversation",
+        "description": "Human session and CSRF required. Session changes and Activity/Outbox are atomic.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  }
+                },
+                "required": ["title"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/ai/events": {
+      "get": {
+        "summary": "Read transient authorized provider events for a run",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelEvent"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/events": {
+      "get": {
+        "summary": "Read transient authorized provider events for a run",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelEvent"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/ai/capability": {
+      "post": {
+        "summary": "Execute the shared application capability registry",
+        "description": "Cookie/CSRF only. READ requires read authorization. PROPOSE and WRITE require explicit human approved=true. MCP uses the same registry and rejects unapproved writes/proposals; it cannot supply approved=true. Mutation receipts prevent duplicate effects. Optional sessionId/sessionVersion binds persisted TOOL_CALL/TOOL_RESULT/PROPOSAL messages to the actor-owned conversation in the same transaction. MCP document disclosure requires document and Space ALLOW/ANY policies, never SECRET.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "enum": [
+                      "search_documents",
+                      "read_document",
+                      "get_project",
+                      "list_project_tasks",
+                      "create_task",
+                      "propose_document_edit",
+                      "link_documents"
+                    ]
+                  },
+                  "input": {
+                    "type": "object",
+                    "description": "search_documents: query, optional projectId/currentSpaceId; read_document/get_project: id; list_project_tasks: projectId; create_task: title, optional projectIds; propose_document_edit: id, markdown; link_documents: fromId, toId. Other fields are rejected."
+                  },
+                  "approved": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "sessionVersion": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": ["name", "input"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/capability": {
+      "post": {
+        "summary": "Execute the shared application capability registry",
+        "description": "Cookie/CSRF only. READ requires read authorization. PROPOSE and WRITE require explicit human approved=true. MCP uses the same registry and rejects unapproved writes/proposals; it cannot supply approved=true. Mutation receipts prevent duplicate effects. Optional sessionId/sessionVersion binds persisted TOOL_CALL/TOOL_RESULT/PROPOSAL messages to the actor-owned conversation in the same transaction. MCP document disclosure requires document and Space ALLOW/ANY policies, never SECRET.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "enum": [
+                      "search_documents",
+                      "read_document",
+                      "get_project",
+                      "list_project_tasks",
+                      "create_task",
+                      "propose_document_edit",
+                      "link_documents"
+                    ]
+                  },
+                  "input": {
+                    "type": "object",
+                    "description": "search_documents: query, optional projectId/currentSpaceId; read_document/get_project: id; list_project_tasks: projectId; create_task: title, optional projectIds; propose_document_edit: id, markdown; link_documents: fromId, toId. Other fields are rejected."
+                  },
+                  "approved": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "sessionVersion": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": ["name", "input"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/ai/trusted-endpoints": {
+      "get": {
+        "summary": "Administrator endpoint trust for this workspace",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "version": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TrustedAiEndpoint"
+                      }
+                    }
+                  },
+                  "required": ["version", "entries"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/trusted-endpoints": {
+      "get": {
+        "summary": "Administrator endpoint trust for this workspace",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "version": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TrustedAiEndpoint"
+                      }
+                    }
+                  },
+                  "required": ["version", "entries"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/ai/trusted-endpoints/save": {
+      "post": {
+        "summary": "Replace administrator endpoint trust for this workspace",
+        "description": "ADMIN cookie/CSRF only; workspace is derived from actor. Exact normalized endpoint trust, DNS pinning, private-address bounds and revocation apply at actual provider sends. Empty entries remove this workspace's trust. Vault credentials remain separate.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "provider": {
+                          "enum": ["OLLAMA", "LM_STUDIO", "VLLM"]
+                        },
+                        "origin": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "provider",
+                        "origin",
+                        "enabled"
+                      ]
+                    },
+                    "maxItems": 50
+                  }
+                },
+                "required": ["version", "entries"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TrustedAiEndpoint"
+                      }
+                    }
+                  },
+                  "required": ["version", "entries"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/trusted-endpoints/save": {
+      "post": {
+        "summary": "Replace administrator endpoint trust for this workspace",
+        "description": "ADMIN cookie/CSRF only; workspace is derived from actor. Exact normalized endpoint trust, DNS pinning, private-address bounds and revocation apply at actual provider sends. Empty entries remove this workspace's trust. Vault credentials remain separate.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "provider": {
+                          "enum": ["OLLAMA", "LM_STUDIO", "VLLM"]
+                        },
+                        "origin": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "provider",
+                        "origin",
+                        "enabled"
+                      ]
+                    },
+                    "maxItems": 50
+                  }
+                },
+                "required": ["version", "entries"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TrustedAiEndpoint"
+                      }
+                    }
+                  },
+                  "required": ["version", "entries"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/library/rebuild-index": {
+      "post": {
+        "summary": "Rebuild derived Wiki links and backlinks",
+        "description": "Human session with update authorization; persistent aliases preserve rename resolution and existing document bodies/revisions remain unchanged.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "rebuilt": {
+                      "const": true
+                    }
+                  },
+                  "required": ["rebuilt"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/library/rebuild-index": {
+      "post": {
+        "summary": "Rebuild derived Wiki links and backlinks",
+        "description": "Human session with update authorization; persistent aliases preserve rename resolution and existing document bodies/revisions remain unchanged.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {},
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "rebuilt": {
+                      "const": true
+                    }
+                  },
+                  "required": ["rebuilt"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        }
+      }
     }
   },
   "components": {
     "pathItems": {
+      "ProjectSpaces": {
+        "post": {
+          "summary": "List direct and optionally inherited project knowledge spaces",
+          "description": "Human session only. CSRF, Origin and Idempotency-Key required by the current POST transport. Workspace and principal derive from authentication. includeInherited defaults to false; inherited entries retain their ancestor projectId and are returned as LINKED. Integration tokens cannot call this endpoint.",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["projectId"],
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "includeInherited": {
+                      "type": "boolean",
+                      "default": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Knowledge bindings",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ProjectKnowledgeBinding"
+                    }
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Invalid fields or missing idempotency key"
+            },
+            "401": {
+              "description": "Unauthenticated"
+            },
+            "403": {
+              "description": "Permission, CSRF or Origin denied"
+            },
+            "404": {
+              "description": "Project not found"
+            },
+            "409": {
+              "description": "Idempotency conflict"
+            }
+          }
+        }
+      },
+      "CreateProjectSpace": {
+        "post": {
+          "summary": "Explicitly create an owned project Wiki space",
+          "description": "Human session only; CSRF, Origin and Idempotency-Key required. First space defaults to PRIMARY unless a role is supplied; subsequent spaces default to SUPPORTING. Existing PRIMARY prevents another explicitly requested PRIMARY. SPACE, binding, Activity and Outbox share the request transaction. No empty project creates a Space merely by opening it.",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["projectId", "title"],
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "role": {
+                      "enum": ["PRIMARY", "SUPPORTING", "REFERENCE"]
+                    },
+                    "inheritToChildren": {
+                      "type": "boolean",
+                      "default": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Created binding",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ProjectKnowledgeBinding"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Invalid fields, role or duplicate Primary"
+            },
+            "401": {
+              "description": "Unauthenticated"
+            },
+            "403": {
+              "description": "Permission, CSRF or Origin denied"
+            },
+            "404": {
+              "description": "Project not found"
+            },
+            "409": {
+              "description": "Idempotency conflict"
+            }
+          }
+        }
+      },
+      "LinkProjectSpace": {
+        "post": {
+          "summary": "Link an existing workspace Space to a project",
+          "description": "Human session only; CSRF, Origin and Idempotency-Key required. LINKED role defaults to REFERENCE. Does not copy content. Duplicate live binding is rejected. Inheritance is explicit and defaults to false.",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["projectId", "spaceId"],
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "spaceId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "role": {
+                      "enum": ["PRIMARY", "SUPPORTING", "REFERENCE"]
+                    },
+                    "inheritToChildren": {
+                      "type": "boolean",
+                      "default": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Linked binding",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ProjectKnowledgeBinding"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Invalid fields or duplicate binding"
+            },
+            "401": {
+              "description": "Unauthenticated"
+            },
+            "403": {
+              "description": "Permission, CSRF or Origin denied"
+            },
+            "404": {
+              "description": "Project or Space not found"
+            },
+            "409": {
+              "description": "Idempotency conflict"
+            }
+          }
+        }
+      },
+      "UnlinkProjectSpace": {
+        "post": {
+          "summary": "Soft-delete a linked project Space binding without deleting content",
+          "description": "Human session only; CSRF, Origin and Idempotency-Key required. id is the binding/material identity, not the Space id. OWNED bindings are rejected. The existing project material restore endpoint can restore the relation.",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "version"],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Soft-deleted material",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ProjectMaterial"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Invalid fields"
+            },
+            "401": {
+              "description": "Unauthenticated"
+            },
+            "403": {
+              "description": "Permission, ownership, CSRF or Origin denied"
+            },
+            "404": {
+              "description": "Binding not found"
+            },
+            "409": {
+              "description": "Version or idempotency conflict"
+            }
+          }
+        }
+      },
+      "CreateProjectDocument": {
+        "post": {
+          "summary": "Create a document in an explicitly selected bound project Space",
+          "description": "Human session only; CSRF, Origin and Idempotency-Key required. Requires a direct live project binding; inherited-only spaces cannot be used by this endpoint. Reuses LibraryEntry DOCUMENT and revisions. Does not create an implicit Space. Legacy /api/projects/document and MCP project_document_create retain their compatibility behavior.",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["projectId", "spaceId", "title", "bodyMd"],
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "spaceId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 240
+                    },
+                    "bodyMd": {
+                      "type": "string",
+                      "maxLength": 200000
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Created Document",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/LibraryEntry"
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "Invalid fields"
+            },
+            "401": {
+              "description": "Unauthenticated"
+            },
+            "403": {
+              "description": "No direct binding, permission, CSRF or Origin denied"
+            },
+            "404": {
+              "description": "Project or Space not found"
+            },
+            "409": {
+              "description": "Idempotency conflict"
+            }
+          }
+        }
+      },
       "NavigationPreference": {
         "post": {
           "operationId": "setNavigationPreference",
@@ -8352,6 +9661,84 @@
           }
         }
       },
+      "ProjectKnowledgeBinding": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "projectId",
+          "spaceId",
+          "ownership",
+          "role",
+          "inheritToChildren",
+          "version",
+          "createdBy",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "spaceId": {
+            "type": "string"
+          },
+          "ownership": {
+            "enum": ["OWNED", "LINKED"]
+          },
+          "role": {
+            "enum": ["PRIMARY", "SUPPORTING", "REFERENCE"]
+          },
+          "inheritToChildren": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "Compatibility projection currently derives this field from the material updatedBy."
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        }
+      },
+      "DocumentWikiLink": {
+        "type": "object",
+        "required": [
+          "sourceDocumentId",
+          "targetDocumentId",
+          "targetText",
+          "alias",
+          "heading"
+        ],
+        "properties": {
+          "sourceDocumentId": {
+            "type": "string"
+          },
+          "targetDocumentId": {
+            "type": ["string", "null"]
+          },
+          "targetText": {
+            "type": "string",
+            "minLength": 1
+          },
+          "alias": {
+            "type": ["string", "null"]
+          },
+          "heading": {
+            "type": ["string", "null"]
+          }
+        },
+        "description": "Workspace-scoped derived Markdown index; unresolved targets are null. Separate from KnowledgeLink."
+      },
       "ProjectMaterial": {
         "type": "object",
         "required": [
@@ -8394,6 +9781,12 @@
           "targetId": {
             "type": ["string", "null"]
           },
+          "role": {
+            "enum": ["PRIMARY", "SUPPORTING", "REFERENCE"]
+          },
+          "inheritToChildren": {
+            "type": "boolean"
+          },
           "title": {
             "type": "string",
             "minLength": 1,
@@ -8423,7 +9816,7 @@
             "type": ["string", "null"]
           }
         },
-        "description": "Workspace-scoped versioned project material. Snapshots expose projectMaterials; file content is fetched separately. OWNED documents belong to the project's dedicated knowledge space; LINKED references preserve the original entity."
+        "description": "Workspace-scoped versioned project material. Snapshots expose projectMaterials; file content is fetched separately. SPACE materials also expose optional role (PRIMARY/SUPPORTING/REFERENCE) and inheritToChildren. OWNED documents belong to explicitly bound project knowledge spaces; LINKED references preserve the original entity. Legacy creation retains automatic Space compatibility behavior."
       },
       "ProjectActivity": {
         "type": "object",
@@ -9132,6 +10525,7 @@
         "required": ["version", "timezone"]
       },
       "Snapshot": {
+        "description": "Authenticated workspace snapshot including derived document Wiki links.",
         "type": "object",
         "additionalProperties": false,
         "properties": {
@@ -9142,9 +10536,16 @@
             "$ref": "#/components/schemas/NavigationPreference"
           },
           "projectMaterials": {
+            "description": "Legacy and current project material identities, with hydrated Space binding metadata.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ProjectMaterial"
+            }
+          },
+          "wikiLinks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentWikiLink"
             }
           },
           "categories": {
@@ -9475,6 +10876,22 @@
                 },
                 "bodyMd": {
                   "type": "string"
+                },
+                "source": {
+                  "enum": [
+                    "current",
+                    "selected",
+                    "retrieved",
+                    "linked",
+                    "mentioned"
+                  ]
+                },
+                "tokenEstimate": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "permission": {
+                  "$ref": "#/components/schemas/ContentPolicy"
                 }
               },
               "required": ["ref", "version", "title", "bodyMd"]
@@ -9482,6 +10899,13 @@
           },
           "appliedAt": {
             "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "sessionVersion": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": [
@@ -9682,6 +11106,20 @@
           "bodyMd": {
             "type": "string",
             "maxLength": 200000
+          },
+          "parentDocumentId": {
+            "type": ["string", "null"],
+            "description": "Same-Space live document parent. Cycles and deleting a parent with live children are rejected."
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "maxItems": 100,
+            "description": "Workspace-unique normalized aliases. Rename retains the old title; delete disables resolution and restore preserves aliases."
           }
         },
         "required": ["kind", "spaceId", "title", "bodyMd"]
@@ -9737,6 +11175,20 @@
           "provenance": {
             "type": "string",
             "enum": ["HUMAN", "EXTERNAL_AI"]
+          },
+          "parentDocumentId": {
+            "type": ["string", "null"],
+            "description": "Same-Space live document parent. Cycles and deleting a parent with live children are rejected."
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "maxItems": 100,
+            "description": "Workspace-unique normalized aliases. Rename retains the old title; delete disables resolution and restore preserves aliases."
           }
         },
         "required": [
@@ -9814,6 +11266,10 @@
             "pattern": "^[a-zA-Z0-9_-]{1,64}$",
             "default": "default",
             "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
+          },
+          "supportsStreaming": {
+            "type": "boolean",
+            "description": "Set false for a non-streaming provider. Gateway then invokes complete; no simulated deltas or automatic retry of sent requests."
           }
         },
         "required": [
@@ -9920,6 +11376,212 @@
           "folder",
           "updatedAt",
           "updatedBy"
+        ]
+      },
+      "AgentSessionMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "USER",
+              "ASSISTANT",
+              "TOOL_CALL",
+              "TOOL_RESULT",
+              "PROPOSAL",
+              "ERROR"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "runId": {
+            "type": ["string", "null"]
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "kind", "text", "runId", "createdAt"]
+      },
+      "AgentSession": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionMessage"
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "deletedAt": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "createdBy",
+          "version",
+          "title",
+          "messages",
+          "createdAt",
+          "updatedAt",
+          "deletedAt"
+        ]
+      },
+      "ModelEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "text-delta"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": ["type", "text"]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "tool-call"
+              },
+              "name": {
+                "type": "string"
+              },
+              "input": {}
+            },
+            "required": ["type", "name", "input"]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "tool-result"
+              },
+              "name": {
+                "type": "string"
+              },
+              "output": {}
+            },
+            "required": ["type", "name", "output"]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "usage"
+              },
+              "usage": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "inputTokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "outputTokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "source": {
+                    "const": "PROVIDER_REPORTED"
+                  }
+                },
+                "required": ["inputTokens", "outputTokens", "source"]
+              }
+            },
+            "required": ["type", "usage"]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "completed"
+              }
+            },
+            "required": ["type"]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "const": "error"
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": ["type", "error"]
+          }
+        ]
+      },
+      "TrustedAiEndpoint": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "provider": {
+            "enum": ["OLLAMA", "LM_STUDIO", "VLLM"]
+          },
+          "origin": {
+            "type": "string",
+            "format": "uri"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "provider",
+          "origin",
+          "enabled",
+          "workspaceId"
         ]
       }
     }

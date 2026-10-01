@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -126,6 +126,52 @@ export class TemporaryPostgres {
       ],
       { windowsHide: true, timeout: 20_000 },
     );
+  }
+  /** Real offline physical backup of this disposable cluster; no system service. */
+  async snapshot() {
+    await this.stop();
+    try {
+      const target = join(this.directory, "snapshot-" + randomUUID());
+      await cp(join(this.directory, "data"), target, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+      });
+      return target;
+    } finally {
+      await this.boot();
+    }
+  }
+  async withRestoredSnapshot<T>(
+    snapshot: string,
+    action: (restored: TemporaryPostgres) => Promise<T>,
+  ): Promise<T> {
+    if (
+      !resolve(snapshot).startsWith(resolve(this.directory) + sep + "snapshot-")
+    )
+      throw new Error("Unsafe snapshot path");
+    const directory = await mkdtemp(join(tmpdir(), "arclattice-pg-"));
+    const restored = new TemporaryPostgres(
+      directory,
+      this.control,
+      this.connection,
+    );
+    await this.stop();
+    try {
+      await cp(snapshot, join(directory, "data"), {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+      });
+      await restored.boot();
+      return await action(restored);
+    } finally {
+      try {
+        await restored.dispose();
+      } finally {
+        await this.boot();
+      }
+    }
   }
   async dispose() {
     await this.stop();

@@ -1,4 +1,8 @@
-import type { EntityRef, KnowledgeLink } from "@arclattice/application";
+import {
+  type EntityRef,
+  type KnowledgeLink,
+  scopedKnowledgeDocuments,
+} from "@arclattice/application";
 import {
   effectiveCategoryId,
   type ProjectScope,
@@ -11,9 +15,11 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "./bootstrap";
+import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
+import { ProjectDependencyGraph } from "./features/projects/ProjectDependencyGraph";
+import { ProjectStructureTree } from "./features/projects/ProjectStructureTree";
 import { TasksWorkspace } from "./features/tasks/TasksWorkspace";
 import { selectTasks } from "./features/tasks/task-selectors";
-import { GraphCanvas } from "./GraphCanvas";
 import { ProjectBriefEditor } from "./ProjectBriefEditor";
 import { ProjectInspector } from "./ProjectInspector";
 import {
@@ -73,22 +79,17 @@ export function ProjectWorkspace({
   runtime: Runtime;
   run(operation: () => Promise<unknown>): Promise<boolean>;
 }) {
-  const { t } = useTranslation("desk");
+  const { t, i18n } = useTranslation("desk");
   const tab = routeTab;
   const setTab = (tab: ProjectTab) => onRouteChange(tab, scope);
   const scope = routeScope;
   const setScope = (scope: ProjectScope) => onRouteChange(tab, scope);
-  const [target, setTarget] = useState("");
+  const [referenceQuery, setReferenceQuery] = useState("");
+  const [knowledgeQuery, setKnowledgeQuery] = useState("");
+  const [knowledgeGraphOpen, setKnowledgeGraphOpen] = useState(false);
   const [inspectedId, setInspectedId] = useState(project.id);
   const liveItems = snapshot.items.filter((item) => !item.deletedAt);
   const scoped = projectScope(project, liveItems, scope);
-  const children =
-    scope === "DIRECT"
-      ? liveItems.filter(
-          (item) =>
-            item.type === "PROJECT" && item.parentProjectId === project.id,
-        )
-      : scoped.projects.filter((item) => item.id !== project.id);
   const tasks = scoped.tasks;
   const selectedTasks = selectTasks(
     liveItems,
@@ -105,7 +106,7 @@ export function ProjectWorkspace({
   const taskIds = new Set(tasks.map((item) => item.id));
   const projectIds = scoped.projectIds;
   const edges = snapshot.edges.filter(
-    (edge) => taskIds.has(edge.fromId) || taskIds.has(edge.toId),
+    (edge) => taskIds.has(edge.fromId) && taskIds.has(edge.toId),
   );
   const graphIds = new Set([
     project.id,
@@ -153,6 +154,7 @@ export function ProjectWorkspace({
   });
   const available = materials.filter(
     (entry) =>
+      entry.ref.kind !== "SPACE" &&
       !linked.some(
         (linked) =>
           linked.ref.id === entry.ref.id &&
@@ -266,11 +268,7 @@ export function ProjectWorkspace({
             className="chip"
             onClick={() => setTab(name)}
           >
-            {name === "timeline"
-              ? t("projectTimeline")
-              : name === "activity"
-                ? t("projectActivity")
-                : t(`projectHub.${name}`)}
+            {t(`projectHub.${name}`)}
           </button>
         ))}
       </div>
@@ -279,7 +277,7 @@ export function ProjectWorkspace({
         id="project-panel"
         aria-labelledby={`project-tab-${tab}`}
       >
-        <div hidden={tab !== "brief"}>
+        <div hidden={tab !== "overview"}>
           <section className="project-next">
             <h2>{t("taskWorkspace.now")}</h2>
             {selectedTasks.focusTasks
@@ -331,16 +329,11 @@ export function ProjectWorkspace({
           />
           <section>
             <h2>{t("projectHub.children")}</h2>
-            {children.map((child) => (
-              <button
-                type="button"
-                className="agenda-item"
-                key={child.id}
-                onClick={() => onProject(child.id)}
-              >
-                {child.title}
-              </button>
-            ))}
+            <ProjectStructureTree
+              projects={liveItems}
+              parentId={project.id}
+              onOpen={onProject}
+            />
           </section>
 
           <ProjectBriefEditor
@@ -349,17 +342,108 @@ export function ProjectWorkspace({
             busy={busy}
             onSave={onBriefSave}
           />
+          <ProjectTimeline
+            tasks={[...tasks, ...milestones]}
+            items={liveItems}
+            onOpen={onOpen}
+          />
+          <ProjectHistory
+            projectId={project.id}
+            projectIds={[...projectIds]}
+            tasks={[...tasks, ...scoped.projects]}
+            edges={edges}
+            load={runtime.projectActivity}
+            loadWork={runtime.activity}
+          />
         </div>
-        {tab === "documents" && (
+        {tab === "knowledge" && (
           <>
+            <details
+              onToggle={(event) =>
+                setKnowledgeGraphOpen(event.currentTarget.open)
+              }
+            >
+              <summary>
+                {i18n.language.startsWith("zh")
+                  ? "知识图谱"
+                  : "Knowledge graph"}
+              </summary>
+              {knowledgeGraphOpen && (
+                <KnowledgeGraph
+                  snapshot={snapshot}
+                  projectId={project.id}
+                  onOpen={onOpen}
+                />
+              )}
+            </details>
+            <input
+              aria-label={
+                i18n.language.startsWith("zh")
+                  ? "搜索项目知识"
+                  : "Search project knowledge"
+              }
+              value={knowledgeQuery}
+              onChange={(event) => setKnowledgeQuery(event.target.value)}
+            />
+            {knowledgeQuery &&
+              scopedKnowledgeDocuments({
+                ...snapshot,
+                projectId: project.id,
+                workspaceFallback: true,
+              })
+                .filter((entry) =>
+                  (
+                    entry.title +
+                    " " +
+                    entry.bodyMd +
+                    " " +
+                    (entry.aliases ?? []).join(" ")
+                  )
+                    .toLocaleLowerCase()
+                    .includes(knowledgeQuery.toLocaleLowerCase()),
+                )
+                .map((entry) => (
+                  <button
+                    type="button"
+                    className="agenda-item"
+                    key={entry.id}
+                    onClick={() => onOpen({ kind: "DOCUMENT", id: entry.id })}
+                  >
+                    {entry.title}
+                  </button>
+                ))}
             <ProjectMaterials
+              library={snapshot.library}
+              onCreateSpace={(input) =>
+                run(() => runtime.createProjectSpace(input))
+              }
+              onLinkSpace={(input) =>
+                run(() => runtime.linkProjectSpace(input))
+              }
               projectId={project.id}
               scopeIds={projectIds}
               projects={scoped.projects}
               materials={snapshot.projectMaterials ?? []}
+              inheritedSpaces={(snapshot.projectMaterials ?? []).filter(
+                (material) =>
+                  material.kind === "SPACE" &&
+                  !material.deletedAt &&
+                  material.inheritToChildren &&
+                  projectAncestors(project, liveItems).some(
+                    (ancestor) => ancestor.id === material.projectId,
+                  ) &&
+                  !(snapshot.projectMaterials ?? []).some(
+                    (direct) =>
+                      direct.projectId === project.id &&
+                      !direct.deletedAt &&
+                      direct.targetId === material.targetId,
+                  ),
+              )}
               busy={busy}
               onOpen={onOpen}
-              onCreate={(input) => run(() => runtime.projectDocument(input))}
+              onCreate={(input) =>
+                run(() => runtime.createProjectDocument(input))
+              }
               onUpload={(input) => run(() => runtime.projectUpload(input))}
               onDelete={(material, deleted) =>
                 run(() =>
@@ -384,50 +468,39 @@ export function ProjectWorkspace({
               }}
             />
             <section className="panel project-summary">
-              <p>{t("projectHub.documentsHint")}</p>
-              <form
-                className="organization-toolbar"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const entry = available.find(
-                    (entry) => `${entry.ref.kind}:${entry.ref.id}` === target,
-                  );
-                  if (entry)
-                    void onLink(
-                      { kind: "WORK", id: project.id },
-                      entry.ref,
-                    ).then((ok) => {
-                      if (ok) setTarget("");
-                    });
-                }}
-              >
-                <label>
-                  {t("projectHub.chooseDocument")}
-                  <select
-                    aria-label={t("projectHub.chooseDocument")}
-                    required
-                    value={target}
-                    onChange={(event) => setTarget(event.target.value)}
-                  >
-                    <option value="">{t("projectHub.chooseDocument")}</option>
-                    {available.map((entry) => (
-                      <option
-                        key={`${entry.ref.kind}:${entry.ref.id}`}
-                        value={`${entry.ref.kind}:${entry.ref.id}`}
-                      >
-                        {entry.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="submit"
-                  className="button secondary"
-                  disabled={busy || !target}
-                >
-                  {t("projectHub.attach")}
-                </button>
-              </form>
+              <label>
+                {t("projectHub.chooseDocument")}
+                <input
+                  type="search"
+                  value={referenceQuery}
+                  onChange={(event) => setReferenceQuery(event.target.value)}
+                />
+              </label>
+              {referenceQuery &&
+                available
+                  .filter((entry) =>
+                    entry.title
+                      .toLocaleLowerCase()
+                      .includes(referenceQuery.toLocaleLowerCase()),
+                  )
+                  .slice(0, 20)
+                  .map((entry) => (
+                    <button
+                      type="button"
+                      key={entry.ref.kind + ":" + entry.ref.id}
+                      disabled={busy}
+                      onClick={() =>
+                        void onLink(
+                          { kind: "WORK", id: project.id },
+                          entry.ref,
+                        ).then((ok) => {
+                          if (ok) setReferenceQuery("");
+                        })
+                      }
+                    >
+                      {entry.title}
+                    </button>
+                  ))}
               {!linked.length && (
                 <p className="empty-small">{t("projectHub.emptyDocuments")}</p>
               )}
@@ -461,23 +534,6 @@ export function ProjectWorkspace({
             </section>
           </>
         )}
-        {tab === "timeline" && (
-          <ProjectTimeline
-            tasks={[...tasks, ...milestones]}
-            items={liveItems}
-            onOpen={onOpen}
-          />
-        )}
-        {tab === "activity" && (
-          <ProjectHistory
-            projectId={project.id}
-            projectIds={[...projectIds]}
-            tasks={[...tasks, ...scoped.projects]}
-            edges={edges}
-            load={runtime.projectActivity}
-            loadWork={runtime.activity}
-          />
-        )}
         {tab === "tasks" && (
           <TasksWorkspace
             items={tasks}
@@ -492,32 +548,14 @@ export function ProjectWorkspace({
             onOpen={(item) => onOpen({ kind: "WORK", id: item.id })}
           />
         )}
-        {tab === "graph" && (
+        {tab === "tasks" && (
           <>
-            <p className="muted">{t("projectHub.graphHint")}</p>
             <p className="muted">{t("inspectHint")}</p>
-            <label className="field">
-              <span>{t("inspector")}</span>
-              <select
-                className="inspector-selection"
-                value={inspectedId}
-                onChange={(event) => setInspectedId(event.target.value)}
-              >
-                {graphSnapshot.items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.title}
-                  </option>
-                ))}
-              </select>
-            </label>
             <div className="project-canvas-layout">
-              <GraphCanvas
+              <ProjectDependencyGraph
                 snapshot={graphSnapshot}
-                tasks
                 onOpen={onOpen}
                 onSelect={(ref) => setInspectedId(ref.id)}
-                onConnect={(from, to) => onAddEdge(from.id, to.id)}
-                onRemove={onRemoveEdge}
               />
               <ProjectInspector
                 item={

@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
+import { Readable } from "node:stream";
 import type { PersonalModelInput } from "@arclattice/application";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GatewayPolicy } from "../../application/src/gateway-policy";
@@ -298,8 +299,8 @@ describe("personal model vault and public-only egress", () => {
     ).rejects.toThrow("MODEL_DESTINATION_REJECTED");
     expect(network.request).not.toHaveBeenCalled();
   });
-  function response(data: unknown, status = 200) {
-    network.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+  function response(data: unknown, status = 200, address = "8.8.8.8") {
+    network.lookup.mockResolvedValue([{ address, family: 4 }]);
     network.request.mockImplementation((_url, options, callback) => {
       const req = new EventEmitter() as EventEmitter & {
         end: (payload: string) => void;
@@ -320,11 +321,118 @@ describe("personal model vault and public-only egress", () => {
         });
       const pinned = vi.fn();
       options.lookup("provider.example", {}, pinned);
-      expect(pinned).toHaveBeenCalledWith(null, "8.8.8.8", 4);
+      expect(pinned).toHaveBeenCalledWith(null, address, 4);
       expect(options.agent).toBe(false);
       return req;
     });
   }
+  it("uses only exact administrator trust for pinned private destinations and revocation", async () => {
+    const vault = openPersonalVault(directory);
+    const local = { ...input, endpoint: "https://127.0.0.1:8443/v1" };
+    expect(() => vault.save(actor, 0, local)).toThrow();
+    vault.setTrustedEndpoints!([
+      {
+        id: "local",
+        workspaceId: actor.workspaceId,
+        title: "Local",
+        provider: "VLLM",
+        origin: local.endpoint,
+        enabled: true,
+      },
+    ]);
+    expect(() =>
+      vault.save({ ...actor, workspaceId: "other" }, 0, local),
+    ).toThrow();
+    vault.save(actor, 0, local);
+    response(
+      { choices: [{ message: { content: "local answer" } }] },
+      200,
+      "127.0.0.1",
+    );
+    const model = vault.resolve(actor, "personal")!;
+    expect(await model.complete("approved", new AbortController().signal)).toBe(
+      "local answer",
+    );
+    vault.setTrustedEndpoints!([]);
+    await expect(
+      model.complete("revoked", new AbortController().signal),
+    ).rejects.toThrow("MODEL_DESTINATION_REJECTED");
+    expect(network.request).toHaveBeenCalledTimes(1);
+  });
+  it("rechecks trust after DNS so revocation cannot authorize a pending send", async () => {
+    const vault = openPersonalVault(directory);
+    const endpoint = "https://provider.example:8443/v1";
+    vault.setTrustedEndpoints!([
+      {
+        id: "trusted",
+        workspaceId: actor.workspaceId,
+        title: "Trusted",
+        provider: "VLLM",
+        origin: endpoint,
+        enabled: true,
+      },
+    ]);
+    vault.save(actor, 0, { ...input, endpoint });
+    network.lookup.mockImplementation(async () => {
+      vault.setTrustedEndpoints!([]);
+      return [{ address: "8.8.8.8", family: 4 }];
+    });
+    const model = vault.resolve(actor, "personal")!;
+    await expect(
+      model.complete("approved", new AbortController().signal),
+    ).rejects.toThrow("MODEL_DESTINATION_REJECTED");
+    expect(network.request).not.toHaveBeenCalled();
+  });
+  it("invokes the production SSE adapter with a pinned destination and real incremental events", async () => {
+    const vault = openPersonalVault(directory);
+    vault.save(actor, 0, input);
+    network.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+    network.request.mockImplementation((_url, options, callback) => {
+      const req = new EventEmitter() as EventEmitter & {
+        end(payload: string): void;
+      };
+      req.end = (payload) => {
+        expect(JSON.parse(payload).stream).toBe(true);
+        expect(JSON.parse(payload).tools).toBeUndefined();
+        queueMicrotask(() => {
+          const res = Readable.from([
+            Buffer.from(
+              'data: {"choices":[{"delta":{"content":"Hello "}}]}\n\n',
+            ),
+            Buffer.from(
+              'data: {"choices":[{"delta":{"content":"world"}}]}\n\n',
+            ),
+            Buffer.from(
+              'data: {"usage":{"prompt_tokens":5,"completion_tokens":2}}\n\ndata: [DONE]\n\n',
+            ),
+          ]) as Readable & {
+            statusCode: number;
+            headers: Record<string, string>;
+          };
+          res.statusCode = 200;
+          res.headers = { "content-type": "text/event-stream" };
+          callback(res);
+        });
+      };
+      const pinned = vi.fn();
+      options.lookup("provider.example", {}, pinned);
+      expect(pinned).toHaveBeenCalledWith(null, "8.8.8.8", 4);
+      return req;
+    });
+    const events = [];
+    for await (const event of vault
+      .resolve(actor, "personal")!
+      .providerAdapter!.stream("approved", new AbortController().signal))
+      events.push(event);
+    expect(events.map((event) => event.type)).toEqual([
+      "text-delta",
+      "text-delta",
+      "usage",
+      "completed",
+    ]);
+    expect(events[0]).toEqual({ type: "text-delta", text: "Hello " });
+    expect(network.request).toHaveBeenCalledTimes(1);
+  });
   it("pins validated DNS, uses the HTTPS hostname and parses Chat/Responses text", async () => {
     const vault = openPersonalVault(directory);
     vault.save(actor, 0, input);
