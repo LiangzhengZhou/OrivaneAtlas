@@ -4,6 +4,7 @@ import { syntaxTree } from "@codemirror/language";
 import {
   Compartment,
   EditorState,
+  Facet,
   RangeSetBuilder,
   StateField,
 } from "@codemirror/state";
@@ -17,10 +18,12 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import katex from "katex";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { externalValue, pendingImage } from "./imageInsertion";
-import { Markdown } from "./Markdown";
+import { Markdown, PrivateImageContext } from "./Markdown";
+
+const imageLoader = Facet.define<((path: string) => Promise<Blob>) | null>();
 
 class MathWidget extends WidgetType {
   constructor(
@@ -69,22 +72,33 @@ class PreviewWidget extends WidgetType {
   constructor(
     readonly text: string,
     readonly from: number,
+    readonly load: ((path: string) => Promise<Blob>) | null,
   ) {
     super();
   }
   eq(other: PreviewWidget) {
-    return other.text === this.text && other.from === this.from;
+    return (
+      other.text === this.text &&
+      other.from === this.from &&
+      other.load === this.load
+    );
   }
   toDOM(view: EditorView) {
     const dom = document.createElement("div");
     dom.className = "md-live-widget";
     dom.addEventListener("mousedown", (event) => {
+      if (event.target instanceof Element && event.target.closest("button"))
+        return;
       event.preventDefault();
       view.dispatch({ selection: { anchor: this.from } });
       view.focus();
     });
     this.root = createRoot(dom);
-    this.root.render(<Markdown text={this.text} />);
+    this.root.render(
+      <PrivateImageContext.Provider value={this.load}>
+        <Markdown text={this.text} />
+      </PrivateImageContext.Provider>,
+    );
     this.observer = new ResizeObserver(() => view.requestMeasure());
     this.observer.observe(dom);
     return dom;
@@ -137,7 +151,7 @@ function blockPreviews(state: EditorState): DecorationSet {
       }
       const preview =
         node.name === "Table" ||
-        /^!\[[^\]\n]*\]\(\/api\/library\/asset\?id=[a-zA-Z0-9-]+\)$/.test(
+        /^!\[[^\]\n]*\]\(\/api\/library\/asset\?id=[a-zA-Z0-9-]+\)$/m.test(
           text.trim(),
         ) ||
         /^\|?.+\|.+\n\|?\s*:?-{3,}/.test(text);
@@ -150,7 +164,11 @@ function blockPreviews(state: EditorState): DecorationSet {
         return;
       ranges.push(
         Decoration.replace({
-          widget: new PreviewWidget(text, node.from),
+          widget: new PreviewWidget(
+            text,
+            node.from,
+            state.facet(imageLoader)[0] ?? null,
+          ),
           block: true,
         }).range(node.from, node.to),
       );
@@ -163,7 +181,9 @@ function blockPreviews(state: EditorState): DecorationSet {
 const blockPreview = StateField.define<DecorationSet>({
   create: blockPreviews,
   update(value, tr) {
-    return tr.docChanged || tr.selection ? blockPreviews(tr.state) : value;
+    return tr.docChanged || tr.selection || tr.reconfigured
+      ? blockPreviews(tr.state)
+      : value;
   },
   provide: (field) => EditorView.decorations.from(field),
 });
@@ -240,6 +260,9 @@ export function LiveMarkdown({
   onImages?: (files: File[]) => void;
 }) {
   const parent = useRef<HTMLDivElement>(null);
+  const load = useContext(PrivateImageContext);
+  const loaderConfig = useRef(new Compartment());
+  const initialLoader = useRef(load);
   const callbacks = useRef({ onChange, onSave, onComposition, onImages });
   callbacks.current = { onChange, onSave, onComposition, onImages };
   const mode = useRef(new Compartment());
@@ -252,6 +275,7 @@ export function LiveMarkdown({
         doc: initial.current.value,
         extensions: [
           markdown(),
+          loaderConfig.current.of(imageLoader.of(initialLoader.current)),
           history(),
           pendingImage,
           EditorView.lineWrapping,
@@ -310,6 +334,11 @@ export function LiveMarkdown({
       view.destroy();
     };
   }, [editorRef]);
+  useEffect(() => {
+    editorRef.current?.dispatch({
+      effects: loaderConfig.current.reconfigure(imageLoader.of(load)),
+    });
+  }, [load, editorRef]);
   useEffect(() => {
     editorRef.current?.dispatch({
       effects: mode.current.reconfigure(

@@ -1,8 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
-import { test as base, expect, type Page } from "@playwright/test";
+import {
+  test as base,
+  expect,
+  type Page,
+  type Response,
+} from "@playwright/test";
 import { localCalendarDay } from "../../packages/domain/src/index";
 
 const resources = Object.fromEntries(
@@ -1914,137 +1919,457 @@ test("brand stays transparent and compact on login and sidebar", async ({
     fullPage: true,
   });
 });
-test("accounts admin review and lecture Markdown images PDF work end to end", async ({
-  page,
-  workbench,
-}, info) => {
-  const w = words(info.project.name),
-    a = w.spaces;
-  // Accounts are provisioned offline; public registration/legacy claim stay disabled.
-  await unlock(page, workbench.url, workbench.secret, w);
-  await nav(page, a.admin);
-  await expect(page.getByText("student", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: a.approve, exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: a.disable, exact: true }),
-  ).toBeVisible();
-  await page.screenshot({ path: info.outputPath("admin.png"), fullPage: true });
-  await nav(page, w.desk.settings);
-  await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
-  await page.getByLabel(a.username, { exact: true }).fill("image-editor");
-  await page.getByLabel(a.password, { exact: true }).fill(workbench.secret);
-  await page.getByRole("button", { name: w.desk.enter, exact: true }).click();
-  await nav(page, a.account);
-  await page.getByLabel(a.tokenName, { exact: true }).fill("Local research AI");
-  await page.getByRole("button", { name: a.issue, exact: true }).click();
-  await expect(page.getByText(a.once, { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: a.closeSecret, exact: true }).click();
-  await page.screenshot({
-    path: info.outputPath("account-api.png"),
-    fullPage: true,
-  });
-  await nav(page, a.library);
-  await page.getByRole("button", { name: a.newSpace, exact: true }).click();
-  await page
-    .getByLabel(a.spaceTitle, { exact: true })
-    .fill("量子场论 / Quantum Field Theory");
-  await page
-    .getByLabel(a.body, { exact: true })
-    .fill("A dedicated space for lecture notes and illustrations.");
-  await saveDocument(page, w);
-  await browseDocuments(page);
-  await page
-    .locator(".note-card")
-    .filter({ hasText: "Quantum Field Theory" })
-    .click();
-  await page.getByRole("button", { name: a.newLecture, exact: true }).click();
-  await page
-    .getByLabel(a.title, { exact: true })
-    .fill("第一讲：场与对称性 / Fields and symmetry");
-  const markdown =
-    "## 1. Overview\n\nA **field** assigns a value to every point in spacetime.\n\n$$ E^2=p^2c^2+m^2c^4 $$\n\n| Symbol | Meaning |\n| --- | --- |\n| E | Energy |\n| p | Momentum |\n\n- [x] Review the notation\n- [ ] Derive the equations\n\n<script>window.untrusted=true</script>\n\n![blocked](https://example.invalid/private.png)";
-  await pane(page).getByLabel(a.body, { exact: true }).fill(markdown);
-  await pane(page)
-    .locator(".document-tools > summary")
-    .filter({ hasText: /^(Import, images and revisions|导入、图片与修订)$/ })
-    .click();
-  await pane(page)
-    .getByLabel(a.image, { exact: true })
-    .setInputFiles({
-      name: "figure.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXs8AAAAASUVORK5CYII=",
-        "base64",
-      ),
+for (const nativeImages of [false, true]) {
+  test(`accounts admin review and lecture Markdown images PDF work end to end ${nativeImages ? "native bridge" : "web"}`, async ({
+    page,
+    workbench,
+  }, info) => {
+    test.setTimeout(90_000);
+    const w = words(info.project.name),
+      a = w.spaces;
+    const imageResponses: {
+      status: number;
+      contentType: string;
+      bytes: number;
+    }[] = [];
+    const imageReads: Promise<void>[] = [];
+    const captureImageResponse = (response: Response) => {
+      if (new URL(response.url()).pathname !== "/api/library/asset") return;
+      imageReads.push(
+        response.body().then((body) => {
+          imageResponses.push({
+            status: response.status(),
+            contentType: response.headers()["content-type"] ?? "",
+            bytes: body.length,
+          });
+        }),
+      );
+    };
+    page.on("response", captureImageResponse);
+    await page.addInitScript(() => {
+      const original = URL.createObjectURL.bind(URL);
+      const blobs: { type: string; size: number }[] = [];
+      Object.assign(window, { imageDiagnosticBlobs: blobs });
+      URL.createObjectURL = (blob) => {
+        if (blob instanceof Blob)
+          blobs.push({ type: blob.type, size: blob.size });
+        return original(blob);
+      };
     });
-  await expect(pane(page).getByLabel(a.body, { exact: true })).toContainText(
-    /api\/library\/asset/,
-  );
-  await nav(page, w.desk.tasks);
-  await expect(
-    page.getByRole("tab", { name: /Fields and symmetry/ }),
-  ).toBeVisible();
-  await page.getByRole("tab", { name: /Fields and symmetry/ }).click();
-  await saveDocument(page, w);
-  await pane(page)
-    .getByRole("button", { name: w.desk.read, exact: true })
-    .click();
-  await expect(pane(page).locator(".document-reading .katex")).toHaveCount(1);
-  await expect(pane(page).locator(".document-reading table")).toHaveCount(1);
-  await expect(pane(page).locator(".document-reading img")).toHaveCount(1);
-  await expect(pane(page).locator(".document-reading script")).toHaveCount(0);
-  expect(
+    // Accounts are provisioned offline; public registration/legacy claim stay disabled.
+    if (nativeImages) {
+      const config = JSON.parse(
+        readFileSync("src-tauri/tauri.conf.json", "utf8"),
+      );
+      const imagePolicy = config.app.security.csp
+        .split(";")
+        .find((directive: string) => directive.trim().startsWith("img-src "));
+      await page.route("**/*", async (route) => {
+        if (route.request().resourceType() !== "document")
+          return route.continue();
+        const response = await route.fetch();
+        const headers = response.headers();
+        const hostPolicy = headers["content-security-policy"];
+        if (!hostPolicy) throw new Error("Test host CSP is missing");
+        headers["content-security-policy"] = hostPolicy.replace(
+          /img-src[^;]+/,
+          imagePolicy,
+        );
+        await route.fulfill({ response, headers });
+      });
+      await page.addInitScript((policy) => {
+        document.addEventListener("DOMContentLoaded", () => {
+          const meta = document.createElement("meta");
+          meta.httpEquiv = "Content-Security-Policy";
+          meta.content = policy;
+          document.head.append(meta);
+        });
+        localStorage.setItem("orivane.atlas.server-origin", location.origin);
+        Object.assign(window, {
+          isTauri: true,
+          __TAURI_INTERNALS__: {
+            invoke: async (
+              command: string,
+              args: {
+                path: string;
+                payload?: string;
+                csrf?: string;
+                idempotencyKey?: string;
+              },
+            ) => {
+              if (command === "configure_server") return;
+              if (command === "saved_accounts") return [];
+              if (command !== "server_request")
+                throw new Error(`unexpected native command: ${command}`);
+              const response = await fetch(args.path, {
+                method: args.payload ? "POST" : "GET",
+                credentials: "same-origin",
+                ...(args.payload
+                  ? {
+                      body: args.payload,
+                      headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-Token": args.csrf ?? "",
+                        "Idempotency-Key": args.idempotencyKey ?? "",
+                      },
+                    }
+                  : {}),
+              });
+              const bytes = new Uint8Array(await response.arrayBuffer());
+              return {
+                status: response.status,
+                contentType: response.headers.get("Content-Type"),
+                body: btoa(
+                  Array.from(bytes, (byte) => String.fromCharCode(byte)).join(
+                    "",
+                  ),
+                ),
+              };
+            },
+          },
+        });
+      }, imagePolicy);
+    }
+    await unlock(page, workbench.url, workbench.secret, w);
+    await nav(page, a.admin);
+    await expect(page.getByText("student", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: a.approve, exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: a.disable, exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: info.outputPath("admin.png"),
+      fullPage: true,
+    });
+    await nav(page, w.desk.settings);
+    await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
+    await page.getByLabel(a.username, { exact: true }).fill("image-editor");
+    await page.getByLabel(a.password, { exact: true }).fill(workbench.secret);
+    await page.getByRole("button", { name: w.desk.enter, exact: true }).click();
+    await nav(page, a.account);
+    await page
+      .getByLabel(a.tokenName, { exact: true })
+      .fill("Local research AI");
+    await page.getByRole("button", { name: a.issue, exact: true }).click();
+    await expect(page.getByText(a.once, { exact: true })).toBeVisible();
+    await page
+      .getByRole("button", { name: a.closeSecret, exact: true })
+      .click();
+    await page.screenshot({
+      path: info.outputPath("account-api.png"),
+      fullPage: true,
+    });
+    await nav(page, a.library);
+    await page.getByRole("button", { name: a.newSpace, exact: true }).click();
+    await page
+      .getByLabel(a.spaceTitle, { exact: true })
+      .fill("量子场论 / Quantum Field Theory");
+    await page
+      .getByLabel(a.body, { exact: true })
+      .fill("A dedicated space for lecture notes and illustrations.");
+    await saveDocument(page, w);
+    await browseDocuments(page);
+    await page
+      .locator(".note-card")
+      .filter({ hasText: "Quantum Field Theory" })
+      .click();
+    await page.getByRole("button", { name: a.newLecture, exact: true }).click();
+    await page
+      .getByLabel(a.title, { exact: true })
+      .fill("第一讲：场与对称性 / Fields and symmetry");
+    const markdown =
+      "## 1. Overview\n\nA **field** assigns a value to every point in spacetime.\n\n$$ E^2=p^2c^2+m^2c^4 $$\n\n| Symbol | Meaning |\n| --- | --- |\n| E | Energy |\n| p | Momentum |\n\n- [x] Review the notation\n- [ ] Derive the equations\n\n<script>window.untrusted=true</script>\n\n![blocked](https://example.invalid/private.png)";
+    await pane(page).getByLabel(a.body, { exact: true }).fill(markdown);
     await pane(page)
-      .locator(".document-reading img")
-      .evaluate(
-        (img: HTMLImageElement) => img.complete && img.naturalWidth > 0,
-      ),
-  ).toBe(true);
-  const savedMetadata = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem("orivane.atlas.saved-accounts") ?? "[]"),
-  );
-  expect(savedMetadata).toHaveLength(1);
-  expect(JSON.stringify(savedMetadata)).not.toContain(workbench.secret);
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
-  await page.screenshot({
-    path: info.outputPath("lecture.png"),
-    fullPage: true,
-  });
-  if (info.project.name === "desktop-zh") {
-    await page.evaluate(() => document.fonts.ready);
-    const pdf = await page.pdf({
-      path: info.outputPath("lecture.pdf"),
-      format: "A4",
-      printBackground: true,
+      .locator(".document-tools > summary")
+      .filter({ hasText: /^(Import, images and revisions|导入、图片与修订)$/ })
+      .click();
+    await pane(page)
+      .getByLabel(a.image, { exact: true })
+      .setInputFiles({
+        name: "figure.png",
+        mimeType: "image/png",
+        buffer: Buffer.from(
+          await page.evaluate(() => {
+            const canvas = document.createElement("canvas");
+            canvas.width = 941;
+            canvas.height = 900;
+            const context = canvas.getContext("2d");
+            if (!context) throw new Error("Canvas unavailable");
+            // Exercise multiple 256 KiB upload chunks and binary/native IPC,
+            // not only a tiny highly compressible PNG.
+            const pixels = context.createImageData(canvas.width, canvas.height);
+            let seed = 85;
+            for (let i = 0; i < pixels.data.length; i += 4) {
+              seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+              pixels.data[i] = seed & 255;
+              pixels.data[i + 1] = (seed >>> 8) & 255;
+              pixels.data[i + 2] = (seed >>> 16) & 255;
+              pixels.data[i + 3] = 255;
+            }
+            context.putImageData(pixels, 0, 0);
+            context.fillStyle = "#177b65";
+            context.fillRect(0, 0, 240, 120);
+            context.fillStyle = "#ffffff";
+            context.font = "20px sans-serif";
+            context.fillText("Image preview", 24, 64);
+            return canvas.toDataURL("image/png").split(",")[1] ?? "";
+          }),
+          "base64",
+        ),
+      });
+    await expect(pane(page).getByLabel(a.body, { exact: true })).toContainText(
+      /api\/library\/asset/,
+    );
+    // Fill raw Markdown, not the live DOM containing replacement widgets.
+    await pane(page)
+      .getByRole("button", { name: /^(Source|源码)$/ })
+      .click();
+    const editor = pane(page).getByLabel(a.body, { exact: true });
+    const uploadedText = await editor.innerText();
+    const assetPath = uploadedText.match(
+      /\/api\/library\/asset\?id=[a-zA-Z0-9-]+/,
+    )?.[0];
+    if (!assetPath) throw new Error("Uploaded image path missing");
+    // Existing documents can have empty alt text and an image in the same paragraph.
+    const savedMarkdown = `${markdown}\n\nExisting paragraph\n![](${assetPath})`;
+    await editor.fill(savedMarkdown);
+    await nav(page, w.desk.tasks);
+    await expect(
+      page.getByRole("tab", { name: /Fields and symmetry/ }),
+    ).toBeVisible();
+    await page.getByRole("tab", { name: /Fields and symmetry/ }).click();
+    await saveDocument(page, w);
+    await pane(page)
+      .getByRole("button", { name: w.desk.read, exact: true })
+      .click();
+    await expect(pane(page).locator(".document-reading .katex")).toHaveCount(1);
+    await expect(pane(page).locator(".document-reading table")).toHaveCount(1);
+    await expect(pane(page).locator(".document-reading img")).toHaveCount(1);
+    await expect(pane(page).locator(".document-reading script")).toHaveCount(0);
+    if (nativeImages) {
+      await expect(pane(page).locator(".document-reading img")).toHaveAttribute(
+        "src",
+        /^blob:/,
+      );
+    }
+    await expect
+      .poll(() =>
+        pane(page)
+          .locator(".document-reading img")
+          .evaluate(
+            (img: HTMLImageElement) => img.complete && img.naturalWidth > 0,
+          ),
+      )
+      .toBe(true);
+    await pane(page)
+      .getByRole("button", { name: /^(Live preview|实时预览)$/ })
+      .click();
+    await pane(page).locator(".cm-content").press("Control+End");
+    await pane(page).locator(".cm-content").press("Enter");
+    await pane(page).locator(".cm-content").press("Enter");
+    await pane(page).locator(".cm-content").press("Control+Home");
+    const liveImage = pane(page).locator(".md-live-widget img");
+    await expect(liveImage).toHaveCount(1);
+    if (nativeImages) await expect(liveImage).toHaveAttribute("src", /^blob:/);
+    await expect
+      .poll(() =>
+        liveImage.evaluate(
+          (img: HTMLImageElement) => img.complete && img.naturalWidth > 0,
+        ),
+      )
+      .toBe(true);
+    await liveImage.scrollIntoViewIfNeeded();
+    page.off("response", captureImageResponse);
+    await Promise.all(imageReads);
+    const diagnostic = JSON.stringify(
+      {
+        responses: imageResponses,
+        blobs: await page.evaluate(() =>
+          Reflect.get(window, "imageDiagnosticBlobs"),
+        ),
+        image: await liveImage.evaluate((img: HTMLImageElement) => ({
+          complete: img.complete,
+          naturalWidth: img.naturalWidth,
+        })),
+      },
+      null,
+      2,
+    );
+    writeFileSync(info.outputPath("image-diagnostics.json"), diagnostic);
+    await info.attach("image-diagnostics", {
+      body: diagnostic,
+      contentType: "application/json",
     });
-    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
-  }
-  await pane(page)
-    .getByRole("button", { name: w.desk.revisions, exact: true })
-    .click();
-  await expect(
-    pane(page).locator(".document-tools details").first(),
-  ).toBeAttached();
-  await nav(page, a.library);
-  await page.reload();
-  await page
-    .locator(".note-card")
-    .filter({ hasText: "Quantum Field Theory" })
-    .click();
-  await page
-    .locator(".note-card")
-    .filter({ hasText: "Fields and symmetry" })
-    .click();
-  await pane(page)
-    .getByRole("button", { name: w.desk.read, exact: true })
-    .click();
-  await expect(pane(page).locator(".document-reading .katex")).toHaveCount(1);
-});
+    expect(imageResponses.length).toBeGreaterThan(0);
+    expect(
+      imageResponses.every(
+        (r) => r.status === 200 && r.contentType === "image/png" && r.bytes > 0,
+      ),
+    ).toBe(true);
+    expect(imageResponses[0]?.bytes).toBeGreaterThan(1895651);
+    await page.screenshot({
+      path: info.outputPath("image-live.png"),
+      fullPage: true,
+    });
+    await saveDocument(page, w);
+    await pane(page)
+      .getByRole("button", { name: w.desk.read, exact: true })
+      .click();
+    expect(
+      await pane(page)
+        .locator(".document-reading img")
+        .evaluate(
+          (img: HTMLImageElement) => img.complete && img.naturalWidth > 0,
+        ),
+    ).toBe(true);
+    const savedMetadata = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("orivane.atlas.saved-accounts") ?? "[]"),
+    );
+    expect(savedMetadata).toHaveLength(nativeImages ? 0 : 1);
+    expect(JSON.stringify(savedMetadata)).not.toContain(workbench.secret);
+    const readingImage = pane(page).locator(".document-reading img");
+    await readingImage.evaluate((img) => {
+      img.setAttribute("data-image-instance", "retained");
+    });
+    await pane(page)
+      .getByRole("button", { name: /^(Live preview|实时预览)$/ })
+      .click();
+    await pane(page)
+      .getByRole("button", { name: w.desk.read, exact: true })
+      .click();
+    // A mode change must not tear down a pending/decoded image and restart IPC.
+    await expect(readingImage).toHaveAttribute(
+      "data-image-instance",
+      "retained",
+    );
+    await pane(page)
+      .getByRole("button", { name: /^(Source|源码)$/ })
+      .click();
+    const persistedBody = await page.evaluate(async () => {
+      const snapshot = await (await fetch("/api/snapshot")).json();
+      return snapshot.library.find(
+        (entry: { title: string; bodyMd: string }) =>
+          entry.title === "第一讲：场与对称性 / Fields and symmetry",
+      )?.bodyMd as string;
+    });
+    expect(persistedBody.trim()).toBe(savedMarkdown.trim());
+    await pane(page)
+      .getByRole("button", { name: w.desk.read, exact: true })
+      .click();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: info.outputPath("lecture.png"),
+      fullPage: true,
+    });
+    if (info.project.name === "desktop-zh") {
+      await page.evaluate(() => document.fonts.ready);
+      const pdf = await page.pdf({
+        path: info.outputPath("lecture.pdf"),
+        format: "A4",
+        printBackground: true,
+      });
+      expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+    }
+    // Both renderers must show a bilingual, retryable error, including empty-alt images.
+    for (const fault of ["denied", "html", "empty", "corrupt"] as const) {
+      const assetRoute = `**${assetPath}`;
+      await page.route(assetRoute, (route) =>
+        route.fulfill({
+          status: fault === "denied" ? 401 : 200,
+          contentType: fault === "html" ? "text/html" : "image/png",
+          body: fault === "empty" ? "" : "not an image",
+        }),
+      );
+      // Read and live panes stay mounted when changing modes. Reopen the saved
+      // document so this fault tests a new load, not an already decoded image.
+      await nav(page, a.library);
+      await page.reload();
+      await page
+        .locator(".note-card")
+        .filter({ hasText: "Quantum Field Theory" })
+        .click();
+      await page
+        .locator(".note-card")
+        .filter({ hasText: "Fields and symmetry" })
+        .click();
+      await pane(page)
+        .getByRole("button", { name: /^(Source|源码)$/ })
+        .click();
+      await pane(page)
+        .getByRole("button", { name: /^(Live preview|实时预览)$/ })
+        .click();
+      await expect(
+        pane(page).locator(".md-live-widget .private-image-error"),
+      ).toContainText(
+        nativeImages && fault === "denied"
+          ? a.imageAccessFailed
+          : a.imageLoadFailed,
+      );
+      await pane(page)
+        .getByRole("button", { name: w.desk.read, exact: true })
+        .click();
+      await expect(
+        pane(page).locator(".document-reading .private-image-error"),
+      ).toBeVisible();
+      await page.unroute(assetRoute);
+      await pane(page)
+        .getByRole("button", { name: a.imageRetry, exact: true })
+        .click();
+      await expect
+        .poll(() =>
+          pane(page)
+            .locator(".document-reading img")
+            .evaluate(
+              (img: HTMLImageElement) =>
+                img.complete && img.naturalWidth === 941,
+            ),
+        )
+        .toBe(true);
+      await pane(page)
+        .getByRole("button", { name: /^(Live preview|实时预览)$/ })
+        .click();
+      await pane(page)
+        .locator(".md-live-widget")
+        .getByRole("button", { name: a.imageRetry, exact: true })
+        .click();
+      await expect
+        .poll(() =>
+          pane(page)
+            .locator(".md-live-widget img")
+            .evaluate(
+              (img: HTMLImageElement) =>
+                img.complete && img.naturalWidth === 941,
+            ),
+        )
+        .toBe(true);
+    }
+    await pane(page)
+      .getByRole("button", { name: w.desk.revisions, exact: true })
+      .click();
+    await expect(
+      pane(page).locator(".document-tools details").first(),
+    ).toBeAttached();
+    await nav(page, a.library);
+    await page.reload();
+    await page
+      .locator(".note-card")
+      .filter({ hasText: "Quantum Field Theory" })
+      .click();
+    await page
+      .locator(".note-card")
+      .filter({ hasText: "Fields and symmetry" })
+      .click();
+    await pane(page)
+      .getByRole("button", { name: w.desk.read, exact: true })
+      .click();
+    await expect(pane(page).locator(".document-reading .katex")).toHaveCount(1);
+  });
+}
 test("knowledge references and AI approval preserve private content and never auto-edit", async ({
   page,
   workbench,

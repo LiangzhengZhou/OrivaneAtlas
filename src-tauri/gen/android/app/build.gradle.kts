@@ -18,6 +18,8 @@ android {
     namespace = "app.orivane.atlas"
     signingConfigs {
         create("atlasRelease") {
+            enableV2Signing = true
+            enableV3Signing = true
             val keyPath = System.getenv("ATLAS_ANDROID_KEYSTORE")
             if (!keyPath.isNullOrBlank()) {
                 storeFile = file(keyPath)

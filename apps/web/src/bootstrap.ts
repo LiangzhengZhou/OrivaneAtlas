@@ -37,6 +37,7 @@ import {
   resolveLocale,
 } from "@arclattice/i18n";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import { imageResponseBlob } from "./imageResponse";
 
 const localeKey = "arclattice.ui.locale";
 const serverOriginKey = "orivane.atlas.server-origin";
@@ -715,14 +716,7 @@ export async function bootstrap() {
       if (!/^\/api\/library\/asset\?id=[a-zA-Z0-9-]+$/.test(path))
         throw new Error("INVALID_RESPONSE");
       const response = await transport(path);
-      if (
-        !response.ok ||
-        !["image/png", "image/jpeg", "image/webp"].includes(
-          response.headers.get("Content-Type")?.split(";")[0] ?? "",
-        )
-      )
-        throw new Error("INVALID_RESPONSE");
-      return response.blob();
+      return imageResponseBlob(response);
     },
     revisions: (id: string) =>
       request<Note[]>("/api/revisions?id=" + encodeURIComponent(id)),
