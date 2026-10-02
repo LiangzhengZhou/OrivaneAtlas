@@ -6,6 +6,8 @@ import type { Runtime, Snapshot } from "../../bootstrap";
 import { GatewayRunDetails } from "../../GatewaySettings";
 import { Markdown } from "../../Markdown";
 import { PersonalAISettings } from "../../PersonalAISettings";
+import { SpacePicker } from "../knowledge/SpacePicker";
+import { ProjectDrilldownPicker } from "../projects/ProjectDrilldownPicker";
 export function AiSettingsView({
   runtime,
   snapshot,
@@ -15,7 +17,16 @@ export function AiSettingsView({
 }) {
   const { t, i18n } = useTranslation("connected");
   const zh = i18n.language.startsWith("zh");
+  const [activityOpen, setActivityOpen] = useState(false);
   const [scope, setScope] = useState("personal");
+  const [scopeKind, setScopeKind] = useState("personal");
+  const changeScope = (value: string) => {
+    setScope(value);
+    setProfileId("default");
+    setData(null);
+    setSources([]);
+    setPrompt("");
+  };
   const [sources, setSources] = useState<string[]>([]);
   const contextOptions = [
     ...snapshot.notes
@@ -80,38 +91,67 @@ export function AiSettingsView({
   }
   return (
     <>
-      <label className="field">
-        {zh ? "AI 配置所属项目 / 空间" : "AI project / space"}
-        <select
-          value={scope}
-          onChange={(e) => {
-            setScope(e.target.value);
-            setProfileId("default");
-            setData(null);
-            setSources([]);
-            setPrompt("");
-          }}
-          disabled={busy}
-        >
-          <option value="personal">
-            {zh ? "个人工作区" : "Personal workspace"}
-          </option>
-          {snapshot.items
-            .filter((i) => i.type === "PROJECT" && !i.deletedAt)
-            .map((i) => (
-              <option key={i.id} value={"WORK:" + i.id}>
-                {i.title}
-              </option>
-            ))}
-          {snapshot.library
-            .filter((e) => e.kind === "SPACE" && !e.deletedAt)
-            .map((e) => (
-              <option key={e.id} value={"SPACE:" + e.id}>
-                {e.title}
-              </option>
-            ))}
-        </select>
-      </label>
+      <fieldset className="field">
+        <legend>{zh ? "配置应用于" : "Apply configuration to"}</legend>
+        {(["personal", "project", "space"] as const).map((kind) => (
+          <label key={kind}>
+            <input
+              type="radio"
+              name="ai-configuration-kind"
+              checked={scopeKind === kind}
+              disabled={busy}
+              onChange={() => {
+                setScopeKind(kind);
+                changeScope("personal");
+              }}
+            />
+            {kind === "personal"
+              ? zh
+                ? "个人工作区"
+                : "Personal workspace"
+              : kind === "project"
+                ? zh
+                  ? "项目"
+                  : "Project"
+                : zh
+                  ? "知识空间"
+                  : "Knowledge space"}
+          </label>
+        ))}
+        {scopeKind === "project" && (
+          <ProjectDrilldownPicker
+            mode="single"
+            projects={snapshot.items}
+            value={scope.startsWith("WORK:") ? scope.slice(5) : null}
+            disabled={busy}
+            onChange={(value) =>
+              changeScope(
+                typeof value === "string" ? "WORK:" + value : "personal",
+              )
+            }
+          />
+        )}
+        {scopeKind === "space" && (
+          <SpacePicker
+            spaces={snapshot.library}
+            value={scope.startsWith("SPACE:") ? scope.slice(6) : null}
+            disabled={busy}
+            projectSpaceIds={
+              new Set(
+                snapshot.projectMaterials
+                  .filter(
+                    (binding) =>
+                      binding.kind === "SPACE" &&
+                      !binding.deletedAt &&
+                      binding.targetId,
+                  )
+                  .map((binding) => binding.targetId!),
+              )
+            }
+            onChange={(value) => changeScope("SPACE:" + value)}
+          />
+        )}
+      </fieldset>
       <label className="field">
         {zh ? "本次使用的模型配置" : "Model profile for this request"}
         <select
@@ -147,7 +187,7 @@ export function AiSettingsView({
         }}
         onChange={() => void act(async () => {})}
       />
-      <div className="connected-grid ai-layout">
+      <div className="ai-layout">
         <section className="connected-panel">
           <h2>{t("newRun")}</h2>
           <p>{t("aiPrivacy")}</p>
@@ -188,6 +228,7 @@ export function AiSettingsView({
                 );
                 setPrompt("");
                 setSources([]);
+                setActivityOpen(true);
               });
             }}
           >
@@ -247,8 +288,15 @@ export function AiSettingsView({
             </p>
           )}
         </section>
-        <section className="connected-panel">
-          <h2>{t("runHistory")}</h2>
+        <details className="connected-panel ai-activity" open={activityOpen}>
+          <summary
+            onClick={(event) => {
+              event.preventDefault();
+              setActivityOpen(!activityOpen);
+            }}
+          >
+            {t("runHistory")}
+          </summary>
           <p>{t("historyHint")}</p>
           {data?.runs.length === 0 && <p>{t("noRuns")}</p>}
           {data?.runs.map((run) => (
@@ -331,7 +379,7 @@ export function AiSettingsView({
               {run.error && <p className="error">{t("runFailed")}</p>}
             </article>
           ))}
-        </section>
+        </details>
       </div>
     </>
   );

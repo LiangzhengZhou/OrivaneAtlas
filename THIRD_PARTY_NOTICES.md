@@ -1,4 +1,4 @@
-# Third-party notices — Orivane Atlas 2.0.0
+# Third-party notices — Orivane Atlas 2.0.1
 
 Orivane Atlas retains the existing [Apache License 2.0](LICENSE). This does not
 relicense dependencies, fonts, native platforms or third-party code.

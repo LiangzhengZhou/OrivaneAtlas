@@ -33,6 +33,7 @@ import { AccountView, AdminView } from "./AccountViews";
 import { AppUpdater } from "./AppUpdater";
 import { AppShell } from "./app/AppShell";
 import { CommandPalette } from "./app/CommandPalette";
+import { usePendingOperations } from "./app/hooks/usePendingOperations";
 import { NavigationSettings } from "./app/NavigationSettings";
 import {
   currentView,
@@ -42,7 +43,7 @@ import {
   type View,
 } from "./app/navigation";
 import { Sidebar } from "./app/Sidebar";
-import { ToastHost } from "./app/ToastHost";
+import { showToast, ToastHost } from "./app/ToastHost";
 import { Topbar } from "./app/Topbar";
 import { WorkspaceRouter } from "./app/WorkspaceRouter";
 import {
@@ -59,12 +60,12 @@ import { AiSettingsView } from "./features/ai/AiSettingsView";
 import { AssistantPane } from "./features/ai/AssistantPane";
 import { MoreSheet } from "./features/mobile/MoreSheet";
 import { ProjectDependencyGraph } from "./features/projects/ProjectDependencyGraph";
+import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 import { TasksWorkspace } from "./features/tasks/TasksWorkspace";
 import { selectTasks } from "./features/tasks/task-selectors";
 import { LibraryView } from "./LibraryView";
 import { Login } from "./Login";
 import { PrivateImageContext } from "./Markdown";
-import { downloadText } from "./NoteEditor";
 import { CalendarView, ProjectView } from "./PlanningViews";
 import { ProjectWorkspace } from "./ProjectWorkspace";
 import {
@@ -73,6 +74,7 @@ import {
   projectHash,
 } from "./projectRoute";
 import { ThemeSettings } from "./ThemeSettings";
+import { downloadText } from "./utils/download";
 import { WorkflowManager } from "./WorkflowManager";
 import { WorkItemEditor } from "./WorkItemEditor";
 import { Dependencies, TaskList } from "./WorkViews";
@@ -226,7 +228,11 @@ function Workbench({
     ...navigationPreference.desktop.order.filter(
       (id) => !navigationPreference.desktop.pinned.includes(id),
     ),
-  ].filter((id) => !navigationPreference.desktop.hidden.includes(id));
+  ].filter(
+    (id): id is NavigationView =>
+      navigation.some((entry) => entry.view === id) &&
+      !navigationPreference.desktop.hidden.includes(id),
+  );
   const [showArchived, setShowArchived] = useState(false);
   const [selectedNotes, setSelectedNotes] = useState<string[]>([]);
   const [folderFilter, setFolderFilter] = useState<string | null>(null);
@@ -295,14 +301,19 @@ function Workbench({
     });
     setNoteEditor(null);
   }, [noteEditor]);
-  const [busy, setBusy] = useState(false);
+  const { isPending, runPending } = usePendingOperations();
+  const editorPendingKey =
+    "editor:" + (editor === "new" ? "new" : (editor?.id ?? "none"));
+  const busy = isPending(editorPendingKey);
+  const [taskDependenciesOpen, setTaskDependenciesOpen] = useState(
+    location.hash.includes("view=dependencies"),
+  );
   const [loading, setLoading] = useState(true);
   const [syncOffline, setSyncOffline] = useState(false);
   const [saved, setSaved] = useState(false);
   const [preference, setPreference] =
     useState<LocalePreference>(readPreference);
   const search = useRef<HTMLInputElement>(null);
-  const operation = useRef(false);
   const { service } = runtime;
   function errorCode(cause: unknown) {
     return cause instanceof DomainError ? String(cause.code) : "UNAVAILABLE";
@@ -387,6 +398,10 @@ function Workbench({
       setProjectRoute(nextProject);
       if (nextProject.projectId) void refresh().catch(() => undefined);
       setView(currentView());
+      setTaskDependenciesOpen(
+        new URLSearchParams(location.hash.split("?")[1]).get("view") ===
+          "dependencies",
+      );
       setDocumentVisible(false);
       setQuery("");
       const requestedStatus = new URLSearchParams(
@@ -452,14 +467,15 @@ function Workbench({
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
   }, [editor, noteEditor, busy, loading, view]);
-  async function run(action: () => Promise<unknown>): Promise<boolean> {
-    if (operation.current) return false;
-    operation.current = true;
-    setBusy(true);
+  async function run(
+    action: () => Promise<unknown>,
+    key = "action:" + crypto.randomUUID(),
+  ): Promise<boolean> {
+    if (isPending(key)) return false;
     setError(null);
     setSaved(false);
     try {
-      await action();
+      await runPending(key, action);
       setSaved(true);
       // The mutation is already committed. Do not hold the modal open on a
       // secondary snapshot refresh (a slow/offline refresh used to look like
@@ -469,9 +485,6 @@ function Workbench({
     } catch (cause) {
       setError(errorCode(cause));
       return false;
-    } finally {
-      operation.current = false;
-      setBusy(false);
     }
   }
   // A successful mutation is committed even if its following refresh fails. Do not resubmit a create.
@@ -646,23 +659,50 @@ function Workbench({
     else open("new");
   }
   const onStatus = (item: WorkItem, next: WorkStatus) =>
-    run(async () => {
-      const updated = await service.update(context, item.id, item.version, {
-        status: next,
-      });
-      setSnapshot((current) => ({
-        ...current,
-        items: current.items.map((entry) =>
-          entry.id === item.id ? { ...entry, ...(updated as WorkItem) } : entry,
-        ),
-      }));
-    });
+    run(
+      async () => {
+        setSnapshot((current) => ({
+          ...current,
+          items: current.items.map((entry) =>
+            entry.id === item.id ? { ...entry, status: next } : entry,
+          ),
+        }));
+        try {
+          const updated = await service.update(context, item.id, item.version, {
+            status: next,
+          });
+          setSnapshot((current) => ({
+            ...current,
+            items: current.items.map((entry) =>
+              entry.id === item.id ? (updated as WorkItem) : entry,
+            ),
+          }));
+        } catch (failure) {
+          setSnapshot((current) => ({
+            ...current,
+            items: current.items.map((entry) =>
+              entry.id === item.id && entry.version === item.version
+                ? item
+                : entry,
+            ),
+          }));
+          showToast(
+            t("errors:" + errorCode(failure), {
+              defaultValue: t("connectionError"),
+            }),
+          );
+          throw failure;
+        }
+      },
+      "task:" + item.id + ":status",
+    );
   const workProps = {
     today: calendarDay,
     allItems,
     edges: snapshot.edges,
-    busy,
+    busy: false,
     onOpen: open,
+    isPending: (item: WorkItem) => isPending("task:" + item.id + ":status"),
     onStatus,
     isArchived,
     archiveSource,
@@ -905,6 +945,7 @@ function Workbench({
       )}
       {assistantOpen && (
         <AssistantPane
+          snapshot={snapshot}
           runtime={runtime}
           projectId={
             documentVisible
@@ -946,6 +987,7 @@ function Workbench({
       )}
       <Sidebar
         collapsed={sidebarCollapsed}
+        onToggleCollapsed={toggleSidebar}
         mobileOpen={mobileNavigationOpen}
         canAdmin={!runtime.account || runtime.account.role === "ADMIN"}
         activeView={view}
@@ -973,18 +1015,6 @@ function Workbench({
       />
       <main className="workspace-main">
         <Topbar workspace={t("personal")} location={viewLabel(view)}>
-          <button
-            className="icon-button sidebar-toggle"
-            type="button"
-            aria-label={
-              sidebarCollapsed ? t("expandSidebar") : t("collapseSidebar")
-            }
-            aria-expanded={!sidebarCollapsed}
-            aria-controls="workspace-sidebar"
-            onClick={toggleSidebar}
-          >
-            <PanelLeft size={17} />
-          </button>
           <span
             className={"mode-badge " + (error || syncOffline ? "offline" : "")}
             title={t(
@@ -1023,7 +1053,6 @@ function Workbench({
             [
               "settings",
               "trash",
-              "knowledge",
               "ai",
               "library",
               "account",
@@ -1049,9 +1078,14 @@ function Workbench({
             </button>
           )}
         </Topbar>
-        <p className="calendar-timezone muted" data-testid="calendar-timezone">
-          {t("calendarTimezone", { timezone: calendarTimezone })}
-        </p>
+        {view === "calendar" && (
+          <p
+            className="calendar-timezone muted"
+            data-testid="calendar-timezone"
+          >
+            {t("calendarTimezone", { timezone: calendarTimezone })}
+          </p>
+        )}
         <DocumentWorkspace
           request={documentRequest}
           visible={documentVisible}
@@ -1104,7 +1138,7 @@ function Workbench({
             <LibraryView
               runtime={runtime}
               onOpen={openDocument}
-              onKnowledge={() => navigate("knowledge")}
+              snapshot={snapshot}
             />
           ) : view === "account" ? (
             <AccountView
@@ -1117,53 +1151,14 @@ function Workbench({
             />
           ) : view === "admin" ? (
             <AdminView runtime={runtime} />
-          ) : view === "knowledge" ? (
-            <KnowledgeView
-              snapshot={snapshot}
-              busy={busy}
-              onLink={(from, to, relation) =>
-                run(() => runtime.link(from, to, relation))
-              }
-              onUnlink={(link) =>
-                run(() => runtime.unlink(link.id, link.version))
-              }
-              onOpen={(ref) => {
-                if (ref.kind === "NOTE") {
-                  const note = snapshot.notes.find((n) => n.id === ref.id);
-                  if (note) setNoteEditor(note);
-                } else if (ref.kind === "SPACE" || ref.kind === "DOCUMENT") {
-                  const entity = snapshot.library.find((e) => e.id === ref.id);
-                  if (entity)
-                    openDocument({
-                      key: entity.id,
-                      kind: entity.kind,
-                      entity,
-                      spaceId: entity.spaceId,
-                    });
-                } else {
-                  const item = snapshot.items.find((i) => i.id === ref.id);
-                  if (item) setEditor(item);
-                }
-              }}
-            />
           ) : view === "ai" ? (
-            <section>
-              <button
-                type="button"
-                className="button primary"
-                onClick={() => setAssistantOpen(true)}
-              >
-                {i18n.language.startsWith("zh") ? "询问 Atlas" : "Ask Atlas"}
-              </button>
-              <details>
-                <summary>
-                  {i18n.language.startsWith("zh")
-                    ? "AI 设置与活动"
-                    : "AI settings and activity"}
-                </summary>
-                <AiSettingsView runtime={runtime} snapshot={snapshot} />
-              </details>
-            </section>
+            <AssistantPane
+              snapshot={snapshot}
+              runtime={runtime}
+              context={[]}
+              embedded
+              onClose={() => {}}
+            />
           ) : view === "overview" ? (
             <>
               <div className="home-summary">
@@ -1334,13 +1329,15 @@ function Workbench({
                     )
                   }
                   runtime={runtime}
-                  run={run}
+                  run={(operation) =>
+                    run(operation, "project:" + projectRoute.projectId)
+                  }
                   key={activeProjectId}
                   project={
                     projects.find((project) => project.id === activeProjectId)!
                   }
                   snapshot={snapshot}
-                  busy={busy}
+                  busy={false}
                   routeTab={projectRoute.tab}
                   routeScope={projectRoute.scope}
                   onRouteChange={(tab, scope) =>
@@ -1349,6 +1346,14 @@ function Workbench({
                   onBack={() => navigateProject(null)}
                   onProject={(id) => navigateProject(id)}
                   onOpen={openEntity}
+                  onNewPage={(spaceId) =>
+                    openDocument({
+                      key: `DOCUMENT:new:${crypto.randomUUID()}`,
+                      kind: "DOCUMENT",
+                      spaceId,
+                      projectId: activeProjectId ?? undefined,
+                    })
+                  }
                   onCreate={(type, parentId) => {
                     setCreation({ type, parentId });
                     setError(null);
@@ -1376,7 +1381,7 @@ function Workbench({
                     }
                     projects={projects}
                     items={allItems}
-                    busy={busy}
+                    busy={false}
                     isArchived={isArchived}
                     archiveSource={archiveSource}
                     onOrganize={workProps.onOrganize}
@@ -1393,7 +1398,7 @@ function Workbench({
                     records={snapshot.workflows ?? []}
                     projects={projects}
                     items={allItems}
-                    busy={busy}
+                    busy={false}
                     preview={(projectId, manifest) =>
                       run(() => runtime.previewPlan(projectId, manifest))
                     }
@@ -1440,10 +1445,54 @@ function Workbench({
             />
           ) : view === "settings" ? (
             <div className="settings-panel">
+              <details className="advanced-relations">
+                <summary>
+                  {i18n.language.startsWith("zh")
+                    ? "高级关系"
+                    : "Advanced relations"}
+                </summary>
+                <KnowledgeView
+                  snapshot={snapshot}
+                  busy={false}
+                  onLink={(from, to, relation) =>
+                    run(() => runtime.link(from, to, relation))
+                  }
+                  onUnlink={(link) =>
+                    run(() => runtime.unlink(link.id, link.version))
+                  }
+                  onOpen={(ref) => {
+                    if (ref.kind === "NOTE") {
+                      const note = snapshot.notes.find((n) => n.id === ref.id);
+                      if (note) setNoteEditor(note);
+                    } else if (
+                      ref.kind === "SPACE" ||
+                      ref.kind === "DOCUMENT"
+                    ) {
+                      const entity = snapshot.library.find(
+                        (e) => e.id === ref.id,
+                      );
+                      if (entity)
+                        openDocument({
+                          key: entity.id,
+                          kind: entity.kind,
+                          entity,
+                          spaceId: entity.spaceId,
+                        });
+                    } else {
+                      const item = snapshot.items.find((i) => i.id === ref.id);
+                      if (item) setEditor(item);
+                    }
+                  }}
+                />
+              </details>
+              <section className="panel">
+                <h2>Atlas</h2>
+                <AiSettingsView runtime={runtime} snapshot={snapshot} />
+              </section>
               <NavigationSettings
                 key={navigationPreference.version}
                 preference={navigationPreference}
-                busy={busy}
+                busy={false}
                 label={viewLabel}
                 onSave={(preference) =>
                   run(() =>
@@ -1456,7 +1505,7 @@ function Workbench({
                   snapshot.calendarSettings ?? { version: 0, timezone: null }
                 }
                 effective={calendarTimezone}
-                busy={busy}
+                busy={false}
                 onSave={(version, timezone) =>
                   run(() =>
                     service.setCalendarSettings(context, version, timezone),
@@ -1560,25 +1609,6 @@ function Workbench({
                 </button>
               </section>
             </div>
-          ) : view === "dependencies" ? (
-            <>
-              <ProjectDependencyGraph
-                snapshot={snapshot}
-                onOpen={(ref) => {
-                  const item = snapshot.items.find((i) => i.id === ref.id);
-                  if (item) setEditor(item);
-                }}
-              />
-              <Dependencies
-                items={allItems}
-                edges={snapshot.edges}
-                busy={busy}
-                onAdd={(from, to) =>
-                  run(() => service.addEdge(context, from, to))
-                }
-                onRemove={(id) => run(() => service.removeEdge(context, id))}
-              />
-            </>
           ) : (
             <>
               <div className="list-toolbar">
@@ -1644,24 +1674,41 @@ function Workbench({
                       />
                       {t("showArchived")}
                     </label>
-                    <label>
+                    <div className="field">
                       <span>{t("project")}</span>
-                      <select
-                        aria-label={t("project")}
-                        value={projectFilter}
-                        onChange={(event) =>
-                          setProjectFilter(event.target.value)
-                        }
-                      >
-                        <option value="ALL">{t("all")}</option>
-                        <option value="NONE">{t("noProject")}</option>
-                        {projects.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.title}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                      <div className="project-filter-picker">
+                        <button
+                          type="button"
+                          className="chip"
+                          aria-pressed={projectFilter === "ALL"}
+                          onClick={() => setProjectFilter("ALL")}
+                        >
+                          {t("all")}
+                        </button>
+                        <button
+                          type="button"
+                          className="chip"
+                          aria-pressed={projectFilter === "NONE"}
+                          onClick={() => setProjectFilter("NONE")}
+                        >
+                          {t("noProject")}
+                        </button>
+                        <ProjectDrilldownPicker
+                          mode="single"
+                          projects={projects}
+                          value={
+                            ["ALL", "NONE"].includes(projectFilter)
+                              ? null
+                              : projectFilter
+                          }
+                          onChange={(value) =>
+                            setProjectFilter(
+                              typeof value === "string" ? value : "ALL",
+                            )
+                          }
+                        />
+                      </div>{" "}
+                    </div>
                     <label>
                       <span>{t("status")}</span>
                       <select
@@ -1811,28 +1858,56 @@ function Workbench({
                   </div>
                 )
               ) : view === "tasks" ? (
-                <TasksWorkspace
-                  onDependencies={() => navigate("dependencies")}
-                  key={location.hash}
-                  {...workProps}
-                  items={visible}
-                  includeArchived={showArchived}
-                  initialTab={
-                    status === "DONE"
-                      ? "completed"
-                      : status === "ALL" ||
-                          new URLSearchParams(location.hash.split("?")[1]).get(
-                            "tab",
-                          ) === "all"
-                        ? "all"
-                        : "now"
-                  }
-                  initialBoard={
-                    new URLSearchParams(location.hash.split("?")[1]).get(
-                      "view",
-                    ) === "board"
-                  }
-                />
+                <>
+                  {taskDependenciesOpen && (
+                    <>
+                      <ProjectDependencyGraph
+                        snapshot={snapshot}
+                        onOpen={(ref) => {
+                          const item = snapshot.items.find(
+                            (i) => i.id === ref.id,
+                          );
+                          if (item) setEditor(item);
+                        }}
+                      />
+                      <Dependencies
+                        items={allItems}
+                        edges={snapshot.edges}
+                        busy={false}
+                        onAdd={(from, to) =>
+                          run(() => service.addEdge(context, from, to))
+                        }
+                        onRemove={(id) =>
+                          run(() => service.removeEdge(context, id))
+                        }
+                      />
+                    </>
+                  )}
+                  <TasksWorkspace
+                    onDependencies={() => {
+                      setTaskDependenciesOpen((open) => !open);
+                    }}
+                    key={location.hash}
+                    {...workProps}
+                    items={visible}
+                    includeArchived={showArchived}
+                    initialTab={
+                      status === "DONE"
+                        ? "completed"
+                        : status === "ALL" ||
+                            new URLSearchParams(
+                              location.hash.split("?")[1],
+                            ).get("tab") === "all"
+                          ? "all"
+                          : "now"
+                    }
+                    initialBoard={
+                      new URLSearchParams(location.hash.split("?")[1]).get(
+                        "view",
+                      ) === "board"
+                    }
+                  />
+                </>
               ) : visible.length ? (
                 <TaskList items={visible} {...workProps} />
               ) : (
@@ -1927,32 +2002,40 @@ function Workbench({
           onClose={() => setEditor(null)}
           onSave={async (input) => {
             if (
-              await run(() =>
-                editor === "new"
-                  ? service.create(context, {
-                      ...input,
-                      type: creation.type,
-                    })
-                  : service.update(context, editor.id, editor.version, input),
+              await run(
+                () =>
+                  editor === "new"
+                    ? service.create(context, {
+                        ...input,
+                        type: creation.type,
+                      })
+                    : service.update(context, editor.id, editor.version, input),
+                editorPendingKey,
               )
             )
-              setEditor(null);
+              setEditorState((current) =>
+                current === editor ? null : current,
+              );
           }}
           onDelete={
             editor === "new"
               ? null
               : async () => {
                   if (
-                    await run(() =>
-                      service.setDeleted(
-                        context,
-                        editor.id,
-                        editor.version,
-                        true,
-                      ),
+                    await run(
+                      () =>
+                        service.setDeleted(
+                          context,
+                          editor.id,
+                          editor.version,
+                          true,
+                        ),
+                      editorPendingKey,
                     )
                   )
-                    setEditor(null);
+                    setEditorState((current) =>
+                      current === editor ? null : current,
+                    );
                 }
           }
         />

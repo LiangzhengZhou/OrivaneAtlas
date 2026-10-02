@@ -58,24 +58,17 @@ export function planDocumentPublisher(
       });
     },
     publish: async (actor, input) => {
-      if (input.ownership === "LINKED") {
-        const libraryService = service(input.provenance?.origin);
-        const space = await libraryService.save(actor, null, 0, {
-          kind: "SPACE",
-          spaceId: null,
-          title: input.title,
-          bodyMd: "",
-        });
-        const document = await libraryService.save(actor, null, 0, {
-          kind: "DOCUMENT",
-          spaceId: space.id,
-          title: input.title,
-          bodyMd: input.bodyMd,
-        });
-        await projectService.link(actor, input.projectId, document.id);
-        return document;
-      }
-      const document = await projectService.createDocument(actor, {
+      if (input.ownership === "LINKED")
+        throw new DomainError("VALIDATION_ERROR", { field: "spaceId" });
+      const spaces = await projectService.listProjectSpaces(
+        actor,
+        input.projectId,
+      );
+      const space = spaces.find((entry) => entry.role === "PRIMARY");
+      if (!space)
+        throw new DomainError("VALIDATION_ERROR", { field: "spaceId" });
+      const document = await projectService.createProjectDocument(actor, {
+        spaceId: space.spaceId,
         projectId: input.projectId,
         title: input.title,
         bodyMd: input.bodyMd,

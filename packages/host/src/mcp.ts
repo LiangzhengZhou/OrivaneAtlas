@@ -36,11 +36,10 @@ export const mcpTools = [
     name: "project_document_create",
     description:
       "Create a project-owned Markdown document with EXTERNAL_AI provenance and deny-by-default AI policy. Never creates tasks.",
-    inputSchema: objectSchema({ projectId: text, title: text, bodyMd: text }, [
-      "projectId",
-      "title",
-      "bodyMd",
-    ]),
+    inputSchema: objectSchema(
+      { projectId: text, spaceId: text, title: text, bodyMd: text },
+      ["projectId", "title", "bodyMd"],
+    ),
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,

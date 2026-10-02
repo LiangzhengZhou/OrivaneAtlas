@@ -13,7 +13,10 @@ import { ContentPolicyEditor } from "./ContentPolicyEditor";
 import { exportHtml, exportMarkdownZip, exportPdf } from "./documentExports";
 import { FilePicker } from "./FilePicker";
 import { DiffViewer } from "./features/documents/DiffViewer";
+import { DocumentDrilldownPicker } from "./features/documents/DocumentDrilldownPicker";
+import { DocumentPopover } from "./features/documents/DocumentPopover";
 import { mergeMarkdown } from "./features/documents/merge";
+import { NoteKnowledgeActions } from "./features/knowledge/NoteKnowledgeActions";
 import { WikiRelations } from "./features/knowledge/WikiRelations";
 import { imageAnchor, pendingImage } from "./imageInsertion";
 import { LiveMarkdown } from "./LiveMarkdown";
@@ -24,7 +27,7 @@ import {
   saveDraft,
 } from "./localDrafts";
 import { Markdown } from "./Markdown";
-import { downloadText } from "./NoteEditor";
+import { downloadText } from "./utils/download";
 
 export type DocumentRequest = {
   key: string;
@@ -180,11 +183,11 @@ export function DocumentWorkspace({
               setActive(key);
             }}
             onWikiOpen={(id) => {
-              const entity = snapshot.library.find(
+              const entity = [...snapshot.library, ...snapshot.notes].find(
                 (entry) => entry.id === id && !entry.deletedAt,
               );
               if (!entity) return;
-              const key = `DOCUMENT:${id}`;
+              const key = `${entity.kind}:${id}`;
               setTabs((old) =>
                 old.some((entry) => entry.key === key)
                   ? old
@@ -192,9 +195,9 @@ export function DocumentWorkspace({
                       ...old,
                       {
                         key,
-                        kind: "DOCUMENT",
+                        kind: entity.kind,
                         entity,
-                        spaceId: entity.spaceId,
+                        spaceId: "spaceId" in entity ? entity.spaceId : null,
                         projectId: tab.projectId,
                       },
                     ],
@@ -268,6 +271,7 @@ function DocumentPane({
     [error, setError] = useState(""),
     [composing, setComposing] = useState(false),
     [history, setHistory] = useState<(Note | LibraryEntry)[]>([]);
+  const [historyOpenRequest, setHistoryOpenRequest] = useState(0);
   const [username, setUsername] = useState(""),
     [password, setPassword] = useState("");
   const editor = useRef<EditorView | null>(null),
@@ -400,28 +404,41 @@ function DocumentPane({
     setBusy(true);
     setError("");
     try {
-      const value = library
-        ? await runtime.saveLibrary(
-            previous?.id ?? null,
-            previous?.version ?? 0,
-            {
-              kind: request.kind as "SPACE" | "DOCUMENT",
-              spaceId: request.spaceId ?? null,
+      const value =
+        library && !previous && request.projectId && request.spaceId
+          ? await runtime.createProjectDocument({
+              projectId: request.projectId,
+              spaceId: request.spaceId,
               title: draft.title,
               bodyMd: draft.body,
               aiPolicy: draft.aiPolicy,
-            },
-          )
-        : await runtime.saveNote(previous?.id ?? null, previous?.version ?? 0, {
-            kind: request.kind as "NOTE" | "JOURNAL",
-            day:
-              request.kind === "JOURNAL"
-                ? (request.day ?? (previous as Note)?.day ?? null)
-                : null,
-            title: draft.title,
-            bodyMd: draft.body,
-            aiPolicy: draft.aiPolicy,
-          });
+            })
+          : library
+            ? await runtime.saveLibrary(
+                previous?.id ?? null,
+                previous?.version ?? 0,
+                {
+                  kind: request.kind as "SPACE" | "DOCUMENT",
+                  spaceId: request.spaceId ?? null,
+                  title: draft.title,
+                  bodyMd: draft.body,
+                  aiPolicy: draft.aiPolicy,
+                },
+              )
+            : await runtime.saveNote(
+                previous?.id ?? null,
+                previous?.version ?? 0,
+                {
+                  kind: request.kind as "NOTE" | "JOURNAL",
+                  day:
+                    request.kind === "JOURNAL"
+                      ? (request.day ?? (previous as Note)?.day ?? null)
+                      : null,
+                  title: draft.title,
+                  bodyMd: draft.body,
+                  aiPolicy: draft.aiPolicy,
+                },
+              );
       baseRef.current = value;
       setBase(value);
       await clearDraft(draftKey);
@@ -521,10 +538,10 @@ function DocumentPane({
   return (
     <article className="document-pane">
       <div className="document-toolbar no-print">
-        <details className="document-mode-menu">
-          <summary>
-            {mode === "read" ? t("read") : zh ? "编辑" : "Edit"} ▾
-          </summary>
+        <DocumentPopover
+          className="document-mode-menu"
+          label={<>{mode === "read" ? t("read") : zh ? "编辑" : "Edit"} ▾</>}
+        >
           {(["live", "source", "read"] as const).map((value) => (
             <button
               key={value}
@@ -543,7 +560,7 @@ function DocumentPane({
                   : t("read")}
             </button>
           ))}
-        </details>
+        </DocumentPopover>
         <span className="action-spacer" />
         <span role="status">
           {busy
@@ -556,12 +573,11 @@ function DocumentPane({
                 ? "已保存"
                 : "Saved"}
         </span>
-        <details className="document-actions-menu">
-          <summary aria-label={zh ? "文档操作" : "Document actions"}>
-            ···
-          </summary>
-          <details>
-            <summary>{zh ? "导出" : "Export"}</summary>
+        <DocumentPopover className="document-actions-menu" label={<>···</>}>
+          <DocumentPopover
+            className="document-export"
+            label={zh ? "导出" : "Export"}
+          >
             <button
               className="chip"
               type="button"
@@ -594,22 +610,23 @@ function DocumentPane({
             >
               {zh ? "导出 ZIP（含图片）" : "Export ZIP with images"}
             </button>
-          </details>
+          </DocumentPopover>
           {base && (
             <button
               className="chip"
               type="button"
               disabled={busy}
               onClick={() =>
-                void guarded(async () =>
+                void guarded(async () => {
+                  setHistoryOpenRequest((value) => value + 1);
                   setHistory(
                     history.length
                       ? []
                       : await (library
                           ? runtime.libraryRevisions(base.id)
                           : runtime.revisions(base.id)),
-                  ),
-                )
+                  );
+                })
               }
             >
               {t("revisions")}
@@ -646,7 +663,93 @@ function DocumentPane({
               {c("delete")}
             </button>
           )}
-        </details>
+          <DocumentPopover
+            className="document-policy no-print"
+            label={<>{zh ? "AI 权限" : "AI permissions"}</>}
+          >
+            <ContentPolicyEditor
+              value={aiPolicy}
+              onChange={setAiPolicy}
+              disabled={busy}
+            />
+          </DocumentPopover>
+          <DocumentPopover
+            className="document-tools no-print"
+            requestOpen={historyOpenRequest}
+            label={
+              <>{zh ? "导入、图片与修订" : "Import, images and revisions"}</>
+            }
+          >
+            <div className="document-upload-grid">
+              <FilePicker
+                label={t("importMarkdown")}
+                hint={
+                  zh
+                    ? "选择 .md / .txt · UTF-8 · 最大 600 KB"
+                    : "Choose .md / .txt · UTF-8 · up to 600 KB"
+                }
+                disabled={busy}
+                accept=".md,.markdown,.txt"
+                onFile={(file) => {
+                  if (dirty && !window.confirm(s("leave"))) return;
+                  void guarded(async () => {
+                    if (
+                      file.size > 600000 ||
+                      !/\.(md|markdown|txt)$/i.test(file.name)
+                    )
+                      throw new Error("size");
+                    const value = new TextDecoder("utf-8", {
+                      fatal: true,
+                    }).decode(await file.arrayBuffer());
+                    if (value.length > 200000) throw new Error("size");
+                    setBody(value);
+                    if (!title)
+                      setTitle(
+                        file.name
+                          .replace(/\.(md|markdown|txt)$/i, "")
+                          .slice(0, 240),
+                      );
+                  });
+                }}
+              />
+              <FilePicker
+                label={s("image")}
+                hint={
+                  zh
+                    ? "PNG / JPEG / WebP · 不限文件大小"
+                    : "PNG / JPEG / WebP · No file-size cap"
+                }
+                disabled={busy || !!base?.deletedAt}
+                accept="image/png,image/jpeg,image/webp"
+                onFile={(file) => insertImages([file])}
+              />
+            </div>
+            <p className="upload-hint">
+              {zh
+                ? "也可在编辑器内直接粘贴图片（Ctrl/⌘ V）。图片保存在自己的服务器，仅当前工作区可访问；导出的 Markdown 不包含图片文件。"
+                : "Or paste an image into the editor (Ctrl/⌘ V). Images stay on your server, accessible only within this workspace; Markdown exports do not include image files."}
+            </p>
+            {history.map((revision) => (
+              <details key={revision.version}>
+                <summary>
+                  v{revision.version} · {revision.updatedAt}
+                </summary>
+                <DiffViewer before={revision.bodyMd} after={body} />
+                <button
+                  className="chip"
+                  type="button"
+                  onClick={() => {
+                    setTitle(revision.title);
+                    setBody(revision.bodyMd);
+                    setHistory([]);
+                  }}
+                >
+                  {t("useRevision")}
+                </button>
+              </details>
+            ))}
+          </DocumentPopover>
+        </DocumentPopover>
       </div>
       {base?.deletedAt && (
         <div className="connected-notice">
@@ -839,87 +942,7 @@ function DocumentPane({
           }
         }}
       />
-      <details className="document-policy no-print">
-        <summary>{zh ? "AI 权限" : "AI permissions"}</summary>
-        <ContentPolicyEditor
-          value={aiPolicy}
-          onChange={setAiPolicy}
-          disabled={busy}
-        />
-      </details>
-      <details className="document-tools no-print">
-        <summary>
-          {zh ? "导入、图片与修订" : "Import, images and revisions"}
-        </summary>
-        <div className="document-upload-grid">
-          <FilePicker
-            label={t("importMarkdown")}
-            hint={
-              zh
-                ? "选择 .md / .txt · UTF-8 · 最大 600 KB"
-                : "Choose .md / .txt · UTF-8 · up to 600 KB"
-            }
-            disabled={busy}
-            accept=".md,.markdown,.txt"
-            onFile={(file) => {
-              if (dirty && !window.confirm(s("leave"))) return;
-              void guarded(async () => {
-                if (
-                  file.size > 600000 ||
-                  !/\.(md|markdown|txt)$/i.test(file.name)
-                )
-                  throw new Error("size");
-                const value = new TextDecoder("utf-8", { fatal: true }).decode(
-                  await file.arrayBuffer(),
-                );
-                if (value.length > 200000) throw new Error("size");
-                setBody(value);
-                if (!title)
-                  setTitle(
-                    file.name
-                      .replace(/\.(md|markdown|txt)$/i, "")
-                      .slice(0, 240),
-                  );
-              });
-            }}
-          />
-          <FilePicker
-            label={s("image")}
-            hint={
-              zh
-                ? "PNG / JPEG / WebP · 不限文件大小"
-                : "PNG / JPEG / WebP · No file-size cap"
-            }
-            disabled={busy || !!base?.deletedAt}
-            accept="image/png,image/jpeg,image/webp"
-            onFile={(file) => insertImages([file])}
-          />
-        </div>
-        <p className="upload-hint">
-          {zh
-            ? "也可在编辑器内直接粘贴图片（Ctrl/⌘ V）。图片保存在自己的服务器，仅当前工作区可访问；导出的 Markdown 不包含图片文件。"
-            : "Or paste an image into the editor (Ctrl/⌘ V). Images stay on your server, accessible only within this workspace; Markdown exports do not include image files."}
-        </p>
-        {history.map((revision) => (
-          <details key={revision.version}>
-            <summary>
-              v{revision.version} · {revision.updatedAt}
-            </summary>
-            <DiffViewer before={revision.bodyMd} after={body} />
-            <button
-              className="chip"
-              type="button"
-              onClick={() => {
-                setTitle(revision.title);
-                setBody(revision.bodyMd);
-                setHistory([]);
-              }}
-            >
-              {t("useRevision")}
-            </button>
-          </details>
-        ))}
-      </details>
+
       {imageError && (
         <p className="error" role="alert">
           {imageError}
@@ -929,12 +952,13 @@ function DocumentPane({
         {base && "spaceId" in base && base.kind === "DOCUMENT" && (
           <label className="field">
             {zh ? "父文档" : "Parent document"}
-            <select
-              aria-label={zh ? "父文档" : "Parent document"}
-              value={base.parentDocumentId ?? ""}
+            <DocumentDrilldownPicker
+              documents={snapshot.library}
+              spaceId={base.spaceId!}
+              documentId={base.id}
+              value={base.parentDocumentId ?? null}
               disabled={busy || dirty}
-              onChange={(event) => {
-                const parentDocumentId = event.target.value || null;
+              onChange={(parentDocumentId) => {
                 void guarded(async () => {
                   const previous = baseRef.current;
                   if (!previous || !("spaceId" in previous)) return;
@@ -960,22 +984,7 @@ function DocumentPane({
                   onSaved();
                 });
               }}
-            >
-              <option value="">{zh ? "顶层" : "Top level"}</option>
-              {snapshot.library
-                .filter(
-                  (entry) =>
-                    entry.kind === "DOCUMENT" &&
-                    !entry.deletedAt &&
-                    entry.spaceId === base.spaceId &&
-                    entry.id !== base.id,
-                )
-                .map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {entry.title}
-                  </option>
-                ))}
-            </select>
+            />
           </label>
         )}
         <LiveMarkdown
@@ -1002,6 +1011,17 @@ function DocumentPane({
         <h1 className="print-only">{title}</h1>
         <Markdown text={body} />
       </div>
+      {base && "day" in base && (
+        <NoteKnowledgeActions
+          note={base}
+          snapshot={snapshot}
+          runtime={runtime}
+          disabled={busy || dirty}
+          onChanged={onSaved}
+          onPromoted={onWikiCreated}
+          onOpenWiki={onWikiOpen}
+        />
+      )}
       {request.kind === "DOCUMENT" && base && (
         <WikiRelations
           documentId={base.id}

@@ -30,6 +30,7 @@ test("external proposal human review preserves documents, provenance and snapsho
         title: "Owned",
         bodyMd: "# Exact\n\n- [ ] Not a task\n",
         projectTempId: "project",
+        spaceTempId: "space",
         ownership: "OWNED",
       },
       {

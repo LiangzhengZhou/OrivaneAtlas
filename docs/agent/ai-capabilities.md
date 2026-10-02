@@ -42,3 +42,5 @@ normal USER/ASSISTANT messages survive reload and Host restart.
 Endpoint network trust is administrator-only and separately audited. It never
 overrides these approval/data boundaries. Streaming events are temporary UI data;
 durable AgentRun, session, audit and usage remain authoritative.
+
+`project_document_create` requires explicit `spaceId` bound to the project. It never creates a Space implicitly. Existing authorization, external provenance, deny-by-default policy and idempotent request receipts remain mandatory. Note promotion/link-space are human-session commands and are not Agent tools.

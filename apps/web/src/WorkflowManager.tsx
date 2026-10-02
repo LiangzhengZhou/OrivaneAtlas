@@ -6,6 +6,7 @@ import {
 import { localCalendarDay, type WorkItem } from "@arclattice/domain";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 
 interface Props {
   calendarTimezone?: string;
@@ -149,18 +150,15 @@ export function WorkflowManager({
         >
           <label>
             {t("workflows.project")}
-            <select
-              aria-label={t("workflows.project")}
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-            >
-              <option value="">{t("workflows.chooseProject")}</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
+            <ProjectDrilldownPicker
+              mode="single"
+              projects={projects}
+              value={projectId || null}
+              disabled={busy}
+              onChange={(value) =>
+                setProjectId(typeof value === "string" ? value : "")
+              }
+            />
           </label>
           <label>
             {t("workflows.manifest")}
@@ -459,25 +457,15 @@ export function WorkflowManager({
           </label>
           <label>
             {t("workflows.project")}
-            <select
-              aria-label={t("workflows.project")}
-              multiple
-              value={recurrenceProjects}
-              onChange={(event) =>
-                setRecurrenceProjects(
-                  Array.from(
-                    event.target.selectedOptions,
-                    (option) => option.value,
-                  ),
-                )
+            <ProjectDrilldownPicker
+              mode="multiple"
+              projects={projects}
+              values={recurrenceProjects}
+              disabled={busy}
+              onChange={(values) =>
+                setRecurrenceProjects(Array.isArray(values) ? values : [])
               }
-            >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <button type="submit" disabled={busy}>
             {editing

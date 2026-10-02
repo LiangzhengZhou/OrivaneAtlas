@@ -32,6 +32,10 @@ import type {
   WorkSnapshot,
 } from "@arclattice/application";
 import {
+  applyWorkspaceChanges,
+  type WorkspaceChanges,
+} from "@arclattice/application";
+import {
   type ActorContext,
   DomainError,
   type ErrorCode,
@@ -413,10 +417,14 @@ export async function bootstrap() {
     const generation = serverGeneration;
     const job = syncQueue.then(async () => {
       if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
-      const data = await request<{ cursor: string; snapshot: Snapshot | null }>(
-        "/api/sync?cursor=" + encodeURIComponent(cursor),
-      );
+      const data = await request<{
+        cursor: string;
+        snapshot: Snapshot | null;
+        changes?: WorkspaceChanges;
+      }>("/api/sync?incremental=1&cursor=" + encodeURIComponent(cursor));
       if (data.snapshot) current = normalizeSnapshot(data.snapshot);
+      else if (data.changes && current)
+        current = applyWorkspaceChanges(current, data.changes);
       if (!current) throw new Error("Invalid sync response");
       cursor = data.cursor;
       if (context && current.calendarSettings?.version === 0) {
@@ -612,12 +620,8 @@ export async function bootstrap() {
       spaceId: string;
       title: string;
       bodyMd: string;
+      aiPolicy?: LibraryInput["aiPolicy"];
     }) => request<LibraryEntry>("/api/projects/document/create", input),
-    projectDocument: (input: {
-      projectId: string;
-      title: string;
-      bodyMd: string;
-    }) => request<LibraryEntry>("/api/projects/document", input),
     projectUpload: (input: {
       projectId: string;
       name: string;
@@ -724,6 +728,49 @@ export async function bootstrap() {
         ...(session ?? {}),
       }),
     agentSessions: () => request<AgentSession[]>("/api/ai/sessions"),
+    async streamAiEvents(
+      id: string,
+      signal: AbortSignal,
+      onEvents: (events: ModelEvent[]) => void,
+    ) {
+      if (native) throw new Error("STREAM_UNAVAILABLE");
+      const response = await fetch(
+        "/api/ai/events/stream?id=" + encodeURIComponent(id),
+        { credentials: "same-origin", signal },
+      );
+      if (!response.ok || !response.body) throw new Error("STREAM_UNAVAILABLE");
+      const reader = response.body.getReader(),
+        decoder = new TextDecoder();
+      let buffer = "";
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          buffer += decoder.decode(chunk.value, { stream: true });
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary >= 0) {
+            const frame = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            const data = frame
+              .split("\n")
+              .find((line) => line.startsWith("data: "));
+            if (data) {
+              const packet = JSON.parse(data.slice(6)) as {
+                events: ModelEvent[];
+                done: boolean;
+              };
+              onEvents(packet.events);
+              if (packet.done) return;
+            }
+            boundary = buffer.indexOf("\n\n");
+          }
+        }
+        throw new Error("STREAM_DISCONNECTED");
+      } finally {
+        await reader.cancel().catch(() => undefined);
+        reader.releaseLock();
+      }
+    },
     aiEvents: (id: string) =>
       request<ModelEvent[]>("/api/ai/events?id=" + encodeURIComponent(id)),
     createAgentSession: (title: string) =>
@@ -788,6 +835,22 @@ export async function bootstrap() {
         version,
         completedAt,
       }),
+    promoteNote: (
+      id: string,
+      version: number,
+      spaceId: string,
+      archiveSourceNote: boolean,
+      parentDocumentId: string | null = null,
+    ) =>
+      request<LibraryEntry>("/api/note/promote", {
+        id,
+        version,
+        spaceId,
+        archiveSourceNote,
+        parentDocumentId,
+      }),
+    linkNoteToSpace: (id: string, version: number, spaceId: string) =>
+      request<KnowledgeLink>("/api/note/link-space", { id, version, spaceId }),
     saveNote: (id: string | null, version: number, input: NoteInput) =>
       request<Note>("/api/note/save", { id, version, input }),
     deleteNote: (id: string, version: number, deleted: boolean) =>

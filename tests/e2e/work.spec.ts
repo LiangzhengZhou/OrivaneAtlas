@@ -5,6 +5,7 @@ import { join, resolve, sep } from "node:path";
 import {
   test as base,
   expect,
+  type Locator,
   type Page,
   type Response,
 } from "@playwright/test";
@@ -43,7 +44,8 @@ const test = base.extend<{ workbench: { url: string; secret: string } }>({
   workbench: async ({}, use, info) => {
     const directory = mkdtempSync(join(tmpdir(), "arclattice-e2e-"));
     const secret = randomBytes(32).toString("hex");
-    const port = 1420 + info.parallelIndex;
+    const port =
+      Number(process.env.ATLAS_E2E_BASE_PORT ?? 1420) + info.parallelIndex;
     const host = await createHost({
       calendarTimezone: info.title.includes("authoritative calendar")
         ? "Pacific/Kiritimati"
@@ -257,20 +259,21 @@ test("project knowledge creates multiple owned spaces and links an existing spac
     page.getByRole("heading", { name: zh ? "链接空间" : "Linked spaces" }),
   ).toBeVisible();
   await page
+    .getByRole("button", { name: zh ? "新建页面" : "Create page", exact: true })
+    .click();
+  await page
+    .getByRole("region", { name: zh ? "选择页面空间" : "Choose page space" })
     .getByRole("button", { name: "Architecture wiki", exact: true })
     .click();
-  await page
-    .getByLabel(zh ? "文档标题" : "Document title", { exact: true })
+  await pane(page)
+    .getByLabel(w.spaces.title, { exact: true })
     .fill("Storage architecture");
-  await page
-    .getByLabel(zh ? "Markdown 正文" : "Markdown content", { exact: true })
+  await documentMode(page, zh ? "源码" : "Source");
+  await pane(page)
+    .getByLabel(w.spaces.body, { exact: true })
     .fill("# Storage architecture");
-  await page
-    .getByRole("button", {
-      name: zh ? "创建专属文档" : "Create owned document",
-      exact: true,
-    })
-    .click();
+  await saveDocument(page, w);
+  await browseDocuments(page);
   await expect(
     page.getByRole("button", { name: "Storage architecture", exact: true }),
   ).toBeVisible();
@@ -827,19 +830,21 @@ test("project knowledge documents files and overview summaries persist", async (
     page.getByRole("button", { name: /★ Primary Wiki/ }),
   ).toBeVisible();
   await page
-    .getByLabel(zh ? "文档标题" : "Document title", { exact: true })
-    .fill("Owned research note");
-  await page
-    .getByLabel(zh ? "Markdown 正文" : "Markdown content", { exact: true })
-    .fill("# Original\n- [ ] preserve as prose");
-  await page
-    .getByRole("button", {
-      name: zh ? "创建专属文档" : "Create owned document",
-      exact: true,
-    })
+    .getByRole("button", { name: zh ? "新建页面" : "Create page", exact: true })
     .click();
+  await pane(page)
+    .getByLabel(w.spaces.title, { exact: true })
+    .fill("Owned research note");
+  await documentMode(page, zh ? "源码" : "Source");
+  await pane(page)
+    .getByLabel(w.spaces.body, { exact: true })
+    .fill("# Original\n- [ ] preserve as prose");
+  await saveDocument(page, w);
+  await browseDocuments(page);
   await expect(
-    page.getByRole("button", { name: "Owned research note", exact: true }),
+    page
+      .getByRole("button", { name: "Owned research note", exact: true })
+      .first(),
   ).toBeVisible();
   await page.locator('.project-workspace input[type="file"]').setInputFiles({
     name: "experiment.csv",
@@ -904,14 +909,21 @@ test("navigation collapses independently on desktop and mobile", async ({
   const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   await page.setViewportSize({ width: 1280, height: 850 });
-  await page.locator(".sidebar-toggle").click();
-  await expect(page.locator(".sidebar-toggle")).toHaveAttribute(
+  const sidebarBounds = await page.locator(".sidebar").boundingBox();
+  const collapseBounds = await page
+    .locator(".sidebar-collapse-button")
+    .boundingBox();
+  expect(collapseBounds!.x + collapseBounds!.width).toBeLessThanOrEqual(
+    sidebarBounds!.x + sidebarBounds!.width,
+  );
+  await page.locator(".sidebar-collapse-button").click();
+  await expect(page.locator(".sidebar-collapse-button")).toHaveAttribute(
     "aria-expanded",
     "false",
   );
   await nav(page, w.desk.projects);
   await page.reload();
-  await expect(page.locator(".sidebar-toggle")).toHaveAttribute(
+  await expect(page.locator(".sidebar-collapse-button")).toHaveAttribute(
     "aria-expanded",
     "false",
   );
@@ -952,12 +964,12 @@ test("navigation collapses independently on desktop and mobile", async ({
     ),
   ).toBe(true);
   await page.setViewportSize({ width: 1280, height: 850 });
-  await expect(page.locator(".sidebar-toggle")).toHaveAttribute(
+  await expect(page.locator(".sidebar-collapse-button")).toHaveAttribute(
     "aria-expanded",
     "false",
   );
-  await page.locator(".sidebar-toggle").click();
-  await expect(page.locator(".sidebar-toggle")).toHaveAttribute(
+  await page.locator(".sidebar-collapse-button").click();
+  await expect(page.locator(".sidebar-collapse-button")).toHaveAttribute(
     "aria-expanded",
     "true",
   );
@@ -970,12 +982,7 @@ test("named AI profiles persist independently and bind reviewed proposals", asyn
   const w = words(info.project.name);
   const zh = info.project.name.endsWith("zh");
   await unlock(page, workbench.url, workbench.secret, w);
-  await nav(page, w.desk.ai);
-  await page
-    .getByText(zh ? "AI 设置与活动" : "AI settings and activity", {
-      exact: true,
-    })
-    .click();
+  await nav(page, w.desk.settings);
   await page.locator(".personal-ai-settings > summary").click();
   await page.locator("#ai-profile-id").fill("research");
   await page
@@ -1012,12 +1019,7 @@ test("named AI profiles persist independently and bind reviewed proposals", asyn
     page.locator(".personal-ai-settings input[type=password]"),
   ).toHaveValue("");
   await page.reload();
-  await nav(page, w.desk.ai);
-  await page
-    .getByText(zh ? "AI 设置与活动" : "AI settings and activity", {
-      exact: true,
-    })
-    .click();
+  await nav(page, w.desk.settings);
   const selector = page.getByRole("combobox", {
     name: zh ? "本次使用的模型配置" : "Model profile for this request",
     exact: true,
@@ -1058,7 +1060,7 @@ test("reviewed plan and recurrence publish real tasks without duplication", asyn
 }, info) => {
   const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
-  const project = await mutation(page, "/api/work/create", {
+  await mutation(page, "/api/work/create", {
     title: "Workflow project",
     type: "PROJECT",
   });
@@ -1068,7 +1070,7 @@ test("reviewed plan and recurrence publish real tasks without duplication", asyn
   const plans = page.locator("details").filter({
     has: page.locator("summary", { hasText: w.desk.workflows.plans }),
   });
-  await plans.getByRole("combobox").selectOption(project.id);
+  await chooseProject(plans.locator(".hierarchy-picker"), ["Workflow project"]);
   await plans.getByLabel(w.desk.workflows.manifest, { exact: true }).fill(
     JSON.stringify({
       version: 1,
@@ -1173,9 +1175,7 @@ test("AI context permission defaults deny and persists explicit human edits", as
     .locator(".note-card")
     .filter({ hasText: "Permission test" })
     .click();
-  await pane(page)
-    .getByText(zh ? "AI 权限" : "AI permissions", { exact: true })
-    .click();
+  await documentAction(page, zh ? "AI 权限" : "AI permissions");
   await pane(page)
     .getByText(zh ? "AI 数据许可 · DENY" : "AI data permission · DENY", {
       exact: true,
@@ -1217,9 +1217,7 @@ test("AI context permission defaults deny and persists explicit human edits", as
     .locator(".note-card")
     .filter({ hasText: "Permission test" })
     .click();
-  await pane(page)
-    .getByText(zh ? "AI 权限" : "AI permissions", { exact: true })
-    .click();
+  await documentAction(page, zh ? "AI 权限" : "AI permissions");
   await expect(pane(page).getByText(/AI.*ASK/)).toBeVisible();
 });
 
@@ -1399,12 +1397,14 @@ test("multiple project task authoring persists across reload", async ({
     .click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel(w.work.title, { exact: true }).fill("Shared task");
-  await dialog
-    .getByRole("checkbox", { name: "Project A", exact: true })
-    .check();
-  await dialog
-    .getByRole("checkbox", { name: "Project B", exact: true })
-    .check();
+  await chooseProject(
+    dialog.locator(".project-memberships .hierarchy-picker"),
+    ["Project A"],
+  );
+  await chooseProject(
+    dialog.locator(".project-memberships .hierarchy-picker"),
+    ["Project B"],
+  );
   await page.screenshot({
     path: info.outputPath("multi-project-editor.png"),
     fullPage: true,
@@ -1454,9 +1454,7 @@ test("work planning: activation and nested project authoring", async ({
   await expect(dialog).toHaveCount(0);
   await page.getByRole("button", { name: w.desk.newProject }).first().click();
   await dialog.getByLabel(w.work.title, { exact: true }).fill("Child project");
-  await dialog
-    .getByRole("treeitem", { name: "Parent project", exact: true })
-    .click();
+  await chooseProject(dialog.locator(".hierarchy-picker"), ["Parent project"]);
   await page.screenshot({
     path: info.outputPath("work-planning-editor.png"),
     fullPage: true,
@@ -1881,10 +1879,7 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
   await nav(page, w.desk.notes);
   await page.locator(".topbar .compact-create").click();
   await documentMode(page, /^(Source|源码)$/);
-  await pane(page)
-    .locator(".document-tools > summary")
-    .filter({ hasText: /^(Import, images and revisions|导入、图片与修订)$/ })
-    .click();
+  await documentTools(page);
   await pane(page)
     .getByLabel(w.desk.importMarkdown, { exact: true })
     .setInputFiles({
@@ -1969,6 +1964,7 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
   );
   await expect(editor).toContainText("kept while uploading");
   await page.unroute("**/api/library/upload-chunk");
+  await documentTools(page);
   await pane(page)
     .getByLabel(w.spaces.image, { exact: true })
     .setInputFiles({
@@ -2361,10 +2357,7 @@ for (const nativeImages of [false, true]) {
     await pane(page).getByLabel(a.body, { exact: true }).click();
     await page.keyboard.press("Control+a");
     await page.keyboard.insertText(markdown);
-    await pane(page)
-      .locator(".document-tools > summary")
-      .filter({ hasText: /^(Import, images and revisions|导入、图片与修订)$/ })
-      .click();
+    await documentTools(page);
     await pane(page)
       .getByLabel(a.image, { exact: true })
       .setInputFiles({
@@ -2786,23 +2779,37 @@ test("document knowledge graph preserves wiki neighbors and hides work and isola
   }
   await page.reload();
   await page.goto(workbench.url + "/#knowledge");
+  await page
+    .getByRole("button", {
+      name: zh ? "知识图谱" : "Knowledge graph",
+      exact: true,
+    })
+    .click();
   const graph = page.locator(".graph-section");
-  await expect(graph.locator(".react-flow__node")).toHaveCount(2);
+  const documents = graph.locator(
+    '.react-flow__node:not([data-id^="space-cluster:"])',
+  );
+  await expect(documents).toHaveCount(3);
+  await expect(
+    graph.getByRole("button", {
+      name: zh ? "工作区" : "workspace",
+      exact: true,
+    }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await graph.getByLabel(zh ? "图谱搜索" : "Graph search").fill("Symmetry");
+  await expect(documents).toHaveCount(3);
+  await graph.getByRole("option", { name: /Symmetry lecture/ }).click();
+  await graph
+    .getByRole("button", { name: zh ? "局部" : "local", exact: true })
+    .click();
+  await expect(documents).toHaveCount(2);
   await expect(graph.locator(".react-flow__edge")).toHaveCount(2);
   await expect(graph).not.toContainText("Research task");
   await expect(graph).not.toContainText("Isolated page");
   await graph
     .getByRole("button", { name: zh ? "空间" : "space", exact: true })
     .click();
-  await expect(graph.locator(".react-flow__node")).toHaveCount(2);
-  await graph
-    .getByRole("button", { name: zh ? "工作区" : "workspace", exact: true })
-    .click();
-  await graph.getByLabel(zh ? "图谱搜索" : "Graph search").fill("Symmetry");
-  await expect(graph.locator(".react-flow__node")).toHaveCount(2);
-  await expect(
-    graph.locator(".react-flow__node").filter({ hasText: "Field equations" }),
-  ).toBeVisible();
+  await expect(documents).toHaveCount(3);
   await graph
     .locator(".react-flow__node")
     .filter({ hasText: "Symmetry lecture" })
@@ -2932,10 +2939,21 @@ test("AI approval project scope is shared by search, Wiki autocomplete, graph an
     .getByText(zh ? "知识图谱" : "Knowledge graph", { exact: true })
     .click();
   const graph = workspace.locator(".graph-section");
+  await expect(
+    graph.getByRole("button", { name: zh ? "项目" : "project", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    graph.locator('.react-flow__node:not([data-id^="space-cluster:"])'),
+  ).toHaveCount(4);
+  await expect(
+    graph.locator(".react-flow__node").filter({ hasText: "Storage 4" }),
+  ).toHaveCount(0);
   await graph
     .getByRole("button", { name: zh ? "工作区" : "workspace", exact: true })
     .click();
-  await expect(graph.locator(".react-flow__node")).toHaveCount(5);
+  await expect(
+    graph.locator('.react-flow__node:not([data-id^="space-cluster:"])'),
+  ).toHaveCount(5);
   await workspace.locator("button.agenda-item").first().click();
   const editor = pane(page).locator(".cm-content");
   await editor.click();
@@ -2979,8 +2997,7 @@ test("persistent document hierarchy is visible and can be moved through the know
   page,
   workbench,
 }, info) => {
-  const w = words(info.project.name),
-    zh = info.project.name.endsWith("zh");
+  const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   const space = await mutation(page, "/api/library/save", {
     id: null,
@@ -3016,9 +3033,8 @@ test("persistent document hierarchy is visible and can be moved through the know
   });
   await expect(card.locator("small")).toContainText("Backend");
   await card.click();
-  await pane(page)
-    .getByLabel(zh ? "父文档" : "Parent document", { exact: true })
-    .selectOption("");
+  const parentPicker = pane(page).locator(".hierarchy-picker");
+  await parentPicker.locator(".hierarchy-selected > button").first().click();
   await expect
     .poll(
       async () =>
@@ -3028,9 +3044,7 @@ test("persistent document hierarchy is visible and can be moved through the know
           .parentDocumentId,
     )
     .toBe(null);
-  await pane(page)
-    .getByLabel(zh ? "父文档" : "Parent document", { exact: true })
-    .selectOption(root.id);
+  await chooseProject(parentPicker, ["Backend"]);
   await expect
     .poll(
       async () =>
@@ -3121,9 +3135,10 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
   await page.locator(".topbar .compact-create").click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel(w.work.title, { exact: true }).fill("Ship planning");
-  await dialog
-    .getByRole("checkbox", { name: "Autumn launch", exact: true })
-    .check();
+  await chooseProject(
+    dialog.locator(".project-memberships .hierarchy-picker"),
+    ["Autumn launch"],
+  );
   await dialog.getByLabel(w.desk.startDate).fill("2026-09-14");
   await dialog.getByLabel(w.desk.dueDate).fill("2026-09-21");
   await dialog
@@ -3178,10 +3193,7 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
   const markdown = "# 原始 Markdown\r\n\r\n- [ ] 仅是正文，不是任务\r\n";
   // Wait for the new tab, not the calendar tab briefly visible during navigation.
   await expect(pane(page).getByLabel(w.desk.noteTitle)).toHaveValue("");
-  await pane(page)
-    .locator(".document-tools > summary")
-    .filter({ hasText: /^(Import, images and revisions|导入、图片与修订)$/ })
-    .click();
+  await documentTools(page);
   await pane(page)
     .getByLabel(w.desk.importMarkdown)
     .setInputFiles({
@@ -3294,8 +3306,8 @@ async function nav(page: Page, name: string) {
   for (const locale of ["en-US", "zh-CN"] as const) {
     const desk = resources[locale].desk;
     if (name === desk.knowledge) {
-      await nav(page, resources[locale].spaces.library);
-      await page.getByRole("button", { name, exact: true }).click();
+      await nav(page, desk.settings);
+      await page.locator(".advanced-relations > summary").click();
       return;
     }
     if (name === desk.dependencies) {
@@ -3364,21 +3376,65 @@ async function nav(page: Page, name: string) {
     .getByRole("button", { name: new RegExp("^" + name + "(?: [0-9]+)?$") })
     .click();
 }
+export async function documentTools(page: Page) {
+  const menu = pane(page).locator(".document-actions-menu");
+  if (
+    (await menu.locator(":scope > button").getAttribute("aria-expanded")) !==
+    "true"
+  )
+    await menu.locator(":scope > button").click();
+  const tools = menu.locator(".document-tools");
+  if (
+    (await tools.locator(":scope > button").getAttribute("aria-expanded")) !==
+    "true"
+  )
+    await tools.locator(":scope > button").click();
+}
+async function chooseProject(picker: Locator, path: string[]) {
+  const trigger = picker.locator(".hierarchy-selected > button").last();
+  if ((await trigger.getAttribute("aria-expanded")) !== "true")
+    await trigger.click();
+  await picker.locator("nav > button").click();
+  for (const [index, title] of path.entries()) {
+    const row = picker.locator("li").filter({
+      has: picker.page().getByRole("button", {
+        name: new RegExp("^" + title + "(?: ›)?$"),
+        exact: true,
+      }),
+    });
+    if (index === path.length - 1) await row.locator(".chip").click();
+    else await row.locator(".parent-tree-choice").click();
+  }
+}
 function pane(page: Page) {
   return page.locator(".document-pane:visible");
 }
 async function documentMode(page: Page, name: string | RegExp) {
+  const actions = pane(page).locator(".document-actions-menu > button");
+  if ((await actions.getAttribute("aria-expanded")) === "true") {
+    await page.keyboard.press("Escape");
+    await expect(actions).toHaveAttribute("aria-expanded", "false");
+  }
   const menu = pane(page).locator(".document-mode-menu");
-  if ((await menu.getAttribute("open")) === null)
-    await menu.locator("summary").click();
+  if (
+    (await menu.locator(":scope > button").getAttribute("aria-expanded")) !==
+    "true"
+  )
+    await menu.locator(":scope > button").click();
   await menu.getByRole("button", { name, exact: true }).click();
 }
 async function documentAction(page: Page, name: string, exported = false) {
   const menu = pane(page).locator(".document-actions-menu");
-  if ((await menu.getAttribute("open")) === null)
-    await menu.locator(":scope > summary").click();
-  if (exported)
-    await menu.getByText(/^(Export|导出)$/, { exact: true }).click();
+  if (
+    (await menu.locator(":scope > button").getAttribute("aria-expanded")) !==
+    "true"
+  )
+    await menu.locator(":scope > button").click();
+  if (exported) {
+    const exports = menu.locator(".document-export > button");
+    if ((await exports.getAttribute("aria-expanded")) !== "true")
+      await exports.click();
+  }
   await menu.getByRole("button", { name, exact: true }).click();
 }
 async function browseDocuments(page: Page) {
@@ -3574,10 +3630,7 @@ test("notes, safe reading, revision restore, journal and export", async ({
     .fill("Second revision");
   await saveDocument(page, w);
   await documentAction(page, w.desk.revisions);
-  await pane(page)
-    .locator(".document-tools > summary")
-    .filter({ hasText: /^(Import, images and revisions|导入、图片与修订)$/ })
-    .click();
+  await documentTools(page);
   await pane(page)
     .locator(".document-tools details")
     .last()
@@ -3595,10 +3648,14 @@ test("notes, safe reading, revision restore, journal and export", async ({
   const download = page.waitForEvent("download");
   await documentAction(page, w.desk.exportMarkdown, true);
   expect((await download).suggestedFilename()).toBe("Original note.md");
-  page.once("dialog", (dialog) => dialog.accept());
-  await page
-    .getByRole("button", { name: w.common.delete, exact: true })
-    .click();
+  const deleted = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/note/delete") &&
+      response.request().method() === "POST",
+  );
+  await documentAction(page, w.common.delete);
+  expect((await deleted).status()).toBe(200);
+  await expect(pane(page)).toHaveCount(0);
   await nav(page, w.desk.trash);
   await page
     .getByRole("button", { name: w.common.restore, exact: true })
@@ -4297,11 +4354,14 @@ test("inline prerequisites save atomically with availability and reject stale gr
     exact: true,
   });
   await expect(
-    prerequisites.getByRole("checkbox", { name: "Project excluded" }),
+    prerequisites.getByRole("button", { name: "Project excluded" }),
   ).toHaveCount(0);
   await prerequisites
-    .getByRole("checkbox", { name: "Prerequisite source", exact: true })
-    .check();
+    .getByRole("button", { name: /Add prerequisite|添加前置任务/ })
+    .click();
+  await prerequisites
+    .getByRole("button", { name: /^Prerequisite source / })
+    .click();
   await expect(prerequisites.locator("p")).toContainText(w.work.blocked);
   await dialog
     .getByRole("button", { name: w.common.create, exact: true })
@@ -4328,14 +4388,14 @@ test("inline prerequisites save atomically with availability and reject stale gr
   await openTask();
   await dialog.locator(".task-advanced > summary").click();
   await expect(
-    prerequisites.getByRole("checkbox", {
-      name: "Prerequisite source",
+    prerequisites.getByRole("button", {
+      name: "Prerequisite source ×",
       exact: true,
     }),
-  ).toBeChecked();
+  ).toBeVisible();
   await prerequisites
-    .getByRole("checkbox", { name: "Prerequisite source", exact: true })
-    .uncheck();
+    .getByRole("button", { name: "Prerequisite source ×", exact: true })
+    .click();
   await expect(prerequisites.locator("p")).toContainText(w.work.ready);
   await dialog
     .getByLabel(w.desk.activationState, { exact: true })
@@ -4371,8 +4431,8 @@ test("inline prerequisites save atomically with availability and reject stale gr
   await openTask();
   await dialog.locator(".task-advanced > summary").click();
   await prerequisites
-    .getByRole("checkbox", { name: "Concurrent source", exact: true })
-    .uncheck();
+    .getByRole("button", { name: "Concurrent source ×", exact: true })
+    .click();
   await dialog
     .getByRole("button", { name: w.common.save, exact: true })
     .click();
@@ -4406,9 +4466,9 @@ test("workspace timezone appearance density and mobile navigation persist", asyn
     .locator(".calendar-settings")
     .getByRole("button", { name: w.common.save, exact: true })
     .click();
-  await expect(page.getByTestId("calendar-timezone")).toContainText(
-    "Asia/Tokyo",
-  );
+  await expect(
+    page.getByLabel(w.desk.workspaceTimezone, { exact: true }),
+  ).toHaveValue("Asia/Tokyo");
   await page
     .getByLabel(w.desk.appearance, { exact: true })
     .selectOption("dark");
@@ -4502,18 +4562,26 @@ test("parent picker excludes descendants and dependency nodes open task inspecto
     .getByRole("button", { name: w.desk.projectSettings, exact: true })
     .click();
   const dialog = page.getByRole("dialog");
-  const tree = dialog.getByRole("tree", { name: w.desk.parentTree });
+  const picker = dialog.locator(".hierarchy-picker");
+  await picker.locator(".hierarchy-selected > button").last().click();
   await expect(
-    tree.getByRole("treeitem", { name: "Tree root", exact: true }),
-  ).toHaveAttribute("aria-disabled", "true");
-  await tree
-    .getByRole("treeitem", { name: "Tree root", exact: true })
-    .press("ArrowRight");
+    picker.locator("li").filter({ hasText: "Tree root" }).locator(".chip"),
+  ).toBeDisabled();
+  await picker
+    .locator("li")
+    .filter({ hasText: "Tree root" })
+    .locator(".parent-tree-choice")
+    .click();
   await expect(
-    tree.getByRole("treeitem", { name: "Tree child", exact: true }),
-  ).toHaveAttribute("aria-disabled", "true");
-  await dialog.getByLabel(w.desk.searchProjects).fill("target");
-  await tree.getByRole("treeitem", { name: /^Tree target/ }).click();
+    picker.locator("li").filter({ hasText: "Tree child" }).locator(".chip"),
+  ).toBeDisabled();
+  await picker.locator("nav > button").click();
+  await picker.getByRole("searchbox").fill("target");
+  await picker
+    .locator("li")
+    .filter({ hasText: "Tree target" })
+    .locator(".chip")
+    .click();
   await dialog
     .getByRole("button", { name: w.common.save, exact: true })
     .click();
@@ -4672,9 +4740,10 @@ test("overview task count excludes non-tasks and clears a previous project filte
   });
   await page.reload();
   await nav(page, w.desk.tasks);
-  await page
-    .getByRole("combobox", { name: w.desk.project, exact: true })
-    .selectOption(project.id);
+  await chooseProject(
+    page.locator(".project-filter-picker .hierarchy-picker"),
+    [project.title],
+  );
   await expect(page.locator(".task-card")).toHaveCount(1);
   await nav(page, w.desk.overview);
   const countLink = page
@@ -4688,8 +4757,10 @@ test("overview task count excludes non-tasks and clears a previous project filte
   await countLink.click();
   await expect(page.locator(".task-card")).toHaveCount(2);
   await expect(
-    page.getByRole("combobox", { name: w.desk.project, exact: true }),
-  ).toHaveValue("ALL");
+    page
+      .locator(".project-filter-picker")
+      .getByRole("button", { name: w.desk.all, exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await nav(page, w.desk.projects);
   await page.screenshot({
     path: info.outputPath("upgrade-project-tree.png"),
@@ -4734,9 +4805,7 @@ test.describe("host calendar authority", () => {
     await expect(page.locator(".task-card")).toContainText(
       "Host calendar task",
     );
-    await expect(page.getByTestId("calendar-timezone")).toContainText(
-      "Pacific/Kiritimati",
-    );
+    await expect(page.getByTestId("calendar-timezone")).toHaveCount(0);
     await mutation(page, "/api/work/update", {
       id: task.id,
       version: task.version,
@@ -4847,4 +4916,343 @@ test("AI approval follows the active document tab and excludes hidden document c
   ).toBeVisible();
   state = await (await page.request.get(workbench.url + "/api/ai")).json();
   expect(state.runs[0].context).toEqual([]);
+});
+
+test("capture links to Space and promotes to Wiki with Journal backlinks", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: { kind: "SPACE", spaceId: null, title: "Capture Wiki", bodyMd: "" },
+  });
+  const target = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: space.id,
+      title: "Architecture",
+      bodyMd: "Target",
+    },
+  });
+  const note = await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "NOTE",
+      day: null,
+      title: "Capture source",
+      bodyMd: "# Preserved\n[[Architecture]]\n- [ ] prose",
+    },
+  });
+  await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "JOURNAL",
+      day: "2026-10-02",
+      title: "Journal source",
+      bodyMd: "[[Architecture]]",
+    },
+  });
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await page
+    .locator(".note-card")
+    .filter({ hasText: "Capture source" })
+    .click();
+  const actions = page.locator(
+    ".document-pane:visible .note-knowledge-actions",
+  );
+  await actions
+    .getByRole("button", {
+      name: zh ? "链接到知识空间" : "Link to knowledge space",
+      exact: true,
+    })
+    .click();
+  await actions
+    .getByRole("button", { name: "Capture Wiki", exact: true })
+    .click();
+  await actions
+    .getByRole("button", { name: zh ? "链接" : "Link", exact: true })
+    .click();
+  await expect(actions).toContainText(zh ? "已链接到" : "Linked to");
+  let snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.library.filter(
+      (entry: { kind: string }) => entry.kind === "DOCUMENT",
+    ),
+  ).toHaveLength(1);
+  await actions
+    .getByRole("button", {
+      name: zh ? "提升为 Wiki 页面" : "Promote to Wiki page",
+      exact: true,
+    })
+    .click();
+  await actions
+    .getByRole("button", { name: "Capture Wiki", exact: true })
+    .click();
+  await actions
+    .getByRole("button", { name: zh ? "创建页面" : "Create page", exact: true })
+    .click();
+  await expect(
+    page.getByRole("tab", { name: "Capture source", exact: true }),
+  ).toHaveCount(2);
+  snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  const document = snapshot.library.find(
+    (entry: { kind: string; title: string }) =>
+      entry.kind === "DOCUMENT" && entry.title === "Capture source",
+  );
+  expect(document.bodyMd).toBe(note.bodyMd);
+  expect(
+    snapshot.notes.find((entry: { id: string }) => entry.id === note.id)
+      .deletedAt,
+  ).toBeNull();
+  expect(
+    snapshot.wikiLinks.some(
+      (link: { sourceDocumentId: string; targetDocumentId: string }) =>
+        link.sourceDocumentId === document.id &&
+        link.targetDocumentId === target.id,
+    ),
+  ).toBe(true);
+  await page
+    .getByRole("tablist")
+    .getByRole("button", { name: zh ? "工作台" : "Workspace", exact: true })
+    .click();
+  await nav(page, w.spaces.library);
+  await page.locator(".space-card").filter({ hasText: "Capture Wiki" }).click();
+  await page
+    .locator(".note-card")
+    .filter({ has: page.getByText("Architecture", { exact: true }) })
+    .click();
+  await expect(pane(page).locator(".wiki-relations")).toContainText(
+    "Journal source",
+  );
+  await expect(pane(page).locator(".wiki-relations")).toContainText(
+    "Capture source",
+  );
+  await page.screenshot({
+    path: info.outputPath("capture-knowledge-backlinks.png"),
+    fullPage: true,
+  });
+});
+
+test("current level hierarchy search is shared by Task filters and AI scope", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const parent = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Hierarchy root",
+  });
+  const child = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Deep target",
+    parentProjectId: parent.id,
+  });
+  await mutation(page, "/api/work/create", {
+    title: "Scoped child task",
+    projectIds: [child.id],
+  });
+  await mutation(page, "/api/work/create", { title: "Unscoped task" });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  const filter = page.locator(".project-filter-picker .hierarchy-picker");
+  await filter.locator(".hierarchy-selected > button").last().click();
+  await filter.getByRole("searchbox").fill("Deep target");
+  await expect(filter.locator("li")).toHaveCount(0);
+  await filter.getByRole("searchbox").fill("");
+  await filter
+    .getByRole("button", { name: "Hierarchy root ›", exact: true })
+    .click();
+  await filter.getByRole("searchbox").fill("Deep target");
+  await expect(filter.locator("li")).toHaveCount(1);
+  await filter.locator("li .chip").click();
+  await expect(page.locator(".task-card")).toHaveCount(1);
+  await expect(page.locator(".task-card")).toContainText("Scoped child task");
+  await nav(page, w.desk.settings);
+  await page
+    .getByRole("radio", { name: zh ? "项目" : "Project", exact: true })
+    .check();
+  const scope = page.locator(".hierarchy-picker");
+  await chooseProject(scope, ["Hierarchy root", "Deep target"]);
+  await expect(scope.locator(".hierarchy-selected")).toContainText(
+    "Deep target",
+  );
+  await page.screenshot({
+    path: info.outputPath("ai-scope-drilldown.png"),
+    fullPage: true,
+  });
+});
+
+test("Atlas main workspace is conversation with explicit context and no provider form", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Context project",
+  });
+  await page.reload();
+  await nav(page, w.desk.ai);
+  const atlas = page.locator(".atlas-conversation");
+  await expect(atlas).toBeVisible();
+  await expect(atlas.locator(".personal-ai-settings, .ai-run")).toHaveCount(0);
+  await atlas
+    .getByRole("button", {
+      name: zh ? "添加上下文" : "Add context",
+      exact: true,
+    })
+    .click();
+  await chooseProject(atlas.locator(".hierarchy-picker"), ["Context project"]);
+  await expect(atlas.locator(".context-bar")).toContainText(
+    "Context project ×",
+  );
+  await atlas
+    .getByRole("button", { name: "Context project ×", exact: true })
+    .first()
+    .click();
+  await expect(atlas.locator(".hierarchy-selected")).not.toContainText(
+    "Context project ×",
+  );
+  if (info.project.name.startsWith("mobile")) {
+    const send = await atlas
+      .getByRole("button", { name: "发送", exact: true })
+      .boundingBox();
+    const navigation = await page
+      .locator(".mobile-bottom-navigation")
+      .boundingBox();
+    expect(send!.y + send!.height).toBeLessThanOrEqual(navigation!.y);
+  }
+  await page.screenshot({
+    path: info.outputPath("atlas-conversation.png"),
+    fullPage: true,
+  });
+});
+
+test("Project dependency graph shows external blockers only on explicit request", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Boundary project",
+  });
+  const task = await mutation(page, "/api/work/create", {
+    title: "Local deliverable",
+    projectIds: [project.id],
+  });
+  const blocker = await mutation(page, "/api/work/create", {
+    title: "Outside prerequisite",
+  });
+  const indirect = await mutation(page, "/api/work/create", {
+    title: "Outside indirect",
+  });
+  await mutation(page, "/api/edge/create", {
+    fromId: blocker.id,
+    toId: task.id,
+    type: "BLOCKS",
+  });
+  await mutation(page, "/api/edge/create", {
+    fromId: indirect.id,
+    toId: blocker.id,
+    type: "BLOCKS",
+  });
+  await page.goto(workbench.url + "/#projects/" + project.id + "?tab=tasks");
+  await expect(page.locator(".react-flow__node")).toHaveCount(1);
+  await page
+    .getByRole("checkbox", {
+      name: zh ? "外部阻塞" : "External blockers",
+      exact: true,
+    })
+    .check();
+  await expect(page.locator(".react-flow__node")).toHaveCount(2);
+  await expect(
+    page
+      .locator(".react-flow__node")
+      .filter({ hasText: "Outside prerequisite" }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".react-flow__node").filter({ hasText: "Outside indirect" }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: info.outputPath("external-blockers.png"),
+    fullPage: true,
+  });
+});
+
+test("action pending permits another Task inspector and rolls back optimistic failures", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const first = await mutation(page, "/api/work/create", {
+    title: "Pending A",
+  });
+  await mutation(page, "/api/work/create", { title: "Independent B" });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/work/update", async (route) => {
+    if (route.request().postDataJSON().id !== first.id) {
+      await route.continue();
+      return;
+    }
+    await hold;
+    await route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "VERSION_CONFLICT" }),
+    });
+  });
+  const row = page.locator(".task-card").filter({ hasText: "Pending A" });
+  const status = row.getByRole("combobox");
+  await status.selectOption("IN_PROGRESS");
+  await expect(status).toHaveValue("IN_PROGRESS");
+  await expect(status).toBeDisabled();
+  await page
+    .locator(".task-card")
+    .filter({ hasText: "Independent B" })
+    .locator(".task-title")
+    .click();
+  const inspector = page.getByRole("dialog");
+  await expect(inspector.getByLabel(w.work.title, { exact: true })).toHaveValue(
+    "Independent B",
+  );
+  await expect(
+    inspector.getByLabel(w.work.title, { exact: true }),
+  ).toBeEnabled();
+  await inspector
+    .getByRole("button", { name: w.common.close, exact: true })
+    .click();
+  release();
+  await expect(status).toHaveValue("TODO");
+  await expect(status).toBeEnabled();
+  await expect(page.locator(".toast")).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("pending-rollback.png"),
+    fullPage: true,
+  });
 });

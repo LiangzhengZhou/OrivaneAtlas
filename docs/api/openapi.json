@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orivane Atlas workspace API",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "description": "HTTPS self-hosted accounts with isolated workspaces. Registration is PENDING until admin approval. Legacy-key session alone binds ADMIN to original workspace. Cookie + CSRF or 30/90/365-day or non-expiring revocable Bearer credentials: write allows create/update/delete and responses may include the affected entity (not append-only or confidential blind-write); read-write explicitly permits all private workspace content reads. Bearer forbids admin/accounts/tokens/backup/server AI. Business POSTs use atomic durable Idempotency-Key receipts and current versions. Claim/password/token issuance consume keys without replaying secret responses (409 on consumed key). Passwords and secret-response plaintext are never in receipts. Registration requires a key but deduplicates by unique normalized username (retry after success can return 400). Login/logout/read-only backup do not use receipts. No server AI configuration needed for local AI uploads. No email recovery/MFA/offline replication/public sharing or autonomous tools. PDF is client browser print, not a PDF-generation API. Legacy /api and versioned /api/v1 aliases have identical behavior. Personal encrypted provider settings support Chat Completions and Responses. Explicit review authorizes one call with selected versioned documents; results never auto-apply. SQLite backup excludes the separate provider vault and its master key."
   },
   "servers": [
@@ -41,10 +41,168 @@
       "$ref": "#/components/pathItems/UnlinkProjectSpace"
     },
     "/api/projects/document/create": {
-      "$ref": "#/components/pathItems/CreateProjectDocument"
+      "post": {
+        "operationId": "createProjectKnowledgeDocument",
+        "summary": "Create a page in an explicitly bound project Space",
+        "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Creates a dedicated owned knowledge SPACE when needed and an owned DOCUMENT material. Returns the LibraryEntry; material records appear in snapshots. Body Markdown is preserved. Integration provenance is EXTERNAL_AI.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["projectId", "spaceId", "title", "bodyMd"],
+                "properties": {
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "spaceId": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "bodyMd": {
+                    "type": "string"
+                  },
+                  "aiPolicy": {
+                    "$ref": "#/components/schemas/ContentPolicy"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
     },
     "/api/v1/projects/document/create": {
-      "$ref": "#/components/pathItems/CreateProjectDocument"
+      "post": {
+        "operationId": "createProjectKnowledgeDocumentV1",
+        "summary": "Create a page in an explicitly bound project Space",
+        "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Creates a dedicated owned knowledge SPACE when needed and an owned DOCUMENT material. Returns the LibraryEntry; material records appear in snapshots. Body Markdown is preserved. Integration provenance is EXTERNAL_AI.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["projectId", "spaceId", "title", "bodyMd"],
+                "properties": {
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "spaceId": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "bodyMd": {
+                    "type": "string"
+                  },
+                  "aiPolicy": {
+                    "$ref": "#/components/schemas/ContentPolicy"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or missing idempotency key"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Project or material not found in workspace"
+          },
+          "409": {
+            "description": "Stale version or conflicting idempotency key"
+          }
+        }
+      }
     },
     "/api/work/navigation-preference": {
       "$ref": "#/components/pathItems/NavigationPreference"
@@ -371,7 +529,7 @@
     "/api/projects/document": {
       "post": {
         "operationId": "project_document",
-        "summary": "Create an owned Markdown document inside a project",
+        "summary": "Compatibility endpoint: explicit spaceId required; never creates a Space",
         "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Creates a dedicated owned knowledge SPACE when needed and an owned DOCUMENT material. Returns the LibraryEntry; material records appear in snapshots. Body Markdown is preserved. Integration provenance is EXTERNAL_AI.",
         "requestBody": {
           "required": true,
@@ -380,21 +538,19 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["projectId", "title", "bodyMd"],
+                "required": ["projectId", "spaceId", "title", "bodyMd"],
                 "properties": {
                   "projectId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 240
+                    "type": "string"
+                  },
+                  "spaceId": {
+                    "type": "string"
                   },
                   "title": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 240
+                    "type": "string"
                   },
                   "bodyMd": {
-                    "type": "string",
-                    "maxLength": 200000
+                    "type": "string"
                   }
                 }
               }
@@ -446,7 +602,8 @@
           "409": {
             "description": "Stale version or conflicting idempotency key"
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/projects/link": {
@@ -817,7 +974,7 @@
     "/api/v1/projects/document": {
       "post": {
         "operationId": "project_documentV1",
-        "summary": "Create an owned Markdown document inside a project",
+        "summary": "Compatibility endpoint: explicit spaceId required; never creates a Space",
         "description": "Cookie + CSRF or write/read-write integration token. Requires Idempotency-Key. Workspace and principal derive from authentication; body cannot override them. Mutation and project activity/outbox commit atomically. Creates a dedicated owned knowledge SPACE when needed and an owned DOCUMENT material. Returns the LibraryEntry; material records appear in snapshots. Body Markdown is preserved. Integration provenance is EXTERNAL_AI.",
         "requestBody": {
           "required": true,
@@ -826,21 +983,19 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["projectId", "title", "bodyMd"],
+                "required": ["projectId", "spaceId", "title", "bodyMd"],
                 "properties": {
                   "projectId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 240
+                    "type": "string"
+                  },
+                  "spaceId": {
+                    "type": "string"
                   },
                   "title": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 240
+                    "type": "string"
                   },
                   "bodyMd": {
-                    "type": "string",
-                    "maxLength": 200000
+                    "type": "string"
                   }
                 }
               }
@@ -892,7 +1047,8 @@
           "409": {
             "description": "Stale version or conflicting idempotency key"
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/api/v1/projects/link": {
@@ -3269,6 +3425,15 @@
               "type": "string"
             },
             "description": "Previous response digest. Unknown or absent returns snapshot; equal returns null."
+          },
+          {
+            "name": "incremental",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "enum": [1]
+            },
+            "description": "Return changes when the cursor is retained; otherwise return a full snapshot."
           }
         ],
         "responses": {
@@ -3292,6 +3457,36 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "changes": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "collections": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "upserts": {
+                                "type": "array",
+                                "items": {}
+                              },
+                              "removed": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": ["upserts", "removed"]
+                          }
+                        },
+                        "values": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": ["collections", "values"]
                     }
                   },
                   "required": ["cursor", "snapshot"]
@@ -6028,6 +6223,15 @@
               "type": "string"
             },
             "description": "Previous response digest. Unknown or absent returns snapshot; equal returns null."
+          },
+          {
+            "name": "incremental",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "enum": [1]
+            },
+            "description": "Return changes when the cursor is retained; otherwise return a full snapshot."
           }
         ],
         "responses": {
@@ -6051,6 +6255,36 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "changes": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "collections": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "upserts": {
+                                "type": "array",
+                                "items": {}
+                              },
+                              "removed": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": ["upserts", "removed"]
+                          }
+                        },
+                        "values": {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": ["collections", "values"]
                     }
                   },
                   "required": ["cursor", "snapshot"]
@@ -8982,6 +9216,460 @@
             "description": "Stale version or idempotency conflict"
           }
         }
+      }
+    },
+    "/api/note/promote": {
+      "post": {
+        "operationId": "promoteNoteToDocument",
+        "summary": "Atomically promote capture to an explicit-space Wiki document, preserving content and source",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "spaceId": {
+                    "type": "string"
+                  },
+                  "parentDocumentId": {
+                    "type": ["string", "null"]
+                  },
+                  "archiveSourceNote": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["id", "version", "spaceId", "archiveSourceNote"]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            },
+            "description": "Required for browser POST, omitted for native Bearer clients."
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required for browser POST, omitted for native Bearer clients."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryEntry"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Stable error code; no internal details. 400 invalid input/key; 401 session; 403 host/origin/CSRF; 404 missing; 409 stale version, dependency rule or reused key with different bytes; 413 body limit; 415 media type; 429 login limit; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ]
+      }
+    },
+    "/api/note/link-space": {
+      "post": {
+        "operationId": "linkNoteToSpace",
+        "summary": "Link capture to an existing knowledge space without creating a document",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "spaceId": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "version", "spaceId"]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            },
+            "description": "Required for browser POST, omitted for native Bearer clients."
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required for browser POST, omitted for native Bearer clients."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeLink"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Stable error code; no internal details. 400 invalid input/key; 401 session; 403 host/origin/CSRF; 404 missing; 409 stale version, dependency rule or reused key with different bytes; 413 body limit; 415 media type; 429 login limit; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ]
+      }
+    },
+    "/api/ai/events/stream": {
+      "get": {
+        "summary": "Stream authorized AI run events with replay",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server sent AI events; each frame contains events and completion state.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        },
+        "operationId": "streamAiEvents"
+      }
+    },
+    "/api/v1/note/promote": {
+      "post": {
+        "operationId": "promoteNoteToDocumentV1",
+        "summary": "Atomically promote capture to an explicit-space Wiki document, preserving content and source",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "spaceId": {
+                    "type": "string"
+                  },
+                  "parentDocumentId": {
+                    "type": ["string", "null"]
+                  },
+                  "archiveSourceNote": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["id", "version", "spaceId", "archiveSourceNote"]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            },
+            "description": "Required for browser POST, omitted for native Bearer clients."
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required for browser POST, omitted for native Bearer clients."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryEntry"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Stable error code; no internal details. 400 invalid input/key; 401 session; 403 host/origin/CSRF; 404 missing; 409 stale version, dependency rule or reused key with different bytes; 413 body limit; 415 media type; 429 login limit; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ]
+      }
+    },
+    "/api/v1/note/link-space": {
+      "post": {
+        "operationId": "linkNoteToSpaceV1",
+        "summary": "Link capture to an existing knowledge space without creating a document",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "spaceId": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "version", "spaceId"]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            },
+            "description": "Required for browser POST, omitted for native Bearer clients."
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Required for browser POST, omitted for native Bearer clients."
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeLink"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Stable error code; no internal details. 400 invalid input/key; 401 session; 403 host/origin/CSRF; 404 missing; 409 stale version, dependency rule or reused key with different bytes; 413 body limit; 415 media type; 429 login limit; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ai/events/stream": {
+      "get": {
+        "summary": "Stream authorized AI run events with replay",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server sent AI events; each frame contains events and completion state.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        },
+        "operationId": "streamAiEventsV1"
       }
     }
   },

@@ -28,6 +28,7 @@ export interface WorkProps {
   allItems: readonly WorkItem[];
   edges: readonly WorkEdge[];
   busy: boolean;
+  isPending?(item: WorkItem): boolean;
   onOpen(item: WorkItem): void;
   onStatus(item: WorkItem, status: WorkStatus): Promise<boolean>;
   isArchived(item: WorkItem): boolean;
@@ -39,7 +40,8 @@ function Task({
   item,
   allItems,
   edges,
-  busy,
+  busy: workspaceBusy,
+  isPending,
   onOpen,
   onStatus,
   isArchived,
@@ -47,6 +49,7 @@ function Task({
   onOrganize,
 }: Omit<WorkProps, "items"> & { item: WorkItem }) {
   const { t } = useTranslation(["common", "work"]);
+  const busy = workspaceBusy || !!isPending?.(item);
   const blocked = blockers(item, allItems, edges).length > 0;
   const activated = isExecutionActive(item, today);
   const inherited = archiveSource(item);
@@ -212,7 +215,12 @@ export function WorkBoard({ items, ...props }: WorkProps) {
               const item = items.find(
                 (item) => item.id === event.dataTransfer.getData("text/plain"),
               );
-              if (item && !props.busy && item.status !== status)
+              if (
+                item &&
+                !props.busy &&
+                !props.isPending?.(item) &&
+                item.status !== status
+              )
                 void props.onStatus(item, status);
             }}
           >

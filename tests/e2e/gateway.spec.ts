@@ -11,7 +11,8 @@ test("Gateway registry policy persists and approved alternatives are visible bef
   page,
 }, info) => {
   const directory = mkdtempSync(join(tmpdir(), "arclattice-gateway-e2e-"));
-  const port = 1420 + info.parallelIndex,
+  const port =
+      Number(process.env.ATLAS_E2E_BASE_PORT ?? 1420) + info.parallelIndex,
     origin = `http://127.0.0.1:${port}`;
   const host = await createHost({
     database: join(directory, "data.sqlite"),
@@ -85,20 +86,7 @@ test("Gateway registry policy persists and approved alternatives are visible bef
     ).toBe(200);
     await page.goto(origin);
     const zh = info.project.name.endsWith("zh");
-    if (await page.locator(".mobile-navigation-toggle").isVisible())
-      await page.locator(".mobile-navigation-toggle").click();
-    await page
-      .locator(".sidebar nav:visible, .mobile-more-sheet:visible")
-      .getByRole("button", {
-        name: zh ? "AI 请求" : "AI requests",
-        exact: true,
-      })
-      .click();
-    await page
-      .getByText(zh ? "AI 设置与活动" : "AI settings and activity", {
-        exact: true,
-      })
-      .click();
+    await page.goto(origin + "/#settings");
     await page.locator(".personal-ai-settings > summary").click();
     await expect(
       page.getByLabel(
@@ -128,21 +116,7 @@ test("Gateway registry policy persists and approved alternatives are visible bef
       page.locator(".personal-ai-settings [role=status]"),
     ).toContainText("v2");
     await page.reload();
-    await page.goto(origin + "/#ai");
-    await page
-      .getByText(zh ? "AI 设置与活动" : "AI settings and activity", {
-        exact: true,
-      })
-      .click();
-    if (await page.locator(".mobile-navigation-toggle").isVisible())
-      await page.locator(".mobile-navigation-toggle").click();
-    await page
-      .locator(".sidebar nav:visible, .mobile-more-sheet:visible")
-      .getByRole("button", {
-        name: zh ? "AI 请求" : "AI requests",
-        exact: true,
-      })
-      .click();
+    await page.goto(origin + "/#settings");
     await page.locator(".personal-ai-settings > summary").click();
     await expect(budget).toHaveValue("2");
     await expect(

@@ -1050,6 +1050,7 @@ export {
   validateApprovedContext,
   validateContextPolicy,
 } from "./model-gateway";
+export * from "./note-knowledge";
 export type {
   PersonalModelInput,
   PersonalModelSummary,
@@ -1061,3 +1062,5 @@ export * from "./provider-adapter";
 export * from "./retrieval";
 export * from "./trusted-ai-endpoint";
 export type { AppUpdateInfo, AppUpdateProgress, AppUpdates } from "./updates";
+
+export * from "./workspace-changes";

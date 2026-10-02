@@ -19,7 +19,7 @@ describe("project owned materials", () => {
     const document = await db.request(
       context,
       null,
-      (uow, _notes, _connected, library, _organization, projects) =>
+      async (uow, _notes, _connected, library, _organization, projects) =>
         new ProjectService(
           uow,
           projects,
@@ -27,7 +27,20 @@ describe("project owned materials", () => {
           authorization,
           clock,
           ids,
-        ).createDocument(context, {
+        ).createProjectDocument(context, {
+          spaceId: (
+            await new ProjectService(
+              uow,
+              projects,
+              library,
+              authorization,
+              clock,
+              ids,
+            ).createProjectSpace(context, {
+              projectId: project.id,
+              title: "Explicit space",
+            })
+          ).spaceId,
           projectId: project.id,
           title: "Notes",
           bodyMd,
@@ -128,7 +141,20 @@ describe("project owned materials", () => {
             authorization,
             clock,
             ids,
-          ).createDocument(context, {
+          ).createProjectDocument(context, {
+            spaceId: (
+              await new ProjectService(
+                uow,
+                projects,
+                library,
+                authorization,
+                clock,
+                ids,
+              ).createProjectSpace(context, {
+                projectId: project.id,
+                title: "Explicit space",
+              })
+            ).spaceId,
             projectId: project.id,
             title: "Transient",
             bodyMd: "content",
@@ -169,7 +195,12 @@ describe("project owned materials", () => {
           clock,
           ids,
         );
-        const document = await app.createDocument(context, {
+        const space = await app.createProjectSpace(context, {
+          projectId: project.id,
+          title: "Explicit space",
+        });
+        const document = await app.createProjectDocument(context, {
+          spaceId: space.spaceId,
           projectId: project.id,
           title: "Shared",
           bodyMd: "preserved",

@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../../bootstrap";
+import { noteWikiReferences } from "./note-wiki-references";
 
 export function WikiRelations({
   documentId,
@@ -43,6 +44,35 @@ export function WikiRelations({
               ?.title
           }
         </button>
+      ))}
+      {(["NOTE", "JOURNAL"] as const).map((kind) => (
+        <section key={kind}>
+          <h4>
+            {kind === "NOTE"
+              ? zh
+                ? "笔记"
+                : "Notes"
+              : zh
+                ? "日记"
+                : "Journal"}
+          </h4>
+          {noteWikiReferences(snapshot.notes, snapshot.library)
+            .filter(
+              (link) =>
+                link.targetDocumentId === documentId &&
+                link.sourceKind === kind,
+            )
+            .map((link, index) => (
+              <button
+                type="button"
+                className="text-button"
+                key={link.sourceId + ":" + index}
+                onClick={() => onOpen(link.sourceId)}
+              >
+                {link.sourceTitle}
+              </button>
+            ))}
+        </section>
       ))}
       <h3>{zh ? "未解析链接" : "Unresolved links"}</h3>
       {broken.map((link, index) => (

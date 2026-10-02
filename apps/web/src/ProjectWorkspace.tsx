@@ -45,6 +45,7 @@ export function ProjectWorkspace({
   onBack,
   onProject,
   onOpen,
+  onNewPage,
   onCreate,
   onLink,
   onUnlink,
@@ -69,6 +70,7 @@ export function ProjectWorkspace({
   onBack(): void;
   onProject(id: string): void;
   onOpen(ref: EntityRef): void;
+  onNewPage(spaceId: string): void;
   onCreate(type: "PROJECT" | "TASK" | "MILESTONE", parentId: string): void;
   onLink(from: EntityRef, to: EntityRef): Promise<boolean>;
   onUnlink(link: KnowledgeLink): Promise<boolean>;
@@ -441,9 +443,7 @@ export function ProjectWorkspace({
               )}
               busy={busy}
               onOpen={onOpen}
-              onCreate={(input) =>
-                run(() => runtime.createProjectDocument(input))
-              }
+              onNewPage={onNewPage}
               onUpload={(input) => run(() => runtime.projectUpload(input))}
               onDelete={(material, deleted) =>
                 run(() =>
@@ -554,6 +554,7 @@ export function ProjectWorkspace({
             <div className="project-canvas-layout">
               <ProjectDependencyGraph
                 snapshot={graphSnapshot}
+                fullSnapshot={snapshot}
                 onOpen={onOpen}
                 onSelect={(ref) => setInspectedId(ref.id)}
               />

@@ -29,6 +29,7 @@ import {
   type ModelUsage,
   NotebookService,
   type NoteInput,
+  NoteKnowledgeService,
   OrganizationService,
   type OrganizeInput,
   type PersonalModelInput,
@@ -48,6 +49,7 @@ import {
   validateTrustedAiEndpoint,
   WorkflowService,
   WorkService,
+  workspaceChanges,
 } from "@arclattice/application";
 import {
   type ActorContext,
@@ -211,6 +213,8 @@ export async function createHost(options: HostOptions) {
   const inFlight = new Set<Promise<void>>();
   const controllers = new Set<AbortController>();
   const modelEvents = new Map<string, ModelEvent[]>();
+  const eventListeners = new Map<string, Set<() => void>>();
+  const syncCache = new Map<string, { cursor: string; data: object }>();
   const model = options.model ?? null;
   function resolveModel(
     actor: ActorContext,
@@ -479,6 +483,7 @@ export async function createHost(options: HostOptions) {
             else {
               if (events.length < 10000) events.push(event);
             }
+            for (const listener of eventListeners.get(run.id) ?? []) listener();
           },
         );
         output = result.output;
@@ -536,6 +541,7 @@ export async function createHost(options: HostOptions) {
           }
         },
       );
+      for (const listener of eventListeners.get(run.id) ?? []) listener();
       await db.audit(agentContext, run.id, error ?? "MODEL_SUCCEEDED");
     })();
     inFlight.add(job);
@@ -920,8 +926,9 @@ export async function createHost(options: HostOptions) {
                     authorization,
                     clock,
                     ids,
-                  ).createDocument(context, {
+                  ).createProjectDocument(context, {
                     projectId: string(args.projectId),
+                    spaceId: string(args.spaceId),
                     title: string(args.title),
                     bodyMd: string(args.bodyMd, 200000),
                     provenance: "EXTERNAL_AI",
@@ -1494,17 +1501,27 @@ export async function createHost(options: HostOptions) {
               live.has(l.to.kind + ":" + l.to.id),
           );
           const cursor = digest(JSON.stringify(data));
-          json(
-            res,
-            200,
-            path === "/api/sync"
-              ? {
-                  cursor,
-                  snapshot:
-                    url.searchParams.get("cursor") === cursor ? null : data,
-                }
-              : data,
-          );
+          if (path === "/api/sync") {
+            const cacheKey = context.workspaceId + ":" + context.principalId;
+            const previous = syncCache.get(cacheKey);
+            const requestedCursor = url.searchParams.get("cursor");
+            const incremental = url.searchParams.get("incremental") === "1";
+            const changes =
+              incremental && previous?.cursor === requestedCursor
+                ? workspaceChanges(previous.data, data)
+                : null;
+            syncCache.delete(cacheKey);
+            syncCache.set(cacheKey, { cursor, data });
+            if (syncCache.size > 128) {
+              const oldest = syncCache.keys().next().value;
+              if (oldest) syncCache.delete(oldest);
+            }
+            json(res, 200, {
+              cursor,
+              snapshot: requestedCursor === cursor || changes ? null : data,
+              ...(changes ? { changes } : {}),
+            });
+          } else json(res, 200, data);
           return;
         }
         if (path === "/api/ai" && req.method === "GET") {
@@ -1533,6 +1550,71 @@ export async function createHost(options: HostOptions) {
             routes,
             runs: runs.slice(-100).reverse(),
           });
+          return;
+        }
+        if (path === "/api/ai/events/stream" && req.method === "GET") {
+          if (credential) fail(403, "FORBIDDEN");
+          const id = string(url.searchParams.get("id"));
+          const readRun = () =>
+            db.request(
+              context,
+              null,
+              async (_uow, _notes, store) => {
+                const run = await store.getRun(id);
+                if (run.createdBy !== context.principalId)
+                  fail(403, "FORBIDDEN");
+                return run;
+              },
+              requireAccess,
+            );
+          await readRun();
+          if (eventListeners.size >= 128 && !eventListeners.has(id))
+            fail(429, "RATE_LIMITED");
+          const listeners = eventListeners.get(id) ?? new Set<() => void>();
+          if (listeners.size >= 8) fail(429, "RATE_LIMITED");
+          eventListeners.set(id, listeners);
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "X-Accel-Buffering": "no",
+          });
+          let closed = false,
+            queue = Promise.resolve();
+          const send = () => {
+            queue = queue
+              .then(async () => {
+                if (closed) return;
+                const run = await readRun();
+                if (closed || res.writableEnded || res.destroyed) return;
+                const done = !["RUNNING", "WAITING_APPROVAL"].includes(
+                  run.status,
+                );
+                res.write(
+                  "data: " +
+                    JSON.stringify({
+                      events: modelEvents.get(id) ?? [],
+                      done,
+                    }) +
+                    "\n\n",
+                );
+                if (done) {
+                  closed = true;
+                  res.end();
+                }
+              })
+              .catch(() => {
+                closed = true;
+                if (!res.writableEnded) res.end();
+              });
+          };
+          listeners.add(send);
+          const timer = setInterval(send, 15000);
+          res.on("close", () => {
+            closed = true;
+            clearInterval(timer);
+            listeners.delete(send);
+            if (!listeners.size) eventListeners.delete(id);
+          });
+          send();
           return;
         }
         if (path === "/api/ai/events" && req.method === "GET") {
@@ -1909,7 +1991,13 @@ export async function createHost(options: HostOptions) {
                 );
               }
               case "/api/projects/document/create": {
-                keys(value, ["projectId", "spaceId", "title", "bodyMd"]);
+                keys(value, [
+                  "projectId",
+                  "spaceId",
+                  "title",
+                  "bodyMd",
+                  "aiPolicy",
+                ]);
                 return new ProjectService(
                   uow,
                   projects,
@@ -1922,11 +2010,14 @@ export async function createHost(options: HostOptions) {
                   spaceId: string(value.spaceId),
                   title: string(value.title),
                   bodyMd: string(value.bodyMd, 200000),
+                  ...(value.aiPolicy
+                    ? { aiPolicy: value.aiPolicy as LibraryInput["aiPolicy"] }
+                    : {}),
                   provenance: credential ? "EXTERNAL_AI" : "HUMAN",
                 });
               }
               case "/api/projects/document": {
-                keys(value, ["projectId", "title", "bodyMd"]);
+                keys(value, ["projectId", "spaceId", "title", "bodyMd"]);
                 return new ProjectService(
                   uow,
                   projects,
@@ -1934,8 +2025,9 @@ export async function createHost(options: HostOptions) {
                   authorization,
                   clock,
                   ids,
-                ).createDocument(context, {
+                ).createProjectDocument(context, {
                   projectId: string(value.projectId),
+                  spaceId: string(value.spaceId),
                   title: string(value.title),
                   bodyMd: string(value.bodyMd, 200000),
                   provenance: credential ? "EXTERNAL_AI" : "HUMAN",
@@ -2852,6 +2944,53 @@ export async function createHost(options: HostOptions) {
                 keys(value, ["id"]);
                 await work.removeEdge(context, string(value.id));
                 return null;
+              case "/api/note/promote": {
+                if (credential) fail(403, "FORBIDDEN");
+                keys(value, [
+                  "id",
+                  "version",
+                  "spaceId",
+                  "parentDocumentId",
+                  "archiveSourceNote",
+                ]);
+                return new NoteKnowledgeService(
+                  store,
+                  library,
+                  connected,
+                  authorization,
+                  clock,
+                  ids,
+                ).promoteNoteToDocument(
+                  context,
+                  string(value.id),
+                  version(value.version),
+                  {
+                    spaceId: string(value.spaceId),
+                    parentDocumentId:
+                      value.parentDocumentId == null
+                        ? null
+                        : string(value.parentDocumentId),
+                    archiveSourceNote: boolean(value.archiveSourceNote),
+                  },
+                );
+              }
+              case "/api/note/link-space": {
+                if (credential) fail(403, "FORBIDDEN");
+                keys(value, ["id", "version", "spaceId"]);
+                return new NoteKnowledgeService(
+                  store,
+                  library,
+                  connected,
+                  authorization,
+                  clock,
+                  ids,
+                ).linkNoteToSpace(
+                  context,
+                  string(value.id),
+                  version(value.version),
+                  string(value.spaceId),
+                );
+              }
               case "/api/note/save": {
                 keys(value, ["id", "version", "input"]);
                 const input = object(value.input);

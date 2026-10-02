@@ -19,7 +19,7 @@ export function ProjectMaterials({
   materials,
   inheritedSpaces = [],
   busy,
-  onCreate,
+  onNewPage,
   onUpload,
   onDelete,
   onDownload,
@@ -47,12 +47,7 @@ export function ProjectMaterials({
   materials: ProjectMaterial[];
   inheritedSpaces?: ProjectMaterial[];
   busy: boolean;
-  onCreate(input: {
-    projectId: string;
-    spaceId: string;
-    title: string;
-    bodyMd: string;
-  }): Promise<boolean>;
+  onNewPage(spaceId: string): void;
   onUpload(input: {
     projectId: string;
     name: string;
@@ -65,14 +60,13 @@ export function ProjectMaterials({
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
-  const [title, setTitle] = useState("");
-  const [bodyMd, setBody] = useState("");
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
   const [spaceTitle, setSpaceTitle] = useState("");
   const [spaceQuery, setSpaceQuery] = useState("");
   const [selectedSpace, setSelectedSpace] = useState("");
+  const [choosingPageSpace, setChoosingPageSpace] = useState(false);
   const spaces = materials.filter(
     (entry) =>
       entry.projectId === projectId &&
@@ -88,7 +82,7 @@ export function ProjectMaterials({
   );
   return (
     <section className="panel project-summary">
-      <h2>{zh ? "项目专属资料" : "Project-owned materials"}</h2>
+      <h2>{zh ? "项目知识" : "Knowledge"}</h2>
       {!spaces.length && (
         <p>{zh ? "尚无项目知识" : "No project knowledge yet"}</p>
       )}
@@ -169,7 +163,11 @@ export function ProjectMaterials({
                 className="chip"
                 key={space.id}
                 aria-pressed={selectedSpace === space.targetId}
-                onClick={() => setSelectedSpace(space.targetId ?? "")}
+                onClick={() => {
+                  setSelectedSpace(space.targetId ?? "");
+                  if (space.targetId)
+                    onOpen({ kind: "SPACE", id: space.targetId });
+                }}
               >
                 {space.role === "PRIMARY" ? "★ " : ""}
                 {space.title}
@@ -194,53 +192,36 @@ export function ProjectMaterials({
           ))}
         </section>
       )}
-      <p className="muted">
-        {zh
-          ? "新资料创建于当前项目："
-          : "New materials are created in the current project: "}
-        {projects?.find((p) => p.id === projectId)?.title}
-      </p>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          const spaceId =
-            selectedSpace ||
-            spaces.find((space) => space.role === "PRIMARY")?.targetId ||
-            spaces[0]?.targetId;
-          if (!spaceId) return;
-          void onCreate({ projectId, spaceId, title, bodyMd }).then((ok) => {
-            if (ok) {
-              setTitle("");
-              setBody("");
-            }
-          });
+      <button
+        type="button"
+        className="button primary"
+        disabled={busy || !spaces.length}
+        onClick={() => {
+          if (spaces.length === 1 && spaces[0]?.targetId)
+            onNewPage(spaces[0].targetId);
+          else setChoosingPageSpace(true);
         }}
       >
-        <label>
-          {zh ? "文档标题" : "Document title"}
-          <input
-            required
-            maxLength={240}
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </label>
-        <label>
-          {zh ? "Markdown 正文" : "Markdown content"}
-          <textarea
-            value={bodyMd}
-            maxLength={200000}
-            onChange={(event) => setBody(event.target.value)}
-          />
-        </label>
-        <button
-          className="button primary"
-          type="submit"
-          disabled={busy || !spaces.length}
-        >
-          {zh ? "创建专属文档" : "Create owned document"}
-        </button>
-      </form>
+        {zh ? "新建页面" : "Create page"}
+      </button>
+      {choosingPageSpace && (
+        <section aria-label={zh ? "选择页面空间" : "Choose page space"}>
+          {spaces.map((space) => (
+            <button
+              type="button"
+              className="chip"
+              key={space.id}
+              onClick={() => {
+                if (space.targetId) onNewPage(space.targetId);
+                setChoosingPageSpace(false);
+              }}
+            >
+              {space.title}
+            </button>
+          ))}
+        </section>
+      )}
+      <h3>{zh ? "页面与引用" : "Pages and references"}</h3>
       <FilePicker
         label={zh ? "上传项目文件" : "Upload project file"}
         hint={
@@ -292,49 +273,54 @@ export function ProjectMaterials({
         />
         {zh ? "包含已删除资料" : "Include deleted materials"}
       </label>
-      {entries.map((entry) => (
-        <div className="project-material" key={entry.id}>
-          <button
-            type="button"
-            className="text-button"
-            disabled={!!entry.deletedAt}
-            onClick={() => {
-              if (entry.kind === "FILE") void onDownload(entry.id);
-              else if (entry.targetId)
-                onOpen({ kind: entry.kind, id: entry.targetId });
-            }}
-          >
-            {entry.kind === "SPACE" ? "◈ " : ""}
-            {entry.title}
-          </button>
-          <small>
-            {entry.ownership === "OWNED"
-              ? zh
-                ? "项目拥有"
-                : "Owned"
-              : zh
-                ? "外部引用"
-                : "Linked"}
-            {entry.kind === "FILE" ? ` · ${entry.size} B` : ""}
-            {" · "}
-            {projects?.find((project) => project.id === entry.projectId)?.title}
-          </small>
-          <button
-            type="button"
-            className="chip"
-            disabled={busy}
-            onClick={() => void onDelete(entry, !entry.deletedAt)}
-          >
-            {entry.deletedAt
-              ? zh
-                ? "恢复"
-                : "Restore"
-              : zh
-                ? "删除"
-                : "Delete"}
-          </button>
-        </div>
-      ))}
+      {entries
+        .filter((entry) => entry.kind !== "SPACE")
+        .map((entry) => (
+          <div className="project-material" key={entry.id}>
+            <button
+              type="button"
+              className="text-button"
+              disabled={!!entry.deletedAt}
+              onClick={() => {
+                if (entry.kind === "FILE") void onDownload(entry.id);
+                else if (entry.targetId)
+                  onOpen({ kind: entry.kind, id: entry.targetId });
+              }}
+            >
+              {entry.kind === "SPACE" ? "◈ " : ""}
+              {entry.title}
+            </button>
+            <small>
+              {entry.ownership === "OWNED"
+                ? zh
+                  ? "项目拥有"
+                  : "Owned"
+                : zh
+                  ? "外部引用"
+                  : "Linked"}
+              {entry.kind === "FILE" ? ` · ${entry.size} B` : ""}
+              {" · "}
+              {
+                projects?.find((project) => project.id === entry.projectId)
+                  ?.title
+              }
+            </small>
+            <button
+              type="button"
+              className="chip"
+              disabled={busy}
+              onClick={() => void onDelete(entry, !entry.deletedAt)}
+            >
+              {entry.deletedAt
+                ? zh
+                  ? "恢复"
+                  : "Restore"
+                : zh
+                  ? "删除"
+                  : "Delete"}
+            </button>
+          </div>
+        ))}
     </section>
   );
 }

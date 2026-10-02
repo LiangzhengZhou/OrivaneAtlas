@@ -1,5 +1,9 @@
 # Native signing and updates
 
+## 2.0.1 release
+
+Version 2.0.1 keeps the existing Android production certificate and Windows updater public key. Android versionCode is 2000001. Build and verify fresh native packages; never relabel 2.0.0 artifacts. Upgrade the matching self-hosted server before the clients. See [release notes](RELEASE_2.0.1.md).
+
 ## 2.0.0 release validation
 
 Windows GNU Cargo check and release-profile tests passed (15 passed, 1 strict-host

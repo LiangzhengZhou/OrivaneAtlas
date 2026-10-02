@@ -2,20 +2,23 @@ import type { LibraryEntry } from "@arclattice/application";
 import { BookOpen, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Runtime } from "./bootstrap";
+import type { Runtime, Snapshot } from "./bootstrap";
 import type { DocumentRequest } from "./DocumentWorkspace";
+import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
 import { Markdown } from "./Markdown";
 export function LibraryView({
   runtime,
   onOpen,
-  onKnowledge,
+  snapshot,
 }: {
   runtime: Runtime;
   onOpen: (request: DocumentRequest) => void;
-  onKnowledge?: () => void;
+  snapshot: Snapshot;
 }) {
   const { t } = useTranslation("spaces");
-  const { t: desk } = useTranslation("desk");
+  const { i18n } = useTranslation();
+  const zh = i18n.language.startsWith("zh");
+  const [graphOpen, setGraphOpen] = useState(false);
   const [entries, setEntries] = useState<LibraryEntry[]>([]),
     [spaceId, setSpaceId] = useState<string | null>(null),
     [query, setQuery] = useState(""),
@@ -100,16 +103,33 @@ export function LibraryView({
           {t("error")}
         </p>
       )}
+      {graphOpen && (
+        <KnowledgeGraph
+          key={spaceId ?? "workspace"}
+          snapshot={snapshot}
+          currentSpaceId={spaceId ?? undefined}
+          onOpen={(ref) => {
+            const entity = entries.find((entry) => entry.id === ref.id);
+            if (entity)
+              onOpen({
+                key: entity.id,
+                kind: entity.kind,
+                entity,
+                spaceId: entity.spaceId,
+              });
+          }}
+        />
+      )}
       <div className="library-toolbar action-row">
-        {onKnowledge && (
-          <button
-            type="button"
-            className="button secondary"
-            onClick={onKnowledge}
-          >
-            {desk("knowledge")}
-          </button>
-        )}
+        <button
+          type="button"
+          className="chip"
+          aria-pressed={graphOpen}
+          onClick={() => setGraphOpen(!graphOpen)}
+        >
+          {zh ? "知识图谱" : "Knowledge graph"}
+        </button>
+
         <button
           className="button secondary"
           type="button"

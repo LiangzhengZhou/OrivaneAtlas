@@ -54,6 +54,9 @@ importers:
       '@arclattice/storage-memory':
         specifier: workspace:*
         version: link:../../packages/storage-memory
+      '@arclattice/wiki-core':
+        specifier: workspace:*
+        version: link:../../packages/wiki-core
       '@codemirror/autocomplete':
         specifier: ^6.20.0
         version: 6.20.3

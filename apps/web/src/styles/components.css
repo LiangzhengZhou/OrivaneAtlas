@@ -84,3 +84,125 @@ select {
 .assistant-pane .markdown {
   min-height: 0;
 }
+
+.assistant-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface, white);
+}
+.conversation-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.conversation-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+}
+.conversation-messages section {
+  margin: 20px 0;
+}
+.conversation-composer {
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  padding-top: 12px;
+  background: inherit;
+}
+.conversation-composer textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 80px;
+  max-height: 180px;
+}
+.atlas-conversation {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: calc(100dvh - 160px);
+  z-index: auto;
+  box-shadow: none;
+}
+.context-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.approval-card,
+.proposal-card,
+.tool-call-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.document-popover {
+  position: relative;
+  display: inline-block;
+}
+.document-popover-panel {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 180;
+  padding: 16px;
+  min-width: 260px;
+  max-width: min(520px, calc(100vw - 32px));
+  max-height: 65dvh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface, white);
+  box-shadow: 0 8px 30px #0002;
+}
+.document-mode-menu .document-popover-panel {
+  left: 0;
+  right: auto;
+}
+
+.space-cluster-label {
+  padding: 12px 16px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.ai-activity {
+  margin-top: 24px;
+}
+
+.document-actions-menu > .document-popover-panel {
+  width: min(440px, calc(100vw - 32px));
+  min-width: 0;
+}
+.document-actions-menu .document-popover {
+  display: block;
+}
+.document-actions-menu .document-popover .document-popover-panel {
+  position: static;
+  min-width: 0;
+  max-width: 100%;
+  max-height: none;
+  box-shadow: none;
+  margin-top: 8px;
+}
+
+@media (max-width: 767px) {
+  .document-actions-menu > .document-popover-panel {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    top: 132px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 220px);
+  }
+}
+
+@media (max-width: 800px) {
+  .atlas-conversation {
+    height: calc(100dvh - 238px - env(safe-area-inset-bottom));
+  }
+}

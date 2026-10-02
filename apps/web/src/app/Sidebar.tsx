@@ -14,6 +14,7 @@ export function Sidebar({
   label,
   onNavigate,
   onToggleMobile,
+  onToggleCollapsed,
   onDragNavigation,
   onMoveNavigation,
   onLogout,
@@ -28,6 +29,7 @@ export function Sidebar({
   label(value: string): string;
   onNavigate(view: View): void;
   onToggleMobile(): void;
+  onToggleCollapsed(): void;
   onDragNavigation(view: NavigationView): void;
   onMoveNavigation(view: NavigationView): void;
   onLogout(): void;
@@ -44,12 +46,22 @@ export function Sidebar({
   ];
   return (
     <aside className="sidebar" id="workspace-sidebar">
-      <div className="brand">
+      <div className="brand sidebar-header">
         <img
           className="brand-logo"
           src="/orivane-atlas.png"
           alt="Orivane Atlas"
         />
+        <button
+          type="button"
+          className="icon-button sidebar-collapse-button"
+          aria-label={t(collapsed ? "expandSidebar" : "collapseSidebar")}
+          aria-expanded={!collapsed}
+          aria-controls="workspace-sidebar"
+          onClick={onToggleCollapsed}
+        >
+          <PanelLeft size={18} />
+        </button>
       </div>
       <button
         type="button"

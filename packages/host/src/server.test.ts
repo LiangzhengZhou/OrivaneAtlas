@@ -396,9 +396,16 @@ it("project documents and files use atomic receipts, soft deletion and authentic
   const project = await (
     await call("/api/work/create", { title: "Materials", type: "PROJECT" })
   ).json();
+  const space = await (
+    await call("/api/projects/space/create", {
+      projectId: project.id,
+      title: "Explicit wiki",
+    })
+  ).json();
   const headers = { "Idempotency-Key": randomUUID() };
   const input = {
     projectId: project.id,
+    spaceId: space.spaceId,
     title: "Owned document",
     bodyMd: "# Exact\r\n- [ ] not a task",
   };
@@ -487,9 +494,20 @@ it("MCP exposes constrained tools and writes only after normal authorization and
   const project = await (
     await call("/api/work/create", { title: "MCP project", type: "PROJECT" })
   ).json();
+  const space = await (
+    await call("/api/projects/space/create", {
+      projectId: project.id,
+      title: "Explicit wiki",
+    })
+  ).json();
   const input = rpc("tools/call", {
     name: "project_document_create",
-    arguments: { projectId: project.id, title: "AI draft", bodyMd: "raw text" },
+    arguments: {
+      projectId: project.id,
+      spaceId: space.spaceId,
+      title: "AI draft",
+      bodyMd: "raw text",
+    },
   });
   expect(
     (await call("/api/mcp", input, { "Idempotency-Key": "" })).status,
@@ -1193,6 +1211,16 @@ describe("private HTTP host", () => {
       expect(run.status).toBe("SUCCEEDED");
     });
     expect(run!.updatedBy).toBe(proposal.createdBy);
+    const replay = await call("/api/ai/events/stream?id=" + run!.id);
+    expect(replay.headers.get("content-type")).toBe("text/event-stream");
+    expect(await replay.text()).toContain('"done":true');
+    expect(
+      (
+        await call("/api/ai/events/stream?id=" + run!.id, undefined, {
+          Cookie: "",
+        })
+      ).status,
+    ).toBe(401);
     expect(
       (await (await call("/api/snapshot")).json()).notes.find(
         (n: { id: string }) => n.id === own.id,
@@ -3005,4 +3033,58 @@ it("calendar authority is exposed and invalid zones are rejected before creating
     }),
   ).rejects.toThrow("VALIDATION_ERROR");
   expect(existsSync(database)).toBe(false);
+});
+
+it("incremental workspace sync sends only changed entities and safely resets unknown cursors", async () => {
+  await login();
+  const initial = await (await call("/api/sync?incremental=1")).json();
+  expect(initial.snapshot).not.toBeNull();
+  const unchanged = await (
+    await call("/api/sync?incremental=1&cursor=" + initial.cursor)
+  ).json();
+  expect(unchanged.snapshot).toBeNull();
+  expect(unchanged.changes).toEqual({ collections: {}, values: {} });
+  const task = await create("Incremental task");
+  const changed = await (
+    await call("/api/sync?incremental=1&cursor=" + initial.cursor)
+  ).json();
+  expect(changed.snapshot).toBeNull();
+  expect(changed.changes.collections.items.upserts).toEqual([task]);
+  expect(changed.changes.collections.items.removed).toEqual([]);
+  expect(changed.changes.collections.notes).toBeUndefined();
+  expect(
+    (await (await call("/api/sync?incremental=1&cursor=unknown")).json())
+      .snapshot,
+  ).not.toBeNull();
+  expect(
+    (await call("/api/sync?incremental=1", undefined, { Cookie: "" })).status,
+  ).toBe(401);
+});
+
+it("legacy project document mutations require explicit Space and cannot create a hidden Space", async () => {
+  await login();
+  const project = await (
+    await call("/api/work/create", {
+      type: "PROJECT",
+      title: "Explicit knowledge",
+    })
+  ).json();
+  const before = await (await call("/api/snapshot")).json();
+  for (const endpoint of [
+    "/api/projects/document",
+    "/api/v1/projects/document",
+    "/api/projects/document/create",
+  ])
+    expect(
+      (
+        await call(endpoint, {
+          projectId: project.id,
+          title: "Rejected",
+          bodyMd: "# Original",
+        })
+      ).status,
+    ).toBe(400);
+  const after = await (await call("/api/snapshot")).json();
+  expect(after.library).toEqual(before.library);
+  expect(after.projectMaterials).toEqual(before.projectMaterials);
 });

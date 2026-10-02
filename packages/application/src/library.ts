@@ -71,6 +71,7 @@ export class LibraryService {
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
     private readonly source: LibraryEntry["provenance"] = "HUMAN",
+    private readonly inheritedPolicy?: ContentPolicy,
   ) {}
   async rebuildWikiIndex(context: ActorContext) {
     await this.authorization.require(context, "work:update");
@@ -191,7 +192,7 @@ export class LibraryService {
       aliases,
       aiPolicy: contentPolicy(
         this.source === "HUMAN" ? input.aiPolicy : undefined,
-        old?.aiPolicy,
+        old?.aiPolicy ?? this.inheritedPolicy,
       ),
       title: requireTitle(input.title),
       id: old?.id ?? this.ids.next(),

@@ -12,6 +12,8 @@ import {
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
+import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
 import { Markdown } from "./Markdown";
 import type { WorkEditorProps } from "./WorkItemEditor";
 
@@ -75,7 +77,6 @@ export function TaskEditor({
           .sort()
       : [],
   );
-  const [prerequisiteSearch, setPrerequisiteSearch] = useState("");
   const previewId = item?.id ?? "new-task";
   const previewWorkspace =
     item?.workspaceId ?? items[0]?.workspaceId ?? "new-workspace";
@@ -281,22 +282,15 @@ export function TaskEditor({
         {(item?.type ?? createType) === "TASK" && (
           <fieldset className="field project-memberships">
             <legend>{t("desk:projects")}</legend>
-            {projects.map((p) => (
-              <label key={p.id}>
-                <input
-                  type="checkbox"
-                  checked={extraProjects.includes(p.id)}
-                  onChange={(event) =>
-                    setExtraProjects((ids) =>
-                      event.target.checked
-                        ? [...ids, p.id]
-                        : ids.filter((id) => id !== p.id),
-                    )
-                  }
-                />{" "}
-                {p.title}
-              </label>
-            ))}
+            <ProjectDrilldownPicker
+              mode="multiple"
+              projects={projects}
+              values={extraProjects}
+              disabled={busy}
+              onChange={(value) =>
+                setExtraProjects(Array.isArray(value) ? value : [])
+              }
+            />
           </fieldset>
         )}
         <details className="task-advanced">
@@ -326,39 +320,13 @@ export function TaskEditor({
                 {t("work:availability")}:{" "}
                 {t(`work:${previewAvailability.toLowerCase()}`)}
               </p>
-              <input
-                type="search"
-                aria-label={t("work:prerequisites")}
-                value={prerequisiteSearch}
-                onChange={(event) => setPrerequisiteSearch(event.target.value)}
+              <TaskEntityPicker
+                items={items}
+                values={prerequisiteIds}
+                excludedId={item?.id}
+                disabled={busy}
+                onChange={setPrerequisiteIds}
               />
-              {items
-                .filter(
-                  (candidate) =>
-                    candidate.type === "TASK" &&
-                    !candidate.deletedAt &&
-                    candidate.id !== item?.id &&
-                    (prerequisiteIds.includes(candidate.id) ||
-                      candidate.title
-                        .toLocaleLowerCase()
-                        .includes(prerequisiteSearch.toLocaleLowerCase())),
-                )
-                .map((candidate) => (
-                  <label key={candidate.id}>
-                    <input
-                      type="checkbox"
-                      checked={prerequisiteIds.includes(candidate.id)}
-                      onChange={(event) =>
-                        setPrerequisiteIds((ids) =>
-                          event.target.checked
-                            ? [...ids, candidate.id]
-                            : ids.filter((id) => id !== candidate.id),
-                        )
-                      }
-                    />{" "}
-                    {candidate.title}
-                  </label>
-                ))}
             </fieldset>
           )}
           {activationPolicy === "MANUAL" && (
@@ -444,20 +412,23 @@ export function TaskEditor({
           )}
         </label>
         {item && (
-          <p className="muted metadata">
-            {t("version", {
-              version: new Intl.NumberFormat(i18n.language).format(
-                item.version,
-              ),
-            })}
-            <span> · </span>
-            <time dateTime={item.updatedAt}>
-              {new Intl.DateTimeFormat(i18n.language, {
-                dateStyle: "medium",
-                timeStyle: "short",
-              }).format(new Date(item.updatedAt))}
-            </time>
-          </p>
+          <details className="task-metadata">
+            <summary>{t("desk:advanced")}</summary>
+            <p className="muted metadata">
+              {t("version", {
+                version: new Intl.NumberFormat(i18n.language).format(
+                  item.version,
+                ),
+              })}
+              <span> · </span>
+              <time dateTime={item.updatedAt}>
+                {new Intl.DateTimeFormat(i18n.language, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(new Date(item.updatedAt))}
+              </time>
+            </p>
+          </details>
         )}
         <div className="dialog-actions">
           {onDelete && (

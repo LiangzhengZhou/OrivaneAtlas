@@ -9,7 +9,11 @@ import type {
   IdGenerator,
   UnitOfWork,
 } from "./index";
-import { LibraryService, type LibraryStore } from "./library";
+import {
+  type LibraryInput,
+  LibraryService,
+  type LibraryStore,
+} from "./library";
 
 export interface ProjectMaterial {
   id: string;
@@ -264,6 +268,7 @@ export class ProjectService {
       title: string;
       bodyMd: string;
       provenance?: "HUMAN" | "EXTERNAL_AI";
+      aiPolicy?: LibraryInput["aiPolicy"];
     },
   ) {
     await this.authorization.require(context, "work:create");
@@ -288,70 +293,12 @@ export class ProjectService {
       spaceId: input.spaceId,
       title: input.title,
       bodyMd: input.bodyMd,
+      ...(input.aiPolicy ? { aiPolicy: input.aiPolicy } : {}),
     });
     await this.store.save(
       this.material(
         context,
         input.projectId,
-        "DOCUMENT",
-        document.title,
-        document.id,
-      ),
-      0,
-    );
-    return document;
-  }
-  async createDocument(
-    context: ActorContext,
-    input: {
-      projectId: string;
-      title: string;
-      bodyMd: string;
-      provenance?: "HUMAN" | "EXTERNAL_AI";
-    },
-  ) {
-    await this.authorization.require(context, "work:create");
-    const project = await this.project(context, input.projectId);
-    const library = new LibraryService(
-      this.library,
-      this.authorization,
-      this.clock,
-      this.ids,
-      input.provenance ?? "HUMAN",
-    );
-    let space = (await this.store.list()).find(
-      (entry) =>
-        entry.projectId === project.id &&
-        entry.kind === "SPACE" &&
-        entry.ownership === "OWNED" &&
-        !entry.deletedAt,
-    );
-    if (!space) {
-      const entry = await library.save(context, null, 0, {
-        kind: "SPACE",
-        spaceId: null,
-        title: project.title,
-        bodyMd: "",
-      });
-      space = this.material(
-        context,
-        project.id,
-        "SPACE",
-        entry.title,
-        entry.id,
-      );
-      await this.store.save(space, 0);
-    }
-    const document = await library.save(context, null, 0, {
-      kind: "DOCUMENT",
-      spaceId: space.targetId,
-      title: input.title,
-      bodyMd: input.bodyMd,
-    });
-    await this.store.save(
-      this.material(
-        context,
-        project.id,
         "DOCUMENT",
         document.title,
         document.id,

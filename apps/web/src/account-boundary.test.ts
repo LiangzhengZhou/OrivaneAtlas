@@ -126,7 +126,9 @@ it("successful reauthentication replaces identity and clears old snapshot cursor
     Response.json({ cursor: "new", snapshot: { items: [] } }),
   );
   await runtime.snapshot();
-  expect(String(fetcher.mock.lastCall?.[0])).toBe(origin + "/api/sync?cursor=");
+  expect(String(fetcher.mock.lastCall?.[0])).toBe(
+    origin + "/api/sync?incremental=1&cursor=",
+  );
 });
 
 it("does not claim successful remote logout on a network failure; retry can complete", async () => {

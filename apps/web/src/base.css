@@ -186,9 +186,6 @@
   padding: 6px 11px;
   font-size: 14px;
 }
-.sidebar-toggle {
-  order: -1;
-}
 .sidebar .mobile-navigation-toggle {
   display: none;
 }
@@ -1385,9 +1382,6 @@ svg.status-dot {
     justify-content: flex-start;
     padding: 8px 10px;
     gap: 6px;
-  }
-  .sidebar-toggle {
-    display: none;
   }
   .sidebar .mobile-navigation-toggle {
     display: flex;

@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
+  "version": "2.0.1",
   "scope": "arm64ReleaseRuntimeClasspath resolved by offline Gradle; Android SDK/platform and build tools remain separate",
   "dependencies": [
     {

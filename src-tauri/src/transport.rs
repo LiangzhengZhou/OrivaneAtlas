@@ -90,6 +90,8 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/recurrences/generate",
             "/api/recurrences/backfill",
             "/api/note/save",
+            "/api/note/promote",
+            "/api/note/link-space",
             "/api/note/delete",
         ][..]
     } else {
@@ -993,6 +995,15 @@ mod tests {
             assert!(endpoint("https://example.com", path, false).is_err());
         }
         assert!(endpoint("https://example.com", "/api/projects/space/unknown", true).is_err());
+    }
+    #[test]
+    fn capture_knowledge_mutations_require_post_and_stream_uses_fallback() {
+        for path in ["/api/note/promote", "/api/note/link-space"] {
+            assert!(endpoint("https://example.com", path, true).is_ok());
+            assert!(endpoint("https://example.com", path, false).is_err());
+        }
+        assert!(endpoint("https://example.com", "/api/ai/events/stream?id=run", false).is_err());
+        assert!(endpoint("https://example.com", "/api/sync?incremental=1&cursor=abc", false).is_ok());
     }
     #[test]
     fn switching_server_discards_cookie() {

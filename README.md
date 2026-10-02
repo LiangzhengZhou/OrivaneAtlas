@@ -10,7 +10,7 @@
 
 ## What it is
 
-Orivane Atlas 2.0.0 is a self-hostable, knowledge-centric workspace with optional AI assistance. Projects organize work and bind knowledge spaces; documents retain Markdown, revisions, aliases and Wiki relationships. Web and native clients connect to the same server; the server remains the source of truth while clients may keep local drafts.
+Orivane Atlas 2.0.1 is a self-hostable, knowledge-centric workspace with optional AI assistance. Projects organize work and bind knowledge spaces; documents retain Markdown, revisions, aliases and Wiki relationships. Web and native clients connect to the same server; the server remains the source of truth while clients may keep local drafts.
 
 AI integration is optional. Orivane Atlas is not a handoff-only project: this repository is for people who want to run, use, extend, or contribute to the product.
 
@@ -65,7 +65,7 @@ For local development, read [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). The docu
 
 Windows x64 and Android arm64 packages are published on [GitHub Releases](https://github.com/LiangzhengZhou/OrivaneAtlas/releases). Starting with 0.0.4, native clients include **Check for updates → Download and install**. Windows verifies signed update packages; Android uses a dedicated release key and asks the system installer for confirmation. Windows does not yet have a publicly trusted Authenticode publisher certificate and may display an unknown-publisher warning.
 
-Version 2.0.0 includes newly built Windows x64 and Android arm64 release packages.
+Version 2.0.1 includes newly built Windows x64 and Android arm64 release packages.
 Cargo check and release-profile tests passed using the existing isolated Rust
 toolchain; Windows updater signatures and the existing Android production
 certificate were verified. Installed-app upgrade and Android physical-device

@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.0.1]
+
+Interaction consistency and product cleanup release.
+
+- Shared current-level Project/Document drill-down selectors across editing, filters, AI scope and workflows.
+- Sidebar collapse controls remain in the Sidebar; document popovers work on desktop and mobile.
+- Atlas opens conversations with explicit context and a sticky composer; configuration and Activity live in Settings.
+- Notes/Journal support explicit-Space promotion, linking and Wiki references/backlinks without losing Markdown.
+- Project Knowledge opens Pages in DocumentWorkspace; implicit Space creation and legacy editors are removed.
+- Entity/action pending, optimistic Task status rollback and cursor incremental transport preserve responsive editing.
+- Browser SSE uses authenticated streaming with native polling fallback; graphs have contextual scope, Space clusters and optional external blockers.
+- No new database migration. Upgrade the matching server before clients to enable the new commands and streaming/sync endpoints.
+
+
 ## [2.0.0]
 
 Major release of the unified knowledge and Assistant platform. Native packages

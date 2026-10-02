@@ -67,3 +67,44 @@ and its old layout worker are removed; there is no parallel legacy graph runtime
 Old independent project documents/graph/timeline/activity tabs are consolidated
 into current navigation. The former long parent select and obsolete AI console
 are replaced by the existing hierarchy picker and Assistant/settings flows.
+
+## Interaction consistency upgrade (2026-10-02)
+
+Project parent, Task membership/filter, AI configuration scope, plan preview and
+recurrence membership share ProjectDrilldownPicker on HierarchyPicker. Document
+parent uses the same browser restricted to its Space and excluding its own branch.
+Search only inspects direct children; selection chips are separate from browsing.
+Space selection groups recent/project/other spaces and keeps AI configuration
+scope separate from explicit conversation context.
+
+Atlas's main route renders conversation sessions, messages, approvals, visible
+ContextBar and a sticky composer. Configuration and execution Activity are in
+Settings. Browser fetch SSE is authorized for the owning principal on initial
+access and each emitted frame. Native/disconnection fallback polls; replay events
+are bounded transient memory, and durable AgentSession messages remain the source
+of truth after restart.
+
+NoteKnowledgeService promotes to an explicit-Space Document under the existing
+SQLite request transaction, preserving text/policy/provenance and adding a source
+KnowledgeLink. Optional source archival uses soft deletion and version checks.
+Linking to Space creates no Document. Note/Journal Wiki references are derived
+with wiki-core and shown as references/backlinks; no schema or PostgreSQL Note
+adapter is introduced. The deprecated HTTP project-document command requires
+spaceId; legacy plan publication without an explicit Space cannot silently create
+one.
+
+Workspace sync accepts incremental=1 and a cursor. An actor/workspace-scoped,
+bounded snapshot cache returns collection upserts/removals and scalar changes;
+unknown cursors reset to a full snapshot. Browser reconciliation preserves unchanged
+entity references. The server still assembles the authoritative snapshot: this is
+an incremental wire protocol, not database change capture or a reliable event bus.
+Task status is optimistic with version-aware rollback, action pending blocks only
+the affected task, and committed saves close the matching editor without invoking
+the discard guard.
+
+Knowledge Graph defaults to Document/local, Space/space, Project/project or
+Workspace/workspace, resolves explicit search selections and groups broad scopes
+by Space. Project dependency graphs optionally display one-hop external blockers,
+not their entire remote dependency tree. Old #knowledge/#dependencies bookmarks
+redirect to Library or the Tasks dependency view; generic relations remain advanced
+Settings tools. NoteEditor and ProjectParentTree are removed.

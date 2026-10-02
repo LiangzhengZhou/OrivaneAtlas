@@ -1,6 +1,6 @@
 {
   "product": "Orivane Atlas",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "scope": "Installed JavaScript/build dependencies on Windows; not a complete native artifact SBOM",
   "dependencies": [
     {

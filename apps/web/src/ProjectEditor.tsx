@@ -8,7 +8,7 @@ import {
 } from "@arclattice/domain";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ProjectParentTree } from "./ProjectParentTree";
+import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 import type { WorkEditorProps } from "./WorkItemEditor";
 
 export function ProjectEditor({
@@ -180,13 +180,25 @@ export function ProjectEditor({
             </select>
           </label>
         )}
-        <ProjectParentTree
+        <ProjectDrilldownPicker
+          mode="single"
           projects={projects}
-          candidates={candidates}
+          disabledIds={
+            new Set(
+              projects
+                .filter(
+                  (project) =>
+                    !candidates.some(
+                      (candidate) => candidate.id === project.id,
+                    ),
+                )
+                .map((project) => project.id),
+            )
+          }
           value={parent}
           disabled={busy}
           onChange={(value) => {
-            setParent(value);
+            setParent(typeof value === "string" ? value : "");
           }}
         />
         {item && (
@@ -233,27 +245,27 @@ export function ProjectEditor({
               ))}
             </select>
             {resolution === "MOVE" && (
-              <select
-                value={destination}
-                onChange={(event) => setDestination(event.target.value)}
-              >
-                <option value="">
-                  {t("desk:completionResolution.choose")}
-                </option>
-                {projects
-                  .filter(
-                    (project) =>
-                      project.id !== item?.id &&
-                      !projectAncestors(project, projects).some(
-                        (ancestor) => ancestor.id === item?.id,
-                      ),
+              <ProjectDrilldownPicker
+                projects={projects}
+                value={destination || null}
+                mode="single"
+                disabledIds={
+                  new Set(
+                    projects
+                      .filter(
+                        (project) =>
+                          project.id === item?.id ||
+                          projectAncestors(project, projects).some(
+                            (ancestor) => ancestor.id === item?.id,
+                          ),
+                      )
+                      .map((project) => project.id),
                   )
-                  .map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.title}
-                    </option>
-                  ))}
-              </select>
+                }
+                onChange={(value) =>
+                  setDestination(typeof value === "string" ? value : "")
+                }
+              />
             )}
           </fieldset>
         )}
