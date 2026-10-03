@@ -67,3 +67,6 @@ scripts/offsite-backup.mjs
 scripts/open-workbench.ps1
 scripts/verify-release*.mjs
 *.tsbuildinfo
+
+# Generated Kotlin compiler session files
+src-tauri/gen/android/buildSrc/.kotlin/

@@ -1,9 +1,9 @@
 import {
   isExecutionActive,
-  isReady,
   type WorkEdge,
   type WorkItem,
 } from "@arclattice/domain";
+import { taskDerivedIndex } from "./task-index";
 
 export function selectTasks(
   items: readonly WorkItem[],
@@ -11,6 +11,7 @@ export function selectTasks(
   today: string,
   isArchived: (item: WorkItem) => boolean,
 ) {
+  const derived = taskDerivedIndex(items, edges, today);
   const tasks = items.filter(
     (item) => item.type === "TASK" && !item.deletedAt && !isArchived(item),
   );
@@ -18,8 +19,9 @@ export function selectTasks(
   const openActiveTasks = activeTasks.filter(
     (item) => item.status !== "DONE" && item.status !== "CANCELED",
   );
-  const readyTasks = openActiveTasks.filter((item) =>
-    isReady(item, items, edges, today),
+  const readyTasks = openActiveTasks.filter(
+    (item) =>
+      item.status === "TODO" && !derived.blockersByTaskId.get(item.id)?.length,
   );
   const inProgressTasks = openActiveTasks.filter(
     (item) => item.status === "IN_PROGRESS",

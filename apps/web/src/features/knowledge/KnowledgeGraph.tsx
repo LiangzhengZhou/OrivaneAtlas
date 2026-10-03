@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../../bootstrap";
 import { GraphViewport } from "../graph/GraphViewport";
 import { knowledgeForceLayout } from "../graph/layouts/KnowledgeForceLayout";
+import { useStructuralLayout } from "../graph/layouts/useStructuralLayout";
 import { hierarchyPath } from "../hierarchy/hierarchy";
 
 export function KnowledgeGraph({
@@ -101,15 +102,17 @@ export function KnowledgeGraph({
       source: link.sourceDocumentId,
       target: link.targetDocumentId!,
     }));
-  const positions = knowledgeForceLayout([...ids], edges);
+  const positions = useStructuralLayout([...ids], edges, knowledgeForceLayout);
+  const positionsById = new Map(
+    positions.map((position) => [position.id, position.position]),
+  );
   const nodes: Node[] = [];
   if (scope === "local") {
     nodes.push(
       ...visible.map((entry) => ({
         id: entry.id,
         data: { label: entry.title },
-        position: positions.find((position) => position.id === entry.id)!
-          .position,
+        position: positionsById.get(entry.id)!,
       })),
     );
   } else {
@@ -164,82 +167,89 @@ export function KnowledgeGraph({
   }
   return (
     <section className="graph-section">
-      <div className="action-row">
-        <input
-          aria-label={zh ? "图谱搜索" : "Graph search"}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        {(["local", "space", "project", "workspace"] as const).map((value) => (
-          <button
-            type="button"
-            className="chip"
-            aria-pressed={scope === value}
-            key={value}
-            onClick={() => setScope(value)}
-          >
-            {zh
-              ? {
-                  local: "局部",
-                  space: "空间",
-                  project: "项目",
-                  workspace: "工作区",
-                }[value]
-              : value}
-          </button>
-        ))}
-        <button
-          type="button"
-          className="chip"
-          onClick={() => setHops(hops === 1 ? 2 : 1)}
-        >
-          {hops} hop
-        </button>
-      </div>
-      {query && (
-        <div
-          role="listbox"
-          aria-label={zh ? "图谱搜索结果" : "Graph search results"}
-        >
-          {documents
-            .filter((entry) =>
-              entry.title
-                .toLocaleLowerCase()
-                .includes(query.toLocaleLowerCase()),
-            )
-            .map((entry) => (
+      <GraphViewport
+        toolbar={
+          <>
+            <div className="action-row">
+              <input
+                aria-label={zh ? "图谱搜索" : "Graph search"}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              {(["local", "space", "project", "workspace"] as const).map(
+                (value) => (
+                  <button
+                    type="button"
+                    className="chip"
+                    aria-pressed={scope === value}
+                    key={value}
+                    onClick={() => setScope(value)}
+                  >
+                    {zh
+                      ? {
+                          local: "局部",
+                          space: "空间",
+                          project: "项目",
+                          workspace: "工作区",
+                        }[value]
+                      : value}
+                  </button>
+                ),
+              )}
               <button
                 type="button"
-                role="option"
-                aria-selected={entry.id === focusId}
-                className="text-button"
-                key={entry.id}
-                onClick={() => {
-                  setFocusId(entry.id);
-                  setQuery("");
-                }}
+                className="chip"
+                onClick={() => setHops(hops === 1 ? 2 : 1)}
               >
-                {entry.title} ·{" "}
-                {
-                  snapshot.library.find((space) => space.id === entry.spaceId)
-                    ?.title
-                }
-                {" / "}
-                {hierarchyPath(
-                  documents.map((document) => ({
-                    id: document.id,
-                    title: document.title,
-                    parentId: document.parentDocumentId ?? null,
-                  })),
-                  entry.id,
-                )
-                  .map((ancestor) => ancestor.title)
-                  .join(" / ")}
+                {hops} hop
               </button>
-            ))}
-        </div>
-      )}
-      <GraphViewport
+            </div>
+            {query && (
+              <div
+                role="listbox"
+                aria-label={zh ? "图谱搜索结果" : "Graph search results"}
+              >
+                {documents
+                  .filter((entry) =>
+                    entry.title
+                      .toLocaleLowerCase()
+                      .includes(query.toLocaleLowerCase()),
+                  )
+                  .map((entry) => (
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={entry.id === focusId}
+                      className="text-button"
+                      key={entry.id}
+                      onClick={() => {
+                        setFocusId(entry.id);
+                        setQuery("");
+                      }}
+                    >
+                      {entry.title} ·{" "}
+                      {
+                        snapshot.library.find(
+                          (space) => space.id === entry.spaceId,
+                        )?.title
+                      }
+                      {" / "}
+                      {hierarchyPath(
+                        documents.map((document) => ({
+                          id: document.id,
+                          title: document.title,
+                          parentId: document.parentDocumentId ?? null,
+                        })),
+                        entry.id,
+                      )
+                        .map((ancestor) => ancestor.title)
+                        .join(" / ")}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </>
+        }
         nodes={nodes}
         edges={edges}
         onOpen={(id) => {

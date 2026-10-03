@@ -34,6 +34,14 @@ export function DocumentDrilldownPicker({
     }));
   return (
     <HierarchyPicker
+      kind="DOCUMENT"
+      accessibleIds={
+        new Set(
+          documents
+            .filter((entry) => entry.kind === "DOCUMENT" && !entry.deletedAt)
+            .map((entry) => entry.id),
+        )
+      }
       entries={entries}
       mode="single"
       values={value ? [value] : []}

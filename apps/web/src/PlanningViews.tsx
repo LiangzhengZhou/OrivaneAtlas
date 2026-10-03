@@ -8,7 +8,6 @@ import {
   effectiveCategoryId,
   formatCalendarDate,
   projectLifecycle,
-  projectScope,
   shiftCalendarMonth,
   type WorkItem,
 } from "@arclattice/domain";
@@ -18,9 +17,136 @@ import {
   ChevronRight,
   FolderKanban,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import {
+  memo,
+  type ReactNode,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { CategoryManager } from "./CategoryManager";
+import {
+  projectProgressIndex,
+  projectTreeIndex,
+} from "./features/projects/project-tree";
+
+const ProjectRow = memo(function ProjectRow({
+  project,
+  completed,
+  unfinished,
+  canceled,
+  children,
+  expanded,
+  busy,
+  archived,
+  inheritedTitle,
+  onToggle,
+  onOpen,
+  onTasks,
+  onOrganize,
+}: {
+  project: WorkItem;
+  completed: number;
+  unfinished: number;
+  canceled: number;
+  children: boolean;
+  expanded: boolean;
+  busy: boolean;
+  archived: boolean;
+  inheritedTitle: string | undefined;
+  onToggle(id: string): void;
+  onOpen(item: WorkItem): void;
+  onTasks(id: string): void;
+  onOrganize(item: WorkItem, action: "archive" | "unarchive"): void;
+}) {
+  const { t } = useTranslation("desk");
+  const scoped = { completed, unfinished, canceled },
+    actionableTotal = completed + unfinished;
+  return (
+    <section
+      className="panel project-card project-compact-row"
+      key={project.id}
+    >
+      {children ? (
+        <button
+          type="button"
+          className="project-tree-toggle"
+          aria-label={t(!expanded ? "expandProject" : "collapseProject", {
+            title: project.title,
+          })}
+          aria-expanded={expanded}
+          onClick={() => onToggle(project.id)}
+        >
+          {!expanded ? "▸" : "▾"}
+        </button>
+      ) : (
+        <FolderKanban size={16} />
+      )}
+      <button
+        type="button"
+        className="project-title"
+        onClick={() => onOpen(project)}
+      >
+        <h2>{project.title}</h2>
+      </button>
+      <span className="priority">
+        {t("projectLifecycles." + projectLifecycle(project))}
+      </span>
+      <span
+        className="project-compact-progress"
+        title={t("projectProgress", scoped)}
+      >
+        <progress
+          aria-label={t("completion")}
+          max={Math.max(actionableTotal, 1)}
+          value={scoped.completed}
+        />
+        <span>
+          {scoped.completed} / {actionableTotal}
+        </span>
+      </span>
+      <div className="project-card-actions">
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => onOpen(project)}
+        >
+          {t("openProject")}
+        </button>
+        <button
+          type="button"
+          className="text-button"
+          disabled={busy || !!inheritedTitle}
+          title={
+            inheritedTitle
+              ? t("inheritedArchive", { title: inheritedTitle })
+              : undefined
+          }
+          onClick={() =>
+            onOrganize(project, archived ? "unarchive" : "archive")
+          }
+        >
+          {t(archived ? "unarchive" : "archive")}
+        </button>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => onTasks(project.id)}
+        >
+          {t("projectTasks")}
+          <ArrowUpRight size={14} />
+        </button>
+      </div>
+      {inheritedTitle && (
+        <small className="project-archive-explanation">
+          {t("inheritedArchive", { title: inheritedTitle })}
+        </small>
+      )}
+    </section>
+  );
+});
 
 export function ProjectView({
   categories,
@@ -49,109 +175,58 @@ export function ProjectView({
 }) {
   const { t } = useTranslation("desk");
   const [showArchived, setShowArchived] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const visibleProjects = projects.filter(
-    (project) => isArchived(project) === showArchived,
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const visibleProjects = useMemo(
+    () => projects.filter((project) => isArchived(project) === showArchived),
+    [projects, isArchived, showArchived],
+  );
+  const childrenByParent = useMemo(
+    () => projectTreeIndex(visibleProjects),
+    [visibleProjects],
+  );
+  const progressById = useMemo(() => projectProgressIndex(items), [items]);
+  const actions = useRef({ onOpen, onTasks, onOrganize });
+  actions.current = { onOpen, onTasks, onOrganize };
+  const openRow = useCallback(
+    (project: WorkItem) => actions.current.onOpen(project),
+    [],
+  );
+  const taskRow = useCallback((id: string) => actions.current.onTasks(id), []);
+  const organizeRow = useCallback(
+    (project: WorkItem, action: "archive" | "unarchive") =>
+      actions.current.onOrganize(project, action),
+    [],
+  );
+  const toggleRow = useCallback(
+    (id: string) =>
+      setExpanded((old) => {
+        const next = new Set(old);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }),
+    [],
   );
   const renderCard = (project: WorkItem) => {
-    const inherited = archiveSource(project);
-    const scoped = projectScope(project, items, "SUBTREE");
-    const actionableTotal = scoped.completed + scoped.unfinished;
-    const children = visibleProjects.some(
-      (candidate) => candidate.parentProjectId === project.id,
-    );
+    const progress = progressById.get(project.id);
     return (
-      <section
-        className="panel project-card project-compact-row"
-        key={project.id}
-      >
-        {children ? (
-          <button
-            type="button"
-            className="project-tree-toggle"
-            aria-label={t(
-              collapsed.has(project.id) ? "expandProject" : "collapseProject",
-              { title: project.title },
-            )}
-            aria-expanded={!collapsed.has(project.id)}
-            onClick={() =>
-              setCollapsed((old) => {
-                const next = new Set(old);
-                if (next.has(project.id)) next.delete(project.id);
-                else next.add(project.id);
-                return next;
-              })
-            }
-          >
-            {collapsed.has(project.id) ? "▸" : "▾"}
-          </button>
-        ) : (
-          <FolderKanban size={16} />
-        )}
-        <button
-          type="button"
-          className="project-title"
-          onClick={() => onOpen(project)}
-        >
-          <h2>{project.title}</h2>
-        </button>
-        <span className="priority">
-          {t("projectLifecycles." + projectLifecycle(project))}
-        </span>
-        <span
-          className="project-compact-progress"
-          title={t("projectProgress", scoped)}
-        >
-          <progress
-            aria-label={t("completion")}
-            max={Math.max(actionableTotal, 1)}
-            value={scoped.completed}
-          />
-          <span>
-            {scoped.completed} / {actionableTotal}
-          </span>
-        </span>
-        <div className="project-card-actions">
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => onOpen(project)}
-          >
-            {t("openProject")}
-          </button>
-          <button
-            type="button"
-            className="text-button"
-            disabled={busy || !!inherited}
-            title={
-              inherited
-                ? t("inheritedArchive", { title: inherited.title })
-                : undefined
-            }
-            onClick={() =>
-              onOrganize(project, isArchived(project) ? "unarchive" : "archive")
-            }
-          >
-            {t(isArchived(project) ? "unarchive" : "archive")}
-          </button>
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => onTasks(project.id)}
-          >
-            {t("projectTasks")}
-            <ArrowUpRight size={14} />
-          </button>
-        </div>
-        {inherited && (
-          <small className="project-archive-explanation">
-            {t("inheritedArchive", { title: inherited.title })}
-          </small>
-        )}
-      </section>
+      <ProjectRow
+        project={project}
+        completed={progress?.completed ?? 0}
+        unfinished={progress?.unfinished ?? 0}
+        canceled={progress?.canceled ?? 0}
+        children={!!childrenByParent.get(project.id)?.length}
+        expanded={expanded.has(project.id)}
+        busy={busy}
+        archived={showArchived}
+        inheritedTitle={archiveSource(project)?.title}
+        onToggle={toggleRow}
+        onOpen={openRow}
+        onTasks={taskRow}
+        onOrganize={organizeRow}
+      />
     );
   };
-  const visibleIds = new Set(visibleProjects.map((p) => p.id));
   const seen = new Set<string>();
   const renderTree = (nodes: WorkItem[]): ReactNode => (
     <ul className="project-tree-list">
@@ -160,39 +235,43 @@ export function ProjectView({
         .map((project) => {
           if (seen.has(project.id)) return null;
           seen.add(project.id);
-          const children = visibleProjects.filter(
-            (p) => p.parentProjectId === project.id && !seen.has(p.id),
-          );
-          const childTree = renderTree(children);
+          const children = childrenByParent.get(project.id) ?? [];
           return (
             <li key={project.id}>
               {renderCard(project)}
-              <div hidden={collapsed.has(project.id)}>{childTree}</div>
+              {expanded.has(project.id) && children.length > 0
+                ? renderTree(children)
+                : null}
             </li>
           );
         })}
     </ul>
   );
-  const roots = visibleProjects.filter(
-    (p) => !p.parentProjectId || !visibleIds.has(p.parentProjectId),
-  );
+  const roots = childrenByParent.get(null) ?? [];
   const sections = [
     ...categories
       .filter((category) => !category.deletedAt)
       .map((category) => ({ id: category.id, name: category.name })),
     { id: null, name: t("uncategorized") },
   ];
+  const liveCategoryIds = new Set(
+    categories
+      .filter((category) => !category.deletedAt)
+      .map((category) => category.id),
+  );
+  const rootsByCategory = new Map<string | null, WorkItem[]>();
+  for (const project of roots) {
+    const inheritedCategory = effectiveCategoryId(project, items),
+      categoryId =
+        inheritedCategory && liveCategoryIds.has(inheritedCategory)
+          ? inheritedCategory
+          : null;
+    const grouped = rootsByCategory.get(categoryId) ?? [];
+    grouped.push(project);
+    rootsByCategory.set(categoryId, grouped);
+  }
   const hierarchy = sections.map((category) => {
-    const categoryRoots = roots.filter(
-      (project) =>
-        (categories.some(
-          (entry) =>
-            !entry.deletedAt &&
-            entry.id === effectiveCategoryId(project, items),
-        )
-          ? effectiveCategoryId(project, items)
-          : null) === category.id,
-    );
+    const categoryRoots = rootsByCategory.get(category.id) ?? [];
     if (!categoryRoots.length) return null;
     return (
       <section key={category.id ?? "uncategorized"}>

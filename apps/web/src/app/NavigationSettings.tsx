@@ -3,6 +3,7 @@ import {
   type NavigationPreference,
   type NavigationViewId,
 } from "@arclattice/domain";
+import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -19,6 +20,7 @@ export function NavigationSettings({
 }) {
   const { t } = useTranslation("desk");
   const [draft, setDraft] = useState(preference);
+  const [dragged, setDragged] = useState<NavigationViewId | null>(null);
   const conflict = draft.version !== preference.version;
   function reorder(id: NavigationViewId, delta: number, mobile: boolean) {
     const order = [...(mobile ? draft.mobile.pinned : draft.desktop.order)];
@@ -38,21 +40,55 @@ export function NavigationSettings({
       <h2>{t("customizeNavigation")}</h2>
       <h3>{t("desktopNavigation")}</h3>
       {draft.desktop.order.map((id) => (
-        <div className="organization-toolbar" key={id}>
+        <div className="organization-toolbar navigation-reorder-row" key={id}>
+          <button
+            type="button"
+            className="icon-button navigation-drag-handle"
+            draggable={!busy}
+            aria-label={label(id)}
+            onDragStart={() => setDragged(id)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => {
+              if (dragged) {
+                const order = draft.desktop.order;
+                reorder(
+                  dragged,
+                  order.indexOf(id) - order.indexOf(dragged),
+                  false,
+                );
+                setDragged(null);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.altKey &&
+                (event.key === "ArrowUp" || event.key === "ArrowDown")
+              ) {
+                event.preventDefault();
+                reorder(id, event.key === "ArrowUp" ? -1 : 1, false);
+              }
+            }}
+          >
+            <GripVertical size={16} />
+          </button>
           <span>{label(id)}</span>
           <button
             type="button"
+            className="icon-button"
+            disabled={busy}
             aria-label={t("moveUp", { name: label(id) })}
             onClick={() => reorder(id, -1, false)}
           >
-            ↑
+            <ChevronUp size={16} />
           </button>
           <button
             type="button"
+            className="icon-button"
+            disabled={busy}
             aria-label={t("moveDown", { name: label(id) })}
             onClick={() => reorder(id, 1, false)}
           >
-            ↓
+            <ChevronDown size={16} />
           </button>
           <label>
             <input
@@ -99,21 +135,55 @@ export function NavigationSettings({
       <h3>{t("mobileNavigation")}</h3>
       <p>{t("mobileNavigationHint")}</p>
       {draft.mobile.pinned.map((id) => (
-        <div className="organization-toolbar" key={id}>
+        <div className="organization-toolbar navigation-reorder-row" key={id}>
+          <button
+            type="button"
+            className="icon-button navigation-drag-handle"
+            draggable={!busy}
+            aria-label={label(id)}
+            onDragStart={() => setDragged(id)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => {
+              if (dragged) {
+                const order = draft.mobile.pinned;
+                reorder(
+                  dragged,
+                  order.indexOf(id) - order.indexOf(dragged),
+                  true,
+                );
+                setDragged(null);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.altKey &&
+                (event.key === "ArrowUp" || event.key === "ArrowDown")
+              ) {
+                event.preventDefault();
+                reorder(id, event.key === "ArrowUp" ? -1 : 1, true);
+              }
+            }}
+          >
+            <GripVertical size={16} />
+          </button>
           <span>{label(id)}</span>
           <button
             type="button"
+            className="icon-button"
+            disabled={busy}
             aria-label={t("moveUp", { name: label(id) })}
             onClick={() => reorder(id, -1, true)}
           >
-            ↑
+            <ChevronUp size={16} />
           </button>
           <button
             type="button"
+            className="icon-button"
+            disabled={busy}
             aria-label={t("moveDown", { name: label(id) })}
             onClick={() => reorder(id, 1, true)}
           >
-            ↓
+            <ChevronDown size={16} />
           </button>
         </div>
       ))}

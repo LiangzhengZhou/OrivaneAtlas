@@ -26,7 +26,7 @@ it("restores a real pre-v15 PostgreSQL backup into an independent data directory
       expect((await stat(backup)).isDirectory()).toBe(true);
     }),
   );
-  expect(await h.client(name, (client) => inspectSchema(client))).toBe(17);
+  expect(await h.client(name, (client) => inspectSchema(client))).toBe(19);
   await h.cluster().withRestoredSnapshot(backup, async (restored) => {
     expect(
       (
@@ -57,7 +57,9 @@ it("restores a real pre-v15 PostgreSQL backup into an independent data directory
     (await h.query(name, "SELECT name FROM arclattice.workspace")).rows[0]
       ?.name,
   ).toBe("Original");
-  expect(await h.client(name, (client) => inspectSchema(client))).toBe(17);
+  expect(await h.client(name, (client) => inspectSchema(client))).toBe(
+    migrations.length,
+  );
 }, 180000);
 
 it("restores PostgreSQL aliases, hierarchy, Wiki index and sessions through real application adapters", async () => {

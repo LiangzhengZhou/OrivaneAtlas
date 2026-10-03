@@ -87,7 +87,9 @@
     "CREATED": "已创建任务",
     "BACKFILLED": "已补录",
     "completedAt": "实际完成时间（选填，设备本地时间）",
-    "backfill": "补录本次任务"
+    "backfill": "补录本次任务",
+    "OPEN": "待完成",
+    "COMPLETED": "已完成"
   },
   "categories": {
     "manage": "管理项目分类",
@@ -310,5 +312,11 @@
     "INBOX": "移出本项目（保留其他项目归属）",
     "MOVE": "移到其他项目"
   },
-  "uncategorized": "未分类"
+  "uncategorized": "未分类",
+  "createProject": "新建项目",
+  "expandGraph": "展开图谱",
+  "permanentDelete": "永久删除",
+  "permanentDeleteConfirm": "永久删除“{{title}}”？此操作无法撤销。",
+  "movedToTrash": "已移至回收站",
+  "selectedEntity": "选中实体"
 }

@@ -1,3 +1,4 @@
+mod notifications;
 mod session_store;
 mod transport;
 #[cfg(windows)]
@@ -35,6 +36,18 @@ pub fn run() {
             })
             .build(),
     );
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(
+        tauri::plugin::Builder::<tauri::Wry>::new("atlas-notifications")
+            .setup(|app, api| {
+                use tauri::Manager;
+                let handle =
+                    api.register_android_plugin("app.orivane.atlas", "AtlasNotificationPlugin")?;
+                app.manage(notifications::AndroidNotifications(handle));
+                Ok(())
+            })
+            .build(),
+    );
     builder
         .setup(|app| {
             #[cfg(windows)]
@@ -57,6 +70,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            notifications::notification_permission,
+            notifications::notification_request_permission,
+            notifications::notification_reconcile,
+            notifications::notification_cancel,
             update::check_app_update,
             update::install_app_update,
             transport::configure_server,

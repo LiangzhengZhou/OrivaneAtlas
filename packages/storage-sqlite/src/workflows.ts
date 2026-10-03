@@ -1,5 +1,9 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { WorkflowRecord, WorkTransaction } from "@arclattice/application";
+import {
+  normalizeWorkflowRecords,
+  type WorkflowRecord,
+  type WorkTransaction,
+} from "@arclattice/application";
 import { DomainError } from "@arclattice/domain";
 export function workflowPort(
   db: DatabaseSync,
@@ -9,18 +13,20 @@ export function workflowPort(
   return {
     workflows: async () => {
       guard();
-      return db
-        .prepare(
-          "SELECT id,workspace_id AS workspaceId,version,created_by AS createdBy,updated_by AS updatedBy,created_at AS createdAt,updated_at AS updatedAt,deleted_at AS deletedAt,payload FROM workflow_record WHERE workspace_id=? ORDER BY created_at,id",
-        )
-        .all(workspaceId)
-        .map(
-          (row) =>
-            ({
-              ...row,
-              payload: readWorkflowPayload(String(row.payload)),
-            }) as WorkflowRecord,
-        );
+      return normalizeWorkflowRecords(
+        db
+          .prepare(
+            "SELECT id,workspace_id AS workspaceId,version,created_by AS createdBy,updated_by AS updatedBy,created_at AS createdAt,updated_at AS updatedAt,deleted_at AS deletedAt,payload FROM workflow_record WHERE workspace_id=? ORDER BY created_at,id",
+          )
+          .all(workspaceId)
+          .map(
+            (row) =>
+              ({
+                ...row,
+                payload: readWorkflowPayload(String(row.payload)),
+              }) as WorkflowRecord,
+          ),
+      );
     },
     saveWorkflow: async (r, expected) => {
       guard();

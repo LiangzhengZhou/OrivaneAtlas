@@ -15,6 +15,7 @@ import {
   projection,
   workFields,
 } from "./fields";
+import { purgeRelations } from "./purge";
 import { workflowPort } from "./workflows";
 
 function values<T extends object>(
@@ -285,6 +286,30 @@ export function repository(client: PoolClient, workspaceId: string) {
         await memberships(copy);
       });
     },
+    purge: (id, expected) =>
+      schedule(async () => {
+        const old = await get(id);
+        if (old.version !== expected) throw new DomainError("VERSION_CONFLICT");
+        if (!old.deletedAt) throw new DomainError("VALIDATION_ERROR");
+        await purgeRelations(client, workspaceId, { kind: "WORK", id });
+        await client.query(
+          "DELETE FROM arclattice.work_edge WHERE workspace_id=$1 AND (from_id=$2 OR to_id=$2)",
+          [workspaceId, id],
+        );
+        await client.query(
+          "DELETE FROM arclattice.task_project WHERE workspace_id=$1 AND (task_id=$2 OR project_id=$2)",
+          [workspaceId, id],
+        );
+        if (
+          (
+            await client.query(
+              "DELETE FROM arclattice.work_item WHERE workspace_id=$1 AND id=$2 AND version=$3 AND deleted_at IS NOT NULL",
+              [workspaceId, id, expected],
+            )
+          ).rowCount !== 1
+        )
+          throw new DomainError("VERSION_CONFLICT");
+      }),
     addEdge: (edge) => {
       const copy = { ...edge };
       return schedule(async () => {
@@ -322,6 +347,7 @@ export function repository(client: PoolClient, workspaceId: string) {
         fromId: event.fromId ?? null,
         toId: event.toId ?? null,
         edgeType: event.edgeType ?? null,
+        reason: event.reason ?? null,
       };
       return schedule(async () => {
         scope(copy);

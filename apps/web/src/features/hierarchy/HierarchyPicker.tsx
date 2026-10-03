@@ -1,8 +1,13 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AnchoredFloatingSurface } from "../../app/AnchoredFloatingSurface";
 import { currentLevel, type HierarchyEntry, hierarchyPath } from "./hierarchy";
+import { PickerIdentityContext } from "./PickerIdentityContext";
+import { cleanRecent, recentKey } from "./recent";
 
 export type HierarchyPickerProps = {
+  kind?: "PROJECT" | "DOCUMENT";
+  accessibleIds?: ReadonlySet<string>;
   entries: readonly HierarchyEntry[];
   mode: "single" | "multiple";
   values: readonly string[];
@@ -17,6 +22,8 @@ export type HierarchyPickerProps = {
 
 export function HierarchyPicker({
   entries,
+  kind = "PROJECT",
+  accessibleIds,
   mode,
   values,
   excludedIds,
@@ -31,42 +38,51 @@ export function HierarchyPicker({
   const zh = i18n.language.startsWith("zh");
   const searchId = useId();
   const root = useRef<HTMLElement>(null);
+  const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [parentId, setParentId] = useState<string | null>(
     initialParentId ?? null,
   );
-  useEffect(() => {
-    if (!open) return;
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.stopPropagation();
-      setOpen(false);
-      root.current
-        ?.querySelector<HTMLButtonElement>(
-          ".hierarchy-selected > button:last-child",
-        )
-        ?.focus();
-    };
-    const outside = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
-    };
-    root.current?.addEventListener("keydown", escape);
-    document.addEventListener("pointerdown", outside);
-    return () => {
-      root.current?.removeEventListener("keydown", escape);
-      document.removeEventListener("pointerdown", outside);
-    };
-  }, [open]);
   const [query, setQuery] = useState("");
-  const [recent, setRecent] = useState<string[]>([]);
+  const identity = useContext(PickerIdentityContext);
+  const key = identity ? recentKey(identity, kind) : null;
+  const [storedRecent, setStoredRecent] = useState<{
+    key: string | null;
+    ids: string[];
+  }>({ key: null, ids: [] });
+  const recent = storedRecent.key === key ? storedRecent.ids : [];
+  const setRecent = (ids: string[]) => setStoredRecent({ key, ids });
+  useEffect(() => {
+    if (!key) {
+      setRecent([]);
+      return;
+    }
+    const accessible =
+      accessibleIds ?? new Set(entries.map((entry) => entry.id));
+    try {
+      const ids = cleanRecent(
+        JSON.parse(localStorage.getItem(key) ?? "[]"),
+        accessible,
+      );
+      setRecent(ids);
+      localStorage.setItem(key, JSON.stringify(ids));
+    } catch {
+      setRecent([]);
+    }
+  }, [key, entries, accessibleIds]);
   const navigate = (id: string | null) => {
     setParentId(id);
     setQuery("");
   };
   const select = (id: string) => {
-    setRecent((previous) =>
-      [id, ...previous.filter((value) => value !== id)].slice(0, 5),
-    );
+    const next = [id, ...recent.filter((value) => value !== id)].slice(0, 5);
+    setRecent(next);
+    if (key)
+      try {
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch {
+        /* Browser preferences remain usable when storage is unavailable. */
+      }
     onChange(
       mode === "single"
         ? [id]
@@ -100,6 +116,7 @@ export function HierarchyPicker({
           type="button"
           className="chip"
           disabled={disabled}
+          ref={anchor}
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
@@ -107,7 +124,13 @@ export function HierarchyPicker({
         </button>
       </div>
       {open && (
-        <div className="hierarchy-browser">
+        <AnchoredFloatingSurface
+          anchorRef={anchor}
+          onDismiss={() => setOpen(false)}
+          label={label}
+          className="hierarchy-browser"
+          placement="bottom-start"
+        >
           <nav aria-label={zh ? "层级路径" : "Hierarchy path"}>
             <button
               type="button"
@@ -222,7 +245,7 @@ export function HierarchyPicker({
           >
             {zh ? "完成" : "Done"}
           </button>
-        </div>
+        </AnchoredFloatingSurface>
       )}
     </section>
   );

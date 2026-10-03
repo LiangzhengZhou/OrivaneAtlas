@@ -65,11 +65,13 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/projects/delete",
             "/api/work/update",
             "/api/work/delete",
+            "/api/work/purge",
             "/api/edge/create",
             "/api/edge/delete",
             "/api/library/save",
             "/api/library/rebuild-index",
             "/api/library/delete",
+            "/api/library/purge",
             "/api/library/upload-chunk",
             "/api/ai/providers/save",
             "/api/ai/providers/remove",
@@ -93,6 +95,7 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/note/promote",
             "/api/note/link-space",
             "/api/note/delete",
+            "/api/note/purge",
         ][..]
     } else {
         &[
@@ -976,7 +979,10 @@ mod tests {
     }
     #[test]
     fn workspace_preference_mutations_are_allowed_only_as_post() {
-        for path in ["/api/work/calendar-settings", "/api/work/navigation-preference"] {
+        for path in [
+            "/api/work/calendar-settings",
+            "/api/work/navigation-preference",
+        ] {
             assert!(endpoint("https://example.com", path, true).is_ok());
             assert!(endpoint("https://example.com", path, false).is_err());
         }
@@ -1003,7 +1009,12 @@ mod tests {
             assert!(endpoint("https://example.com", path, false).is_err());
         }
         assert!(endpoint("https://example.com", "/api/ai/events/stream?id=run", false).is_err());
-        assert!(endpoint("https://example.com", "/api/sync?incremental=1&cursor=abc", false).is_ok());
+        assert!(endpoint(
+            "https://example.com",
+            "/api/sync?incremental=1&cursor=abc",
+            false
+        )
+        .is_ok());
     }
     #[test]
     fn switching_server_discards_cookie() {

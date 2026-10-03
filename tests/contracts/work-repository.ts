@@ -260,7 +260,7 @@ export function repositoryContract(
         slots.map((s) =>
           s.payload.kind === "OCCURRENCE" ? s.payload.status : null,
         ),
-      ).toEqual(["MISSED", "MISSED", "CREATED"]);
+      ).toEqual(["MISSED", "MISSED", "OPEN"]);
       expect((await api.snapshot(context)).items).toHaveLength(1);
       await flow.generate(
         context,

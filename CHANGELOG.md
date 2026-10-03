@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.2]
+
+Product Hardening & UX Upgrade.
+
+- Lazy root-only Projects, portal menus, dirty-safe dialogs, expanded graphs and Settings reorder.
+- Authorized permanent purge and soft-delete Undo across Work, Notes and Library.
+- Explicit recurrence state, occurrence expiry/reconciliation and Today/7 Days/natural Month statistics.
+- Snapshot Library, bounded AI Activity reads, derived indexes, persistent scoped picker Recent and App route extraction.
+- Notification planner with Windows scheduled toast and Android WorkManager adapters; device acceptance limits documented.
+- SQLite schema26 / PostgreSQL schema19 migrations with legacy defaults and verified backups. Upgrade the matching server before clients.
+
 ## [2.0.1]
 
 Interaction consistency and product cleanup release.

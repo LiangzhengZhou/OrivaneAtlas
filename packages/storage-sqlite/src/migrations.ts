@@ -211,6 +211,22 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 25,
+    name: "permanent-purge",
+    sql: readFileSync(
+      new URL("./migrations/0025-permanent-purge.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 26,
+    name: "recurrence-lifecycle",
+    sql: readFileSync(
+      new URL("./migrations/0026-recurrence-lifecycle.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {

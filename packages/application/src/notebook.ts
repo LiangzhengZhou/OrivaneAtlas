@@ -37,6 +37,7 @@ export interface NotebookStore {
   get(id: string): Promise<Note>;
   save(note: Note, expectedVersion: number): Promise<void>;
   revisions(id: string): Promise<Note[]>;
+  purge(id: string, expectedVersion: number): Promise<void>;
 }
 export class NotebookService {
   constructor(
@@ -113,6 +114,19 @@ export class NotebookService {
     };
     await this.store.save(note, version);
     return note;
+  }
+  async purge(
+    context: ActorContext,
+    id: string,
+    version: number,
+  ): Promise<void> {
+    await this.authorization.require(context, "work:delete");
+    const note = await this.store.get(id);
+    if (note.workspaceId !== context.workspaceId)
+      throw new DomainError("NOT_FOUND");
+    if (note.version !== version) throw new DomainError("VERSION_CONFLICT");
+    if (!note.deletedAt) throw new DomainError("VALIDATION_ERROR");
+    await this.store.purge(id, version);
   }
   async setDeleted(
     context: ActorContext,

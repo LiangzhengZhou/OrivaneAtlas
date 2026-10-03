@@ -3,6 +3,7 @@ import type {
   ActivityEvent,
   AgentSessionStore,
   LibraryStore,
+  NotebookStore,
   OutboxEvent,
   ProjectStore,
   UnitOfWork,
@@ -26,6 +27,7 @@ import {
 import { activityFields, outboxFields, projection } from "./fields";
 import { libraryStore } from "./library";
 import { type BeforeUpgrade, migrate, migrations } from "./migrations";
+import { notebookStore } from "./notebook";
 import { projectStore } from "./project-materials";
 import { repository } from "./repository";
 
@@ -227,6 +229,7 @@ export class PostgresUnitOfWork implements UnitOfWork {
       library: LibraryStore,
       projects: ProjectStore,
       sessions: AgentSessionStore,
+      notes: NotebookStore,
     ) => Promise<T>,
   ): Promise<T> {
     return this.accept(() =>
@@ -259,6 +262,7 @@ export class PostgresUnitOfWork implements UnitOfWork {
             libraryStore(client, actor, guard),
             projectStore(client, actor, guard),
             agentSessionStore(client, actor, guard),
+            notebookStore(client, actor, guard),
           );
         } finally {
           active = false;

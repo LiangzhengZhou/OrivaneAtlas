@@ -6,8 +6,9 @@ import {
   projectLifecycle,
   projectLifecycles,
 } from "@arclattice/domain";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { DismissibleDialog } from "./app/DismissibleDialog";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 import type { WorkEditorProps } from "./WorkItemEditor";
 
@@ -24,7 +25,6 @@ export function ProjectEditor({
   onDelete,
 }: WorkEditorProps) {
   const { t } = useTranslation(["common", "desk", "work"]);
-  const dialog = useRef<HTMLDialogElement>(null);
   const [title, setTitle] = useState(item?.title ?? "");
   const [categoryId, setCategoryId] = useState(item?.categoryId ?? "");
   const [parent, setParent] = useState(
@@ -59,11 +59,6 @@ export function ProjectEditor({
   const candidates = eligibleProjectParents(item, projects);
   const invalidParent = !!parent && !candidates.some((p) => p.id === parent);
   useEffect(() => {
-    const node = dialog.current;
-    node?.showModal();
-    return () => node?.close();
-  }, []);
-  useEffect(() => {
     const leave = (event: BeforeUnloadEvent) => {
       if (dirty) {
         event.preventDefault();
@@ -74,12 +69,10 @@ export function ProjectEditor({
     return () => window.removeEventListener("beforeunload", leave);
   }, [dirty]);
   return (
-    <dialog
-      ref={dialog}
+    <DismissibleDialog
       className="task-dialog project-settings-dialog"
       aria-labelledby="project-editor-heading"
-      onCancel={(event) => {
-        event.preventDefault();
+      onRequestClose={() => {
         if (!busy) close();
       }}
     >
@@ -316,10 +309,10 @@ export function ProjectEditor({
             className="button primary"
             disabled={busy || !title.trim() || invalidParent || blocked}
           >
-            {t(false ? "desk:reopenAndCreate" : item ? "save" : "create")}
+            {item ? t("save") : t("desk:createProject")}
           </button>
         </div>
       </form>
-    </dialog>
+    </DismissibleDialog>
   );
 }

@@ -1,4 +1,8 @@
-import type { WorkflowRecord, WorkTransaction } from "@arclattice/application";
+import {
+  normalizeWorkflowRecords,
+  type WorkflowRecord,
+  type WorkTransaction,
+} from "@arclattice/application";
 import { DomainError } from "@arclattice/domain";
 import type { PoolClient } from "pg";
 export function workflowPort(
@@ -9,17 +13,19 @@ export function workflowPort(
   return {
     workflows: () =>
       schedule(async () =>
-        (
-          await client.query(
-            'SELECT id,workspace_id AS "workspaceId",version,created_by AS "createdBy",updated_by AS "updatedBy",created_at AS "createdAt",updated_at AS "updatedAt",deleted_at AS "deletedAt",payload FROM arclattice.workflow_record WHERE workspace_id=$1 ORDER BY created_at,id',
-            [workspaceId],
-          )
-        ).rows.map(
-          (row) =>
-            ({
-              ...row,
-              payload: readWorkflowPayload(row.payload),
-            }) as WorkflowRecord,
+        normalizeWorkflowRecords(
+          (
+            await client.query(
+              'SELECT id,workspace_id AS "workspaceId",version,created_by AS "createdBy",updated_by AS "updatedBy",created_at AS "createdAt",updated_at AS "updatedAt",deleted_at AS "deletedAt",payload FROM arclattice.workflow_record WHERE workspace_id=$1 ORDER BY created_at,id',
+              [workspaceId],
+            )
+          ).rows.map(
+            (row) =>
+              ({
+                ...row,
+                payload: readWorkflowPayload(row.payload),
+              }) as WorkflowRecord,
+          ),
         ),
       ),
     saveWorkflow: (record, expected) => {

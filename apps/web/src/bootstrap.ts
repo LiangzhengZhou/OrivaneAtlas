@@ -18,6 +18,8 @@ import type {
   ModelRoute,
   Note,
   NoteInput,
+  NotificationPermission,
+  NotificationPort,
   Organization,
   OrganizeInput,
   PersonalModelInput,
@@ -392,6 +394,7 @@ export async function bootstrap() {
     | "create"
     | "update"
     | "setDeleted"
+    | "purge"
     | "addEdge"
     | "removeEdge"
     | "setCalendarSettings"
@@ -406,6 +409,8 @@ export async function bootstrap() {
     create: (_actor, input) => request("/api/work/create", input),
     update: (_actor, id, version, input) =>
       request("/api/work/update", { id, version, input }),
+    purge: (_actor, id, version) =>
+      request<void>("/api/work/purge", { id, version }),
     setDeleted: (_actor, id, version, deleted) =>
       request("/api/work/delete", { id, version, deleted }),
     addEdge: (_actor, fromId, toId, type = "BLOCKS") =>
@@ -450,9 +455,48 @@ export async function bootstrap() {
     syncQueue = job.catch(() => undefined);
     return job;
   }
+  let notificationQueue: Promise<unknown> = Promise.resolve();
+  const notificationJob = <T>(action: () => Promise<T>): Promise<T> => {
+    const job = notificationQueue.then(action, action);
+    notificationQueue = job;
+    return job;
+  };
+  const notifications: NotificationPort = {
+    permission: () =>
+      native
+        ? invoke<NotificationPermission>("notification_permission")
+        : Promise.resolve("unavailable"),
+    requestPermission: () =>
+      native
+        ? invoke<NotificationPermission>("notification_request_permission")
+        : Promise.resolve("unavailable"),
+    reconcile: (intents) => {
+      const generation = serverGeneration;
+      return notificationJob(async () => {
+        if (intents.length && generation !== serverGeneration) return;
+        if (!native) {
+          if (intents.length) throw new Error("notification_unsupported");
+          return;
+        }
+        await invoke("notification_reconcile", {
+          intents: intents.map((intent) => ({
+            id: intent.id,
+            scope: intent.scope,
+            title: intent.title,
+            deliverAtMs: Date.parse(intent.scheduledAt),
+          })),
+        });
+      });
+    },
+    cancel: (ids) =>
+      notificationJob(async () => {
+        if (native) await invoke("notification_cancel", { ids });
+      }),
+  };
   return {
     i18n,
     native,
+    notifications,
     updates: {
       available: isTauri(),
       check: () => invoke("check_app_update"),
@@ -476,6 +520,7 @@ export async function bootstrap() {
       return serverOrigin;
     },
     async setServerOrigin(value: string) {
+      await notifications.reconcile([]);
       const normalized = normalizeServerOrigin(value);
       if (!native && normalized !== location.origin)
         throw new Error("INVALID_SERVER");
@@ -500,10 +545,12 @@ export async function bootstrap() {
     savedAccounts: () => (native ? nativeAccounts : readSavedAccounts()),
     refreshSavedAccounts,
     async beginAccountSwitch() {
+      await notifications.reconcile([]);
       resetIdentity();
       if (native) await invoke("detach_account");
     },
     async switchAccount(id: string) {
+      await notifications.reconcile([]);
       if (!native) throw new Error("UNAUTHORIZED");
       const selected = nativeAccounts.find((entry) => entry.id === id);
       if (!selected) throw new Error("UNAUTHORIZED");
@@ -535,6 +582,11 @@ export async function bootstrap() {
       if (native) {
         const selected = nativeAccounts.find((entry) => entry.id === id);
         if (!selected) return;
+        if (
+          selected.serverUrl === serverOrigin &&
+          selected.userId === account?.id
+        )
+          await notifications.reconcile([]);
         await invoke("forget_account", {
           reference: selected.credentialReference,
         });
@@ -561,6 +613,7 @@ export async function bootstrap() {
       );
       if ("all" in target || target.current) {
         try {
+          await notifications.reconcile([]);
           await removeCurrentCredential();
         } finally {
           resetIdentity();
@@ -640,6 +693,8 @@ export async function bootstrap() {
       ),
     saveLibrary: (id: string | null, version: number, input: LibraryInput) =>
       request<LibraryEntry>("/api/library/save", { id, version, input }),
+    purgeLibrary: (id: string, version: number) =>
+      request<void>("/api/library/purge", { id, version }),
     deleteLibrary: (id: string, version: number, deleted: boolean) =>
       request<LibraryEntry>("/api/library/delete", { id, version, deleted }),
     libraryRevisions: (id: string) =>
@@ -695,7 +750,7 @@ export async function bootstrap() {
       }),
     removeProvider: (scope: string, version: number, profileId = "default") =>
       request("/api/ai/providers/remove", { scope, version, profileId }),
-    ai: (scope = "personal", profileId = "default") =>
+    ai: (scope = "personal", profileId = "default", includeRuns = true) =>
       request<{
         route: ModelRoute | null;
         routes: ModelRoute[];
@@ -704,7 +759,9 @@ export async function bootstrap() {
         "/api/ai?scope=" +
           encodeURIComponent(scope) +
           "&profileId=" +
-          encodeURIComponent(profileId),
+          encodeURIComponent(profileId) +
+          "&includeRuns=" +
+          String(includeRuns),
       ),
     propose: (
       prompt: string,
@@ -853,10 +910,17 @@ export async function bootstrap() {
       request<KnowledgeLink>("/api/note/link-space", { id, version, spaceId }),
     saveNote: (id: string | null, version: number, input: NoteInput) =>
       request<Note>("/api/note/save", { id, version, input }),
+    purgeNote: (id: string, version: number) =>
+      request<void>("/api/note/purge", { id, version }),
     deleteNote: (id: string, version: number, deleted: boolean) =>
       request<Note>("/api/note/delete", { id, version, deleted }),
     logout: async () => {
       logoutWarning = false;
+      try {
+        await notifications.reconcile([]);
+      } catch {
+        logoutWarning = true;
+      }
       try {
         await request("/api/logout", {});
       } catch (error) {

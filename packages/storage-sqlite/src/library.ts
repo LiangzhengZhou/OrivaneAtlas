@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { LibraryEntry, LibraryStore } from "@arclattice/application";
+import { referencedLibraryAssetIds } from "@arclattice/application";
 import { type ActorContext, DomainError } from "@arclattice/domain";
 import { indexDocument, normalizeWikiTitle } from "@arclattice/wiki-core";
+import { purgeRelations } from "./purge";
 
 export function libraryStore(
   db: DatabaseSync,
@@ -52,6 +54,75 @@ export function libraryStore(
   }
   return {
     get,
+    async purge(id, expected) {
+      guard();
+      const entry = await get(id);
+      if (entry.version !== expected) throw new DomainError("VERSION_CONFLICT");
+      if (!entry.deletedAt) throw new DomainError("VALIDATION_ERROR");
+      purgeRelations(db, context.workspaceId, { kind: entry.kind, id });
+      const revisionRows = db
+        .prepare("SELECT id,payload FROM library_revision WHERE workspace_id=?")
+        .all(context.workspaceId);
+      const owned = new Set<string>(),
+        retained = new Set<string>();
+      for (const revision of revisionRows)
+        for (const assetId of referencedLibraryAssetIds(
+          (JSON.parse(String(revision.payload)) as LibraryEntry).bodyMd,
+        ))
+          (revision.id === id ? owned : retained).add(assetId);
+      for (const assetId of owned)
+        if (!retained.has(assetId)) {
+          db.prepare(
+            "DELETE FROM library_asset_upload WHERE workspace_id=? AND id=?",
+          ).run(context.workspaceId, assetId);
+          db.prepare(
+            "DELETE FROM library_asset WHERE workspace_id=? AND id=?",
+          ).run(context.workspaceId, assetId);
+        }
+
+      for (const table of [
+        "document_wiki_link",
+        "document_alias",
+        "document_hierarchy",
+        "library_revision",
+      ]) {
+        const column =
+          table === "document_wiki_link"
+            ? "source_document_id"
+            : table.startsWith("document_")
+              ? "document_id"
+              : "id";
+        db.prepare(
+          "DELETE FROM " + table + " WHERE workspace_id=? AND " + column + "=?",
+        ).run(context.workspaceId, id);
+      }
+      db.prepare(
+        "UPDATE document_wiki_link SET target_document_id=NULL WHERE workspace_id=? AND target_document_id=?",
+      ).run(context.workspaceId, id);
+      for (const assetId of retained)
+        for (const table of ["library_asset", "library_asset_upload"])
+          db.prepare(
+            "UPDATE " +
+              table +
+              " SET space_id=NULL WHERE workspace_id=? AND space_id=? AND id=?",
+          ).run(context.workspaceId, id, assetId);
+      db.prepare(
+        "DELETE FROM library_asset_upload WHERE workspace_id=? AND space_id=?",
+      ).run(context.workspaceId, id);
+      db.prepare(
+        "DELETE FROM library_asset WHERE workspace_id=? AND space_id=?",
+      ).run(context.workspaceId, id);
+      if (
+        db
+          .prepare(
+            "DELETE FROM library_entry WHERE workspace_id=? AND id=? AND version=?",
+          )
+          .run(context.workspaceId, id, expected).changes !== 1
+      )
+        throw new DomainError("VERSION_CONFLICT");
+      event(id, expected + 1, "LIBRARY_PURGED");
+    },
+
     async wikiLinks() {
       guard();
       return db

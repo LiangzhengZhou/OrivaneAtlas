@@ -26,6 +26,7 @@ import {
   WorkService,
   type WorkTransaction,
 } from "./index";
+import { occurrenceExpiry, recurrenceDefaults } from "./recurrence-lifecycle";
 
 export interface TaskDefaults {
   projectIds?: string[];
@@ -154,6 +155,11 @@ export interface PlanPayload {
 }
 export interface RecurrencePayload extends TaskDefaults {
   kind: "RECURRENCE";
+  state?: "ACTIVE" | "PAUSED" | "ENDED";
+  closePolicy?: "END_OF_DAY" | "NEXT_OCCURRENCE" | "DURATION";
+  closeIncomplete?: boolean;
+  durationValue?: number | null;
+  durationUnit?: "HOUR" | "DAY" | "WEEK" | null;
   title: string;
   descriptionMd: string;
   startDate: string;
@@ -168,7 +174,9 @@ export interface OccurrencePayload {
   definitionId: string;
   definitionVersion: number;
   day: string;
-  status: "MISSED" | "CREATED" | "BACKFILLED";
+  status: "MISSED" | "CREATED" | "OPEN" | "COMPLETED" | "BACKFILLED";
+  expiresAt?: string;
+  closedAt?: string | null;
   taskId: string | null;
   completedAt: string | null;
   recordedAt: string;
@@ -191,9 +199,16 @@ export function recurrenceStats(
 ): RecurrenceStats {
   const due = occurrences.filter((entry) => entry.day <= today);
   const completed = due.filter(
-    (entry) => !!entry.taskId && completedTaskIds.has(entry.taskId),
+    (entry) =>
+      entry.status === "COMPLETED" ||
+      (entry.status === "BACKFILLED" && !!entry.completedAt) ||
+      (entry.status === "CREATED" &&
+        !!entry.taskId &&
+        completedTaskIds.has(entry.taskId)),
   );
-  const backfilled = due.filter((entry) => entry.status === "BACKFILLED");
+  const backfilled = due.filter(
+    (entry) => !!entry.backfilledAt || entry.status === "BACKFILLED",
+  );
   const days = new Set(completed.map((entry) => entry.day));
   const sorted = [...days].sort();
   let currentStreak = 0;
@@ -215,10 +230,7 @@ export function recurrenceStats(
   return {
     dueCount: due.length,
     completedCount: completed.length,
-    missedCount: due.filter(
-      (entry) =>
-        entry.status === "MISSED" && !completedTaskIds.has(entry.taskId ?? ""),
-    ).length,
+    missedCount: due.filter((entry) => entry.status === "MISSED").length,
     backfilledCount: backfilled.length,
     completionRate: due.length ? completed.length / due.length : 0,
     currentStreak,
@@ -1100,12 +1112,21 @@ export class WorkflowService {
       input.rule.descriptionMd.length > 200000
     )
       throw new DomainError("VALIDATION_ERROR");
-    const rule: RecurrencePayload = {
+    const rule = recurrenceDefaults({
       ...input.rule,
       ...defaults,
       kind: "RECURRENCE",
       title: requireTitle(input.rule.title),
-    };
+    });
+    requireMember(rule.state, ["ACTIVE", "PAUSED", "ENDED"], "state");
+    requireMember(
+      rule.closePolicy,
+      ["END_OF_DAY", "NEXT_OCCURRENCE", "DURATION"],
+      "closePolicy",
+    );
+    if (typeof rule.closeIncomplete !== "boolean")
+      throw new DomainError("VALIDATION_ERROR");
+    occurrenceExpiry(rule, rule.startDate);
     return this.uow.run(context.workspaceId, async (tx) => {
       const old = input.id
         ? (await tx.workflows()).find((r) => r.id === input.id)
@@ -1127,7 +1148,10 @@ export class WorkflowService {
       delete rule.schedulerThrough;
       if (old) {
         const today = localCalendarDay(this.clock.now(), rule.timezone);
-        rule.schedulerThrough = calendarOffset(today, -1);
+        rule.schedulerThrough =
+          old.payload.kind === "RECURRENCE" && old.payload.state === rule.state
+            ? (old.payload.schedulerThrough ?? calendarOffset(today, -1))
+            : calendarOffset(today, -1);
       }
       return this.save(tx, context, rule, old, undefined, input.deleted);
     });
@@ -1145,7 +1169,62 @@ export class WorkflowService {
         return [];
       if (definition.createdBy !== context.principalId)
         throw new DomainError("FORBIDDEN");
-      const rule = definition.payload;
+      const rule = recurrenceDefaults(definition.payload);
+      const now = this.clock.now();
+      const items = await tx.list();
+      for (const occurrence of await tx.workflows()) {
+        const payload = occurrence.payload;
+        if (
+          payload.kind !== "OCCURRENCE" ||
+          payload.definitionId !== id ||
+          occurrence.deletedAt ||
+          payload.status === "COMPLETED" ||
+          payload.status === "MISSED" ||
+          (payload.status === "BACKFILLED" && payload.completedAt)
+        )
+          continue;
+        const task = items.find((item) => item.id === payload.taskId);
+        if (task?.status === "DONE") {
+          await this.save(
+            tx,
+            context,
+            {
+              ...payload,
+              status: "COMPLETED",
+              completedAt: task.completedAt ?? now,
+              closedAt: task.completedAt ?? now,
+            },
+            occurrence,
+          );
+        } else if (
+          Date.parse(now) >=
+          Date.parse(
+            payload.expiresAt ??
+              occurrenceExpiry(payload.ruleSnapshot ?? rule, payload.day),
+          )
+        ) {
+          if (
+            task &&
+            !task.deletedAt &&
+            task.status !== "CANCELED" &&
+            (payload.ruleSnapshot?.closeIncomplete ?? rule.closeIncomplete)
+          )
+            await this.work(tx, context).update(
+              context,
+              task.id,
+              task.version,
+              { status: "CANCELED" },
+              "RECURRENCE_WINDOW_EXPIRED",
+            );
+          await this.save(
+            tx,
+            context,
+            { ...payload, status: "MISSED", closedAt: now },
+            occurrence,
+          );
+        }
+      }
+      if (rule.state !== "ACTIVE") return [];
       const today = localCalendarDay(this.clock.now(), rule.timezone);
       const from = rule.schedulerThrough
         ? calendarOffset(rule.schedulerThrough, 1)
@@ -1195,9 +1274,10 @@ export class WorkflowService {
         throw new DomainError("NOT_FOUND");
       if (definition.version !== version)
         throw new DomainError("VERSION_CONFLICT");
-      const rule = definition.payload,
+      const rule = recurrenceDefaults(definition.payload),
         today = localCalendarDay(this.clock.now(), rule.timezone);
       if (to > today) throw new DomainError("VALIDATION_ERROR");
+      if (rule.state !== "ACTIVE") return [];
       const result: WorkflowRecord[] = [];
       for (const day of occurrenceDays(rule, from, to)) {
         const occurrenceId = `occurrence:${id}:${day}`,
@@ -1207,7 +1287,7 @@ export class WorkflowService {
           continue;
         }
         const task =
-          day === today
+          Date.parse(this.clock.now()) < Date.parse(occurrenceExpiry(rule, day))
             ? await this.work(tx, context).create(context, {
                 ...taskDefaults(rule as unknown as Record<string, unknown>),
                 title: rule.title,
@@ -1225,7 +1305,9 @@ export class WorkflowService {
               definitionId: id,
               definitionVersion: version,
               day,
-              status: task ? "CREATED" : "MISSED",
+              status: task ? "OPEN" : "MISSED",
+              expiresAt: occurrenceExpiry(rule, day),
+              closedAt: task ? null : this.clock.now(),
               taskId: task?.id ?? null,
               completedAt: null,
               recordedAt: this.clock.now(),

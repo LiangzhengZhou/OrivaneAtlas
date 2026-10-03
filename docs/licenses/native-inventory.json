@@ -1,5 +1,5 @@
 {
-  "version": "2.0.1",
+  "version": "2.0.2",
   "targets": ["x86_64-pc-windows-gnu", "aarch64-linux-android"],
   "scope": "Locked Cargo metadata including build/test packages; platform SDK notices remain separate",
   "dependencies": [

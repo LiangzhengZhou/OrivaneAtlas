@@ -58,18 +58,20 @@ dependencies = [
 
 [[package]]
 name = "arclattice"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "base64 0.22.1",
  "reqwest",
  "rustls",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-updater",
  "tokio",
  "webpki-roots",
+ "windows",
  "windows-sys 0.61.2",
 ]
 

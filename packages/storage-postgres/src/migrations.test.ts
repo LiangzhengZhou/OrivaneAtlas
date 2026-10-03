@@ -77,7 +77,9 @@ describe("PostgreSQL transactional migrations", () => {
       inheritToChildren: true,
       title: "Legacy wiki",
     });
-    expect(await h.client(name, (client) => inspectSchema(client))).toBe(17);
+    expect(await h.client(name, (client) => inspectSchema(client))).toBe(
+      latest,
+    );
   });
   it("upgrades v11 with Wiki and knowledge binding tables while preserving existing work", async () => {
     const name = await h.database();
@@ -451,4 +453,69 @@ describe("PostgreSQL transactional migrations", () => {
       ).rows,
     ).toEqual([]);
   });
+});
+
+it("upgrades v2.0.1 recurrence pause and occurrence payloads with explicit defaults", async () => {
+  const name = await h.database();
+  await run(name, migrations.slice(0, 17));
+  await h.query(
+    name,
+    "INSERT INTO arclattice.workspace VALUES ('w','W'); INSERT INTO arclattice.principal VALUES ('p','USER','P'); INSERT INTO arclattice.workspace_principal VALUES ('w','p')",
+  );
+  const rule = {
+    kind: "RECURRENCE",
+    title: "Keep",
+    descriptionMd: "# original",
+    projectIds: [],
+    startDate: "2026-10-01",
+    timezone: "America/New_York",
+    frequency: "DAILY",
+    interval: 1,
+  };
+  for (const [id, kind, deleted, payload] of [
+    ["active", "RECURRENCE", null, rule],
+    ["paused", "RECURRENCE", "2026-10-02", rule],
+    [
+      "occurrence",
+      "OCCURRENCE",
+      null,
+      {
+        kind: "OCCURRENCE",
+        definitionId: "active",
+        day: "2026-10-01",
+        status: "CREATED",
+        taskId: null,
+        recordedAt: "2026-10-01",
+      },
+    ],
+  ])
+    await h.query(
+      name,
+      "INSERT INTO arclattice.workflow_record VALUES ('w',$1,$2,1,'p','p','2026-10-01','2026-10-01',$3,$4)",
+      [id, kind, deleted, JSON.stringify(payload)],
+    );
+  let backedUp = false;
+  await run(name, migrations, async () => {
+    backedUp = true;
+  });
+  expect(backedUp).toBe(true);
+  const rows = (
+    await h.query(
+      name,
+      "SELECT id,deleted_at,payload FROM arclattice.workflow_record ORDER BY id",
+    )
+  ).rows;
+  expect(JSON.parse(rows[0].payload)).toMatchObject({
+    state: "ACTIVE",
+    closePolicy: "END_OF_DAY",
+    closeIncomplete: true,
+    descriptionMd: "# original",
+  });
+  expect(JSON.parse(rows[1].payload)).toMatchObject({ status: "OPEN" });
+  expect(JSON.parse(rows[2].payload)).toMatchObject({
+    state: "PAUSED",
+    closePolicy: "END_OF_DAY",
+    closeIncomplete: true,
+  });
+  expect(rows[2].deleted_at).toBeNull();
 });

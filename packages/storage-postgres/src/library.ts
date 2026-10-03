@@ -1,8 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { LibraryEntry, LibraryStore } from "@arclattice/application";
+import {
+  type LibraryEntry,
+  type LibraryStore,
+  referencedLibraryAssetIds,
+} from "@arclattice/application";
 import { type ActorContext, DomainError } from "@arclattice/domain";
 import { indexDocument, normalizeWikiTitle } from "@arclattice/wiki-core";
 import type { PoolClient } from "pg";
+import { purgeRelations } from "./purge";
 
 /** Actor-bound ports. The owner holds the workspace lock and transaction. */
 export function libraryStore(
@@ -82,6 +87,106 @@ export function libraryStore(
     );
   };
   return {
+    async purge(id, expected) {
+      guard();
+      const entry = await get(id);
+      if (entry.version !== expected) throw new DomainError("VERSION_CONFLICT");
+      if (!entry.deletedAt) throw new DomainError("VALIDATION_ERROR");
+      await purgeRelations(client, context.workspaceId, {
+        kind: entry.kind,
+        id,
+      });
+      const revisionRows = (
+        await client.query(
+          "SELECT id,payload FROM arclattice.library_revision WHERE workspace_id=$1",
+          [context.workspaceId],
+        )
+      ).rows;
+      const owned = new Set<string>(),
+        retained = new Set<string>();
+      for (const revision of revisionRows)
+        for (const assetId of referencedLibraryAssetIds(
+          (JSON.parse(revision.payload) as LibraryEntry).bodyMd,
+        ))
+          (revision.id === id ? owned : retained).add(assetId);
+      for (const assetId of owned)
+        if (!retained.has(assetId)) {
+          await client.query(
+            "DELETE FROM arclattice.library_asset_upload WHERE workspace_id=$1 AND id=$2",
+            [context.workspaceId, assetId],
+          );
+          await client.query(
+            "DELETE FROM arclattice.library_asset WHERE workspace_id=$1 AND id=$2",
+            [context.workspaceId, assetId],
+          );
+        }
+      for (const table of [
+        "document_wiki_link",
+        "document_alias",
+        "document_hierarchy",
+        "library_revision",
+      ]) {
+        const column =
+          table === "document_wiki_link"
+            ? "source_document_id"
+            : table.startsWith("document_")
+              ? "document_id"
+              : "id";
+        await client.query(
+          "DELETE FROM arclattice." +
+            table +
+            " WHERE workspace_id=$1 AND " +
+            column +
+            "=$2",
+          [context.workspaceId, id],
+        );
+      }
+      await client.query(
+        "UPDATE arclattice.document_wiki_link SET target_document_id=NULL WHERE workspace_id=$1 AND target_document_id=$2",
+        [context.workspaceId, id],
+      );
+      for (const assetId of retained)
+        for (const table of ["library_asset", "library_asset_upload"])
+          await client.query(
+            "UPDATE arclattice." +
+              table +
+              " SET space_id=NULL WHERE workspace_id=$1 AND space_id=$2 AND id=$3",
+            [context.workspaceId, id, assetId],
+          );
+      await client.query(
+        "DELETE FROM arclattice.library_asset_upload WHERE workspace_id=$1 AND space_id=$2",
+        [context.workspaceId, id],
+      );
+      await client.query(
+        "DELETE FROM arclattice.library_asset WHERE workspace_id=$1 AND space_id=$2",
+        [context.workspaceId, id],
+      );
+      if (
+        (
+          await client.query(
+            "DELETE FROM arclattice.library_entry WHERE workspace_id=$1 AND id=$2 AND version=$3",
+            [context.workspaceId, id, expected],
+          )
+        ).rowCount !== 1
+      )
+        throw new DomainError("VERSION_CONFLICT");
+      const eventId = randomUUID();
+      await client.query(
+        "INSERT INTO arclattice.knowledge_activity VALUES ($1,$2,$3,$4,'LIBRARY_PURGED',$5,$6)",
+        [
+          context.workspaceId,
+          eventId,
+          id,
+          context.principalId,
+          expected + 1,
+          new Date().toISOString(),
+        ],
+      );
+      await client.query(
+        "INSERT INTO arclattice.knowledge_outbox VALUES ($1,$2,'LIBRARY_PURGED')",
+        [context.workspaceId, eventId],
+      );
+    },
     list,
     get,
     async rebuildWikiIndex() {

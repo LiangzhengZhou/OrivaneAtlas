@@ -1,0 +1,10 @@
+SET search_path TO arclattice;
+ALTER TABLE activity DROP CONSTRAINT activity_type_check;
+ALTER TABLE activity ADD CONSTRAINT activity_type_check CHECK(type IN ('WORK_ITEM_CREATED','WORK_ITEM_UPDATED','WORK_ITEM_DELETED','WORK_ITEM_RESTORED','WORK_ITEM_PURGED','WORK_EDGE_ADDED','WORK_EDGE_REMOVED','WORKSPACE_SETTINGS_UPDATED'));
+CREATE TABLE knowledge_link (workspace_id TEXT NOT NULL REFERENCES workspace(id), id TEXT NOT NULL, version BIGINT NOT NULL CHECK(version>0), payload TEXT NOT NULL, PRIMARY KEY(workspace_id,id));
+CREATE TABLE organization (workspace_id TEXT NOT NULL REFERENCES workspace(id),kind TEXT NOT NULL CHECK(kind IN ('WORK','NOTE')),id TEXT NOT NULL,version BIGINT NOT NULL CHECK(version>0),payload TEXT NOT NULL,PRIMARY KEY(workspace_id,kind,id));
+CREATE TABLE notebook (workspace_id TEXT NOT NULL REFERENCES workspace(id),id TEXT NOT NULL,version BIGINT NOT NULL CHECK(version>0),kind TEXT NOT NULL CHECK(kind IN ('NOTE','JOURNAL')),day TEXT,deleted_at TEXT,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,id));
+CREATE UNIQUE INDEX notebook_journal_day ON notebook(workspace_id,day) WHERE kind='JOURNAL' AND deleted_at IS NULL;
+CREATE TABLE notebook_revision (workspace_id TEXT NOT NULL,id TEXT NOT NULL,version BIGINT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(workspace_id,id,version),FOREIGN KEY(workspace_id,id) REFERENCES notebook(workspace_id,id));
+CREATE TABLE notebook_activity (workspace_id TEXT NOT NULL,id TEXT NOT NULL,entity_id TEXT NOT NULL,principal_id TEXT NOT NULL,version BIGINT NOT NULL,occurred_at TIMESTAMPTZ NOT NULL,PRIMARY KEY(workspace_id,id),FOREIGN KEY(workspace_id,principal_id) REFERENCES workspace_principal(workspace_id,principal_id));
+CREATE TABLE notebook_outbox (workspace_id TEXT NOT NULL,activity_id TEXT NOT NULL,type TEXT NOT NULL CHECK(type='NOTE_CHANGED'),PRIMARY KEY(workspace_id,activity_id),FOREIGN KEY(workspace_id,activity_id) REFERENCES notebook_activity(workspace_id,id));

@@ -66,6 +66,7 @@ import { planDocumentPublisher } from "./plan-documents";
 import { startRecurrenceWorker } from "./recurrence-worker";
 
 export interface HostOptions {
+  clock?: { now(): string };
   calendarTimezone?: string;
   vault?: PersonalModelVault;
   model?: ModelPort | null;
@@ -208,7 +209,10 @@ export async function createHost(options: HostOptions) {
       displayName: "Inference worker",
     },
   ]);
-  const clock = { now: () => new Date().toISOString(), calendarTimezone };
+  const clock = {
+    now: options.clock?.now ?? (() => new Date().toISOString()),
+    calendarTimezone,
+  };
   const ids = { next: v7 };
   const inFlight = new Set<Promise<void>>();
   const controllers = new Set<AbortController>();
@@ -1525,9 +1529,12 @@ export async function createHost(options: HostOptions) {
           return;
         }
         if (path === "/api/ai" && req.method === "GET") {
-          const runs = await db.request(context, null, (_uow, _notes, store) =>
-            store.runs(),
-          );
+          const runs =
+            url.searchParams.get("includeRuns") === "false"
+              ? []
+              : await db.request(context, null, (_uow, _notes, store) =>
+                  store.runs(),
+                );
           const scope = url.searchParams.get("scope") ?? "personal";
           const routes = (options.vault?.list(context) ?? [])
             .filter((entry) => entry.scope === scope)
@@ -2136,6 +2143,16 @@ export async function createHost(options: HostOptions) {
                   input as unknown as LibraryInput,
                 );
               }
+              case "/api/library/purge": {
+                keys(value, ["id", "version"]);
+                await new LibraryService(
+                  library,
+                  authorization,
+                  clock,
+                  ids,
+                ).purge(context, string(value.id), version(value.version));
+                return { purged: true };
+              }
               case "/api/library/delete":
                 keys(value, ["id", "version", "deleted"]);
                 return new LibraryService(
@@ -2742,6 +2759,11 @@ export async function createHost(options: HostOptions) {
                 keys(value, ["id", "version", "deleted", "rule"]);
                 const rule = object(value.rule);
                 keys(rule, [
+                  "state",
+                  "closePolicy",
+                  "closeIncomplete",
+                  "durationValue",
+                  "durationUnit",
                   "title",
                   "descriptionMd",
                   "startDate",
@@ -2924,6 +2946,14 @@ export async function createHost(options: HostOptions) {
                   input as UpdateWorkInput,
                 );
               }
+              case "/api/work/purge":
+                keys(value, ["id", "version"]);
+                await work.purge(
+                  context,
+                  string(value.id),
+                  version(value.version),
+                );
+                return { purged: true };
               case "/api/work/delete":
                 keys(value, ["id", "version", "deleted"]);
                 return work.setDeleted(
@@ -3008,6 +3038,14 @@ export async function createHost(options: HostOptions) {
                   input as unknown as NoteInput,
                 );
               }
+              case "/api/note/purge":
+                keys(value, ["id", "version"]);
+                await notes.purge(
+                  context,
+                  string(value.id),
+                  version(value.version),
+                );
+                return { purged: true };
               case "/api/note/delete":
                 keys(value, ["id", "version", "deleted"]);
                 return notes.setDeleted(
@@ -3148,6 +3186,7 @@ export async function createHost(options: HostOptions) {
     server,
     db,
     context,
+    reconcileRecurrences: recurrenceWorker.run,
     async close() {
       await recurrenceWorker.close();
       for (const controller of controllers) controller.abort();

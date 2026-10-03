@@ -87,7 +87,9 @@
     "CREATED": "Task created",
     "BACKFILLED": "Backfilled",
     "completedAt": "Actual completion (optional; device local time)",
-    "backfill": "Backfill this occurrence"
+    "backfill": "Backfill this occurrence",
+    "OPEN": "Open",
+    "COMPLETED": "Completed"
   },
   "categories": {
     "manage": "Manage project categories",
@@ -310,5 +312,11 @@
     "INBOX": "Remove from this project (keep other memberships)",
     "MOVE": "Move to another project"
   },
-  "uncategorized": "Uncategorized"
+  "uncategorized": "Uncategorized",
+  "createProject": "Create project",
+  "expandGraph": "Expand graph",
+  "permanentDelete": "Delete permanently",
+  "permanentDeleteConfirm": "Permanently delete “{{title}}”? This cannot be undone.",
+  "movedToTrash": "Moved to Trash",
+  "selectedEntity": "Selected entity"
 }

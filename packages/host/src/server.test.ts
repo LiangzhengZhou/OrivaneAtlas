@@ -3088,3 +3088,99 @@ it("legacy project document mutations require explicit Space and cannot create a
   expect(after.library).toEqual(before.library);
   expect(after.projectMaterials).toEqual(before.projectMaterials);
 });
+
+it("permanent purge endpoints enforce authorization isolation version idempotency and actual removal", async () => {
+  await login();
+  for (const kind of ["work", "note", "library"]) {
+    const saved = await call(
+      kind === "work" ? "/api/work/create" : "/api/" + kind + "/save",
+      kind === "work"
+        ? { title: "Purge " + kind }
+        : {
+            id: null,
+            version: 0,
+            input:
+              kind === "note"
+                ? {
+                    title: "Purge note",
+                    bodyMd: "Private Markdown",
+                    kind: "NOTE",
+                    day: null,
+                  }
+                : {
+                    title: "Purge space",
+                    bodyMd: "",
+                    kind: "SPACE",
+                    spaceId: null,
+                  },
+          },
+    );
+    expect(saved.status).toBe(200);
+    const entry = await saved.json();
+    const path = "/api/" + kind + "/purge";
+    expect(
+      (await call(path, { id: entry.id, version: entry.version })).status,
+    ).toBe(400);
+    const removed = await (
+      await call("/api/" + kind + "/delete", {
+        id: entry.id,
+        version: entry.version,
+        deleted: true,
+      })
+    ).json();
+    expect(
+      (await call(path, { id: entry.id, version: entry.version })).status,
+    ).toBe(409);
+    expect(
+      (
+        await call(
+          path,
+          { id: removed.id, version: removed.version },
+          { "X-CSRF-Token": "wrong" },
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await call(
+          path,
+          { id: removed.id, version: removed.version },
+          { Cookie: "" },
+        )
+      ).status,
+    ).toBe(401);
+    const readToken = await (
+      await call("/api/tokens/create", { name: "Purge agent", scope: "write" })
+    ).json();
+    expect(
+      (
+        await call(
+          path,
+          { id: removed.id, version: removed.version },
+          { Authorization: "Bearer " + readToken.secret, Cookie: "" },
+        )
+      ).status,
+    ).toBe(403);
+    const headers = { "Idempotency-Key": randomUUID() };
+    expect(
+      (await call(path, { id: removed.id, version: removed.version }, headers))
+        .status,
+    ).toBe(200);
+    expect(
+      (await call(path, { id: removed.id, version: removed.version }, headers))
+        .status,
+    ).toBe(200);
+    const snapshot = await (await call("/api/snapshot")).json();
+    expect(
+      (kind === "work"
+        ? snapshot.items
+        : kind === "note"
+          ? snapshot.notes
+          : snapshot.library
+      ).some((item: { id: string }) => item.id === entry.id),
+    ).toBe(false);
+    expect(
+      (await call(path, { id: removed.id, version: removed.version })).status,
+    ).toBe(404);
+  }
+});

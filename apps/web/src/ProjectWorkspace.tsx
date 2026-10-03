@@ -553,32 +553,35 @@ export function ProjectWorkspace({
             <p className="muted">{t("inspectHint")}</p>
             <div className="project-canvas-layout">
               <ProjectDependencyGraph
+                inspector={
+                  <ProjectInspector
+                    item={
+                      graphSnapshot.items.find(
+                        (item) => item.id === inspectedId,
+                      ) ?? project
+                    }
+                    snapshot={snapshot}
+                    busy={busy}
+                    runtime={runtime}
+                    run={run}
+                    onEdit={() =>
+                      onOpen({
+                        kind: "WORK",
+                        id:
+                          graphSnapshot.items.find(
+                            (item) => item.id === inspectedId,
+                          )?.id ?? project.id,
+                      })
+                    }
+                    onProject={onProject}
+                    onStatus={onStatus}
+                    onOrganize={onOrganize}
+                  />
+                }
                 snapshot={graphSnapshot}
                 fullSnapshot={snapshot}
                 onOpen={onOpen}
                 onSelect={(ref) => setInspectedId(ref.id)}
-              />
-              <ProjectInspector
-                item={
-                  graphSnapshot.items.find((item) => item.id === inspectedId) ??
-                  project
-                }
-                snapshot={snapshot}
-                busy={busy}
-                runtime={runtime}
-                run={run}
-                onEdit={() =>
-                  onOpen({
-                    kind: "WORK",
-                    id:
-                      graphSnapshot.items.find(
-                        (item) => item.id === inspectedId,
-                      )?.id ?? project.id,
-                  })
-                }
-                onProject={onProject}
-                onStatus={onStatus}
-                onOrganize={onOrganize}
               />
             </div>
             <Dependencies

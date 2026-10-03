@@ -1,6 +1,7 @@
 import { GripVertical, LogOut, PanelLeft, Settings2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AnchoredFloatingSurface } from "./AnchoredFloatingSurface";
 import { type NavigationView, navigation, type View } from "./navigation";
 
 export function Sidebar({
@@ -35,6 +36,7 @@ export function Sidebar({
   onLogout(): void;
 }) {
   const { t } = useTranslation("desk");
+  const menuAnchor = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const groups = [
     {
@@ -124,6 +126,7 @@ export function Sidebar({
       </nav>
       <div className="sidebar-bottom">
         <button
+          ref={menuAnchor}
           className={"nav-item " + (activeView === "settings" ? "active" : "")}
           type="button"
           onClick={() => setMenuOpen((open) => !open)}
@@ -135,10 +138,11 @@ export function Sidebar({
           <span>{t("workspaceMenu")}</span>
         </button>
         {menuOpen && (
-          <div
+          <AnchoredFloatingSurface
+            anchorRef={menuAnchor}
+            onDismiss={() => setMenuOpen(false)}
             className="workspace-menu"
-            role="menu"
-            aria-label={t("workspaceMenu")}
+            label={t("workspaceMenu")}
           >
             {(["account", "admin", "settings", "trash"] as const)
               .filter((next) => next !== "admin" || canAdmin)
@@ -159,7 +163,7 @@ export function Sidebar({
               <LogOut size={16} />
               {t("lock")}
             </button>
-          </div>
+          </AnchoredFloatingSurface>
         )}
       </div>
     </aside>

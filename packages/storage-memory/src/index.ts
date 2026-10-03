@@ -10,6 +10,7 @@ import type {
   WorkflowRecord,
   WorkTransaction,
 } from "@arclattice/application";
+import { normalizeWorkflowRecords } from "@arclattice/application";
 import type { ActorContext, WorkEdge, WorkItem } from "@arclattice/domain";
 import {
   DomainError,
@@ -112,7 +113,9 @@ export class MemoryUnitOfWork implements UnitOfWork {
         },
         workflows: async () => {
           assertOpen();
-          return structuredClone([...state.workflows.values()]);
+          return normalizeWorkflowRecords(
+            structuredClone([...state.workflows.values()]),
+          );
         },
         saveWorkflow: async (record, expected) => {
           assertScope(record);
@@ -181,6 +184,16 @@ export class MemoryUnitOfWork implements UnitOfWork {
               actualVersion: old.version,
             });
           state.items.set(item.id, structuredClone(item));
+        },
+        purge: async (id, expected) => {
+          const old = get(id);
+          if (old.version !== expected)
+            throw new DomainError("VERSION_CONFLICT");
+          if (!old.deletedAt) throw new DomainError("VALIDATION_ERROR");
+          for (const edge of state.edges.values())
+            if (edge.fromId === id || edge.toId === id)
+              state.edges.delete(edge.id);
+          state.items.delete(id);
         },
         addEdge: async (edge) => {
           assertScope(edge);

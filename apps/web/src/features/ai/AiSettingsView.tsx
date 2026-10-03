@@ -62,7 +62,7 @@ export function AiSettingsView({
       if (pending || document.hidden) return;
       pending = true;
       try {
-        const result = await runtime.ai(scope, profileId);
+        const result = await runtime.ai(scope, profileId, activityOpen);
         if (active) setData(result);
       } catch {
         if (active) setError(true);
@@ -71,12 +71,15 @@ export function AiSettingsView({
       }
     };
     void load();
-    const timer = window.setInterval(() => void load(), 3000);
+    const visible = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", visible);
     return () => {
       active = false;
-      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", visible);
     };
-  }, [runtime, scope, profileId]);
+  }, [runtime, scope, profileId, activityOpen]);
   async function act(action: () => Promise<unknown>) {
     setBusy(true);
     setError(false);

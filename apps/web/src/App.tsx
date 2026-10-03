@@ -17,9 +17,7 @@ import {
   ArrowUpRight,
   BookOpen,
   CheckCheck,
-  Download,
   ListTodo,
-  LogOut,
   NotebookPen,
   PanelLeft,
   Plus,
@@ -33,8 +31,9 @@ import { AccountView, AdminView } from "./AccountViews";
 import { AppUpdater } from "./AppUpdater";
 import { AppShell } from "./app/AppShell";
 import { CommandPalette } from "./app/CommandPalette";
+import { useNotifications } from "./app/hooks/useNotifications";
 import { usePendingOperations } from "./app/hooks/usePendingOperations";
-import { NavigationSettings } from "./app/NavigationSettings";
+import { useWorkspaceSync } from "./app/hooks/useWorkspaceSync";
 import {
   currentView,
   type NavigationView,
@@ -42,26 +41,19 @@ import {
   SIDEBAR_COLLAPSED_KEY,
   type View,
 } from "./app/navigation";
+import { SettingsRoute } from "./app/routes/SettingsRoute";
+import { TasksRoute } from "./app/routes/TasksRoute";
+import { TrashRoute } from "./app/routes/TrashRoute";
 import { Sidebar } from "./app/Sidebar";
 import { showToast, ToastHost } from "./app/ToastHost";
 import { Topbar } from "./app/Topbar";
 import { WorkspaceRouter } from "./app/WorkspaceRouter";
-import {
-  type Runtime,
-  readPreference,
-  type Snapshot,
-  savePreference,
-} from "./bootstrap";
-import { CalendarSettings } from "./CalendarSettings";
-import { KnowledgeView } from "./ConnectedViews";
-import { DensitySettings } from "./DensitySettings";
+import { type Runtime, readPreference, savePreference } from "./bootstrap";
 import { type DocumentRequest, DocumentWorkspace } from "./DocumentWorkspace";
-import { AiSettingsView } from "./features/ai/AiSettingsView";
 import { AssistantPane } from "./features/ai/AssistantPane";
+import { PickerIdentityContext } from "./features/hierarchy/PickerIdentityContext";
 import { MoreSheet } from "./features/mobile/MoreSheet";
-import { ProjectDependencyGraph } from "./features/projects/ProjectDependencyGraph";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
-import { TasksWorkspace } from "./features/tasks/TasksWorkspace";
 import { selectTasks } from "./features/tasks/task-selectors";
 import { LibraryView } from "./LibraryView";
 import { Login } from "./Login";
@@ -73,27 +65,33 @@ import {
   parseProjectRoute,
   projectHash,
 } from "./projectRoute";
-import { ThemeSettings } from "./ThemeSettings";
-import { downloadText } from "./utils/download";
 import { WorkflowManager } from "./WorkflowManager";
 import { WorkItemEditor } from "./WorkItemEditor";
-import { Dependencies, TaskList } from "./WorkViews";
+import { TaskList } from "./WorkViews";
 
 export function App({ runtime }: { runtime: Runtime }) {
   const [context, setContext] = useState(runtime.context);
   return context ? (
-    <PrivateImageContext.Provider
-      value={runtime.native ? runtime.loadImage : null}
+    <PickerIdentityContext.Provider
+      value={{
+        server: runtime.serverOrigin || location.origin,
+        workspaceId: context.workspaceId,
+        principalId: context.principalId,
+      }}
     >
-      <Workbench
-        runtime={runtime}
-        context={context}
-        onLogout={() => {
-          runtime.context = null;
-          setContext(null);
-        }}
-      />
-    </PrivateImageContext.Provider>
+      <PrivateImageContext.Provider
+        value={runtime.native ? runtime.loadImage : null}
+      >
+        <Workbench
+          runtime={runtime}
+          context={context}
+          onLogout={() => {
+            runtime.context = null;
+            setContext(null);
+          }}
+        />
+      </PrivateImageContext.Provider>
+    </PickerIdentityContext.Provider>
   ) : (
     <>
       <Login runtime={runtime} onLogin={() => setContext(runtime.context)} />
@@ -211,15 +209,9 @@ function Workbench({
     });
     setDocumentVisible(true);
   }
-  const [snapshot, setSnapshot] = useState<Snapshot>({
-    projectMaterials: [],
-    items: [],
-    edges: [],
-    notes: [],
-    links: [],
-    library: [],
-    organization: [],
-  });
+  const [error, setError] = useState<string | null>(null);
+  const { snapshot, setSnapshot, loading, syncOffline, refresh } =
+    useWorkspaceSync(runtime, setError);
   const [query, setQuery] = useState("");
   const navigationPreference =
     snapshot.navigationPreference ?? defaultNavigationPreference();
@@ -251,11 +243,31 @@ function Workbench({
       return;
     }
     if (
-      input.action === "delete" &&
-      !window.confirm(t("confirmBulkDelete", { count: input.entries.length }))
+      await run(async () => {
+        await runtime.organize(input);
+        if (input.action === "delete")
+          showToast(t("movedToTrash"), async () => {
+            const current = await runtime.snapshot();
+            for (const entry of input.entries) {
+              const deleted =
+                input.kind === "WORK"
+                  ? current.items.find((item) => item.id === entry.id)
+                  : current.notes.find((item) => item.id === entry.id);
+              if (!deleted?.deletedAt) continue;
+              if (input.kind === "WORK")
+                await service.setDeleted(
+                  context,
+                  deleted.id,
+                  deleted.version,
+                  false,
+                );
+              else await runtime.deleteNote(deleted.id, deleted.version, false);
+            }
+            await refresh();
+          });
+      })
     )
-      return;
-    if (await run(() => runtime.organize(input))) setSelectedNotes([]);
+      setSelectedNotes([]);
   }
   const [status, setStatus] = useState(() => {
     const requested = new URLSearchParams(location.hash.split("?")[1]).get(
@@ -285,7 +297,6 @@ function Workbench({
   const [noteEditor, setNoteEditor] = useState<
     Note | "NOTE" | "JOURNAL" | null
   >(null);
-  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!noteEditor) return;
     const entity = typeof noteEditor === "string" ? undefined : noteEditor;
@@ -308,8 +319,6 @@ function Workbench({
   const [taskDependenciesOpen, setTaskDependenciesOpen] = useState(
     location.hash.includes("view=dependencies"),
   );
-  const [loading, setLoading] = useState(true);
-  const [syncOffline, setSyncOffline] = useState(false);
   const [saved, setSaved] = useState(false);
   const [preference, setPreference] =
     useState<LocalePreference>(readPreference);
@@ -318,65 +327,6 @@ function Workbench({
   function errorCode(cause: unknown) {
     return cause instanceof DomainError ? String(cause.code) : "UNAVAILABLE";
   }
-  async function refresh() {
-    try {
-      setSnapshot(await runtime.snapshot());
-      setSyncOffline(false);
-      setError(null);
-    } catch (cause) {
-      setError(errorCode(cause));
-    } finally {
-      setLoading(false);
-    }
-  }
-  useEffect(() => {
-    let active = true;
-    void runtime
-      .snapshot()
-      .then((value) => {
-        if (active) setSnapshot(value);
-      })
-      .catch((cause) => {
-        if (active) setError(errorCode(cause));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [runtime]);
-  useEffect(() => {
-    let active = true,
-      polling = false;
-    const poll = async () => {
-      if (document.hidden || polling) return;
-      polling = true;
-      try {
-        const value = await runtime.snapshot();
-        if (active) {
-          setSnapshot(value);
-          setSyncOffline(false);
-        }
-      } catch {
-        if (active) setSyncOffline(true);
-      } finally {
-        polling = false;
-      }
-    };
-    const timer = window.setInterval(() => void poll(), 5000);
-    const foreground = () => void poll();
-    window.addEventListener("online", foreground);
-    window.addEventListener("focus", foreground);
-    document.addEventListener("visibilitychange", foreground);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-      window.removeEventListener("online", foreground);
-      window.removeEventListener("focus", foreground);
-      document.removeEventListener("visibilitychange", foreground);
-    };
-  }, [runtime]);
   useEffect(() => {
     const listener = () => {
       const nextProject = parseProjectRoute(location.hash);
@@ -502,6 +452,14 @@ function Workbench({
     new Date().toISOString(),
   );
   const calendarDay = localCalendarDay(calendarInstant, calendarTimezone);
+  const notifications = useNotifications(
+    runtime,
+    context,
+    snapshot,
+    calendarDay,
+    i18n.language.startsWith("zh") ? "zh-CN" : "en-US",
+    loading,
+  );
   useEffect(() => {
     const update = () => setCalendarInstant(new Date().toISOString());
     const timer = window.setInterval(update, 30_000);
@@ -1120,22 +1078,58 @@ function Workbench({
               )}
             </div>
           )}
-          <div
-            className="settings-panel"
-            hidden={view !== "settings" || loading}
-          >
-            <DensitySettings
-              actor={context}
-              controls={view === "settings" && !loading}
-            />
-            <ThemeSettings controls={view === "settings" && !loading} />
-          </div>
+          <SettingsRoute
+            notifications={notifications}
+            active={view === "settings" && !loading}
+            context={context}
+            runtime={runtime}
+            snapshot={snapshot}
+            busy={busy}
+            day={day}
+            preference={preference}
+            switchLanguage={switchLanguage}
+            run={run}
+            onNote={setNoteEditor}
+            onWork={setEditor}
+            openDocument={openDocument}
+            navigation={{
+              preference: navigationPreference,
+              busy: false,
+              label: viewLabel,
+              onSave: (preference) =>
+                run(() => service.setNavigationPreference(context, preference)),
+            }}
+            calendar={{
+              settings: snapshot.calendarSettings ?? {
+                version: 0,
+                timezone: null,
+              },
+              effective: calendarTimezone,
+              busy: false,
+              onSave: (version, timezone) =>
+                run(() =>
+                  service.setCalendarSettings(context, version, timezone),
+                ),
+            }}
+            onLogout={() => {
+              void (
+                (documentDirty || libraryDraft.current || editor) &&
+                !window.confirm(t("discardHint"))
+                  ? Promise.resolve(false)
+                  : run(() => runtime.logout())
+              ).then((ok) => {
+                if (ok) onLogout();
+              });
+            }}
+          />
+
           {loading ? (
             <div className="loading-panel" role="status">
               {t("connecting")}
             </div>
           ) : view === "library" ? (
             <LibraryView
+              onChanged={refresh}
               runtime={runtime}
               onOpen={openDocument}
               snapshot={snapshot}
@@ -1443,173 +1437,7 @@ function Workbench({
                 });
               }}
             />
-          ) : view === "settings" ? (
-            <div className="settings-panel">
-              <details className="advanced-relations">
-                <summary>
-                  {i18n.language.startsWith("zh")
-                    ? "高级关系"
-                    : "Advanced relations"}
-                </summary>
-                <KnowledgeView
-                  snapshot={snapshot}
-                  busy={false}
-                  onLink={(from, to, relation) =>
-                    run(() => runtime.link(from, to, relation))
-                  }
-                  onUnlink={(link) =>
-                    run(() => runtime.unlink(link.id, link.version))
-                  }
-                  onOpen={(ref) => {
-                    if (ref.kind === "NOTE") {
-                      const note = snapshot.notes.find((n) => n.id === ref.id);
-                      if (note) setNoteEditor(note);
-                    } else if (
-                      ref.kind === "SPACE" ||
-                      ref.kind === "DOCUMENT"
-                    ) {
-                      const entity = snapshot.library.find(
-                        (e) => e.id === ref.id,
-                      );
-                      if (entity)
-                        openDocument({
-                          key: entity.id,
-                          kind: entity.kind,
-                          entity,
-                          spaceId: entity.spaceId,
-                        });
-                    } else {
-                      const item = snapshot.items.find((i) => i.id === ref.id);
-                      if (item) setEditor(item);
-                    }
-                  }}
-                />
-              </details>
-              <section className="panel">
-                <h2>Atlas</h2>
-                <AiSettingsView runtime={runtime} snapshot={snapshot} />
-              </section>
-              <NavigationSettings
-                key={navigationPreference.version}
-                preference={navigationPreference}
-                busy={false}
-                label={viewLabel}
-                onSave={(preference) =>
-                  run(() =>
-                    service.setNavigationPreference(context, preference),
-                  )
-                }
-              />
-              <CalendarSettings
-                settings={
-                  snapshot.calendarSettings ?? { version: 0, timezone: null }
-                }
-                effective={calendarTimezone}
-                busy={false}
-                onSave={(version, timezone) =>
-                  run(() =>
-                    service.setCalendarSettings(context, version, timezone),
-                  )
-                }
-              />
-              <AppUpdater updates={runtime.updates} />
-              <section>
-                <h2>{t("settings:language")}</h2>
-                <p>{t("settings:languageHint")}</p>
-                <label className="field">
-                  <span>{t("settings:language")}</span>
-                  <select
-                    aria-label={t("settings:language")}
-                    value={preference}
-                    onChange={(event) =>
-                      void switchLanguage(
-                        event.target.value as LocalePreference,
-                      )
-                    }
-                  >
-                    <option value="system">{t("settings:system")}</option>
-                    <option value="en-US">English</option>
-                    <option value="zh-CN">简体中文</option>
-                  </select>
-                </label>
-              </section>
-              <section>
-                <h2>{t("dataControl")}</h2>
-                {runtime.account?.role === "USER" ? (
-                  <p>{t("spaces:backupAdmin")}</p>
-                ) : (
-                  <>
-                    <p>{t("backupHint")}</p>
-                    <button
-                      className="button primary"
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        void run(async () => {
-                          const blob = await runtime.backup();
-                          const url = URL.createObjectURL(blob);
-                          const link = document.createElement("a");
-                          link.href = url;
-                          link.download = "arclattice-" + day + ".sqlite";
-                          link.click();
-                          setTimeout(() => URL.revokeObjectURL(url), 1000);
-                        })
-                      }
-                    >
-                      <Download size={17} />
-                      {t("backupDatabase")}
-                    </button>
-                  </>
-                )}
-                <p>{t("exportHint")}</p>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() =>
-                    downloadText(
-                      "arclattice-" + day + ".json",
-                      JSON.stringify(
-                        {
-                          format: "arclattice-workbench-snapshot",
-                          version: 1,
-                          exportedAt: new Date().toISOString(),
-                          ...snapshot,
-                        },
-                        null,
-                        2,
-                      ),
-                      "application/json",
-                    )
-                  }
-                >
-                  <Download size={17} />
-                  {t("exportData")}
-                </button>
-              </section>
-              <section>
-                <h2>{t("protected")}</h2>
-                <p>{t("scope")}</p>
-                <button
-                  className="button secondary"
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    void (
-                      (documentDirty || libraryDraft.current || editor) &&
-                      !window.confirm(t("discardHint"))
-                        ? Promise.resolve(false)
-                        : run(() => runtime.logout())
-                    ).then((ok) => {
-                      if (ok) onLogout();
-                    })
-                  }
-                >
-                  <LogOut size={17} />
-                  {t("lock")}
-                </button>
-              </section>
-            </div>
-          ) : (
+          ) : view === "settings" ? null : (
             <>
               <div className="list-toolbar">
                 <div className={view === "tasks" ? "list-title" : "view-count"}>
@@ -1788,59 +1616,13 @@ function Workbench({
                   );
                 })()
               ) : view === "trash" ? (
-                <div className="trash-list">
-                  {snapshot.items
-                    .filter(
-                      (i) => i.deletedAt && matches(i.title, i.descriptionMd),
-                    )
-                    .map((item) => (
-                      <div key={item.id}>
-                        <ListTodo size={18} />
-                        <span>{item.title}</span>
-                        <button
-                          className="button secondary"
-                          type="button"
-                          disabled={busy}
-                          onClick={() =>
-                            void run(() =>
-                              service.setDeleted(
-                                context,
-                                item.id,
-                                item.version,
-                                false,
-                              ),
-                            )
-                          }
-                        >
-                          {t("common:restore")}
-                        </button>
-                      </div>
-                    ))}
-                  {snapshot.notes
-                    .filter((n) => n.deletedAt && matches(n.title, n.bodyMd))
-                    .map((note) => (
-                      <div key={note.id}>
-                        <BookOpen size={18} />
-                        <span>{note.title}</span>
-                        <button
-                          className="button secondary"
-                          type="button"
-                          disabled={busy}
-                          onClick={() =>
-                            void run(() =>
-                              runtime.deleteNote(note.id, note.version, false),
-                            )
-                          }
-                        >
-                          {t("common:restore")}
-                        </button>
-                      </div>
-                    ))}
-                  {!snapshot.items.some((i) => i.deletedAt) &&
-                    !snapshot.notes.some((n) => n.deletedAt) && (
-                      <p className="empty-small">{t("work:emptyTrash")}</p>
-                    )}
-                </div>
+                <TrashRoute
+                  snapshot={snapshot}
+                  runtime={runtime}
+                  query={query}
+                  busy={busy}
+                  run={run}
+                />
               ) : view === "focus" ? (
                 focus.filter((i) => matches(i.title, i.descriptionMd))
                   .length ? (
@@ -1858,56 +1640,23 @@ function Workbench({
                   </div>
                 )
               ) : view === "tasks" ? (
-                <>
-                  {taskDependenciesOpen && (
-                    <>
-                      <ProjectDependencyGraph
-                        snapshot={snapshot}
-                        onOpen={(ref) => {
-                          const item = snapshot.items.find(
-                            (i) => i.id === ref.id,
-                          );
-                          if (item) setEditor(item);
-                        }}
-                      />
-                      <Dependencies
-                        items={allItems}
-                        edges={snapshot.edges}
-                        busy={false}
-                        onAdd={(from, to) =>
-                          run(() => service.addEdge(context, from, to))
-                        }
-                        onRemove={(id) =>
-                          run(() => service.removeEdge(context, id))
-                        }
-                      />
-                    </>
-                  )}
-                  <TasksWorkspace
-                    onDependencies={() => {
-                      setTaskDependenciesOpen((open) => !open);
-                    }}
-                    key={location.hash}
-                    {...workProps}
-                    items={visible}
-                    includeArchived={showArchived}
-                    initialTab={
-                      status === "DONE"
-                        ? "completed"
-                        : status === "ALL" ||
-                            new URLSearchParams(
-                              location.hash.split("?")[1],
-                            ).get("tab") === "all"
-                          ? "all"
-                          : "now"
-                    }
-                    initialBoard={
-                      new URLSearchParams(location.hash.split("?")[1]).get(
-                        "view",
-                      ) === "board"
-                    }
-                  />
-                </>
+                <TasksRoute
+                  runtime={runtime}
+                  context={context}
+                  snapshot={snapshot}
+                  calendarTimezone={calendarTimezone}
+                  projects={projects}
+                  workProps={workProps}
+                  visible={visible}
+                  showArchived={showArchived}
+                  status={status}
+                  taskDependenciesOpen={taskDependenciesOpen}
+                  onToggleDependencies={() =>
+                    setTaskDependenciesOpen((open) => !open)
+                  }
+                  run={run}
+                  onOpen={setEditor}
+                />
               ) : visible.length ? (
                 <TaskList items={visible} {...workProps} />
               ) : (
@@ -2022,16 +1771,23 @@ function Workbench({
               ? null
               : async () => {
                   if (
-                    await run(
-                      () =>
-                        service.setDeleted(
+                    await run(async () => {
+                      const deleted = await service.setDeleted(
+                        context,
+                        editor.id,
+                        editor.version,
+                        true,
+                      );
+                      showToast(t("movedToTrash"), async () => {
+                        await service.setDeleted(
                           context,
-                          editor.id,
-                          editor.version,
-                          true,
-                        ),
-                      editorPendingKey,
-                    )
+                          deleted.id,
+                          deleted.version,
+                          false,
+                        );
+                        await refresh();
+                      });
+                    }, editorPendingKey)
                   )
                     setEditorState((current) =>
                       current === editor ? null : current,

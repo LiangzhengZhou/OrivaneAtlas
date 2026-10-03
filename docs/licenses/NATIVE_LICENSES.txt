@@ -1,4 +1,4 @@
-Cargo dependency notices for Orivane Atlas 2.0.0
+Cargo dependency notices for Orivane Atlas 2.0.2
 Windows GNU / Android aarch64 locked target metadata; includes build/test dependencies.
 
 

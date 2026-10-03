@@ -1,5 +1,5 @@
 Third-party installed JavaScript/build dependency licenses
-Generated from installed package license files for Orivane Atlas 2.0.0.
+Generated from installed package license files for Orivane Atlas 2.0.2.
 Not a native artifact bill of materials.
 
 

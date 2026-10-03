@@ -36,7 +36,7 @@ describe("SQLite migrations and recovery", () => {
         .prepare("INSERT INTO library_entry VALUES ('w','doc',1,?)")
         .run(payload);
       backup = (await migrate(raw, path, 100)).backupPath!;
-      expect(inspectSchema(raw)).toBe(24);
+      expect(inspectSchema(raw)).toBe(migrations.length);
       expect(
         raw.prepare("SELECT payload FROM library_entry").get()?.payload,
       ).toBe(payload);
@@ -676,4 +676,100 @@ describe("SQLite migrations and recovery", () => {
     );
     expect(existsSync(target)).toBe(false);
   });
+});
+
+it("upgrades 2.0.1 schema24 with events preserved and a restorable pre-purge backup", async () => {
+  const path = harness.file(),
+    raw = new DatabaseSync(path);
+  let before = "";
+  try {
+    raw.exec("PRAGMA foreign_keys=ON");
+    await migrate(raw, path, 100, migrations.slice(0, 24));
+    raw.exec(
+      "INSERT INTO workspace VALUES ('purge-w','Purge'); INSERT INTO principal VALUES ('purge-p','USER','P'); INSERT INTO workspace_principal VALUES ('purge-w','purge-p'); INSERT INTO activity VALUES ('purge-w','event','purge-p','missing','WORK_ITEM_DELETED','2026-10-03',NULL,NULL,NULL); INSERT INTO outbox VALUES ('purge-w','out','event','WORK_CHANGED','2026-10-03');",
+    );
+    before = (await migrate(raw, path, 100)).backupPath!;
+    expect(inspectSchema(raw)).toBe(migrations.length);
+    expect(
+      raw.prepare("SELECT type FROM activity WHERE id='event'").get()?.type,
+    ).toBe("WORK_ITEM_DELETED");
+    expect(
+      raw.prepare("SELECT activity_id FROM outbox WHERE id='out'").get()
+        ?.activity_id,
+    ).toBe("event");
+    expect(raw.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+  } finally {
+    raw.close();
+  }
+  const restored = harness.file();
+  await restoreDatabase(before, restored);
+  const old = new DatabaseSync(restored, { readOnly: true });
+  try {
+    expect(inspectSchema(old, migrations.slice(0, 24))).toBe(24);
+    expect(old.prepare("SELECT count(*) n FROM outbox").get()?.n).toBe(1);
+  } finally {
+    old.close();
+  }
+});
+
+it("upgrades v2.0.1 recurrence pause and occurrence payloads with explicit defaults", async () => {
+  const path = harness.file(),
+    db = new DatabaseSync(path);
+  try {
+    await migrate(db, path, 100, migrations.slice(0, 24));
+    db.exec(
+      "INSERT INTO workspace VALUES ('w','W'); INSERT INTO principal VALUES ('p','USER','P'); INSERT INTO workspace_principal VALUES ('w','p')",
+    );
+    const insert = db.prepare(
+      "INSERT INTO workflow_record VALUES ('w',?,?,1,'p','p','2026-10-01','2026-10-01',?,?)",
+    );
+    const rule = {
+      kind: "RECURRENCE",
+      title: "Keep",
+      descriptionMd: "# original",
+      projectIds: [],
+      startDate: "2026-10-01",
+      timezone: "America/New_York",
+      frequency: "DAILY",
+      interval: 1,
+    };
+    insert.run("active", "RECURRENCE", null, JSON.stringify(rule));
+    insert.run("paused", "RECURRENCE", "2026-10-02", JSON.stringify(rule));
+    insert.run(
+      "occurrence",
+      "OCCURRENCE",
+      null,
+      JSON.stringify({
+        kind: "OCCURRENCE",
+        definitionId: "active",
+        day: "2026-10-01",
+        status: "CREATED",
+        taskId: null,
+        recordedAt: "2026-10-01",
+      }),
+    );
+    const backup = (await migrate(db, path, 100)).backupPath;
+    expect(backup).toBeTruthy();
+    const rows = db
+      .prepare("SELECT id,deleted_at,payload FROM workflow_record ORDER BY id")
+      .all();
+    expect(JSON.parse(String(rows[0]!.payload))).toMatchObject({
+      state: "ACTIVE",
+      closePolicy: "END_OF_DAY",
+      closeIncomplete: true,
+      descriptionMd: "# original",
+    });
+    expect(JSON.parse(String(rows[1]!.payload))).toMatchObject({
+      status: "OPEN",
+    });
+    expect(JSON.parse(String(rows[2]!.payload))).toMatchObject({
+      state: "PAUSED",
+      closePolicy: "END_OF_DAY",
+      closeIncomplete: true,
+    });
+    expect(rows[2]!.deleted_at).toBeNull();
+    expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+  } finally {
+    db.close();
+  }
 });

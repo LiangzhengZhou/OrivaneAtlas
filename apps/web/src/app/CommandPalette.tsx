@@ -2,6 +2,7 @@ import type { EntityRef } from "@arclattice/application";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../bootstrap";
+import { DismissibleDialog } from "./DismissibleDialog";
 
 export function CommandPalette({
   snapshot,
@@ -42,58 +43,55 @@ export function CommandPalette({
     )
     .slice(0, 30);
   return (
-    <div className="modal-backdrop">
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label={zh ? "搜索与命令" : "Search and commands"}
-        className="dialog"
-        onKeyDown={(event) => {
-          if (event.key === "Escape") onClose();
+    <DismissibleDialog
+      onRequestClose={onClose}
+      aria-label={zh ? "搜索与命令" : "Search and commands"}
+      className="dialog"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+    >
+      <input
+        autoFocus
+        type="search"
+        aria-label={zh ? "搜索" : "Search"}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <button
+        type="button"
+        onClick={() => {
+          onClose();
+          onCreate();
         }}
       >
-        <input
-          autoFocus
-          type="search"
-          aria-label={zh ? "搜索" : "Search"}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        {zh ? "新建" : "Create"}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          onClose();
+          window.dispatchEvent(new CustomEvent("atlas:open"));
+        }}
+      >
+        {zh ? "询问 Atlas" : "Ask Atlas"}
+      </button>
+      {entries.map((entry) => (
         <button
           type="button"
+          className="agenda-item"
+          key={`${entry.ref.kind}:${entry.ref.id}`}
           onClick={() => {
             onClose();
-            onCreate();
+            onOpen(entry.ref);
           }}
         >
-          {zh ? "新建" : "Create"}
+          {entry.title}
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            onClose();
-            window.dispatchEvent(new CustomEvent("atlas:open"));
-          }}
-        >
-          {zh ? "询问 Atlas" : "Ask Atlas"}
-        </button>
-        {entries.map((entry) => (
-          <button
-            type="button"
-            className="agenda-item"
-            key={`${entry.ref.kind}:${entry.ref.id}`}
-            onClick={() => {
-              onClose();
-              onOpen(entry.ref);
-            }}
-          >
-            {entry.title}
-          </button>
-        ))}
-        <button type="button" onClick={onClose}>
-          {zh ? "关闭" : "Close"}
-        </button>
-      </section>
-    </div>
+      ))}
+      <button type="button" onClick={onClose}>
+        {zh ? "关闭" : "Close"}
+      </button>
+    </DismissibleDialog>
   );
 }

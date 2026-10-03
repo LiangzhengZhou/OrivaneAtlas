@@ -6,6 +6,15 @@ import {
 import { type ContentPolicy, contentPolicy } from "./content-policy";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
 
+/** Asset ids only, never copies Markdown or image data into a purge event. */
+export function referencedLibraryAssetIds(markdown: string): Set<string> {
+  return new Set(
+    [...markdown.matchAll(/\/api\/library\/asset\?id=([a-zA-Z0-9_-]+)/g)].map(
+      (match) => match[1]!,
+    ),
+  );
+}
+
 export interface LibraryEntry {
   parentDocumentId?: string | null;
   aliases?: string[];
@@ -48,6 +57,7 @@ export interface LibraryStore {
   get(id: string): Promise<LibraryEntry>;
   save(entry: LibraryEntry, expected: number): Promise<void>;
   revisions(id: string): Promise<LibraryEntry[]>;
+  purge(id: string, expectedVersion: number): Promise<void>;
   putAsset(asset: LibraryAsset): Promise<void>;
   putAssetChunk(
     asset: LibraryAsset,
@@ -207,6 +217,27 @@ export class LibraryService {
     };
     await this.store.save(entry, version);
     return entry;
+  }
+  async purge(
+    context: ActorContext,
+    id: string,
+    version: number,
+  ): Promise<void> {
+    await this.authorization.require(context, "work:delete");
+    const entry = await this.store.get(id);
+    if (entry.workspaceId !== context.workspaceId)
+      throw new DomainError("NOT_FOUND");
+    if (entry.version !== version) throw new DomainError("VERSION_CONFLICT");
+    if (!entry.deletedAt) throw new DomainError("VALIDATION_ERROR");
+    if (
+      (await this.store.list()).some(
+        (child) =>
+          child.workspaceId === context.workspaceId &&
+          (child.spaceId === id || child.parentDocumentId === id),
+      )
+    )
+      throw new DomainError("DEPENDENCY_EXISTS");
+    await this.store.purge(id, version);
   }
   async setDeleted(
     context: ActorContext,

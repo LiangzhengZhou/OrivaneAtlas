@@ -1,5 +1,5 @@
 {
-  "version": "2.0.1",
+  "version": "2.0.2",
   "scope": "arm64ReleaseRuntimeClasspath resolved by offline Gradle; Android SDK/platform and build tools remain separate",
   "dependencies": [
     {
@@ -145,16 +145,30 @@
     {
       "group": "androidx.collection",
       "name": "collection",
-      "version": "1.1.0",
+      "version": "1.4.2",
       "licenses": [
         {
           "name": "The Apache Software License, Version 2.0",
           "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
         }
       ],
-      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/collection/collection/1.1.0/collection-1.1.0.pom",
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/collection/collection/1.4.2/collection-1.4.2.pom",
       "inheritedLicensePom": null,
-      "sourceRepository": "http://source.android.com"
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
+      "group": "androidx.collection",
+      "name": "collection-jvm",
+      "version": "1.4.2",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/collection/collection-jvm/1.4.2/collection-jvm-1.4.2.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
     },
     {
       "group": "androidx.concurrent",
@@ -167,6 +181,20 @@
         }
       ],
       "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "http://source.android.com"
+    },
+    {
+      "group": "androidx.concurrent",
+      "name": "concurrent-futures-ktx",
+      "version": "1.1.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/concurrent/concurrent-futures-ktx/1.1.0/concurrent-futures-ktx-1.1.0.pom",
       "inheritedLicensePom": null,
       "sourceRepository": "http://source.android.com"
     },
@@ -536,6 +564,20 @@
     },
     {
       "group": "androidx.lifecycle",
+      "name": "lifecycle-service",
+      "version": "2.10.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-service/2.10.0/lifecycle-service-2.10.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
+      "group": "androidx.lifecycle",
       "name": "lifecycle-viewmodel",
       "version": "2.10.0",
       "licenses": [
@@ -689,6 +731,62 @@
       "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
     },
     {
+      "group": "androidx.room",
+      "name": "room-common",
+      "version": "2.7.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/room/room-common/2.7.0/room-common-2.7.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
+      "group": "androidx.room",
+      "name": "room-common-jvm",
+      "version": "2.7.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/room/room-common-jvm/2.7.0/room-common-jvm-2.7.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
+      "group": "androidx.room",
+      "name": "room-runtime",
+      "version": "2.7.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/room/room-runtime/2.7.0/room-runtime-2.7.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
+      "group": "androidx.room",
+      "name": "room-runtime-android",
+      "version": "2.7.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/room/room-runtime-android/2.7.0/room-runtime-android-2.7.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
       "group": "androidx.savedstate",
       "name": "savedstate",
       "version": "1.4.0",
@@ -731,6 +829,62 @@
       "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
     },
     {
+      "group": "androidx.sqlite",
+      "name": "sqlite",
+      "version": "2.5.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/sqlite/sqlite/2.5.0/sqlite-2.5.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
+      "group": "androidx.sqlite",
+      "name": "sqlite-android",
+      "version": "2.5.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/sqlite/sqlite-android/2.5.0/sqlite-android-2.5.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
+      "group": "androidx.sqlite",
+      "name": "sqlite-framework",
+      "version": "2.5.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/sqlite/sqlite-framework/2.5.0/sqlite-framework-2.5.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
+      "group": "androidx.sqlite",
+      "name": "sqlite-framework-android",
+      "version": "2.5.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/sqlite/sqlite-framework-android/2.5.0/sqlite-framework-android-2.5.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
       "group": "androidx.startup",
       "name": "startup-runtime",
       "version": "1.1.1",
@@ -747,14 +901,28 @@
     {
       "group": "androidx.tracing",
       "name": "tracing",
-      "version": "1.0.0",
+      "version": "1.2.0",
       "licenses": [
         {
           "name": "The Apache Software License, Version 2.0",
           "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
         }
       ],
-      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/tracing/tracing/1.0.0/tracing-1.0.0.pom",
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/tracing/tracing/1.2.0/tracing-1.2.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
+      "group": "androidx.tracing",
+      "name": "tracing-ktx",
+      "version": "1.2.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/tracing/tracing-ktx/1.2.0/tracing-ktx-1.2.0.pom",
       "inheritedLicensePom": null,
       "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
     },
@@ -853,6 +1021,20 @@
         }
       ],
       "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/webkit/webkit/1.14.0/webkit-1.14.0.pom",
+      "inheritedLicensePom": null,
+      "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
+    },
+    {
+      "group": "androidx.work",
+      "name": "work-runtime",
+      "version": "2.12.0",
+      "licenses": [
+        {
+          "name": "The Apache Software License, Version 2.0",
+          "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
+        }
+      ],
+      "publishedPom": "https://dl.google.com/dl/android/maven2/androidx/work/work-runtime/2.12.0/work-runtime-2.12.0.pom",
       "inheritedLicensePom": null,
       "sourceRepository": "https://cs.android.com/androidx/platform/frameworks/support"
     },
@@ -985,14 +1167,14 @@
     {
       "group": "org.jetbrains.kotlin",
       "name": "kotlin-stdlib",
-      "version": "2.0.21",
+      "version": "2.1.20",
       "licenses": [
         {
           "name": "The Apache License, Version 2.0",
           "url": "http://www.apache.org/licenses/LICENSE-2.0.txt"
         }
       ],
-      "publishedPom": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.0.21/kotlin-stdlib-2.0.21.pom",
+      "publishedPom": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.1.20/kotlin-stdlib-2.1.20.pom",
       "inheritedLicensePom": null,
       "sourceRepository": "https://github.com/JetBrains/kotlin"
     },

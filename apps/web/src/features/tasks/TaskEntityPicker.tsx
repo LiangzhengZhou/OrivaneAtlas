@@ -1,14 +1,19 @@
 import { projectPath, type WorkItem } from "@arclattice/domain";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AnchoredFloatingSurface } from "../../app/AnchoredFloatingSurface";
 
 export function TaskEntityPicker({
   items,
+  label,
+  mode = "multiple",
   values,
   excludedId,
   disabled,
   onChange,
 }: {
+  label?: string;
+  mode?: "single" | "multiple";
   items: readonly WorkItem[];
   values: readonly string[];
   excludedId?: string | undefined;
@@ -17,6 +22,7 @@ export function TaskEntityPicker({
 }) {
   const { t, i18n } = useTranslation("work");
   const zh = i18n.language.startsWith("zh");
+  const anchorRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   return (
@@ -38,13 +44,20 @@ export function TaskEntityPicker({
         type="button"
         className="chip"
         disabled={disabled}
+        ref={anchorRef}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        {zh ? "添加前置任务" : "Add prerequisite"}
+        {label ?? (zh ? "添加前置任务" : "Add prerequisite")}
       </button>
       {open && (
-        <div className="hierarchy-browser">
+        <AnchoredFloatingSurface
+          anchorRef={anchorRef}
+          onDismiss={() => setOpen(false)}
+          label={label ?? t("prerequisites")}
+          placement="bottom-start"
+          className="hierarchy-browser"
+        >
           <input
             type="search"
             aria-label={t("prerequisites")}
@@ -68,7 +81,12 @@ export function TaskEntityPicker({
                 className="text-button"
                 key={item.id}
                 disabled={disabled}
-                onClick={() => onChange([...values, item.id])}
+                onClick={() => {
+                  onChange(
+                    mode === "single" ? [item.id] : [...values, item.id],
+                  );
+                  if (mode === "single") setOpen(false);
+                }}
               >
                 {item.title}{" "}
                 <small>
@@ -76,7 +94,7 @@ export function TaskEntityPicker({
                 </small>
               </button>
             ))}
-        </div>
+        </AnchoredFloatingSurface>
       )}
     </section>
   );

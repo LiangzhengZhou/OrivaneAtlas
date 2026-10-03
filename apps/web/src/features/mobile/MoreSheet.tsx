@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { DismissibleDialog } from "../../app/DismissibleDialog";
 
 export function MoreSheet({
   entries,
@@ -11,22 +11,12 @@ export function MoreSheet({
   onClose(): void;
 }) {
   const { t } = useTranslation(["desk", "common"]);
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const element = dialog.current;
-    element?.showModal();
-    return () => element?.close();
-  }, []);
   return (
-    <dialog
-      ref={dialog}
+    <DismissibleDialog
+      onRequestClose={onClose}
       id="mobile-more-sheet"
       className="mobile-more-sheet"
       aria-labelledby="mobile-more-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
     >
       <header>
         <h2 id="mobile-more-title">{t("moreNavigation")}</h2>
@@ -45,6 +35,6 @@ export function MoreSheet({
           </button>
         ))}
       </nav>
-    </dialog>
+    </DismissibleDialog>
   );
 }

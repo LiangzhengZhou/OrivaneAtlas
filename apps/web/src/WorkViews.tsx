@@ -1,6 +1,4 @@
 import {
-  availability,
-  blockers,
   dependency,
   isExecutionActive,
   type WorkEdge,
@@ -19,8 +17,10 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
+import { taskDerivedIndex } from "./features/tasks/task-index";
 
 export interface WorkProps {
   today: string;
@@ -38,8 +38,7 @@ export interface WorkProps {
 function Task({
   today,
   item,
-  allItems,
-  edges,
+  derived,
   busy: workspaceBusy,
   isPending,
   onOpen,
@@ -47,10 +46,13 @@ function Task({
   isArchived,
   archiveSource,
   onOrganize,
-}: Omit<WorkProps, "items"> & { item: WorkItem }) {
+}: Omit<WorkProps, "items"> & {
+  item: WorkItem;
+  derived: ReturnType<typeof taskDerivedIndex>;
+}) {
   const { t } = useTranslation(["common", "work"]);
   const busy = workspaceBusy || !!isPending?.(item);
-  const blocked = blockers(item, allItems, edges).length > 0;
+  const blocked = (derived.blockersByTaskId.get(item.id)?.length ?? 0) > 0;
   const activated = isExecutionActive(item, today);
   const inherited = archiveSource(item);
   return (
@@ -128,10 +130,7 @@ function Task({
         </button>
         {!!item.projectIds?.length && (
           <span className="task-project">
-            {allItems
-              .filter((project) => item.projectIds?.includes(project.id))
-              .map((project) => project.title)
-              .join(" · ")}
+            {derived.projectTitlesByTaskId.get(item.id)}
           </span>
         )}
         {item.dueDate && (
@@ -161,7 +160,7 @@ function Task({
         {item.status === "TODO" && !activated && (
           <span className="readiness waiting">
             {t(
-              `work:${availability(item, allItems, edges, today).toLowerCase()}`,
+              `work:${derived.availabilityByTaskId.get(item.id)?.toLowerCase()}`,
             )}
           </span>
         )}
@@ -188,16 +187,24 @@ function Task({
   );
 }
 export function TaskList({ items, ...props }: WorkProps) {
+  const derived = useMemo(
+    () => taskDerivedIndex(props.allItems, props.edges, props.today),
+    [props.allItems, props.edges, props.today],
+  );
   return (
     <div className="task-list">
       {items.map((item) => (
-        <Task key={item.id} item={item} {...props} />
+        <Task key={item.id} item={item} {...props} derived={derived} />
       ))}
     </div>
   );
 }
 export function WorkBoard({ items, ...props }: WorkProps) {
   const { t, i18n } = useTranslation("work");
+  const derived = useMemo(
+    () => taskDerivedIndex(props.allItems, props.edges, props.today),
+    [props.allItems, props.edges, props.today],
+  );
   return (
     <div className="board">
       {workStatuses.map((status) => {
@@ -232,7 +239,7 @@ export function WorkBoard({ items, ...props }: WorkProps) {
               </span>
             </h3>
             {group.map((item) => (
-              <Task key={item.id} item={item} {...props} />
+              <Task key={item.id} item={item} {...props} derived={derived} />
             ))}
           </section>
         );
@@ -280,40 +287,28 @@ export function Dependencies({
       >
         <label className="field">
           <span>{t("work:prerequisite")}</span>
-          <select
-            aria-label={t("work:prerequisite")}
-            required
-            value={from}
-            onChange={(event) => setFrom(event.target.value)}
-          >
-            <option value="">{t("work:chooseTask")}</option>
-            {items
-              .filter((item) => item.type === "TASK" && !item.deletedAt)
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.title}
-                </option>
-              ))}
-          </select>
+          <TaskEntityPicker
+            items={items}
+            values={from ? [from] : []}
+            mode="single"
+            label={t("work:prerequisite")}
+            excludedId={to}
+            disabled={busy}
+            onChange={(values) => setFrom(values[0] ?? "")}
+          />
         </label>
         <ArrowRight size={19} aria-hidden="true" />
         <label className="field">
           <span>{t("work:dependent")}</span>
-          <select
-            aria-label={t("work:dependent")}
-            required
-            value={to}
-            onChange={(event) => setTo(event.target.value)}
-          >
-            <option value="">{t("work:chooseTask")}</option>
-            {items
-              .filter((item) => item.type === "TASK" && !item.deletedAt)
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.title}
-                </option>
-              ))}
-          </select>
+          <TaskEntityPicker
+            items={items}
+            values={to ? [to] : []}
+            mode="single"
+            label={t("work:dependent")}
+            excludedId={from}
+            disabled={busy}
+            onChange={(values) => setTo(values[0] ?? "")}
+          />
         </label>
         <button
           type="submit"

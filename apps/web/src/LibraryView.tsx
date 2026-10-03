@@ -1,7 +1,8 @@
 import type { LibraryEntry } from "@arclattice/application";
 import { BookOpen, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { showToast } from "./app/ToastHost";
 import type { Runtime, Snapshot } from "./bootstrap";
 import type { DocumentRequest } from "./DocumentWorkspace";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
@@ -10,45 +11,33 @@ export function LibraryView({
   runtime,
   onOpen,
   snapshot,
+  onChanged,
 }: {
   runtime: Runtime;
   onOpen: (request: DocumentRequest) => void;
   snapshot: Snapshot;
+  onChanged(): Promise<void>;
 }) {
   const { t } = useTranslation("spaces");
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
   const [graphOpen, setGraphOpen] = useState(false);
-  const [entries, setEntries] = useState<LibraryEntry[]>([]),
-    [spaceId, setSpaceId] = useState<string | null>(null),
+  const entries = snapshot.library;
+  const entriesById = useMemo(
+    () => new Map(entries.map((entry) => [entry.id, entry])),
+    [entries],
+  );
+  const [spaceId, setSpaceId] = useState<string | null>(null),
     [query, setQuery] = useState(""),
     [error, setError] = useState(false),
     [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      void runtime
-        .library()
-        .then((data) => {
-          if (alive) setEntries(data);
-        })
-        .catch(() => {
-          if (alive) setError(true);
-        });
-    load();
-    const timer = setInterval(load, 5000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [runtime]);
   async function run(action: () => Promise<unknown>) {
     if (busy) return;
     setBusy(true);
     setError(false);
     try {
       await action();
-      setEntries(await runtime.library());
+      await onChanged();
     } catch {
       setError(true);
     } finally {
@@ -64,24 +53,25 @@ export function LibraryView({
       e.spaceId === spaceId &&
       (e.title + " " + e.bodyMd).toLowerCase().includes(query.toLowerCase()),
   );
-  const hierarchy = (document: LibraryEntry) => {
-    const ancestors: string[] = [];
-    const visited = new Set([document.id]);
-    let parentId = document.parentDocumentId;
-    while (parentId && !visited.has(parentId)) {
-      visited.add(parentId);
-      const parent = entries.find(
-        (entry) =>
-          entry.id === parentId &&
-          !entry.deletedAt &&
-          entry.spaceId === document.spaceId,
-      );
-      if (!parent) break;
-      ancestors.unshift(parent.title);
-      parentId = parent.parentDocumentId;
+  const paths = useMemo(() => {
+    const result = new Map<string, string[]>();
+    for (const document of entries) {
+      const ancestors: string[] = [];
+      const visited = new Set([document.id]);
+      let parentId = document.parentDocumentId;
+      while (parentId && !visited.has(parentId)) {
+        visited.add(parentId);
+        const parent = entriesById.get(parentId);
+        if (!parent || parent.deletedAt || parent.spaceId !== document.spaceId)
+          break;
+        ancestors.unshift(parent.title);
+        parentId = parent.parentDocumentId;
+      }
+      result.set(document.id, ancestors);
     }
-    return ancestors;
-  };
+    return result;
+  }, [entries, entriesById]);
+  const hierarchy = (document: LibraryEntry) => paths.get(document.id) ?? [];
   docs.sort((left, right) =>
     [...hierarchy(left), left.title]
       .join("/")
@@ -109,7 +99,7 @@ export function LibraryView({
           snapshot={snapshot}
           currentSpaceId={spaceId ?? undefined}
           onOpen={(ref) => {
-            const entity = entries.find((entry) => entry.id === ref.id);
+            const entity = entriesById.get(ref.id);
             if (entity)
               onOpen({
                 key: entity.id,
@@ -170,7 +160,22 @@ export function LibraryView({
                 disabled={busy}
                 onClick={() =>
                   void run(async () => {
-                    await runtime.deleteLibrary(space.id, space.version, true);
+                    const deleted = await runtime.deleteLibrary(
+                      space.id,
+                      space.version,
+                      true,
+                    );
+                    showToast(
+                      zh ? "已移至回收站" : "Moved to Trash",
+                      async () => {
+                        await runtime.deleteLibrary(
+                          deleted.id,
+                          deleted.version,
+                          false,
+                        );
+                        await onChanged();
+                      },
+                    );
                     setSpaceId(null);
                   })
                 }
@@ -249,6 +254,21 @@ export function LibraryView({
                 }
               >
                 {t("restore")}
+              </button>
+              <button
+                type="button"
+                className="button danger"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      t("desk:permanentDeleteConfirm", { title: e.title }),
+                    )
+                  )
+                    void run(() => runtime.purgeLibrary(e.id, e.version));
+                }}
+              >
+                {t("desk:permanentDelete")}
               </button>
             </div>
           ))}

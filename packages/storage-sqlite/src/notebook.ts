@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { Note, NotebookStore } from "@arclattice/application";
 import { type ActorContext, DomainError } from "@arclattice/domain";
+import { purgeRelations } from "./purge";
 
 export function notebookStore(
   db: DatabaseSync,
@@ -38,6 +39,37 @@ export function notebookStore(
         )
         .all(context.workspaceId, id)
         .map(decode);
+    },
+    async purge(id, expected) {
+      guard();
+      const row = db
+        .prepare(
+          "SELECT version,deleted_at FROM notebook WHERE workspace_id=? AND id=?",
+        )
+        .get(context.workspaceId, id);
+      if (!row) throw new DomainError("NOT_FOUND");
+      if (row.version !== expected) throw new DomainError("VERSION_CONFLICT");
+      if (!row.deleted_at) throw new DomainError("VALIDATION_ERROR");
+      purgeRelations(db, context.workspaceId, { kind: "NOTE", id });
+      db.prepare(
+        "DELETE FROM notebook_revision WHERE workspace_id=? AND id=?",
+      ).run(context.workspaceId, id);
+      db.prepare(
+        "DELETE FROM notebook WHERE workspace_id=? AND id=? AND version=?",
+      ).run(context.workspaceId, id, expected);
+      const eventId = randomUUID();
+      db.prepare("INSERT INTO notebook_activity VALUES (?,?,?,?,?,?)").run(
+        context.workspaceId,
+        eventId,
+        id,
+        context.principalId,
+        expected + 1,
+        new Date().toISOString(),
+      );
+      db.prepare("INSERT INTO notebook_outbox VALUES (?,?,'NOTE_CHANGED')").run(
+        context.workspaceId,
+        eventId,
+      );
     },
     async save(note, expectedVersion) {
       guard();

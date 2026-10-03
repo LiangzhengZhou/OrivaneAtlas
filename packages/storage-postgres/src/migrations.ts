@@ -161,6 +161,22 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 18,
+    name: "permanent-purge",
+    sql: readFileSync(
+      new URL("./migrations/0018-permanent-purge.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 19,
+    name: "recurrence-lifecycle",
+    sql: readFileSync(
+      new URL("./migrations/0019-recurrence-lifecycle.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")
@@ -282,6 +298,16 @@ export async function inspectSchema(
         ]
       : []),
     ...(rows.length >= 17 ? ["agent_session"] : []),
+    ...(rows.length >= 18
+      ? [
+          "knowledge_link",
+          "organization",
+          "notebook",
+          "notebook_revision",
+          "notebook_activity",
+          "notebook_outbox",
+        ]
+      : []),
   ];
   if (
     knowledgeTables.some(

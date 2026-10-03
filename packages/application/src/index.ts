@@ -67,6 +67,7 @@ export interface IdGenerator {
   next(): string;
 }
 export interface ActivityEvent {
+  readonly reason?: "RECURRENCE_WINDOW_EXPIRED" | null;
   readonly fromId?: string | null;
   readonly toId?: string | null;
   readonly edgeType?: EdgeType | null;
@@ -79,6 +80,7 @@ export interface ActivityEvent {
     | "WORK_ITEM_UPDATED"
     | "WORK_ITEM_DELETED"
     | "WORK_ITEM_RESTORED"
+    | "WORK_ITEM_PURGED"
     | "WORK_EDGE_ADDED"
     | "WORK_EDGE_REMOVED"
     | "WORKSPACE_SETTINGS_UPDATED";
@@ -124,6 +126,7 @@ export interface WorkTransaction {
   edges(): Promise<readonly WorkEdge[]>;
   insert(item: WorkItem): Promise<void>;
   replace(item: WorkItem, expectedVersion: number): Promise<void>;
+  purge(id: string, expectedVersion: number): Promise<void>;
   addEdge(edge: WorkEdge): Promise<void>;
   removeEdge(id: string): Promise<void>;
   appendActivity(event: ActivityEvent): Promise<void>;
@@ -324,6 +327,7 @@ export class WorkService {
     id: string,
     expectedVersion: number,
     input: UpdateWorkInput,
+    reason?: "RECURRENCE_WINDOW_EXPIRED",
   ): Promise<WorkItem> {
     await this.authorization.require(context, "work:update");
     this.prerequisites(input.prerequisiteIds);
@@ -562,9 +566,62 @@ export class WorkService {
           throw new DomainError("WORK_ITEM_BLOCKED");
       }
       await tx.replace(normalized, expectedVersion);
-      await this.record(tx, context, item.id, "WORK_ITEM_UPDATED", now);
+      await this.record(
+        tx,
+        context,
+        item.id,
+        "WORK_ITEM_UPDATED",
+        now,
+        undefined,
+        reason,
+      );
       await this.reconcileDependents(tx, context, now);
       return tx.get(item.id);
+    });
+  }
+
+  async purge(
+    context: ActorContext,
+    id: string,
+    expectedVersion: number,
+  ): Promise<void> {
+    await this.authorization.require(context, "work:delete");
+    await this.uow.run(context.workspaceId, async (tx) => {
+      const item = await tx.get(id);
+      if (item.workspaceId !== context.workspaceId)
+        throw new DomainError("NOT_FOUND");
+      if (item.version !== expectedVersion)
+        throw new DomainError("VERSION_CONFLICT");
+      if (!item.deletedAt) throw new DomainError("VALIDATION_ERROR");
+      const items = await tx.list(true);
+      if (
+        items.some(
+          (child) =>
+            child.parentProjectId === id ||
+            (item.type === "PROJECT" && child.projectIds?.includes(id)),
+        )
+      )
+        throw new DomainError("DEPENDENCY_EXISTS");
+      const now = this.clock.now();
+      for (const record of await tx.workflows()) {
+        if (
+          record.payload.kind !== "OCCURRENCE" ||
+          record.payload.taskId !== id
+        )
+          continue;
+        await tx.saveWorkflow(
+          {
+            ...record,
+            version: record.version + 1,
+            updatedAt: now,
+            updatedBy: context.principalId,
+            payload: { ...record.payload, taskId: null },
+          },
+          record.version,
+        );
+      }
+      await tx.purge(id, expectedVersion);
+      await this.record(tx, context, id, "WORK_ITEM_PURGED", now);
     });
   }
 
@@ -1016,6 +1073,7 @@ export class WorkService {
     type: ActivityEvent["type"],
     occurredAt: string,
     edge?: WorkEdge,
+    reason?: "RECURRENCE_WINDOW_EXPIRED",
   ): Promise<void> {
     const id = this.ids.next();
     await tx.appendActivity({
@@ -1028,6 +1086,7 @@ export class WorkService {
       fromId: edge?.fromId ?? null,
       toId: edge?.toId ?? null,
       edgeType: edge?.type ?? null,
+      reason: reason ?? null,
     });
     await tx.appendOutbox({
       id: this.ids.next(),
@@ -1051,6 +1110,7 @@ export {
   validateContextPolicy,
 } from "./model-gateway";
 export * from "./note-knowledge";
+export * from "./notifications";
 export type {
   PersonalModelInput,
   PersonalModelSummary,
@@ -1059,8 +1119,8 @@ export type {
 export { type AiTextEdit, parseAiTextEdits } from "./personal-ai";
 export * from "./project-knowledge-scope";
 export * from "./provider-adapter";
+export * from "./recurrence-lifecycle";
 export * from "./retrieval";
 export * from "./trusted-ai-endpoint";
 export type { AppUpdateInfo, AppUpdateProgress, AppUpdates } from "./updates";
-
 export * from "./workspace-changes";

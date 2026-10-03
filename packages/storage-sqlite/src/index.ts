@@ -43,6 +43,7 @@ import { inspectSchema, migrate } from "./migrations";
 import { notebookStore } from "./notebook";
 import { organizationStore } from "./organization";
 import { projectStore } from "./project-materials";
+import { purgeRelations } from "./purge";
 import { workflowPort } from "./workflows";
 
 export { StorageError } from "./database";
@@ -84,6 +85,7 @@ const edgeFields = {
   createdAt: "created_at",
 } satisfies Record<keyof WorkEdge, string>;
 const activityFields = {
+  reason: "reason",
   fromId: "from_id",
   toId: "to_id",
   edgeType: "edge_type",
@@ -574,6 +576,31 @@ export class SqliteUnitOfWork implements UnitOfWork {
         if (result.changes !== 1) throw new DomainError("VERSION_CONFLICT");
         memberships(item);
       },
+      purge: async (id, expected) => {
+        guard();
+        const old = get(id);
+        if (old.version !== expected) throw new DomainError("VERSION_CONFLICT");
+        if (!old.deletedAt) throw new DomainError("VALIDATION_ERROR");
+        purgeRelations(this.db, workspaceId, { kind: "WORK", id });
+        this.db
+          .prepare(
+            "DELETE FROM work_edge WHERE workspace_id=? AND (from_id=? OR to_id=?)",
+          )
+          .run(workspaceId, id, id);
+        this.db
+          .prepare(
+            "DELETE FROM task_project WHERE workspace_id=? AND (task_id=? OR project_id=?)",
+          )
+          .run(workspaceId, id, id);
+        if (
+          this.db
+            .prepare(
+              "DELETE FROM work_item WHERE workspace_id=? AND id=? AND version=? AND deleted_at IS NOT NULL",
+            )
+            .run(workspaceId, id, expected).changes !== 1
+        )
+          throw new DomainError("VERSION_CONFLICT");
+      },
       addEdge: async (edge) => {
         scope(edge);
         member(edge.createdBy);
@@ -604,6 +631,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
           fromId: event.fromId ?? null,
           toId: event.toId ?? null,
           edgeType: event.edgeType ?? null,
+          reason: event.reason ?? null,
         });
       },
       appendOutbox: async (event) => {

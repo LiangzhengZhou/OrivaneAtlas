@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orivane Atlas workspace API",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "description": "HTTPS self-hosted accounts with isolated workspaces. Registration is PENDING until admin approval. Legacy-key session alone binds ADMIN to original workspace. Cookie + CSRF or 30/90/365-day or non-expiring revocable Bearer credentials: write allows create/update/delete and responses may include the affected entity (not append-only or confidential blind-write); read-write explicitly permits all private workspace content reads. Bearer forbids admin/accounts/tokens/backup/server AI. Business POSTs use atomic durable Idempotency-Key receipts and current versions. Claim/password/token issuance consume keys without replaying secret responses (409 on consumed key). Passwords and secret-response plaintext are never in receipts. Registration requires a key but deduplicates by unique normalized username (retry after success can return 400). Login/logout/read-only backup do not use receipts. No server AI configuration needed for local AI uploads. No email recovery/MFA/offline replication/public sharing or autonomous tools. PDF is client browser print, not a PDF-generation API. Legacy /api and versioned /api/v1 aliases have identical behavior. Personal encrypted provider settings support Chat Completions and Responses. Explicit review authorizes one call with selected versioned documents; results never auto-apply. SQLite backup excludes the separate provider vault and its master key."
   },
   "servers": [
@@ -1523,8 +1523,8 @@
     "/api/v1/recurrences/save": {
       "post": {
         "operationId": "recurrences_saveV1",
-        "summary": "Save or pause recurrence",
-        "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Workspace and version scoped. Plan publication binds creator and exact graph revision. Recurrence generation runs manually and in the active-account background worker, limited to 366 calendar dates per transaction through local today; a durable schedulerThrough cursor prevents repeated scanning. Monthly rules skip missing days. Backfill uses the immutable occurrence ruleSnapshot; legacy occurrences require unchanged definition. Actual completion is stored separately. Legacy /api alias supported.",
+        "summary": "Save recurrence definition with explicit active paused or ended state",
+        "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Workspace and version scoped. Plan publication binds creator and exact graph revision. Recurrence generation runs manually and in the active-account background worker, limited to 366 calendar dates per transaction through local today; a durable schedulerThrough cursor prevents repeated scanning. Monthly rules skip missing days. Backfill uses the immutable occurrence ruleSnapshot; legacy occurrences require unchanged definition. Actual completion is stored separately. Legacy /api alias supported. State defaults ACTIVE, closePolicy END_OF_DAY and closeIncomplete true. Pause uses state and preserves deletedAt for trash. Tick first reconciles existing occurrences including paused/ended definitions: DONE becomes COMPLETED; expired incomplete becomes MISSED, optionally canceling its task with activity reason RECURRENCE_WINDOW_EXPIRED. endDate stops generation and does not shorten occurrence windows. expiresAt uses immutable ruleSnapshot and local calendar boundaries including DST. Counts and completion rates use occurrence lifecycle, never arbitrary DONE task totals.",
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -1614,6 +1614,26 @@
                       "assigneePrincipalId": {
                         "type": ["string", "null"],
                         "maxLength": 240
+                      },
+                      "state": {
+                        "enum": ["ACTIVE", "PAUSED", "ENDED"],
+                        "default": "ACTIVE"
+                      },
+                      "closePolicy": {
+                        "enum": ["END_OF_DAY", "NEXT_OCCURRENCE", "DURATION"],
+                        "default": "END_OF_DAY"
+                      },
+                      "closeIncomplete": {
+                        "type": "boolean",
+                        "default": true
+                      },
+                      "durationValue": {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                        "maximum": 366
+                      },
+                      "durationUnit": {
+                        "enum": ["HOUR", "DAY", "WEEK", null]
                       }
                     }
                   }
@@ -3587,6 +3607,15 @@
               "default": "default",
               "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
             }
+          },
+          {
+            "name": "includeRuns",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "description": "false returns configuration without reading run activity; used when Settings Activity is closed."
           }
         ]
       }
@@ -6385,6 +6414,15 @@
               "default": "default",
               "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
             }
+          },
+          {
+            "name": "includeRuns",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            },
+            "description": "false returns configuration without reading run activity; used when Settings Activity is closed."
           }
         ]
       }
@@ -9671,6 +9709,360 @@
         },
         "operationId": "streamAiEventsV1"
       }
+    },
+    "/api/work/purge": {
+      "post": {
+        "tags": ["work"],
+        "summary": "Permanently purge an already deleted entity and its related projections",
+        "operationId": "workPurge",
+        "description": "Requires work:delete, workspace isolation, expected version and Idempotency-Key. Rejects active entities and parents with remaining children. Atomic Activity/Outbox. Human session only; API credentials and Agent tools cannot permanently purge.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Purged"
+          },
+          "400": {
+            "description": "Invalid request or entity is not deleted"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "404": {
+            "description": "Entity not found in this workspace"
+          },
+          "409": {
+            "description": "Version conflict or remaining descendants"
+          }
+        }
+      }
+    },
+    "/api/note/purge": {
+      "post": {
+        "tags": ["note"],
+        "summary": "Permanently purge an already deleted entity and its related projections",
+        "operationId": "notePurge",
+        "description": "Requires work:delete, workspace isolation, expected version and Idempotency-Key. Rejects active entities and parents with remaining children. Atomic Activity/Outbox. Human session only; API credentials and Agent tools cannot permanently purge.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Purged"
+          },
+          "400": {
+            "description": "Invalid request or entity is not deleted"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "404": {
+            "description": "Entity not found in this workspace"
+          },
+          "409": {
+            "description": "Version conflict or remaining descendants"
+          }
+        }
+      }
+    },
+    "/api/library/purge": {
+      "post": {
+        "tags": ["library"],
+        "summary": "Permanently purge an already deleted entity and its related projections",
+        "operationId": "libraryPurge",
+        "description": "Requires work:delete, workspace isolation, expected version and Idempotency-Key. Rejects active entities and parents with remaining children. Atomic Activity/Outbox. Human session only; API credentials and Agent tools cannot permanently purge.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Purged"
+          },
+          "400": {
+            "description": "Invalid request or entity is not deleted"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "404": {
+            "description": "Entity not found in this workspace"
+          },
+          "409": {
+            "description": "Version conflict or remaining descendants"
+          }
+        }
+      }
+    },
+    "/api/v1/work/purge": {
+      "post": {
+        "tags": ["work"],
+        "summary": "Permanently purge an already deleted entity and its related projections",
+        "operationId": "workPurgeV1",
+        "description": "Requires work:delete, workspace isolation, expected version and Idempotency-Key. Rejects active entities and parents with remaining children. Atomic Activity/Outbox. Human session only; API credentials and Agent tools cannot permanently purge.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Purged"
+          },
+          "400": {
+            "description": "Invalid request or entity is not deleted"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "404": {
+            "description": "Entity not found in this workspace"
+          },
+          "409": {
+            "description": "Version conflict or remaining descendants"
+          }
+        }
+      }
+    },
+    "/api/v1/note/purge": {
+      "post": {
+        "tags": ["note"],
+        "summary": "Permanently purge an already deleted entity and its related projections",
+        "operationId": "notePurgeV1",
+        "description": "Requires work:delete, workspace isolation, expected version and Idempotency-Key. Rejects active entities and parents with remaining children. Atomic Activity/Outbox. Human session only; API credentials and Agent tools cannot permanently purge.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Purged"
+          },
+          "400": {
+            "description": "Invalid request or entity is not deleted"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "404": {
+            "description": "Entity not found in this workspace"
+          },
+          "409": {
+            "description": "Version conflict or remaining descendants"
+          }
+        }
+      }
+    },
+    "/api/v1/library/purge": {
+      "post": {
+        "tags": ["library"],
+        "summary": "Permanently purge an already deleted entity and its related projections",
+        "operationId": "libraryPurgeV1",
+        "description": "Requires work:delete, workspace isolation, expected version and Idempotency-Key. Rejects active entities and parents with remaining children. Atomic Activity/Outbox. Human session only; API credentials and Agent tools cannot permanently purge.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Purged"
+          },
+          "400": {
+            "description": "Invalid request or entity is not deleted"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "404": {
+            "description": "Entity not found in this workspace"
+          },
+          "409": {
+            "description": "Version conflict or remaining descendants"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -11169,11 +11561,16 @@
               "WORK_ITEM_RESTORED",
               "WORK_EDGE_ADDED",
               "WORK_EDGE_REMOVED",
-              "WORKSPACE_SETTINGS_UPDATED"
+              "WORKSPACE_SETTINGS_UPDATED",
+              "WORK_ITEM_PURGED"
             ]
           },
           "occurredAt": {
             "type": "string"
+          },
+          "reason": {
+            "enum": ["RECURRENCE_WINDOW_EXPIRED", null],
+            "description": "Internal cancellation cause, not caller-controlled work update input."
           }
         },
         "required": [

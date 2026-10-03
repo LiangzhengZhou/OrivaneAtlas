@@ -1,4 +1,4 @@
-# Third-party notices — Orivane Atlas 2.0.1
+# Third-party notices — Orivane Atlas 2.0.2
 
 Orivane Atlas retains the existing [Apache License 2.0](LICENSE). This does not
 relicense dependencies, fonts, native platforms or third-party code.
@@ -29,7 +29,7 @@ Rolldown and Tauri CLI platform bindings share the licensing of the matching too
 the parent tool's packaged license/notice texts are included. Preserve appropriate
 upstream attribution when distributing these tools or their outputs.
 
-No dependencies were added or upgraded for release preparation. This is an
+The product upgrade adds WorkManager and updates Kotlin; inventories include the resolved release dependencies. This is an
 attribution inventory, not a claim of exhaustive legal clearance for every possible
 distribution. Licenses and notices included with the actual artifact take precedence.
 
@@ -39,7 +39,7 @@ Cargo dependencies are pinned by `src-tauri/Cargo.lock`. The [native inventory](
 records 323 packages from locked Windows GNU / Android aarch64 metadata, including
 build/test dependencies; [packaged Cargo notices](docs/licenses/NATIVE_LICENSES.txt)
 retain available license/copyright texts. The [Android inventory](docs/licenses/android-inventory.json)
-records 79 resolved arm64 release runtime dependencies and their published POM
+records 92 resolved arm64 release runtime dependencies and their published POM
 license declarations (including inherited licenses); [Android notices](docs/licenses/ANDROID_LICENSES.txt)
 retain license/notice texts found in the actual JAR/AAR archives.
 

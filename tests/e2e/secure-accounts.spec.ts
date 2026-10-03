@@ -61,6 +61,16 @@ test("native secure account selector switches without password and forgets local
             args: { reference?: string; path?: string },
           ) => {
             if (command === "saved_accounts") return entries;
+            if (
+              command === "notification_permission" ||
+              command === "notification_request_permission"
+            )
+              return "prompt";
+            if (
+              command === "notification_reconcile" ||
+              command === "notification_cancel"
+            )
+              return;
             if (command === "configure_server") return;
             if (command === "select_account") {
               selected = args.reference ?? null;

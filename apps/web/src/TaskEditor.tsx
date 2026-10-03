@@ -12,6 +12,7 @@ import {
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { DismissibleDialog } from "./app/DismissibleDialog";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
 import { Markdown } from "./Markdown";
@@ -32,7 +33,6 @@ export function TaskEditor({
   onDelete,
 }: WorkEditorProps) {
   const { t, i18n } = useTranslation(["common", "work"]);
-  const dialog = useRef<HTMLDialogElement>(null);
   const pendingChange = useRef<(() => void) | null>(null);
   const [discard, setDiscard] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -148,19 +148,12 @@ export function TaskEditor({
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
-  useEffect(() => {
-    const node = dialog.current;
-    if (window.matchMedia("(max-width: 767px)").matches) node?.showModal();
-    else node?.show();
-    return () => node?.close();
-  }, []);
   return (
-    <dialog
-      ref={dialog}
+    <DismissibleDialog
+      modal={window.matchMedia("(max-width: 767px)").matches}
       className="task-dialog task-inspector"
       aria-labelledby="editor-heading"
-      onCancel={(event) => {
-        event.preventDefault();
+      onRequestClose={() => {
         if (!busy) close();
       }}
     >
@@ -459,6 +452,6 @@ export function TaskEditor({
           </button>
         </div>
       </form>
-    </dialog>
+    </DismissibleDialog>
   );
 }
