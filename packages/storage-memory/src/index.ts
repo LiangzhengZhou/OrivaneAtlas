@@ -3,15 +3,22 @@ import type {
   AuthorizationService,
   CalendarSettings,
   CategoryChange,
+  Organization,
   OutboxEvent,
   Permission,
   ProjectCategory,
   UnitOfWork,
   WorkflowRecord,
+  WorkspaceChange,
   WorkTransaction,
 } from "@arclattice/application";
 import { normalizeWorkflowRecords } from "@arclattice/application";
-import type { ActorContext, WorkEdge, WorkItem } from "@arclattice/domain";
+import type {
+  ActorContext,
+  Reminder,
+  WorkEdge,
+  WorkItem,
+} from "@arclattice/domain";
 import {
   DomainError,
   defaultNavigationPreference,
@@ -20,6 +27,11 @@ import {
 } from "@arclattice/domain";
 
 interface MemoryState {
+  changes: WorkspaceChange[];
+  epoch: string;
+  reminders: Map<string, Reminder>;
+  reminderEvents: Reminder[];
+  organizations: Map<string, Organization>;
   navigation: Map<string, NavigationPreference>;
   calendarSettings: CalendarSettings;
   workflows: Map<string, WorkflowRecord>;
@@ -32,6 +44,11 @@ interface MemoryState {
   outbox: OutboxEvent[];
 }
 const emptyState = (): MemoryState => ({
+  changes: [],
+  epoch: crypto.randomUUID(),
+  reminders: new Map(),
+  reminderEvents: [],
+  organizations: new Map(),
   navigation: new Map(),
   calendarSettings: { version: 0, timezone: null },
   workflows: new Map(),
@@ -79,7 +96,94 @@ export class MemoryUnitOfWork implements UnitOfWork {
             : item,
         );
       };
+      const publish = (
+        collection: string,
+        entityId: string,
+        version: number,
+        op: "UPSERT" | "DELETE" = "UPSERT",
+      ) =>
+        state.changes.push({
+          seq: state.changes.length + 1,
+          workspaceId,
+          collection,
+          entityId,
+          version,
+          op,
+        });
       const tx: WorkTransaction = {
+        workspaceRelatedLinks: async () => {
+          assertOpen();
+          return [];
+        },
+        workspaceChanges: async (after, epoch) => {
+          assertOpen();
+          if (!Number.isSafeInteger(after) || after < 0)
+            throw new DomainError("VALIDATION_ERROR");
+          const recovery =
+            after > state.changes.length || (!!epoch && epoch !== state.epoch);
+          const changes = recovery
+            ? []
+            : structuredClone(state.changes.slice(after, after + 500));
+          return {
+            epoch: state.epoch,
+            changes,
+            cursor: changes.at(-1)?.seq ?? state.changes.length,
+            recovery,
+            hasMore: !recovery && after + changes.length < state.changes.length,
+          };
+        },
+        workspaceEntity: async (collection, id) => {
+          assertOpen();
+          const value =
+            collection === "items"
+              ? state.items.get(id)
+              : collection === "edges"
+                ? state.edges.get(id)
+                : collection === "categories"
+                  ? state.categories.get(id)
+                  : collection === "workflows"
+                    ? state.workflows.get(id)
+                    : collection === "organization"
+                      ? state.organizations.get(id)
+                      : collection === "reminders"
+                        ? state.reminders.get(id)
+                        : collection === "navigationPreference"
+                          ? state.navigation.get(id)
+                          : collection === "calendarSettings"
+                            ? state.calendarSettings
+                            : null;
+          return structuredClone(value ?? null);
+        },
+        reminders: async () => {
+          assertOpen();
+          return structuredClone([...state.reminders.values()]);
+        },
+        saveReminder: async (value, expected) => {
+          assertScope(value);
+          if (
+            (state.reminders.get(value.id)?.version ?? 0) !== expected ||
+            value.version !== expected + 1
+          )
+            throw new DomainError("VERSION_CONFLICT");
+          state.reminders.set(value.id, structuredClone(value));
+          publish("reminders", value.id, value.version);
+          state.reminderEvents.push(structuredClone(value));
+        },
+        organizations: async () => {
+          assertOpen();
+          return structuredClone([...state.organizations.values()]);
+        },
+        saveOrganization: async (value, expected) => {
+          assertScope(value);
+          const key = value.kind + ":" + value.id;
+          if (
+            (state.organizations.get(key)?.version ?? 0) !== expected ||
+            value.version !== expected + 1
+          )
+            throw new DomainError("VERSION_CONFLICT");
+          state.organizations.set(key, structuredClone(value));
+          publish("organization", key, value.version);
+        },
         navigationPreference: async (principalId) => {
           assertOpen();
           return structuredClone(
@@ -97,6 +201,7 @@ export class MemoryUnitOfWork implements UnitOfWork {
           )
             throw new DomainError("VERSION_CONFLICT");
           state.navigation.set(principalId, structuredClone(preference));
+          publish("navigationPreference", principalId, preference.version);
         },
         calendarSettings: async () => {
           assertOpen();
@@ -110,6 +215,7 @@ export class MemoryUnitOfWork implements UnitOfWork {
           )
             throw new DomainError("VERSION_CONFLICT");
           state.calendarSettings = { ...settings };
+          publish("calendarSettings", "workspace", settings.version);
         },
         workflows: async () => {
           assertOpen();
@@ -133,6 +239,7 @@ export class MemoryUnitOfWork implements UnitOfWork {
           )
             throw new DomainError("VALIDATION_ERROR");
           state.workflows.set(record.id, structuredClone(record));
+          publish("workflows", record.id, record.version);
           state.workflowEvents.push(structuredClone(record));
         },
         categories: async () => {
@@ -148,6 +255,7 @@ export class MemoryUnitOfWork implements UnitOfWork {
           )
             throw new DomainError("VERSION_CONFLICT");
           state.categories.set(category.id, structuredClone(category));
+          publish("categories", category.id, category.version);
         },
         appendCategoryChange: async (event) => {
           assertScope(event);
@@ -171,6 +279,7 @@ export class MemoryUnitOfWork implements UnitOfWork {
           if (state.items.has(item.id) || item.version !== 1)
             throw new DomainError("VERSION_CONFLICT");
           state.items.set(item.id, structuredClone(item));
+          publish("items", item.id, item.version);
         },
         replace: async (item, expectedVersion) => {
           assertScope(item);
@@ -184,6 +293,7 @@ export class MemoryUnitOfWork implements UnitOfWork {
               actualVersion: old.version,
             });
           state.items.set(item.id, structuredClone(item));
+          publish("items", item.id, item.version);
         },
         purge: async (id, expected) => {
           const old = get(id);
@@ -191,9 +301,12 @@ export class MemoryUnitOfWork implements UnitOfWork {
             throw new DomainError("VERSION_CONFLICT");
           if (!old.deletedAt) throw new DomainError("VALIDATION_ERROR");
           for (const edge of state.edges.values())
-            if (edge.fromId === id || edge.toId === id)
+            if (edge.fromId === id || edge.toId === id) {
               state.edges.delete(edge.id);
+              publish("edges", edge.id, 1, "DELETE");
+            }
           state.items.delete(id);
+          publish("items", id, old.version, "DELETE");
         },
         addEdge: async (edge) => {
           assertScope(edge);
@@ -201,10 +314,12 @@ export class MemoryUnitOfWork implements UnitOfWork {
           if (get(edge.fromId).deletedAt || get(edge.toId).deletedAt)
             throw new DomainError("NOT_FOUND");
           state.edges.set(edge.id, structuredClone(edge));
+          publish("edges", edge.id, 1);
         },
         removeEdge: async (id) => {
           assertOpen();
           if (!state.edges.delete(id)) throw new DomainError("NOT_FOUND");
+          publish("edges", id, 1, "DELETE");
         },
         appendActivity: async (event) => {
           assertScope(event);

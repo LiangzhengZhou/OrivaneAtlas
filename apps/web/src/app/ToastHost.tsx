@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "../components/ui/Button";
 
 interface Toast {
   id: string;
@@ -32,7 +33,7 @@ export function ToastHost() {
         <div className="toast" key={toast.id}>
           <span>{toast.message}</span>
           {toast.undo && (
-            <button
+            <Button
               type="button"
               disabled={pending === toast.id}
               onClick={async () => {
@@ -54,9 +55,9 @@ export function ToastHost() {
               }}
             >
               {i18n.language.startsWith("zh") ? "撤销" : "Undo"}
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             type="button"
             aria-label={i18n.language.startsWith("zh") ? "关闭" : "Dismiss"}
             onClick={() =>
@@ -64,7 +65,7 @@ export function ToastHost() {
             }
           >
             ×
-          </button>
+          </Button>
         </div>
       ))}
     </aside>

@@ -101,7 +101,7 @@ this event mechanism; foreground refresh/reconnect still recovers state.
 
 ## Native validation boundary
 
-Master branding lives only in branding/app-icon-master.svg; the reproducible
+Master branding lives only in branding/application-icon-source.png; the reproducible
 generator derives Windows sizes, Android adaptive/legacy and notification assets.
 Build and resource tests do not establish physical Android launcher, Windows
 Explorer/shortcut/taskbar behavior, or live paid provider acceptance. Those require

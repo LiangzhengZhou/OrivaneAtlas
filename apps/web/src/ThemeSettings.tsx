@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Select } from "./components/ui/Surfaces";
 
 type Theme = "system" | "light" | "dark";
 const storageKey = "orivane-atlas.theme";
@@ -26,7 +27,7 @@ export function ThemeSettings({ controls }: { controls: boolean }) {
   return controls ? (
     <label className="density-settings">
       {t("appearance")}
-      <select
+      <Select
         aria-label={t("appearance")}
         value={theme}
         onChange={(event) => {
@@ -42,7 +43,7 @@ export function ThemeSettings({ controls }: { controls: boolean }) {
             {t(`themes.${value}`)}
           </option>
         ))}
-      </select>
+      </Select>
     </label>
   ) : null;
 }

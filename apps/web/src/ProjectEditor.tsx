@@ -1,16 +1,21 @@
 import {
   eligibleProjectParents,
   type ProjectLifecycle,
-  projectAncestors,
   projectCompletion,
   projectLifecycle,
   projectLifecycles,
 } from "@arclattice/domain";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DismissibleDialog } from "./app/DismissibleDialog";
 import { DateField } from "./components/DateField";
+import { Button } from "./components/ui/Button";
+import { Select } from "./components/ui/Surfaces";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
+import {
+  buildWorkspaceWorkIndex,
+  WorkspaceWorkIndexContext,
+} from "./features/tasks/workspace-work-index";
 import type { WorkEditorProps } from "./WorkItemEditor";
 
 export function ProjectEditor({
@@ -26,6 +31,26 @@ export function ProjectEditor({
   onDelete,
 }: WorkEditorProps) {
   const { t } = useTranslation(["common", "desk", "work"]);
+  const sharedWorkIndex = useContext(WorkspaceWorkIndexContext);
+  const workIndex = useMemo(
+    () => sharedWorkIndex ?? buildWorkspaceWorkIndex(projects, []),
+    [sharedWorkIndex, projects],
+  );
+  const excludedDestinations = useMemo(
+    () =>
+      new Set(
+        projects
+          .filter(
+            (project) =>
+              project.id === item?.id ||
+              workIndex.ancestorIdsByProjectId
+                .get(project.id)
+                ?.includes(item?.id ?? ""),
+          )
+          .map((project) => project.id),
+      ),
+    [projects, workIndex, item?.id],
+  );
   const [title, setTitle] = useState(item?.title ?? "");
   const [categoryId, setCategoryId] = useState(item?.categoryId ?? "");
   const [parent, setParent] = useState(
@@ -106,14 +131,14 @@ export function ProjectEditor({
           <h2 id="project-editor-heading">
             {t(item ? "desk:projectSettings" : "desk:newProject")}
           </h2>
-          <button
+          <Button
             type="button"
             className="chip"
             disabled={busy}
             onClick={close}
           >
             {t("close")}
-          </button>
+          </Button>
         </div>
         {error && (
           <p role="alert" className="error">
@@ -123,16 +148,16 @@ export function ProjectEditor({
         {discard && (
           <div className="error">
             {t("desk:discardHint")}
-            <button type="button" className="button danger" onClick={onClose}>
+            <Button type="button" className="button danger" onClick={onClose}>
               {t("desk:discard")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               className="button secondary"
               onClick={() => setDiscard(false)}
             >
               {t("cancel")}
-            </button>
+            </Button>
           </div>
         )}
         <label className="field">
@@ -159,7 +184,7 @@ export function ProjectEditor({
         {!parent && (
           <label className="field">
             <span>{t("desk:categories.filter")}</span>
-            <select
+            <Select
               value={categoryId}
               onChange={(event) => setCategoryId(event.target.value)}
             >
@@ -171,7 +196,7 @@ export function ProjectEditor({
                     {category.name}
                   </option>
                 ))}
-            </select>
+            </Select>
           </label>
         )}
         <ProjectDrilldownPicker
@@ -198,7 +223,7 @@ export function ProjectEditor({
         {item && (
           <label className="field">
             <span>{t("desk:projectLifecycle")}</span>
-            <select
+            <Select
               aria-label={t("desk:projectLifecycle")}
               value={lifecycle}
               onChange={(event) =>
@@ -210,7 +235,7 @@ export function ProjectEditor({
                   {t("desk:projectLifecycles." + value)}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         )}
         {completion && (
@@ -225,7 +250,7 @@ export function ProjectEditor({
         {incomplete && (
           <fieldset className="field">
             <legend>{t("desk:completionResolution.title")}</legend>
-            <select
+            <Select
               value={resolution}
               onChange={(event) =>
                 setResolution(event.target.value as typeof resolution)
@@ -237,25 +262,13 @@ export function ProjectEditor({
                   {t("desk:completionResolution." + action)}
                 </option>
               ))}
-            </select>
+            </Select>
             {resolution === "MOVE" && (
               <ProjectDrilldownPicker
                 projects={projects}
                 value={destination || null}
                 mode="single"
-                disabledIds={
-                  new Set(
-                    projects
-                      .filter(
-                        (project) =>
-                          project.id === item?.id ||
-                          projectAncestors(project, projects).some(
-                            (ancestor) => ancestor.id === item?.id,
-                          ),
-                      )
-                      .map((project) => project.id),
-                  )
-                }
+                disabledIds={excludedDestinations}
                 onChange={(value) =>
                   setDestination(typeof value === "string" ? value : "")
                 }
@@ -288,30 +301,32 @@ export function ProjectEditor({
         <p className="muted">{t("desk:projectBriefSeparate")}</p>
         <div className="dialog-actions">
           {onDelete && (
-            <button
+            <Button
               type="button"
               className="button danger"
               disabled={busy}
               onClick={() => void onDelete()}
             >
               {t("delete")}
-            </button>
+            </Button>
           )}
           <div className="action-spacer" />
-          <button
+          <Button
             type="button"
             className="button secondary"
             disabled={busy}
             onClick={close}
           >
             {t("cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
+            type="submit"
             className="button primary"
             disabled={busy || !title.trim() || invalidParent || blocked}
           >
             {item ? t("save") : t("desk:createProject")}
-          </button>
+          </Button>
         </div>
       </form>
     </DismissibleDialog>

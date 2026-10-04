@@ -148,6 +148,10 @@ test("Gateway registry policy persists and approved alternatives are visible bef
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
+    await editor
+      .getByRole("button", { name: zh ? "取消" : "Cancel", exact: true })
+      .click();
+    await expect(editor).toHaveCount(0);
     await page
       .getByText(zh ? "模型测试请求" : "Model test request", { exact: true })
       .click();

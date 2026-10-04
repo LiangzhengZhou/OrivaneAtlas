@@ -33,6 +33,7 @@ export interface LibraryEntry {
   deletedAt: string | null;
   provenance: "HUMAN" | "EXTERNAL_AI";
 }
+export const MAX_LIBRARY_ENTRIES = 10000;
 export interface LibraryInput {
   parentDocumentId?: string | null;
   aliases?: string[];

@@ -89,7 +89,8 @@
     "completedAt": "Actual completion (optional; device local time)",
     "backfill": "Backfill this occurrence",
     "OPEN": "Open",
-    "COMPLETED": "Completed"
+    "COMPLETED": "Completed",
+    "SKIPPED": "Skipped"
   },
   "categories": {
     "manage": "Manage project categories",

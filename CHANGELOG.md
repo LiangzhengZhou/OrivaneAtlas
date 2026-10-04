@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.2.0]
+
+Unified interaction and performance upgrade.
+
+- Shared UI primitives, compact task filters and independent scope/view controls.
+- Shared work/task/calendar/knowledge indexes, virtualized lists and boards, scoped hierarchy pickers and conditional heavy tabs.
+- Formal Calendar Reminders and notification intents; explicit SKIPPED recurrence and expiration through existing Archive.
+- Note-friendly Markdown breaks, inactive editor freezing and debounced CodeMirror synchronization.
+- Semantic graph scopes, adjacency traversal, modern controls and stable layout revisions.
+- Conversation-first Atlas with rename/archive/restore/delete/undo, session summaries, paged messages and cursor streaming fallback.
+- Durable transactional WorkspaceChange sequences in SQLite/PostgreSQL, with snapshot recovery at invalid cursor boundaries.
+- One canonical application icon across Windows/Android/Web; Sidebar brand logo preserved.
+- SQLite schema32 / PostgreSQL schema26. Back up the database and separate encrypted vault; upgrade the matching server before clients.
+- Local validation:635 unit/integration tests,252 browser tests, isolated Release performance fixtures and native builds/signature checks. Physical-device visual acceptance is not claimed.
+
+## [2.1.0]
+
+UX, Graph Workspace and controlled Atlas Agent upgrade.
+
+- Localized date fields, streamlined Sidebar and task-integrated repeat settings.
+- Independent focused Graph Workspace, encrypted provider catalog and inheriting routing profiles.
+- Bounded Agent Harness, human-reviewed plans, version-bound approvals and real Sources.
+- Browser SSE invalidation and unified Trash. SQLite schema27 / PostgreSQL schema20.
+
 ## [2.0.2]
 
 Product Hardening & UX Upgrade.

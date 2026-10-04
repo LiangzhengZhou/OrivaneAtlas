@@ -2,6 +2,7 @@ import { recurrenceStats, type WorkflowRecord } from "@arclattice/application";
 import { localCalendarDay } from "@arclattice/domain";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Select } from "./components/ui/Surfaces";
 
 export function RecurrenceStatisticsBoard({
   records,
@@ -47,7 +48,7 @@ export function RecurrenceStatisticsBoard({
       <h3>{text("统计看板", "Statistics Board")}</h3>
       <label>
         {text("统计范围", "Statistics scope")}
-        <select
+        <Select
           value={definitionId}
           onChange={(e) => setDefinitionId(e.target.value)}
         >
@@ -57,7 +58,7 @@ export function RecurrenceStatisticsBoard({
               {r.payload.kind === "RECURRENCE" ? r.payload.title : ""}
             </option>
           ))}
-        </select>
+        </Select>
       </label>
       <div className="recurrence-statistics-grid">
         {windows.map(([label, from]) => {

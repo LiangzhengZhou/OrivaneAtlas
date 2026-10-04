@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { Snapshot } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
+import { Select } from "../../components/ui/Surfaces";
 import { SpacePicker } from "../knowledge/SpacePicker";
 import { ProjectDrilldownPicker } from "../projects/ProjectDrilldownPicker";
 import {
@@ -43,7 +45,7 @@ export function ModelBindings({
       </p>
       <label>
         {zh ? "默认模型配置" : "Default model profile"}
-        <select
+        <Select
           disabled={busy}
           value={defaults?.profileId ?? ""}
           onChange={(event) =>
@@ -68,7 +70,7 @@ export function ModelBindings({
         >
           <option value="">{zh ? "未设置" : "Not configured"}</option>
           {options}
-        </select>
+        </Select>
       </label>
       {configuration.bindings
         .filter((binding) => binding.scope !== "PERSONAL")
@@ -82,7 +84,7 @@ export function ModelBindings({
                 ? "空间覆盖"
                 : "Space override"}{" "}
             · {names.get(binding.entityId ?? "") ?? binding.entityId}
-            <select
+            <Select
               disabled={busy}
               value={binding.profileId}
               onChange={(event) =>
@@ -101,7 +103,7 @@ export function ModelBindings({
             >
               <option value="">{zh ? "继承" : "Inherit"}</option>
               {options}
-            </select>
+            </Select>
           </label>
         ))}
       <details>
@@ -110,7 +112,7 @@ export function ModelBindings({
         </summary>
         <label>
           {zh ? "覆盖对象类型" : "Override entity type"}
-          <select
+          <Select
             value={kind}
             onChange={(event) => {
               setKind(event.target.value as "PROJECT" | "SPACE");
@@ -119,7 +121,7 @@ export function ModelBindings({
           >
             <option value="PROJECT">{zh ? "项目" : "Project"}</option>
             <option value="SPACE">{zh ? "知识空间" : "Space"}</option>
-          </select>
+          </Select>
         </label>
         {kind === "PROJECT" ? (
           <ProjectDrilldownPicker
@@ -141,15 +143,15 @@ export function ModelBindings({
         )}
         <label>
           {zh ? "覆盖使用的配置" : "Override profile"}
-          <select
+          <Select
             value={profileId}
             onChange={(event) => setProfileId(event.target.value)}
           >
             <option value="">{zh ? "选择配置" : "Choose profile"}</option>
             {options}
-          </select>
+          </Select>
         </label>
-        <button
+        <Button
           type="button"
           disabled={busy || !entityId || !profileId}
           onClick={async () => {
@@ -168,7 +170,7 @@ export function ModelBindings({
           }}
         >
           {zh ? "保存覆盖" : "Save override"}
-        </button>
+        </Button>
       </details>
     </section>
   );

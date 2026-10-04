@@ -6,6 +6,9 @@ import type {
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime } from "./bootstrap";
+import { Button } from "./components/ui/Button";
+import { confirmAction } from "./components/ui/ConfirmationHost";
+import { Select } from "./components/ui/Surfaces";
 
 export function AccountView({
   runtime,
@@ -14,7 +17,7 @@ export function AccountView({
 }: {
   runtime: Runtime;
   onLogout: () => void;
-  confirmLeave: () => boolean;
+  confirmLeave: () => Promise<boolean>;
 }) {
   const { t, i18n } = useTranslation("spaces");
   const zh = i18n.language.startsWith("zh");
@@ -85,12 +88,12 @@ export function AccountView({
               : t("switchHint")}
           </p>
           <div className="action-row">
-            <button
+            <Button
               type="button"
               className="button secondary"
               disabled={busy}
-              onClick={() => {
-                if (confirmLeave())
+              onClick={async () => {
+                if (await confirmLeave())
                   void run(async () => {
                     await runtime.logout();
                     onLogout();
@@ -98,13 +101,13 @@ export function AccountView({
               }}
             >
               {t("signOut")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               className="button secondary"
               disabled={busy}
-              onClick={() => {
-                if (confirmLeave())
+              onClick={async () => {
+                if (await confirmLeave())
                   void run(async () => {
                     if (runtime.native) await runtime.beginAccountSwitch();
                     else await runtime.logout();
@@ -113,8 +116,8 @@ export function AccountView({
               }}
             >
               {t("switchAccount")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               className="button secondary"
               disabled={busy}
@@ -123,7 +126,7 @@ export function AccountView({
               }
             >
               {t("refresh")}
-            </button>
+            </Button>
           </div>
           {sessions.map((session) => (
             <div className="token-row" key={session.id}>
@@ -142,12 +145,12 @@ export function AccountView({
                     : new Date(session.expiresAt).toLocaleString(i18n.language)}
                 </small>
               </div>
-              <button
+              <Button
                 type="button"
                 className="button secondary"
                 disabled={busy}
-                onClick={() => {
-                  if (session.current && !confirmLeave()) return;
+                onClick={async () => {
+                  if (session.current && !(await confirmLeave())) return;
                   void run(async () => {
                     await runtime.revokeSession(session);
                     if (session.current) onLogout();
@@ -156,15 +159,18 @@ export function AccountView({
                 }}
               >
                 {t("revoke")}
-              </button>
+              </Button>
             </div>
           ))}
-          <button
+          <Button
             type="button"
             className="button secondary"
             disabled={busy || sessions.length === 0}
-            onClick={() => {
-              if (confirmLeave() && window.confirm(t("revokeAllConfirm")))
+            onClick={async () => {
+              if (
+                (await confirmLeave()) &&
+                (await confirmAction(t("revokeAllConfirm")))
+              )
                 void run(async () => {
                   await runtime.revokeSession({ all: true });
                   onLogout();
@@ -172,7 +178,7 @@ export function AccountView({
             }}
           >
             {t("revokeAllSessions")}
-          </button>
+          </Button>
         </section>
       )}
       {!runtime.account ? (
@@ -211,9 +217,14 @@ export function AccountView({
                 onChange={(e) => setPassword(e.target.value)}
               />
             </label>
-            <button className="button primary" disabled={busy || !!notice}>
+            <Button
+              variant="primary"
+              type="submit"
+              className="button primary"
+              disabled={busy || !!notice}
+            >
               {t("claim")}
-            </button>
+            </Button>
           </form>
         </section>
       ) : (
@@ -223,9 +234,9 @@ export function AccountView({
           <h3>{t("passwordChange")}</h3>
           <p className="muted">{t("passwordHint")}</p>
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              if (!confirmLeave()) return;
+              if (!(await confirmLeave())) return;
               void run(async () => {
                 await runtime.changePassword(current, password);
                 setCurrent("");
@@ -256,9 +267,9 @@ export function AccountView({
                 onChange={(e) => setPassword(e.target.value)}
               />
             </label>
-            <button className="button secondary" disabled={busy}>
+            <Button type="submit" className="button secondary" disabled={busy}>
               {t("passwordChange")}
-            </button>
+            </Button>
           </form>
         </section>
       )}
@@ -298,7 +309,7 @@ export function AccountView({
               </label>
               <label className="field">
                 {t("scope", { defaultValue: t("tokens") })}
-                <select
+                <Select
                   value={scope}
                   onChange={(e) =>
                     setScope(e.target.value as ApiCredential["scope"])
@@ -306,11 +317,11 @@ export function AccountView({
                 >
                   <option value="write">{t("write")}</option>
                   <option value="read-write">{t("readWrite")}</option>
-                </select>
+                </Select>
               </label>
               <label className="field">
                 {zh ? "有效期" : "Validity"}
-                <select
+                <Select
                   value={days ?? "permanent"}
                   onChange={(e) =>
                     setDays(
@@ -328,12 +339,17 @@ export function AccountView({
                   <option value="permanent">
                     {zh ? "长期有效（可撤销）" : "Permanent (revocable)"}
                   </option>
-                </select>
+                </Select>
               </label>
               <p className="muted">{t("readWarning")}</p>
-              <button className="button primary" disabled={busy || !!secret}>
+              <Button
+                variant="primary"
+                type="submit"
+                className="button primary"
+                disabled={busy || !!secret}
+              >
                 {t("issue")}
-              </button>
+              </Button>
             </form>
             {secret && (
               <div className="secret-once">
@@ -344,13 +360,13 @@ export function AccountView({
                   aria-label={t("tokens")}
                   onFocus={(e) => e.target.select()}
                 />
-                <button
+                <Button
                   type="button"
                   className="button secondary"
                   onClick={() => setSecret("")}
                 >
                   {t("closeSecret")}
-                </button>
+                </Button>
               </div>
             )}
             <div className="token-list">
@@ -365,7 +381,7 @@ export function AccountView({
                         (zh ? "长期有效" : "Permanent")}
                     </small>
                   </div>
-                  <button
+                  <Button
                     className="button secondary"
                     type="button"
                     disabled={busy || !!item.revokedAt}
@@ -377,7 +393,7 @@ export function AccountView({
                     }
                   >
                     {t(item.revokedAt ? "revoked" : "revoke")}
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
@@ -468,13 +484,13 @@ export function AdminView({ runtime }: { runtime: Runtime }) {
       <section className="panel account-panel">
         <div className="panel-heading">
           <h2>{t("accounts")}</h2>
-          <button
+          <Button
             type="button"
             className="button secondary"
             onClick={() => void refresh().catch(() => setError(true))}
           >
             {t("refresh")}
-          </button>
+          </Button>
         </div>
         {accounts.length === 0 && <p>{t("empty")}</p>}
         {accounts.map((account) => (
@@ -488,7 +504,7 @@ export function AdminView({ runtime }: { runtime: Runtime }) {
             {account.role !== "ADMIN" && (
               <div className="action-row">
                 {(["ACTIVE", "DISABLED"] as const).map((status) => (
-                  <button
+                  <Button
                     type="button"
                     className="button secondary"
                     key={status}
@@ -504,7 +520,7 @@ export function AdminView({ runtime }: { runtime: Runtime }) {
                     }}
                   >
                     {t(status === "ACTIVE" ? "approve" : "disable")}
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}

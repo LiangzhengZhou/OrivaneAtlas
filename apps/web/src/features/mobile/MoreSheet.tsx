@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { DismissibleDialog } from "../../app/DismissibleDialog";
+import { Button } from "../../components/ui/Button";
 
 export function MoreSheet({
   entries,
@@ -20,19 +21,24 @@ export function MoreSheet({
     >
       <header>
         <h2 id="mobile-more-title">{t("moreNavigation")}</h2>
-        <button type="button" className="text-button" onClick={onClose}>
+        <Button
+          variant="ghost"
+          type="button"
+          className="text-button"
+          onClick={onClose}
+        >
           {t("common:close")}
-        </button>
+        </Button>
       </header>
       <nav aria-label={t("moreNavigation")}>
         {entries.map((entry) => (
-          <button
+          <Button
             type="button"
             key={entry.id}
             onClick={() => onNavigate(entry.id)}
           >
             {entry.label}
-          </button>
+          </Button>
         ))}
       </nav>
     </DismissibleDialog>

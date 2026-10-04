@@ -1,6 +1,7 @@
 import { GripVertical, LogOut, PanelLeft, Settings2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "../components/ui/Button";
 import { AnchoredFloatingSurface } from "./AnchoredFloatingSurface";
 import { type NavigationView, navigation, type View } from "./navigation";
 
@@ -54,7 +55,7 @@ export function Sidebar({
           src="/orivane-atlas.png"
           alt="Orivane Atlas"
         />
-        <button
+        <Button
           type="button"
           className="icon-button sidebar-collapse-button"
           aria-label={t(collapsed ? "expandSidebar" : "collapseSidebar")}
@@ -63,9 +64,9 @@ export function Sidebar({
           onClick={onToggleCollapsed}
         >
           <PanelLeft size={18} />
-        </button>
+        </Button>
       </div>
-      <button
+      <Button
         type="button"
         className="icon-button mobile-navigation-toggle"
         aria-label={t(mobileOpen ? "collapseSidebar" : "expandSidebar")}
@@ -74,7 +75,7 @@ export function Sidebar({
         onClick={() => onToggleMobile()}
       >
         <PanelLeft size={20} />
-      </button>
+      </Button>
       <nav id="workspace-navigation" aria-label={t("workspace")}>
         {groups.map((group) => (
           <section key={group.views.join("-")}>
@@ -85,7 +86,8 @@ export function Sidebar({
               .filter(Boolean)
               .filter((n) => n.view !== "admin" || canAdmin)
               .map(({ view: next, icon: Icon }) => (
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   key={next}
                   className={
@@ -113,13 +115,14 @@ export function Sidebar({
                   {next === "notes" && (
                     <span className="nav-count">{noteCount}</span>
                   )}
-                </button>
+                </Button>
               ))}
           </section>
         ))}
       </nav>
       <div className="sidebar-bottom">
-        <button
+        <Button
+          variant="ghost"
           ref={menuAnchor}
           className={"nav-item " + (activeView === "settings" ? "active" : "")}
           type="button"
@@ -130,7 +133,7 @@ export function Sidebar({
         >
           <Settings2 size={18} />
           <span>{t("workspaceMenu")}</span>
-        </button>
+        </Button>
         {menuOpen && (
           <AnchoredFloatingSurface
             anchorRef={menuAnchor}
@@ -141,7 +144,7 @@ export function Sidebar({
             {(["account", "admin", "settings", "trash"] as const)
               .filter((next) => next !== "admin" || canAdmin)
               .map((next) => (
-                <button
+                <Button
                   type="button"
                   role="menuitem"
                   key={next}
@@ -151,12 +154,12 @@ export function Sidebar({
                   }}
                 >
                   {label(next)}
-                </button>
+                </Button>
               ))}
-            <button type="button" role="menuitem" onClick={onLogout}>
+            <Button type="button" role="menuitem" onClick={onLogout}>
               <LogOut size={16} />
               {t("lock")}
-            </button>
+            </Button>
           </AnchoredFloatingSurface>
         )}
       </div>

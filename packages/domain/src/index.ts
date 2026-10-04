@@ -6,6 +6,7 @@ export * from "./navigation";
 export * from "./project-lifecycle";
 export * from "./projects";
 export * from "./recurrence";
+export * from "./reminder";
 
 export type PrincipalKind = "USER" | "AGENT" | "SERVICE";
 export interface Principal {

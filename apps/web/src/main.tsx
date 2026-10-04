@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
 import { App } from "./App";
 import { bootstrap } from "./bootstrap";
+import { ConfirmationHost } from "./components/ui/ConfirmationHost";
 import "./styles/tokens.css";
 import "./styles/themes.css";
 import "./styles/reset.css";
@@ -20,6 +21,7 @@ createRoot(root).render(
   <StrictMode>
     <I18nextProvider i18n={runtime.i18n}>
       <App runtime={runtime} />
+      <ConfirmationHost />
     </I18nextProvider>
   </StrictMode>,
 );

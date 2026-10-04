@@ -238,6 +238,49 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 28,
+    name: "recurrence-skipped",
+    sql: readFileSync(
+      new URL("./migrations/0028-recurrence-skipped.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 29,
+    name: "reminder",
+    sql: readFileSync(
+      new URL("./migrations/0029-reminder.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 30,
+    name: "workspace-changes",
+    sql: readFileSync(
+      new URL("./migrations/0030-workspace-changes.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 31,
+    name: "agent-session-conversations",
+    sql: readFileSync(
+      new URL(
+        "./migrations/0031-agent-session-conversations.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  },
+  {
+    version: 32,
+    name: "agent-session-pages",
+    sql: readFileSync(
+      new URL("./migrations/0032-agent-session-pages.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {
@@ -296,6 +339,35 @@ export function inspectSchema(
     "work_edge_dependency",
     "work_edge_target",
   ];
+  if (version >= 30) {
+    const expected =
+      plan.find((step) => step.name === "workspace-changes")?.sql ?? "";
+    for (const name of [
+      "workspace_change",
+      "workspace_sync_state",
+      "workspace_change_cursor",
+      ...[...expected.matchAll(/CREATE TRIGGER (\w+)/g)].map(
+        (match) => match[1]!,
+      ),
+    ]) {
+      if (!objects.some((row) => row.name === name))
+        throw new StorageError("SCHEMA_OBJECT_MISSING");
+    }
+    for (const match of expected.matchAll(
+      /(CREATE TRIGGER (\w+)[\s\S]*?END);/g,
+    )) {
+      const actual = db
+        .prepare(
+          "SELECT sql FROM sqlite_schema WHERE type='trigger' AND name=?",
+        )
+        .get(match[2]!);
+      if (
+        String(actual?.sql).replaceAll("\r\n", "\n").trim() !==
+        match[1]!.replaceAll("\r\n", "\n").trim()
+      )
+        throw new StorageError("MIGRATION_HISTORY_MISMATCH");
+    }
+  }
   if (required.some((name) => !objects.some((row) => row.name === name)))
     throw new StorageError("SCHEMA_OBJECT_MISSING");
   if (
@@ -384,6 +456,22 @@ export function inspectSchema(
   )
     throw new StorageError("SCHEMA_OBJECT_MISSING");
   if (version >= 24 && !objects.some((row) => row.name === "agent_session"))
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (
+    version >= 32 &&
+    [
+      "agent_session_metadata",
+      "agent_session_message",
+      "agent_session_metadata_list",
+    ].some((name) => !objects.some((row) => row.name === name))
+  )
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (
+    version >= 29 &&
+    ["reminder", "reminder_activity", "reminder_outbox", "reminder_day"].some(
+      (name) => !objects.some((row) => row.name === name),
+    )
+  )
     throw new StorageError("SCHEMA_OBJECT_MISSING");
   if (
     version >= 17 &&

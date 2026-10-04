@@ -1,6 +1,7 @@
 import type { LibraryEntry } from "@arclattice/application";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "../../components/ui/Button";
 
 export function SpacePicker({
   spaces,
@@ -45,7 +46,7 @@ export function SpacePicker({
           {live
             .filter((entry) => recent.includes(entry.id))
             .map((entry) => (
-              <button
+              <Button
                 type="button"
                 className="chip"
                 key={entry.id}
@@ -54,7 +55,7 @@ export function SpacePicker({
                 onClick={() => choose(entry.id)}
               >
                 {entry.title}
-              </button>
+              </Button>
             ))}
         </div>
       )}
@@ -78,7 +79,7 @@ export function SpacePicker({
                 !recent.includes(entry.id),
             )
             .map((entry) => (
-              <button
+              <Button
                 type="button"
                 className="chip"
                 key={entry.id}
@@ -87,7 +88,7 @@ export function SpacePicker({
                 onClick={() => choose(entry.id)}
               >
                 {entry.title}
-              </button>
+              </Button>
             ))}
         </div>
       ))}

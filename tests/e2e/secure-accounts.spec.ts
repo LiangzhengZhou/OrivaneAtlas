@@ -202,8 +202,14 @@ test("native secure account selector switches without password and forgets local
     const switcher = page.getByRole("button", {
       name: /^(Switch account|切换账户)$/,
     });
-    page.once("dialog", (dialog) => dialog.accept());
     await switcher.click();
+    const confirmation = page.getByRole("dialog", {
+      name: /^(确认操作|Confirm action)$/,
+    });
+    await expect(confirmation).toBeVisible();
+    await confirmation
+      .getByRole("button", { name: /^(确认|Confirm)$/, exact: true })
+      .click();
     await expect(page.locator(".login-form")).toBeVisible();
     await page.getByRole("button", { name: "Personal", exact: true }).click();
     await expect(page.locator(".app-shell")).toBeVisible();
@@ -222,8 +228,11 @@ test("native secure account selector switches without password and forgets local
       location.hash = "account";
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     });
-    page.once("dialog", (dialog) => dialog.accept());
     await switcher.click();
+    await expect(confirmation).toBeVisible();
+    await confirmation
+      .getByRole("button", { name: /^(确认|Confirm)$/, exact: true })
+      .click();
     await page
       .getByRole("button", { name: /^(Forget account|忘记账户) Research$/ })
       .click();

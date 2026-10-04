@@ -2,6 +2,7 @@ import type { WorkItem } from "@arclattice/domain";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "../../components/ui/Button";
 import { projectTreeIndex } from "./project-tree";
 export function ProjectStructureTree({
   projects,
@@ -41,7 +42,7 @@ export function ProjectStructureTree({
           return (
             <li key={project.id}>
               {descendants.length > 0 && (
-                <button
+                <Button
                   type="button"
                   className="icon-button"
                   aria-label={
@@ -63,15 +64,16 @@ export function ProjectStructureTree({
                   ) : (
                     <ChevronRight size={16} />
                   )}
-                </button>
+                </Button>
               )}
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 className="text-button"
                 onClick={() => onOpen(project.id)}
               >
                 {project.title}
-              </button>
+              </Button>
               {open &&
                 descendants.length > 0 &&
                 render(
@@ -89,7 +91,7 @@ export function ProjectStructureTree({
       {showDepthControls && (
         <div className="action-row">
           {[1, 2].map((value) => (
-            <button
+            <Button
               type="button"
               className="chip"
               key={value}
@@ -100,7 +102,7 @@ export function ProjectStructureTree({
               }}
             >
               {zh ? value + " 层" : value + " level" + (value > 1 ? "s" : "")}
-            </button>
+            </Button>
           ))}
         </div>
       )}

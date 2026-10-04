@@ -4,7 +4,11 @@ import {
 } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
-import { syntaxTree } from "@codemirror/language";
+import {
+  defaultHighlightStyle,
+  syntaxHighlighting,
+  syntaxTree,
+} from "@codemirror/language";
 import {
   Compartment,
   EditorState,
@@ -25,6 +29,7 @@ import katex from "katex";
 import { useContext, useEffect, useLayoutEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useTranslation } from "react-i18next";
+import { largeMarkdownLanguage } from "./features/documents/large-markdown-language";
 import { externalValue, pendingImage } from "./imageInsertion";
 import { Markdown, PrivateImageContext } from "./Markdown";
 
@@ -118,6 +123,7 @@ class PreviewWidget extends WidgetType {
   }
 }
 function blockPreviews(state: EditorState): DecorationSet {
+  if (state.doc.length > 50000) return Decoration.none;
   const ranges: ReturnType<Decoration["range"]>[] = [];
   syntaxTree(state).iterate({
     enter(node) {
@@ -197,6 +203,8 @@ function decorate(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const ranges: { from: number; to: number; decoration: Decoration }[] = [];
   syntaxTree(view.state).iterate({
+    from: view.viewport.from,
+    to: view.viewport.to,
     enter(node) {
       const name = node.name;
       if (
@@ -254,6 +262,7 @@ export function LiveMarkdown({
   onComposition,
   editorRef,
   onImages,
+  onPendingChange,
   wikiPages = [],
 }: {
   value: string;
@@ -264,6 +273,7 @@ export function LiveMarkdown({
   onComposition: (active: boolean) => void;
   editorRef: { current: EditorView | null };
   onImages?: (files: File[]) => void;
+  onPendingChange?: (pending: boolean) => void;
   wikiPages?: readonly {
     id: string;
     title: string;
@@ -277,20 +287,53 @@ export function LiveMarkdown({
   const load = useContext(PrivateImageContext);
   const loaderConfig = useRef(new Compartment());
   const initialLoader = useRef(load);
-  const callbacks = useRef({ onChange, onSave, onComposition, onImages });
-  callbacks.current = { onChange, onSave, onComposition, onImages };
+  const callbacks = useRef({
+    onChange,
+    onSave,
+    onComposition,
+    onImages,
+    onPendingChange,
+  });
+  callbacks.current = {
+    onChange,
+    onSave,
+    onComposition,
+    onImages,
+    onPendingChange,
+  };
   const mode = useRef(new Compartment());
+  const syntaxMode = useRef(new Compartment());
+  const largeSyntax = useRef(value.length >= 50000);
   const initial = useRef({ value, source, label });
+  const published = useRef(value.replace(/\r\n?/g, "\n"));
   const pages = useRef(wikiPages);
   pages.current = wikiPages;
   useEffect(() => {
     if (!parent.current) return;
+    let syncTimer: ReturnType<typeof setTimeout> | undefined;
+    let changed = false;
+    const flush = () => {
+      clearTimeout(syncTimer);
+      if (!changed) return;
+      changed = false;
+      const text = view.state.doc.toString();
+      published.current = text;
+      callbacks.current.onChange(text);
+      callbacks.current.onPendingChange?.(false);
+    };
     const view = new EditorView({
       parent: parent.current,
       state: EditorState.create({
         doc: initial.current.value,
         extensions: [
-          markdown(),
+          syntaxMode.current.of(
+            largeSyntax.current
+              ? [
+                  largeMarkdownLanguage,
+                  syntaxHighlighting(defaultHighlightStyle),
+                ]
+              : markdown(),
+          ),
           autocompletion({
             override: [
               (context: CompletionContext) => {
@@ -366,6 +409,7 @@ export function LiveMarkdown({
             {
               key: "Mod-s",
               run: () => {
+                flush();
                 callbacks.current.onSave();
                 return true;
               },
@@ -374,6 +418,9 @@ export function LiveMarkdown({
             ...historyKeymap,
           ]),
           EditorView.domEventHandlers({
+            blur: () => {
+              flush();
+            },
             paste: (event) => {
               const files = Array.from(event.clipboardData?.files ?? []).filter(
                 (file) => file.type.startsWith("image/"),
@@ -394,8 +441,12 @@ export function LiveMarkdown({
             if (
               update.docChanged &&
               !update.transactions.every((tr) => tr.annotation(externalValue))
-            )
-              callbacks.current.onChange(update.state.doc.toString());
+            ) {
+              if (!changed) callbacks.current.onPendingChange?.(true);
+              changed = true;
+              clearTimeout(syncTimer);
+              syncTimer = setTimeout(flush, 120);
+            }
           }),
           mode.current.of(
             initial.current.source ? [] : [livePreview, blockPreview],
@@ -405,6 +456,7 @@ export function LiveMarkdown({
     });
     editorRef.current = view;
     return () => {
+      flush();
       editorRef.current = null;
       view.destroy();
     };
@@ -425,11 +477,31 @@ export function LiveMarkdown({
   // can replay stale text over fast Android typing and invalidate upload anchors.
   useLayoutEffect(() => {
     const view = editorRef.current;
-    if (view && view.state.doc.toString() !== value.replace(/\r\n?/g, "\n"))
+    const normalized = value.replace(/\r\n?/g, "\n");
+    if (view && published.current !== normalized) {
+      published.current = normalized;
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: value },
         annotations: externalValue.of(true),
       });
+    }
+    if (view) {
+      const large =
+        view.state.doc.length >= (largeSyntax.current ? 40000 : 50000);
+      if (large !== largeSyntax.current) {
+        largeSyntax.current = large;
+        view.dispatch({
+          effects: syntaxMode.current.reconfigure(
+            large
+              ? [
+                  largeMarkdownLanguage,
+                  syntaxHighlighting(defaultHighlightStyle),
+                ]
+              : markdown(),
+          ),
+        });
+      }
+    }
   }, [value, editorRef]);
   return <div className="live-markdown" ref={parent} />;
 }

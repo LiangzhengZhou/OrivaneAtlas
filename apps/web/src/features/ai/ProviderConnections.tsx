@@ -5,6 +5,8 @@ import type {
 } from "@arclattice/application";
 import { useState } from "react";
 import type { Runtime } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
+import { ConfirmDialog, Dialog, Select } from "../../components/ui/Surfaces";
 import {
   configurationInput,
   type ModelSettingsSectionProps,
@@ -38,6 +40,7 @@ export function ProviderConnections({
     capabilities?: ModelProviderCapabilities;
   } | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<ProviderConnection | null>(null);
   const close = () => setEditing(null);
   return (
     <section
@@ -64,7 +67,11 @@ export function ProviderConnections({
         return (
           <div className="model-settings-row" key={connection.id}>
             <strong>{connection.name}</strong>
-            <span>{connection.endpoint}</span>
+            <span>{connection.kind}</span>
+            <details>
+              <summary>{zh ? "高级" : "Advanced"}</summary>
+              <small>{connection.endpoint}</small>
+            </details>
             <span>
               {connection.credentialConfigured
                 ? zh
@@ -74,14 +81,14 @@ export function ProviderConnections({
                   ? "无密钥"
                   : "No key"}
             </span>
-            <button
+            <Button
               type="button"
               disabled={busy}
               onClick={() => setEditing(connection)}
             >
               {zh ? "编辑连接" : "Edit connection"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               disabled={busy || !!testing}
               onClick={async () => {
@@ -110,8 +117,8 @@ export function ProviderConnections({
               }}
             >
               {zh ? "测试并发现模型" : "Test and discover models"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               disabled={busy || used}
               title={
@@ -121,28 +128,10 @@ export function ProviderConnections({
                     : "Remove profiles using these models first"
                   : undefined
               }
-              onClick={async () => {
-                if (
-                  !window.confirm(
-                    zh
-                      ? "删除这个连接和服务器保存的密钥？"
-                      : "Remove this connection and its saved key?",
-                  )
-                )
-                  return;
-                await save((current) => ({
-                  ...configurationInput(current),
-                  connections: current.connections.filter(
-                    (row) => row.id !== connection.id,
-                  ),
-                  models: current.models.filter(
-                    (row) => row.connectionId !== connection.id,
-                  ),
-                }));
-              }}
+              onClick={() => setRemoving(connection)}
             >
               {zh ? "移除连接" : "Remove connection"}
-            </button>
+            </Button>
           </div>
         );
       })}
@@ -162,7 +151,7 @@ export function ProviderConnections({
                 {discovery.models.length}
               </p>
               {discovery.models.map((modelId) => (
-                <button
+                <Button
                   type="button"
                   key={modelId}
                   disabled={
@@ -195,15 +184,15 @@ export function ProviderConnections({
                   }
                 >
                   {modelId} +
-                </button>
+                </Button>
               ))}
             </>
           )}
         </div>
       )}
-      <button type="button" disabled={busy} onClick={() => setEditing("new")}>
+      <Button type="button" disabled={busy} onClick={() => setEditing("new")}>
         {zh ? "添加服务连接" : "Add provider connection"}
-      </button>
+      </Button>
       {editing && (
         <ConnectionForm
           key={typeof editing === "string" ? "new" : editing.id}
@@ -224,6 +213,36 @@ export function ProviderConnections({
             }));
           }}
         />
+      )}
+      {removing && (
+        <ConfirmDialog
+          title={zh ? "移除连接" : "Remove connection"}
+          confirmLabel={zh ? "移除" : "Remove"}
+          cancelLabel={zh ? "取消" : "Cancel"}
+          pending={busy}
+          danger
+          onCancel={() => setRemoving(null)}
+          onConfirm={() =>
+            void (async () => {
+              if (
+                await save((current) => ({
+                  ...configurationInput(current),
+                  connections: current.connections.filter(
+                    (row) => row.id !== removing.id,
+                  ),
+                  models: current.models.filter(
+                    (row) => row.connectionId !== removing.id,
+                  ),
+                }))
+              )
+                setRemoving(null);
+            })()
+          }
+        >
+          {zh
+            ? "删除这个连接和服务器保存的密钥？"
+            : "Remove this connection and its saved key?"}
+        </ConfirmDialog>
       )}
     </section>
   );
@@ -253,106 +272,131 @@ function ConnectionForm({
     kind !== (connection?.kind ?? "OPENAI") ||
     endpoint !== (connection?.endpoint ?? kinds[0]![2]) ||
     !!key;
+  const [discarding, setDiscarding] = useState(false);
   return (
-    <form
-      className="model-settings-form"
+    <Dialog
       aria-label={zh ? "连接编辑" : "Connection editor"}
-      onSubmit={async (event) => {
-        event.preventDefault();
-        if (
-          await onSave(
-            {
-              id,
-              name,
-              kind,
-              endpoint,
-              credentialRef: id,
-              credentialConfigured: connection?.credentialConfigured ?? false,
-            },
-            key,
-          )
-        ) {
-          setKey("");
-          onClose();
+      onRequestClose={() => {
+        if (!busy) {
+          if (dirty) setDiscarding(true);
+          else onClose();
         }
       }}
     >
-      <label>
-        {zh ? "连接名称" : "Connection name"}
-        <input
-          required
-          maxLength={240}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </label>
-      <label>
-        {zh ? "服务商" : "Provider"}
-        <select
-          value={kind}
-          onChange={(event) => {
-            const next = kinds.find((row) => row[0] === event.target.value)!;
-            setKind(next[0]);
-            setEndpoint(next[2]);
-            setName(next[1]);
-          }}
-        >
-          {kinds.map(([id, name]) => (
-            <option key={id} value={id}>
-              {name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        {zh ? "API 基址" : "API base URL"}
-        <input
-          type="url"
-          required
-          value={endpoint}
-          onChange={(event) => setEndpoint(event.target.value)}
-        />
-      </label>
-      <label>
-        {zh
-          ? "API 密钥（留空保留已有密钥）"
-          : "API key (blank keeps existing key)"}
-        <input
-          type="password"
-          autoComplete="new-password"
-          value={key}
-          onChange={(event) => setKey(event.target.value)}
-        />
-      </label>
-      {["OLLAMA", "LM_STUDIO", "VLLM"].includes(kind) && (
-        <p>
+      <form
+        className="model-settings-form"
+        aria-label={zh ? "连接编辑" : "Connection editor"}
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (
+            await onSave(
+              {
+                id,
+                name,
+                kind,
+                endpoint,
+                credentialRef: id,
+                credentialConfigured: connection?.credentialConfigured ?? false,
+              },
+              key,
+            )
+          ) {
+            setKey("");
+            onClose();
+          }
+        }}
+      >
+        <label>
+          {zh ? "连接名称" : "Connection name"}
+          <input
+            required
+            maxLength={240}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label>
+          {zh ? "服务商" : "Provider"}
+          <Select
+            value={kind}
+            onChange={(event) => {
+              const next = kinds.find((row) => row[0] === event.target.value)!;
+              setKind(next[0]);
+              setEndpoint(next[2]);
+              setName(next[1]);
+            }}
+          >
+            {kinds.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <details open={kind === "CUSTOM_OPENAI" ? true : undefined}>
+          <summary>{zh ? "高级" : "Advanced"}</summary>
+          <label>
+            {zh ? "API 基址" : "API base URL"}
+            <input
+              type="url"
+              required
+              value={endpoint}
+              onChange={(event) => setEndpoint(event.target.value)}
+            />
+          </label>
+        </details>
+        <label>
           {zh
-            ? "本地/私有地址须由管理员加入 Trusted AI Endpoint 允许列表。"
-            : "Local/private addresses require an administrator's Trusted AI Endpoint allowlist."}
-        </p>
-      )}
-      <div className="action-row">
-        <button type="submit" disabled={busy}>
-          {zh ? "保存连接" : "Save connection"}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            if (
-              !dirty ||
-              window.confirm(
-                zh ? "丢弃连接草稿？" : "Discard connection draft?",
-              )
-            ) {
+            ? "API 密钥（留空保留已有密钥）"
+            : "API key (blank keeps existing key)"}
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={key}
+            onChange={(event) => setKey(event.target.value)}
+          />
+        </label>
+        {["OLLAMA", "LM_STUDIO", "VLLM"].includes(kind) && (
+          <p>
+            {zh
+              ? "本地/私有地址须由管理员加入 Trusted AI Endpoint 允许列表。"
+              : "Local/private addresses require an administrator's Trusted AI Endpoint allowlist."}
+          </p>
+        )}
+        <div className="action-row">
+          <Button type="submit" disabled={busy}>
+            {zh ? "保存连接" : "Save connection"}
+          </Button>
+          <Button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (!dirty) {
+                setKey("");
+                onClose();
+              } else setDiscarding(true);
+            }}
+          >
+            {zh ? "取消" : "Cancel"}
+          </Button>
+        </div>
+        {discarding && (
+          <ConfirmDialog
+            title={zh ? "丢弃连接草稿？" : "Discard connection draft?"}
+            confirmLabel={zh ? "丢弃" : "Discard"}
+            cancelLabel={zh ? "继续编辑" : "Keep editing"}
+            onCancel={() => setDiscarding(false)}
+            onConfirm={() => {
               setKey("");
               onClose();
-            }
-          }}
-        >
-          {zh ? "取消" : "Cancel"}
-        </button>
-      </div>
-    </form>
+            }}
+          >
+            {zh
+              ? "未保存的修改将被丢弃。"
+              : "Unsaved changes will be discarded."}
+          </ConfirmDialog>
+        )}
+      </form>
+    </Dialog>
   );
 }

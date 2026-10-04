@@ -7,6 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AiEdits } from "../../AiEdits";
 import type { Runtime, Snapshot } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
+import { Select } from "../../components/ui/Surfaces";
 import { GatewayRunDetails } from "../../GatewaySettings";
 import { Markdown } from "../../Markdown";
 import { ModelSettings } from "./ModelSettings";
@@ -153,13 +155,13 @@ export function AiSettingsView({
                 ? "显示最近 100 次请求；用量可能未知，精确配额与预算由服务器事务校验。"
                 : "Shows the latest 100 requests; usage may be unknown. The server enforces exact limits and budgets transactionally."}
             </p>
-            <button
+            <Button
               type="button"
               disabled={busy}
               onClick={() => setRefreshVersion((value) => value + 1)}
             >
               {zh ? "刷新活动" : "Refresh activity"}
-            </button>
+            </Button>
             {data?.runs.length === 0 && <p>{t("noRuns")}</p>}
             {data?.runs.map((run) => (
               <article className="ai-run" key={run.id}>
@@ -176,7 +178,7 @@ export function AiSettingsView({
                 <GatewayRunDetails run={run} zh={zh} />
                 {run.status === "WAITING_APPROVAL" && (
                   <div className="action-row">
-                    <button
+                    <Button
                       type="button"
                       disabled={busy}
                       onClick={() =>
@@ -186,8 +188,8 @@ export function AiSettingsView({
                       }
                     >
                       {t("approve")}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
                       disabled={busy}
                       onClick={() =>
@@ -197,7 +199,7 @@ export function AiSettingsView({
                       }
                     >
                       {t("reject")}
-                    </button>
+                    </Button>
                   </div>
                 )}
                 {run.output && <Markdown text={run.output} />}
@@ -233,7 +235,7 @@ export function AiSettingsView({
           <>
             <label>
               {zh ? "本次使用的模型配置" : "Model profile for this request"}
-              <select
+              <Select
                 value={profileId}
                 onChange={(event) => setProfileId(event.target.value)}
               >
@@ -245,7 +247,7 @@ export function AiSettingsView({
                     {profile.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <div className="connected-notice">
               {data?.route ? (
@@ -324,12 +326,12 @@ export function AiSettingsView({
                   </label>
                 ))}
               </details>
-              <button
+              <Button
                 type="submit"
                 disabled={busy || !data?.route || !prompt.trim()}
               >
                 {t("propose")}
-              </button>
+              </Button>
             </form>
           </>
         )}

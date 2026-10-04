@@ -6,22 +6,27 @@ import {
 import {
   effectiveCategoryId,
   type ProjectScope,
-  projectAncestors,
   projectLifecycle,
   projectScope,
   type WorkItem,
   type WorkStatus,
 } from "@arclattice/domain";
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "./bootstrap";
+import { Button } from "./components/ui/Button";
+import { Select } from "./components/ui/Surfaces";
 import { openGraph } from "./features/graph/graph-route";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
 import { ProjectDependencyGraph } from "./features/projects/ProjectDependencyGraph";
 import { ProjectStructureTree } from "./features/projects/ProjectStructureTree";
 import { TasksWorkspace } from "./features/tasks/TasksWorkspace";
-import { selectTasks } from "./features/tasks/task-selectors";
-import { ProjectBriefEditor } from "./ProjectBriefEditor";
+import { type TaskWorkspaceIndex } from "./features/tasks/task-selectors";
+import type { WorkspaceWorkIndex } from "./features/tasks/workspace-work-index";
+import {
+  ProjectBriefEditor,
+  type ProjectBriefState,
+} from "./ProjectBriefEditor";
 import { ProjectInspector } from "./ProjectInspector";
 import {
   ProjectHistory,
@@ -32,6 +37,8 @@ import { type ProjectTab, projectTabs } from "./projectRoute";
 import { Dependencies } from "./WorkViews";
 
 export function ProjectWorkspace({
+  workIndex,
+  taskIndex,
   today,
   isArchived,
   archiveSource,
@@ -57,6 +64,8 @@ export function ProjectWorkspace({
   runtime,
   run,
 }: {
+  workIndex: WorkspaceWorkIndex;
+  taskIndex: TaskWorkspaceIndex;
   today: string;
   isArchived(item: WorkItem): boolean;
   archiveSource(item: WorkItem): WorkItem | undefined;
@@ -88,18 +97,54 @@ export function ProjectWorkspace({
   const scope = routeScope;
   const setScope = (scope: ProjectScope) => onRouteChange(tab, scope);
   const [referenceQuery, setReferenceQuery] = useState("");
+  const briefState = useRef<ProjectBriefState>({ draft: null, mode: "live" });
   const [knowledgeQuery, setKnowledgeQuery] = useState("");
   const [knowledgeGraphOpen, setKnowledgeGraphOpen] = useState(false);
+  const [dependencyOpen, setDependencyOpen] = useState(false);
+  const [dependencyState, setDependencyState] = useState({
+    focus: "",
+    hops: 1,
+    scope: "focus",
+  });
   const [inspectedId, setInspectedId] = useState(project.id);
-  const liveItems = snapshot.items.filter((item) => !item.deletedAt);
-  const scoped = projectScope(project, liveItems, scope);
-  const tasks = scoped.tasks;
-  const selectedTasks = selectTasks(
-    liveItems,
-    snapshot.edges,
-    today,
-    isArchived,
+  const liveItems = useMemo(
+    () => snapshot.items.filter((item) => !item.deletedAt),
+    [snapshot.items],
   );
+  const scoped = useMemo(
+    () => projectScope(project, liveItems, scope),
+    [project, liveItems, scope],
+  );
+  const ancestors = useMemo(
+    () =>
+      (workIndex.ancestorIdsByProjectId.get(project.id) ?? []).flatMap((id) => {
+        const value = workIndex.projectsById.get(id);
+        return value ? [value] : [];
+      }),
+    [workIndex, project.id],
+  );
+  const ancestorIds = useMemo(
+    () => new Set(ancestors.map((entry) => entry.id)),
+    [ancestors],
+  );
+  const inheritedMaterials = useMemo(() => {
+    const entries = snapshot.projectMaterials ?? [];
+    const directTargets = new Set(
+      entries
+        .filter((entry) => entry.projectId === project.id && !entry.deletedAt)
+        .map((entry) => entry.targetId),
+    );
+    return entries.filter(
+      (entry) =>
+        entry.kind === "SPACE" &&
+        !entry.deletedAt &&
+        entry.inheritToChildren &&
+        ancestorIds.has(entry.projectId) &&
+        !directTargets.has(entry.targetId),
+    );
+  }, [snapshot.projectMaterials, project.id, ancestorIds]);
+  const tasks = scoped.tasks;
+  const selectedTasks = taskIndex;
   const milestones = liveItems.filter(
     (item) =>
       item.type === "MILESTONE" &&
@@ -122,27 +167,33 @@ export function ProjectWorkspace({
     items: liveItems.filter((item) => graphIds.has(item.id)),
     edges,
   };
-  const materials = [
-    ...snapshot.notes
-      .filter((note) => !note.deletedAt)
-      .map((note) => ({
-        ref: { kind: "NOTE" as const, id: note.id },
-        title: note.title,
-      })),
-    ...snapshot.library
-      .filter(
-        (entry) =>
-          !entry.deletedAt &&
-          (entry.kind === "SPACE" ||
-            snapshot.library.some(
-              (parent) => parent.id === entry.spaceId && !parent.deletedAt,
-            )),
-      )
-      .map((entry) => ({
-        ref: { kind: entry.kind, id: entry.id },
-        title: entry.title,
-      })),
-  ];
+  const materials = useMemo(() => {
+    if (tab !== "knowledge") return [];
+    const liveSpaces = new Set(
+      snapshot.library
+        .filter((entry) => entry.kind === "SPACE" && !entry.deletedAt)
+        .map((entry) => entry.id),
+    );
+    return [
+      ...snapshot.notes
+        .filter((note) => !note.deletedAt)
+        .map((note) => ({
+          ref: { kind: "NOTE" as const, id: note.id },
+          title: note.title,
+        })),
+      ...snapshot.library
+        .filter(
+          (entry) =>
+            !entry.deletedAt &&
+            (entry.kind === "SPACE" ||
+              (!!entry.spaceId && liveSpaces.has(entry.spaceId))),
+        )
+        .map((entry) => ({
+          ref: { kind: entry.kind, id: entry.id },
+          title: entry.title,
+        })),
+    ];
+  }, [snapshot.notes, snapshot.library, tab]);
   const references = snapshot.links.filter(
     (link) =>
       link.from.kind === "WORK" &&
@@ -165,38 +216,37 @@ export function ProjectWorkspace({
           linked.link.from.id === project.id,
       ),
   );
-  const parent = liveItems.find((item) => item.id === project.parentProjectId);
+  const parent = workIndex.projectsById.get(project.parentProjectId ?? "");
   return (
     <section className="project-workspace">
       <div className="organization-toolbar">
-        <button type="button" className="chip" onClick={onBack}>
+        <Button type="button" className="chip" onClick={onBack}>
           {t("projectHub.back")}
-        </button>
+        </Button>
         {parent && (
-          <button
+          <Button
             type="button"
             className="chip"
             onClick={() => onProject(parent.id)}
           >
             {t("parentProject")} · {parent.title}
-          </button>
+          </Button>
         )}
       </div>
       <div className="panel project-summary">
         <nav aria-label={t("projectBreadcrumb")} className="project-breadcrumb">
-          {projectAncestors(project, liveItems)
-            .reverse()
-            .map((ancestor) => (
-              <button
-                type="button"
-                className="text-button"
-                key={ancestor.id}
-                aria-label={ancestor.title}
-                onClick={() => onProject(ancestor.id)}
-              >
-                {ancestor.title}
-              </button>
-            ))}
+          {[...ancestors].reverse().map((ancestor) => (
+            <Button
+              variant="ghost"
+              type="button"
+              className="text-button"
+              key={ancestor.id}
+              aria-label={ancestor.title}
+              onClick={() => onProject(ancestor.id)}
+            >
+              {ancestor.title}
+            </Button>
+          ))}
           <span aria-current="page">{project.title}</span>
         </nav>
         <h1>{project.title}</h1>
@@ -212,14 +262,14 @@ export function ProjectWorkspace({
         </p>
         <label className="field project-scope">
           <span>{t("projectScope")}</span>
-          <select
+          <Select
             aria-label={t("projectScope")}
             value={scope}
             onChange={(event) => setScope(event.target.value as ProjectScope)}
           >
             <option value="DIRECT">{t("scopeDirect")}</option>
             <option value="SUBTREE">{t("scopeSubtree")}</option>
-          </select>
+          </Select>
         </label>
         <p className="muted" data-testid="project-progress">
           {t("projectProgress", {
@@ -229,30 +279,30 @@ export function ProjectWorkspace({
           })}
         </p>
         <div className="organization-toolbar">
-          <button
+          <Button
             type="button"
             className="button secondary"
             disabled={busy}
             onClick={() => onOpen({ kind: "WORK", id: project.id })}
           >
             {t("projectSettings")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             className="button secondary"
             disabled={busy}
             onClick={() => onCreate("PROJECT", project.id)}
           >
             {t("projectHub.newChild")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             className="button secondary"
             disabled={busy}
             onClick={() => onCreate("TASK", project.id)}
           >
             {t("newTask")}
-          </button>
+          </Button>
         </div>
       </div>
       <div
@@ -261,7 +311,7 @@ export function ProjectWorkspace({
         aria-label={t("projectHub.sections")}
       >
         {projectTabs.map((name) => (
-          <button
+          <Button
             key={name}
             type="button"
             role="tab"
@@ -272,7 +322,7 @@ export function ProjectWorkspace({
             onClick={() => setTab(name)}
           >
             {t(`projectHub.${name}`)}
-          </button>
+          </Button>
         ))}
       </div>
       <div
@@ -280,98 +330,101 @@ export function ProjectWorkspace({
         id="project-panel"
         aria-labelledby={`project-tab-${tab}`}
       >
-        <div hidden={tab !== "overview"}>
-          <section className="project-next">
-            <h2>{t("taskWorkspace.now")}</h2>
-            {selectedTasks.focusTasks
-              .filter((task) => taskIds.has(task.id))
-              .slice(0, 5)
-              .map((task) => (
-                <button
-                  key={task.id}
+        {tab === "overview" && (
+          <div>
+            <section className="project-next">
+              <h2>{t("taskWorkspace.now")}</h2>
+              {selectedTasks.focusTasks
+                .filter((task) => taskIds.has(task.id))
+                .slice(0, 5)
+                .map((task) => (
+                  <Button
+                    key={task.id}
+                    type="button"
+                    className="agenda-item"
+                    onClick={() => onOpen({ kind: "WORK", id: task.id })}
+                  >
+                    {task.title}
+                  </Button>
+                ))}
+            </section>
+            <section className="project-milestones">
+              <h2>{t("milestones")}</h2>
+              {milestones.map((milestone) => (
+                <Button
+                  key={milestone.id}
                   type="button"
                   className="agenda-item"
-                  onClick={() => onOpen({ kind: "WORK", id: task.id })}
+                  onClick={() => onOpen({ kind: "WORK", id: milestone.id })}
                 >
-                  {task.title}
-                </button>
+                  <span>
+                    {milestone.status === "DONE"
+                      ? "✓"
+                      : milestone.status === "IN_PROGRESS"
+                        ? "●"
+                        : "○"}
+                  </span>{" "}
+                  {milestone.title}
+                </Button>
               ))}
-          </section>
-          <section className="project-milestones">
-            <h2>{t("milestones")}</h2>
-            {milestones.map((milestone) => (
-              <button
-                key={milestone.id}
+              <Button
                 type="button"
-                className="agenda-item"
-                onClick={() => onOpen({ kind: "WORK", id: milestone.id })}
+                className="chip"
+                disabled={busy}
+                onClick={() => onCreate("MILESTONE", project.id)}
               >
-                <span>
-                  {milestone.status === "DONE"
-                    ? "✓"
-                    : milestone.status === "IN_PROGRESS"
-                      ? "●"
-                      : "○"}
-                </span>{" "}
-                {milestone.title}
-              </button>
-            ))}
-            <button
-              type="button"
-              className="chip"
-              disabled={busy}
-              onClick={() => onCreate("MILESTONE", project.id)}
-            >
-              {t("newMilestone")}
-            </button>
-          </section>
-          <progress
-            aria-label={t("completion")}
-            max={Math.max(1, scoped.completed + scoped.unfinished)}
-            value={scoped.completed}
-          />
-          <section>
-            <h2>{t("projectHub.children")}</h2>
-            <button
-              type="button"
-              className="chip"
-              onClick={() =>
-                openGraph({
-                  kind: "project",
-                  id: project.id,
-                  mode: "structure",
-                })
-              }
-            >
-              {t("openGraphWorkspace")}
-            </button>
-            <ProjectStructureTree
-              projects={liveItems}
-              parentId={project.id}
-              onOpen={onProject}
+                {t("newMilestone")}
+              </Button>
+            </section>
+            <progress
+              aria-label={t("completion")}
+              max={Math.max(1, scoped.completed + scoped.unfinished)}
+              value={scoped.completed}
             />
-          </section>
+            <section>
+              <h2>{t("projectHub.children")}</h2>
+              <Button
+                type="button"
+                className="chip"
+                onClick={() =>
+                  openGraph({
+                    kind: "project",
+                    id: project.id,
+                    mode: "structure",
+                  })
+                }
+              >
+                {t("openGraphWorkspace")}
+              </Button>
+              <ProjectStructureTree
+                projects={liveItems}
+                parentId={project.id}
+                onOpen={onProject}
+              />
+            </section>
 
-          <ProjectBriefEditor
-            dirtyRef={briefDirtyRef}
-            project={project}
-            busy={busy}
-            onSave={onBriefSave}
-          />
-          <ProjectTimeline
-            tasks={[...tasks, ...milestones]}
-            items={liveItems}
-            onOpen={onOpen}
-          />
-          <ProjectHistory
-            projectId={project.id}
-            projectIds={[...projectIds]}
-            tasks={[...tasks, ...scoped.projects]}
-            edges={edges}
-            load={runtime.projectActivity}
-            loadWork={runtime.activity}
-          />
-        </div>
+            <ProjectBriefEditor
+              retained={briefState}
+              dirtyRef={briefDirtyRef}
+              project={project}
+              busy={busy}
+              onSave={onBriefSave}
+            />
+            <ProjectTimeline
+              tasks={[...tasks, ...milestones]}
+              items={liveItems}
+              onOpen={onOpen}
+            />
+            <ProjectHistory
+              projectId={project.id}
+              projectIds={[...projectIds]}
+              tasks={[...tasks, ...scoped.projects]}
+              edges={edges}
+              load={runtime.projectActivity}
+              loadWork={runtime.activity}
+            />
+          </div>
+        )}
         {tab === "knowledge" && (
           <>
             <details
@@ -419,14 +472,14 @@ export function ProjectWorkspace({
                     .includes(knowledgeQuery.toLocaleLowerCase()),
                 )
                 .map((entry) => (
-                  <button
+                  <Button
                     type="button"
                     className="agenda-item"
                     key={entry.id}
                     onClick={() => onOpen({ kind: "DOCUMENT", id: entry.id })}
                   >
                     {entry.title}
-                  </button>
+                  </Button>
                 ))}
             <ProjectMaterials
               library={snapshot.library}
@@ -440,21 +493,7 @@ export function ProjectWorkspace({
               scopeIds={projectIds}
               projects={scoped.projects}
               materials={snapshot.projectMaterials ?? []}
-              inheritedSpaces={(snapshot.projectMaterials ?? []).filter(
-                (material) =>
-                  material.kind === "SPACE" &&
-                  !material.deletedAt &&
-                  material.inheritToChildren &&
-                  projectAncestors(project, liveItems).some(
-                    (ancestor) => ancestor.id === material.projectId,
-                  ) &&
-                  !(snapshot.projectMaterials ?? []).some(
-                    (direct) =>
-                      direct.projectId === project.id &&
-                      !direct.deletedAt &&
-                      direct.targetId === material.targetId,
-                  ),
-              )}
+              inheritedSpaces={inheritedMaterials}
               busy={busy}
               onOpen={onOpen}
               onNewPage={onNewPage}
@@ -499,7 +538,7 @@ export function ProjectWorkspace({
                   )
                   .slice(0, 20)
                   .map((entry) => (
-                    <button
+                    <Button
                       type="button"
                       key={entry.ref.kind + ":" + entry.ref.id}
                       disabled={busy}
@@ -513,7 +552,7 @@ export function ProjectWorkspace({
                       }
                     >
                       {entry.title}
-                    </button>
+                    </Button>
                   ))}
               {!linked.length && (
                 <p className="empty-small">{t("projectHub.emptyDocuments")}</p>
@@ -523,17 +562,18 @@ export function ProjectWorkspace({
                   className="project-material"
                   key={`${entry.ref.kind}:${entry.ref.id}`}
                 >
-                  <button
+                  <Button
+                    variant="ghost"
                     type="button"
                     className="text-button"
                     onClick={() => onOpen(entry.ref)}
                   >
                     {entry.title}
-                  </button>
+                  </Button>
                   <small>
                     {liveItems.find((p) => p.id === entry.link.from.id)?.title}
                   </small>
-                  <button
+                  <Button
                     type="button"
                     className="chip"
                     disabled={busy}
@@ -542,7 +582,7 @@ export function ProjectWorkspace({
                     }}
                   >
                     {t("projectHub.detach")}
-                  </button>
+                  </Button>
                 </div>
               ))}
             </section>
@@ -550,6 +590,8 @@ export function ProjectWorkspace({
         )}
         {tab === "tasks" && (
           <TasksWorkspace
+            taskIndex={selectedTasks}
+            derived={selectedTasks.derived}
             items={tasks}
             allItems={liveItems}
             edges={snapshot.edges}
@@ -563,36 +605,50 @@ export function ProjectWorkspace({
           />
         )}
         {tab === "tasks" && (
+          <Button
+            type="button"
+            className="button secondary"
+            aria-expanded={dependencyOpen}
+            onClick={() => setDependencyOpen(!dependencyOpen)}
+          >
+            {i18n.language.startsWith("zh")
+              ? "打开依赖视图"
+              : "Open dependency view"}
+          </Button>
+        )}
+        {tab === "tasks" && dependencyOpen && (
           <>
             <p className="muted">{t("inspectHint")}</p>
             <div className="project-canvas-layout">
               <ProjectDependencyGraph
+                scopeProjectId={project.id}
                 initialFocus={
-                  snapshot.items.some(
-                    (i) => i.id === inspectedId && i.type === "TASK",
-                  )
-                    ? inspectedId
+                  taskIds.has(dependencyState.focus)
+                    ? dependencyState.focus
                     : ""
                 }
+                initialHops={dependencyState.hops}
+                initialScope={dependencyState.scope}
+                onStateChange={setDependencyState}
                 onWorkspace={() =>
                   openGraph({
                     kind: "project",
                     id: project.id,
                     mode: "dependencies",
-                    focus: snapshot.items.some(
-                      (i) => i.id === inspectedId && i.type === "TASK",
-                    )
-                      ? inspectedId
+                    focus: taskIds.has(dependencyState.focus)
+                      ? dependencyState.focus
                       : "",
+                    hops: dependencyState.hops,
+                    scope: dependencyState.scope,
                     selection: inspectedId,
                   })
                 }
                 inspector={
                   <ProjectInspector
+                    workIndex={workIndex}
                     item={
-                      graphSnapshot.items.find(
-                        (item) => item.id === inspectedId,
-                      ) ?? project
+                      snapshot.items.find((item) => item.id === inspectedId) ??
+                      project
                     }
                     snapshot={snapshot}
                     busy={busy}
@@ -602,9 +658,8 @@ export function ProjectWorkspace({
                       onOpen({
                         kind: "WORK",
                         id:
-                          graphSnapshot.items.find(
-                            (item) => item.id === inspectedId,
-                          )?.id ?? project.id,
+                          snapshot.items.find((item) => item.id === inspectedId)
+                            ?.id ?? project.id,
                       })
                     }
                     onProject={onProject}

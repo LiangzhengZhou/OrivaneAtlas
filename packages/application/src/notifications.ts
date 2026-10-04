@@ -1,6 +1,7 @@
 import {
   type ActorContext,
   DomainError,
+  type Reminder,
   type WorkItem,
 } from "@arclattice/domain";
 import { calendarDateOffset, calendarDayStart } from "./recurrence-lifecycle";
@@ -11,7 +12,8 @@ export type NotificationKind =
   | "TASK_DUE"
   | "TASK_OVERDUE"
   | "RECURRENCE_EXPIRING"
-  | "DAILY_DIGEST";
+  | "DAILY_DIGEST"
+  | "REMINDER";
 export interface NotificationIntent {
   id: string;
   scope: string;
@@ -38,16 +40,27 @@ export function notificationScope(server: string, actor: ActorContext): string {
   return JSON.stringify([server, actor.workspaceId, actor.principalId]);
 }
 
-function localHourInstant(day: string, timezone: string, hour: number): number {
+function localHourInstant(
+  day: string,
+  timezone: string,
+  hour: number,
+  minute = 0,
+): number {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
+    minute: "2-digit",
     hourCycle: "h23",
   });
-  const target = day + "T" + String(hour).padStart(2, "0");
+  const target =
+    day +
+    "T" +
+    String(hour).padStart(2, "0") +
+    ":" +
+    String(minute).padStart(2, "0");
   let low = calendarDayStart(day, timezone),
     high = calendarDayStart(calendarDateOffset(day, 1), timezone);
   while (low < high) {
@@ -62,7 +75,9 @@ function localHourInstant(day: string, timezone: string, hour: number): number {
       "-" +
       value("day") +
       "T" +
-      value("hour");
+      value("hour") +
+      ":" +
+      value("minute");
     if (local < target) low = middle + 1;
     else high = middle;
   }
@@ -76,6 +91,7 @@ export class NotificationPlanner {
     actor: ActorContext;
     items: readonly WorkItem[];
     workflows: readonly WorkflowRecord[];
+    reminders?: readonly Reminder[];
     timezone: string;
     today: string;
     now: string;
@@ -111,6 +127,7 @@ export class NotificationPlanner {
             TASK_OVERDUE: "任务逾期",
             RECURRENCE_EXPIRING: "周期任务窗口即将关闭",
             DAILY_DIGEST: "每日任务摘要",
+            REMINDER: "提醒",
           }
         : {
             TASK_START: "Task starts",
@@ -118,6 +135,7 @@ export class NotificationPlanner {
             TASK_OVERDUE: "Task overdue",
             RECURRENCE_EXPIRING: "Recurring task window closing",
             DAILY_DIGEST: "Daily task digest",
+            REMINDER: "Reminder",
           };
     const add = (
       kind: NotificationKind,
@@ -152,6 +170,35 @@ export class NotificationPlanner {
       if (task.dueDate) {
         add("TASK_DUE", task.id, task.dueDate);
         add("TASK_OVERDUE", task.id, calendarDateOffset(task.dueDate, 1));
+      }
+    }
+    for (const reminder of input.reminders ?? []) {
+      if (
+        reminder.workspaceId !== input.actor.workspaceId ||
+        reminder.deletedAt ||
+        reminder.state !== "ACTIVE" ||
+        reminder.notifyMode === "NONE" ||
+        !reminder.time
+      )
+        continue;
+      const [reminderHour, minute] = reminder.time.split(":").map(Number);
+      const instant =
+        localHourInstant(
+          reminder.day,
+          reminder.timezone,
+          reminderHour!,
+          minute!,
+        ) -
+        (reminder.notifyMode === "MINUTES_BEFORE"
+          ? (reminder.notifyOffsetMinutes ?? 0)
+          : 0) *
+          60000;
+      const length = intents.length;
+      add("REMINDER", reminder.id, reminder.day, reminder.timezone, instant);
+      if (intents.length > length) {
+        const intent = intents[intents.length - 1]!;
+        intent.title = reminder.title;
+        intent.localHour = reminderHour!;
       }
     }
     for (const record of input.workflows) {

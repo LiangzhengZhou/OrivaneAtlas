@@ -188,6 +188,57 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 21,
+    name: "recurrence-skipped",
+    sql: readFileSync(
+      new URL("./migrations/0021-recurrence-skipped.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 22,
+    name: "organization",
+    sql: readFileSync(
+      new URL("./migrations/0022-organization.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 23,
+    name: "reminder",
+    sql: readFileSync(
+      new URL("./migrations/0023-reminder.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 24,
+    name: "workspace-changes",
+    sql: readFileSync(
+      new URL("./migrations/0024-workspace-changes.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 25,
+    name: "agent-session-conversations",
+    sql: readFileSync(
+      new URL(
+        "./migrations/0025-agent-session-conversations.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  },
+  {
+    version: 26,
+    name: "agent-session-pages",
+    sql: readFileSync(
+      new URL("./migrations/0026-agent-session-pages.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")
@@ -212,13 +263,25 @@ export async function inspectSchema(
   ).rows;
   const routines = (
     await client.query(
-      "SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' LIMIT 1",
+      "SELECT n.nspname,p.proname,p.prosrc,p.prosecdef,p.pronargs,p.prorettype::regtype::text AS return_type FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
     )
-  ).rowCount;
+  ).rows;
   if (
     schemas.some((row) => !["public", "arclattice"].includes(row.nspname)) ||
     objects.some((row) => row.nspname !== "arclattice") ||
-    routines
+    routines.some(
+      (routine) =>
+        routine.nspname !== "arclattice" ||
+        routine.proname !== "record_workspace_change" ||
+        routine.prosecdef ||
+        routine.pronargs !== 0 ||
+        routine.return_type !== "trigger" ||
+        routine.prosrc !==
+          plan
+            .find((step) => step.name === "workspace-changes")
+            ?.sql.split("AS $$")[1]
+            ?.split("$$;")[0],
+    )
   )
     throw new PostgresStorageError("UNRECOGNIZED_DATABASE");
   const claimed = schemas.some((row) => row.nspname === "arclattice");
@@ -292,6 +355,7 @@ export async function inspectSchema(
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
   }
   const knowledgeTables = [
+    ...(rows.length >= 24 ? ["workspace_sync_state", "workspace_change"] : []),
     ...(rows.length >= 12 ? ["library_entry", "document_wiki_link"] : []),
     ...(rows.length >= 13 ? ["project_knowledge_binding"] : []),
     ...(rows.length >= 15 ? ["document_alias", "document_hierarchy"] : []),
@@ -319,7 +383,39 @@ export async function inspectSchema(
           "notebook_outbox",
         ]
       : []),
+    ...(rows.length >= 22
+      ? ["organization_activity", "organization_outbox"]
+      : []),
+    ...(rows.length >= 23
+      ? ["reminder", "reminder_activity", "reminder_outbox"]
+      : []),
+    ...(rows.length >= 26
+      ? ["agent_session_metadata", "agent_session_message"]
+      : []),
   ];
+  if (rows.length >= 24) {
+    if (routines.length !== 1)
+      throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
+    const expected =
+      plan.find((step) => step.name === "workspace-changes")?.sql ?? "";
+    const triggers = (
+      await client.query(
+        "SELECT t.tgname,t.tgenabled,p.proname FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='arclattice' AND NOT t.tgisinternal",
+      )
+    ).rows;
+    if (
+      [...expected.matchAll(/CREATE TRIGGER (\w+)/g)].some(
+        (match) =>
+          !triggers.some(
+            (trigger) =>
+              trigger.tgname === match[1] &&
+              trigger.tgenabled === "O" &&
+              trigger.proname === "record_workspace_change",
+          ),
+      )
+    )
+      throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
+  }
   if (
     knowledgeTables.some(
       (name) =>

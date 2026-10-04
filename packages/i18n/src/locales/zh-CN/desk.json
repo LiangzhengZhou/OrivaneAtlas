@@ -89,7 +89,8 @@
     "completedAt": "实际完成时间（选填，设备本地时间）",
     "backfill": "补录本次任务",
     "OPEN": "待完成",
-    "COMPLETED": "已完成"
+    "COMPLETED": "已完成",
+    "SKIPPED": "已跳过"
   },
   "categories": {
     "manage": "管理项目分类",

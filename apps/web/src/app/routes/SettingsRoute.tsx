@@ -8,6 +8,8 @@ import { AppUpdater } from "../../AppUpdater";
 import type { Runtime, Snapshot } from "../../bootstrap";
 import { CalendarSettings } from "../../CalendarSettings";
 import { KnowledgeView } from "../../ConnectedViews";
+import { Button } from "../../components/ui/Button";
+import { Select } from "../../components/ui/Surfaces";
 import { DensitySettings } from "../../DensitySettings";
 import type { DocumentRequest } from "../../DocumentWorkspace";
 import { AiSettingsView } from "../../features/ai/AiSettingsView";
@@ -65,7 +67,7 @@ export function SettingsRoute({
           <p>{t("settings:languageHint")}</p>
           <label className="field">
             <span>{t("settings:language")}</span>
-            <select
+            <Select
               aria-label={t("settings:language")}
               value={preference}
               onChange={(event) =>
@@ -75,7 +77,7 @@ export function SettingsRoute({
               <option value="system">{t("settings:system")}</option>
               <option value="en-US">English</option>
               <option value="zh-CN">简体中文</option>
-            </select>
+            </Select>
           </label>
         </section>
       </section>
@@ -100,7 +102,8 @@ export function SettingsRoute({
             ) : (
               <>
                 <p>{t("backupHint")}</p>
-                <button
+                <Button
+                  variant="primary"
                   className="button primary"
                   type="button"
                   disabled={busy}
@@ -118,11 +121,11 @@ export function SettingsRoute({
                 >
                   <Download size={17} />
                   {t("backupDatabase")}
-                </button>
+                </Button>
               </>
             )}
             <p>{t("exportHint")}</p>
-            <button
+            <Button
               className="button secondary"
               type="button"
               onClick={() =>
@@ -144,12 +147,12 @@ export function SettingsRoute({
             >
               <Download size={17} />
               {t("exportData")}
-            </button>
+            </Button>
           </section>
           <section>
             <h2>{t("protected")}</h2>
             <p>{t("scope")}</p>
-            <button
+            <Button
               className="button secondary"
               type="button"
               disabled={busy}
@@ -157,7 +160,7 @@ export function SettingsRoute({
             >
               <LogOut size={17} />
               {t("lock")}
-            </button>
+            </Button>
           </section>
           <details className="advanced-relations">
             <summary>

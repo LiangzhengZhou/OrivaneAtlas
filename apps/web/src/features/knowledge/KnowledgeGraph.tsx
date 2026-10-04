@@ -7,11 +7,16 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
 import { GraphViewport } from "../graph/GraphViewport";
+import { collectionRevision } from "../graph/graph-revision";
 import { openGraph } from "../graph/graph-route";
 import { knowledgeForceLayout } from "../graph/layouts/KnowledgeForceLayout";
 import { useStructuralLayout } from "../graph/layouts/useStructuralLayout";
-import { hierarchyPath } from "../hierarchy/hierarchy";
+import {
+  buildKnowledgeGraphIndex,
+  knowledgeNeighborhood,
+} from "./knowledge-graph-index";
 
 export function KnowledgeGraph({
   snapshot,
@@ -44,6 +49,7 @@ export function KnowledgeGraph({
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
+  const text = (cn: string, en: string) => (zh ? cn : en);
   const [scope, setScope] = useState(
     initialScope ??
       (documentId
@@ -71,53 +77,44 @@ export function KnowledgeGraph({
     setHops(next.hops);
     onStateChange?.(next);
   };
-  const entriesById = useMemo(
-    () => new Map(snapshot.library.map((e) => [e.id, e])),
-    [snapshot.library],
+  const graphIndex = useMemo(
+    () => buildKnowledgeGraphIndex(snapshot.library, snapshot.wikiLinks ?? []),
+    [snapshot.library, snapshot.wikiLinks],
   );
-  const documents = snapshot.library.filter(
-    (entry) =>
-      entry.kind === "DOCUMENT" &&
-      !entry.deletedAt &&
-      !!entriesById.get(entry.spaceId ?? "") &&
-      !entriesById.get(entry.spaceId ?? "")?.deletedAt,
-  );
+  const { documents } = graphIndex;
   const focus =
-    documents.find((entry) => entry.id === focusId) ??
-    documents.find((entry) => entry.spaceId === currentSpaceId) ??
+    graphIndex.documentsById.get(focusId) ??
+    graphIndex.documentsBySpaceId.get(currentSpaceId ?? "")?.[0] ??
     documents[0];
-  const projectDocuments = new Set(
-    scopedKnowledgeDocuments({
-      ...snapshot,
-      projectId,
-      workspaceFallback: false,
-    }).map((entry) => entry.id),
+  const projectDocuments = useMemo(
+    () =>
+      new Set(
+        scope === "project"
+          ? scopedKnowledgeDocuments({
+              ...snapshot,
+              projectId,
+              workspaceFallback: false,
+            }).map((entry) => entry.id)
+          : [],
+      ),
+    [snapshot, projectId, scope],
   );
-  const links = snapshot.wikiLinks ?? [];
-  const connected = new Set(
-    links.flatMap((link) =>
-      link.targetDocumentId
-        ? [link.sourceDocumentId, link.targetDocumentId]
-        : [],
-    ),
-  );
-  const neighbors = new Set(focus ? [focus.id] : []);
-  for (let hop = 0; hop < hops; hop++) {
-    const frontier = new Set(neighbors);
-    for (const link of links) {
-      if (
-        link.targetDocumentId &&
-        (frontier.has(link.sourceDocumentId) ||
-          frontier.has(link.targetDocumentId))
-      ) {
-        neighbors.add(link.sourceDocumentId);
-        neighbors.add(link.targetDocumentId);
-      }
-    }
-  }
-  const visible = documents.filter(
+  const neighbors = knowledgeNeighborhood(graphIndex, focus?.id ?? "", hops);
+  const candidates =
+    scope === "local"
+      ? [...neighbors].flatMap((id) => {
+          const entry = graphIndex.documentsById.get(id);
+          return entry ? [entry] : [];
+        })
+      : scope === "space"
+        ? (graphIndex.documentsBySpaceId.get(
+            currentSpaceId ?? focus?.spaceId ?? "",
+          ) ?? [])
+        : documents;
+  const visible = candidates.filter(
     (entry) =>
-      (connected.has(entry.id) || entry.id === focus?.id) &&
+      (graphIndex.neighborsByDocumentId.has(entry.id) ||
+        entry.id === focus?.id) &&
       (scope === "project"
         ? projectDocuments.has(entry.id)
         : scope === "workspace" || scope === "space"
@@ -126,7 +123,8 @@ export function KnowledgeGraph({
           : neighbors.has(entry.id)),
   );
   const ids = new Set(visible.map((entry) => entry.id));
-  const edges = links
+  const edges = visible
+    .flatMap((entry) => graphIndex.outgoingByDocumentId.get(entry.id) ?? [])
     .filter(
       (link) =>
         link.targetDocumentId &&
@@ -138,7 +136,13 @@ export function KnowledgeGraph({
       source: link.sourceDocumentId,
       target: link.targetDocumentId!,
     }));
-  const positions = useStructuralLayout([...ids], edges, knowledgeForceLayout);
+  const layoutKey = `${collectionRevision(snapshot.library)}:${snapshot.wikiLinks ? collectionRevision(snapshot.wikiLinks) : 0}:${collectionRevision(snapshot.items)}:${collectionRevision(snapshot.projectMaterials)}:${scope}:${focus?.id}:${hops}:${currentSpaceId}:${projectId}`;
+  const positions = useStructuralLayout(
+    [...ids],
+    edges,
+    knowledgeForceLayout,
+    layoutKey,
+  );
   const positionsById = new Map(
     positions.map((position) => [position.id, position.position]),
   );
@@ -152,32 +156,31 @@ export function KnowledgeGraph({
       })),
     );
   } else {
-    const spaces = [...new Set(visible.map((entry) => entry.spaceId))];
+    const visibleBySpaceId = new Map<string | null, typeof visible>();
+    for (const entry of visible) {
+      const group = visibleBySpaceId.get(entry.spaceId) ?? [];
+      group.push(entry);
+      visibleBySpaceId.set(entry.spaceId, group);
+    }
+    const spaces = [...visibleBySpaceId.keys()];
+    const clusterRowHeight = Math.max(
+      440,
+      ...[...visibleBySpaceId.values()].map(
+        (group) => Math.ceil(group.length / 2) * 100 + 120,
+      ),
+    );
     for (const [spaceIndex, spaceId] of spaces.entries()) {
-      const children = visible.filter((entry) => entry.spaceId === spaceId);
+      const children = visibleBySpaceId.get(spaceId)!;
       const groupId = "space-cluster:" + spaceId;
       nodes.push({
         id: groupId,
         type: "spaceCluster",
         data: {
-          label:
-            snapshot.library.find((entry) => entry.id === spaceId)?.title ?? "",
+          label: graphIndex.spaceById.get(spaceId ?? "")?.title ?? "",
         },
         position: {
           x: (spaceIndex % 2) * 580,
-          y:
-            Math.floor(spaceIndex / 2) *
-            Math.max(
-              440,
-              ...spaces.map(
-                (id) =>
-                  Math.ceil(
-                    visible.filter((entry) => entry.spaceId === id).length / 2,
-                  ) *
-                    100 +
-                  120,
-              ),
-            ),
+          y: Math.floor(spaceIndex / 2) * clusterRowHeight,
         },
         style: {
           width: 540,
@@ -204,6 +207,7 @@ export function KnowledgeGraph({
   return (
     <section className="graph-section">
       <GraphViewport
+        layoutKey={layoutKey}
         workspace={workspace}
         selectionId={selectionId}
         inspector={inspector}
@@ -244,7 +248,7 @@ export function KnowledgeGraph({
               />
               {(["local", "space", "project", "workspace"] as const).map(
                 (value) => (
-                  <button
+                  <Button
                     type="button"
                     className="chip"
                     aria-pressed={scope === value}
@@ -259,16 +263,18 @@ export function KnowledgeGraph({
                           workspace: "工作区",
                         }[value]
                       : value}
-                  </button>
+                  </Button>
                 ),
               )}
-              <button
+              <Button
                 type="button"
                 className="chip"
                 onClick={() => update({ hops: hops === 1 ? 2 : 1 })}
               >
-                {hops} hop
-              </button>
+                {hops === 1
+                  ? text("直接关系", "Direct relations")
+                  : text("扩展两层", "Expand two levels")}
+              </Button>
             </div>
             {query && (
               <div
@@ -282,7 +288,8 @@ export function KnowledgeGraph({
                       .includes(query.toLocaleLowerCase()),
                   )
                   .map((entry) => (
-                    <button
+                    <Button
+                      variant="ghost"
                       type="button"
                       role="option"
                       aria-selected={entry.id === focusId}
@@ -300,17 +307,8 @@ export function KnowledgeGraph({
                         )?.title
                       }
                       {" / "}
-                      {hierarchyPath(
-                        documents.map((document) => ({
-                          id: document.id,
-                          title: document.title,
-                          parentId: document.parentDocumentId ?? null,
-                        })),
-                        entry.id,
-                      )
-                        .map((ancestor) => ancestor.title)
-                        .join(" / ")}
-                    </button>
+                      {graphIndex.hierarchyPathByDocumentId.get(entry.id)}
+                    </Button>
                   ))}
               </div>
             )}

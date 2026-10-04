@@ -2,6 +2,7 @@ import { ArrowRight, LockKeyhole } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime } from "./bootstrap";
+import { Button } from "./components/ui/Button";
 export function Login({
   runtime,
   onLogin,
@@ -111,7 +112,7 @@ export function Login({
                   gap: 10,
                 }}
               >
-                <button
+                <Button
                   type="button"
                   className="button secondary"
                   disabled={busy}
@@ -135,9 +136,9 @@ export function Login({
                   }}
                 >
                   {item.displayName}
-                </button>
+                </Button>
                 <small>{item.serverUrl}</small>
-                <button
+                <Button
                   type="button"
                   className="button secondary"
                   disabled={busy}
@@ -155,7 +156,7 @@ export function Login({
                   }}
                 >
                   {forgetLabel}
-                </button>
+                </Button>
               </div>
             ))}
           </section>
@@ -207,14 +208,15 @@ export function Login({
               : t(error)}
           </p>
         )}
-        <button
+        <Button
+          variant="primary"
           className="button primary"
           disabled={busy || !server.trim() || !username.trim() || !password}
           type="submit"
         >
           {busy ? t("connecting") : t("enter")}
           <ArrowRight size={17} />
-        </button>
+        </Button>
         {busy && <p role="status">{t("loginDeadline")}</p>}
       </form>
     </main>

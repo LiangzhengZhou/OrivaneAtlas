@@ -5,11 +5,14 @@ import {
   scopedKnowledgeDocuments,
 } from "@arclattice/application";
 import type { EditorView } from "@codemirror/view";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { showToast } from "./app/ToastHost";
 import type { Runtime, Snapshot } from "./bootstrap";
 import { ContentPolicyEditor } from "./ContentPolicyEditor";
+import { Button } from "./components/ui/Button";
+import { confirmAction } from "./components/ui/ConfirmationHost";
 import { exportHtml, exportMarkdownZip, exportPdf } from "./documentExports";
 import { FilePicker } from "./FilePicker";
 import { DiffViewer } from "./features/documents/DiffViewer";
@@ -107,15 +110,15 @@ export function DocumentWorkspace({
     window.addEventListener("beforeunload", leave);
     return () => window.removeEventListener("beforeunload", leave);
   }, [tabs]);
-  function close(tab: Tab) {
+  async function close(tab: Tab) {
     if (tab.busy) return;
     if (
       tab.dirty &&
-      !window.confirm(
+      !(await confirmAction(
         zh
           ? "尚有未保存内容，关闭将丢弃此草稿。是否关闭？"
           : "Unsaved draft will be lost. Close this tab?",
-      )
+      ))
     )
       return;
     const next = tabs.filter((t) => t.key !== tab.key);
@@ -130,12 +133,12 @@ export function DocumentWorkspace({
         role="tablist"
         aria-label={zh ? "打开的文档" : "Open documents"}
       >
-        <button type="button" className="chip" onClick={onBrowse}>
+        <Button type="button" className="chip" onClick={onBrowse}>
           {zh ? "工作台" : "Workspace"}
-        </button>
+        </Button>
         {tabs.map((tab) => (
           <div className="document-tab" key={tab.key}>
-            <button
+            <Button
               type="button"
               role="tab"
               aria-selected={visible && active === tab.key}
@@ -149,8 +152,8 @@ export function DocumentWorkspace({
                 tab.entity?.title ||
                 tab.day ||
                 (zh ? "未命名" : "Untitled")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               aria-label={
                 (zh ? "关闭 " : "Close ") +
@@ -160,13 +163,14 @@ export function DocumentWorkspace({
               disabled={tab.busy}
             >
               ×
-            </button>
+            </Button>
           </div>
         ))}
       </div>
       {tabs.map((tab) => (
         <div key={tab.key} hidden={!visible || active !== tab.key}>
           <DocumentPane
+            active={visible && active === tab.key}
             snapshot={snapshot}
             onWikiCreated={(entity) => {
               const key = `DOCUMENT:${entity.id}`;
@@ -231,6 +235,7 @@ export function DocumentWorkspace({
   );
 }
 function DocumentPane({
+  active,
   snapshot,
   onWikiCreated,
   onWikiOpen,
@@ -241,6 +246,7 @@ function DocumentPane({
   onStatus,
   remote,
 }: {
+  active: boolean;
   snapshot: Snapshot;
   onWikiCreated(entity: LibraryEntry): void;
   onWikiOpen(id: string): void;
@@ -263,6 +269,41 @@ function DocumentPane({
   const [base, setBase] = useState(request.entity),
     [title, setTitle] = useState(request.entity?.title ?? request.day ?? ""),
     [body, setBody] = useState(request.entity?.bodyMd ?? "");
+  const [editorPending, setEditorPending] = useState(false);
+  const editorPendingRef = useRef(false);
+  const [printing, setPrinting] = useState(false);
+  const readingBody = useRef<string | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const prepare = () =>
+      flushSync(() => {
+        setBody(editor.current?.state.doc.toString() ?? current.current.body);
+        setPrinting(true);
+      });
+    const finish = () => setPrinting(false);
+    window.addEventListener("beforeprint", prepare);
+    window.addEventListener("afterprint", finish);
+    return () => {
+      window.removeEventListener("beforeprint", prepare);
+      window.removeEventListener("afterprint", finish);
+    };
+  }, [active]);
+  const wikiPages = useMemo(
+    () =>
+      scopedKnowledgeDocuments({
+        ...snapshot,
+        projectId: request.projectId,
+        currentSpaceId: request.spaceId ?? undefined,
+        workspaceId: runtime.context?.workspaceId,
+        workspaceFallback: true,
+      }),
+    [
+      snapshot,
+      request.projectId,
+      request.spaceId,
+      runtime.context?.workspaceId,
+    ],
+  );
   const [aiPolicy, setAiPolicy] = useState(
     request.entity?.aiPolicy ?? privateContentPolicy,
   );
@@ -272,6 +313,7 @@ function DocumentPane({
     [composing, setComposing] = useState(false),
     [history, setHistory] = useState<(Note | LibraryEntry)[]>([]);
   const [historyOpenRequest, setHistoryOpenRequest] = useState(0);
+  if (mode === "read" || printing) readingBody.current = body;
   const [username, setUsername] = useState(""),
     [password, setPassword] = useState("");
   const editor = useRef<EditorView | null>(null),
@@ -284,6 +326,7 @@ function DocumentPane({
   callbacks.current = { onStatus, onSaved };
   const library = request.kind === "SPACE" || request.kind === "DOCUMENT";
   const dirty =
+    editorPending ||
     title !== (base?.title ?? request.day ?? "") ||
     body !== (base?.bodyMd ?? "") ||
     JSON.stringify(aiPolicy) !==
@@ -380,7 +423,12 @@ function DocumentPane({
       (!explicit && failed.current)
     )
       return;
-    const draft = { ...current.current },
+    const draft = {
+        ...current.current,
+        body: editorPendingRef.current
+          ? (editor.current?.state.doc.toString() ?? current.current.body)
+          : current.current.body,
+      },
       previous = baseRef.current;
     if (previous?.deletedAt) {
       failed.current = true;
@@ -535,6 +583,7 @@ function DocumentPane({
       }
     });
   }
+  if (!active && !busy) return null;
   return (
     <article className="document-pane">
       <div className="document-toolbar no-print">
@@ -543,7 +592,7 @@ function DocumentPane({
           label={<>{mode === "read" ? t("read") : zh ? "编辑" : "Edit"} ▾</>}
         >
           {(["live", "source", "read"] as const).map((value) => (
-            <button
+            <Button
               key={value}
               type="button"
               className={"chip " + (mode === value ? "active" : "")}
@@ -558,7 +607,7 @@ function DocumentPane({
                     ? "源码"
                     : "Source"
                   : t("read")}
-            </button>
+            </Button>
           ))}
         </DocumentPopover>
         <span className="action-spacer" />
@@ -578,17 +627,17 @@ function DocumentPane({
             className="document-export"
             label={zh ? "导出" : "Export"}
           >
-            <button
+            <Button
               className="chip"
               type="button"
               onClick={() => downloadText((title || "document") + ".md", body)}
             >
               {t("exportMarkdown")}
-            </button>
-            <button className="chip" type="button" onClick={exportPdf}>
+            </Button>
+            <Button className="chip" type="button" onClick={exportPdf}>
               {s("pdf")}
-            </button>
-            <button
+            </Button>
+            <Button
               className="chip"
               type="button"
               onClick={() =>
@@ -596,8 +645,8 @@ function DocumentPane({
               }
             >
               {zh ? "导出 HTML" : "Export HTML"}
-            </button>
-            <button
+            </Button>
+            <Button
               className="chip"
               type="button"
               onClick={() =>
@@ -609,10 +658,10 @@ function DocumentPane({
               }
             >
               {zh ? "导出 ZIP（含图片）" : "Export ZIP with images"}
-            </button>
+            </Button>
           </DocumentPopover>
           {base && (
-            <button
+            <Button
               className="chip"
               type="button"
               disabled={busy}
@@ -630,10 +679,10 @@ function DocumentPane({
               }
             >
               {t("revisions")}
-            </button>
+            </Button>
           )}
           {base && (
-            <button
+            <Button
               className="chip"
               type="button"
               disabled={busy}
@@ -661,7 +710,7 @@ function DocumentPane({
               }}
             >
               {c("delete")}
-            </button>
+            </Button>
           )}
           <DocumentPopover
             className="document-policy no-print"
@@ -690,8 +739,8 @@ function DocumentPane({
                 }
                 disabled={busy}
                 accept=".md,.markdown,.txt"
-                onFile={(file) => {
-                  if (dirty && !window.confirm(s("leave"))) return;
+                onFile={async (file) => {
+                  if (dirty && !(await confirmAction(s("leave")))) return;
                   void guarded(async () => {
                     if (
                       file.size > 600000 ||
@@ -735,7 +784,7 @@ function DocumentPane({
                   v{revision.version} · {revision.updatedAt}
                 </summary>
                 <DiffViewer before={revision.bodyMd} after={body} />
-                <button
+                <Button
                   className="chip"
                   type="button"
                   onClick={() => {
@@ -745,7 +794,7 @@ function DocumentPane({
                   }}
                 >
                   {t("useRevision")}
-                </button>
+                </Button>
               </details>
             ))}
           </DocumentPopover>
@@ -758,7 +807,7 @@ function DocumentPane({
               ? "此文档在回收站中。恢复后才能继续保存。"
               : "This document is in trash. Restore it before editing."}
           </p>
-          <button
+          <Button
             type="button"
             disabled={busy}
             onClick={() =>
@@ -774,23 +823,23 @@ function DocumentPane({
             }
           >
             {zh ? "恢复文档" : "Restore document"}
-          </button>
+          </Button>
         </div>
       )}
       {error && (
         <div className="error no-print" role="alert">
           <strong>{error}</strong>
           {recoveryRequired.current && !base && (
-            <button
+            <Button
               type="button"
               disabled={busy}
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  !window.confirm(
+                  !(await confirmAction(
                     zh
                       ? "将恢复的草稿保存为新文档？"
                       : "Save the recovered draft as a new document?",
-                  )
+                  ))
                 )
                   return;
                 recoveryRequired.current = false;
@@ -799,7 +848,7 @@ function DocumentPane({
               }}
             >
               {zh ? "确认恢复并保存" : "Confirm recovery and save"}
-            </button>
+            </Button>
           )}
           {error === "VERSION_CONFLICT" && remote && (
             <details>
@@ -809,7 +858,7 @@ function DocumentPane({
               <h3>{remote.title}</h3>
               <Markdown text={remote.bodyMd} />
               <DiffViewer before={remote.bodyMd} after={body} />
-              <button
+              <Button
                 type="button"
                 disabled={busy}
                 onClick={() => {
@@ -827,17 +876,17 @@ function DocumentPane({
                 }}
               >
                 {zh ? "三方合并" : "Merge"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 disabled={busy || !!remote.deletedAt}
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    !window.confirm(
+                    !(await confirmAction(
                       zh
                         ? "将当前草稿作为合并结果，在远端最新版本上保存？请先检查差异。"
                         : "Save the current draft as your merged result on the latest remote version? Review differences first.",
-                    )
+                    ))
                   )
                     return;
                   recoveryRequired.current = false;
@@ -851,17 +900,17 @@ function DocumentPane({
                 {zh
                   ? "确认合并并保存我的草稿"
                   : "Confirm merge and save my draft"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 disabled={busy}
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    !window.confirm(
+                    !(await confirmAction(
                       zh
                         ? "丢弃本地草稿并载入远端版本？"
                         : "Discard local draft and load remote version?",
-                    )
+                    ))
                   )
                     return;
                   baseRef.current = remote;
@@ -875,7 +924,7 @@ function DocumentPane({
                 }}
               >
                 {zh ? "载入远端版本" : "Load remote version"}
-              </button>
+              </Button>
             </details>
           )}
           <p>
@@ -917,7 +966,9 @@ function DocumentPane({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
-              <button disabled={busy}>{s("login")}</button>
+              <Button type="submit" disabled={busy}>
+                {s("login")}
+              </Button>
             </form>
           )}
         </div>
@@ -988,29 +1039,34 @@ function DocumentPane({
           </label>
         )}
         <LiveMarkdown
-          wikiPages={scopedKnowledgeDocuments({
-            ...snapshot,
-            projectId: request.projectId,
-            currentSpaceId: request.spaceId ?? undefined,
-            workspaceId: runtime.context?.workspaceId,
-            workspaceFallback: true,
-          })}
+          onPendingChange={(pending) => {
+            editorPendingRef.current = pending;
+            setEditorPending(pending);
+          }}
+          wikiPages={wikiPages}
           value={body}
           source={mode === "source"}
           label={library ? s("body") : t("noteBody")}
-          onChange={setBody}
+          onChange={(text) => {
+            current.current.body = text;
+            setBody(text);
+          }}
           onSave={() => void save(true)}
           onComposition={setComposing}
           editorRef={editor}
           onImages={insertImages}
         />
       </div>
-      <div
-        className={"document-reading " + (mode !== "read" ? "print-only" : "")}
-      >
-        <h1 className="print-only">{title}</h1>
-        <Markdown text={body} />
-      </div>
+      {readingBody.current !== null && (
+        <div
+          className={
+            "document-reading " + (mode !== "read" ? "print-only" : "")
+          }
+        >
+          <h1 className="print-only">{title}</h1>
+          <Markdown text={readingBody.current} />
+        </div>
+      )}
       {base && "day" in base && (
         <NoteKnowledgeActions
           note={base}

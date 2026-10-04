@@ -1,8 +1,11 @@
 import { recurrenceStats } from "@arclattice/application";
-import { localCalendarDay } from "@arclattice/domain";
-import { useState } from "react";
+import { localCalendarDay, occurrenceDays } from "@arclattice/domain";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DateField } from "./components/DateField";
+import { DateTimeField } from "./components/DateTimeField";
+import { Button } from "./components/ui/Button";
+import { Select } from "./components/ui/Surfaces";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 
 import type { WorkflowManagerProps } from "./WorkflowManager";
@@ -15,6 +18,7 @@ export function RecurrenceManager({
   save,
   generate,
   backfill,
+  skip,
 }: WorkflowManagerProps) {
   const { t, i18n } = useTranslation("desk");
   const text = (zh: string, en: string) =>
@@ -29,6 +33,7 @@ export function RecurrenceManager({
     ),
     [interval, setInterval] = useState(1);
   const [completed, setCompleted] = useState<Record<string, string>>({});
+  const [backfillId, setBackfillId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{
     id: string;
     version: number;
@@ -55,6 +60,20 @@ export function RecurrenceManager({
     "MANUAL" | "IMMEDIATE" | "WHEN_DEPENDENCIES_COMPLETED" | "AT_SCHEDULED_TIME"
   >("MANUAL");
   const [recurrenceProjects, setRecurrenceProjects] = useState<string[]>([]);
+  const seriesIndex = useMemo(() => {
+    const occurrences = new Map<string, typeof records>();
+    for (const record of records) {
+      if (record.payload.kind !== "OCCURRENCE" || record.deletedAt) continue;
+      const group = occurrences.get(record.payload.definitionId) ?? [];
+      occurrences.set(record.payload.definitionId, [...group, record]);
+    }
+    return {
+      occurrences,
+      completedIds: new Set(
+        items.filter((item) => item.status === "DONE").map((item) => item.id),
+      ),
+    };
+  }, [records, items]);
   return (
     <section className="recurrence-manager">
       <details className="panel" open>
@@ -121,16 +140,8 @@ export function RecurrenceManager({
               />
             </label>
             <label>
-              {text("默认负责人 ID", "Default assignee ID")}
-              <input
-                maxLength={240}
-                value={assignee}
-                onChange={(event) => setAssignee(event.target.value)}
-              />
-            </label>
-            <label>
               {text("默认优先级", "Default priority")}
-              <select
+              <Select
                 value={priority}
                 onChange={(event) =>
                   setPriority(event.target.value as typeof priority)
@@ -141,11 +152,11 @@ export function RecurrenceManager({
                     {t(`priority.${value}`, { defaultValue: value })}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label>
               {text("默认激活状态", "Default activation state")}
-              <select
+              <Select
                 value={activation}
                 onChange={(event) =>
                   setActivation(event.target.value as typeof activation)
@@ -154,11 +165,11 @@ export function RecurrenceManager({
                 <option value="ACTIVE">{text("已激活", "Active")}</option>
                 <option value="INACTIVE">{text("未激活", "Inactive")}</option>
                 <option value="SCHEDULED">{text("按计划", "Scheduled")}</option>
-              </select>
+              </Select>
             </label>
             <label>
               {text("激活规则", "Activation policy")}
-              <select
+              <Select
                 value={activationPolicy}
                 onChange={(event) =>
                   setActivationPolicy(
@@ -174,7 +185,7 @@ export function RecurrenceManager({
                 <option value="AT_SCHEDULED_TIME">
                   {text("到计划日期", "At scheduled date")}
                 </option>
-              </select>
+              </Select>
             </label>
             <label>
               {t("workflows.start")}
@@ -196,7 +207,7 @@ export function RecurrenceManager({
             </label>
             <label>
               {t("workflows.frequency")}
-              <select
+              <Select
                 aria-label={t("workflows.frequency")}
                 value={frequency}
                 onChange={(e) =>
@@ -208,7 +219,7 @@ export function RecurrenceManager({
                     {t(`workflows.${f}`)}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label>
               {t("workflows.interval")}
@@ -235,7 +246,7 @@ export function RecurrenceManager({
             </label>
             <label>
               {text("关闭策略", "Close policy")}
-              <select
+              <Select
                 value={closePolicy}
                 onChange={(e) =>
                   setClosePolicy(e.target.value as typeof closePolicy)
@@ -250,7 +261,7 @@ export function RecurrenceManager({
                 <option value="DURATION">
                   {text("自定义时长", "Duration")}
                 </option>
-              </select>
+              </Select>
             </label>
             {closePolicy === "DURATION" && (
               <>
@@ -266,7 +277,7 @@ export function RecurrenceManager({
                 </label>
                 <label>
                   {text("单位", "Unit")}
-                  <select
+                  <Select
                     value={durationUnit}
                     onChange={(e) =>
                       setDurationUnit(e.target.value as typeof durationUnit)
@@ -275,7 +286,7 @@ export function RecurrenceManager({
                     <option value="HOUR">{text("小时", "Hours")}</option>
                     <option value="DAY">{text("天", "Days")}</option>
                     <option value="WEEK">{text("周", "Weeks")}</option>
-                  </select>
+                  </Select>
                 </label>
               </>
             )}
@@ -290,13 +301,13 @@ export function RecurrenceManager({
                 "Close incomplete tasks at expiration",
               )}
             </label>
-            <button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy}>
               {editing
                 ? text("保存规则修改", "Save rule changes")
                 : t("workflows.save")}
-            </button>
+            </Button>
             {editing && (
-              <button
+              <Button
                 type="button"
                 onClick={() => {
                   setEditing(null);
@@ -304,7 +315,7 @@ export function RecurrenceManager({
                 }}
               >
                 {text("取消编辑", "Cancel edit")}
-              </button>
+              </Button>
             )}
           </form>
         )}
@@ -314,42 +325,49 @@ export function RecurrenceManager({
             if (r.payload.kind !== "RECURRENCE") return null;
             const rule = r.payload,
               today = localCalendarDay(new Date().toISOString(), rule.timezone);
-            const occurrencePayloads = records.flatMap((o) =>
-              o.payload.kind === "OCCURRENCE" && o.payload.definitionId === r.id
-                ? [o.payload]
-                : [],
+            const seriesOccurrences = seriesIndex.occurrences.get(r.id) ?? [];
+            const occurrencePayloads = seriesOccurrences.flatMap((entry) =>
+              entry.payload.kind === "OCCURRENCE" ? [entry.payload] : [],
             );
             const stats = recurrenceStats(
               occurrencePayloads,
-              new Set(
-                items
-                  .filter((item) => item.status === "DONE")
-                  .map((item) => item.id),
-              ),
+              seriesIndex.completedIds,
               today,
             );
+            const through = new Date(today + "T00:00:00Z");
+            through.setUTCDate(through.getUTCDate() + 365);
+            const nextDay =
+              rule.state === "ACTIVE"
+                ? occurrenceDays(
+                    rule,
+                    today,
+                    through.toISOString().slice(0, 10),
+                  ).find(
+                    (day) =>
+                      !occurrencePayloads.some(
+                        (entry) =>
+                          entry.day === day &&
+                          [
+                            "COMPLETED",
+                            "BACKFILLED",
+                            "SKIPPED",
+                            "MISSED",
+                          ].includes(entry.status),
+                      ),
+                  )
+                : undefined;
             return (
               <article className="workflow-proposal" key={r.id}>
                 <h3>{rule.title}</h3>
-                <p className="workflow-description">{rule.descriptionMd}</p>
                 <p>
+                  {t(`workflows.${rule.frequency}`)} · {rule.interval} ·{" "}
                   {rule.startDate} →{" "}
-                  {rule.endDate ?? text("无结束日期", "No end date")} ·{" "}
-                  {text("负责人", "Assignee")}:{" "}
-                  {rule.assigneePrincipalId ?? "—"} ·{" "}
-                  {rule.activationState ?? "ACTIVE"} ·{" "}
-                  {rule.priority ?? "MEDIUM"}
+                  {rule.endDate ?? text("无结束日期", "No end date")}
                 </p>
                 <p>
-                  {(rule.projectIds ?? [])
-                    .map(
-                      (id) =>
-                        projects.find((project) => project.id === id)?.title ??
-                        id,
-                    )
-                    .join(" · ")}
+                  {text("下次", "Next run")}: {nextDay ?? "—"}
                 </p>
-                <button
+                <Button
                   type="button"
                   disabled={busy || !!r.deletedAt}
                   onClick={() => {
@@ -374,23 +392,16 @@ export function RecurrenceManager({
                   }}
                 >
                   {text("编辑规则", "Edit rule")}
-                </button>
-                <p>
-                  {rule.schedulerThrough
-                    ? `${t("workflows.schedulerThrough")}: ${rule.schedulerThrough}`
-                    : t("workflows.schedulerWaiting")}
-                </p>
+                </Button>
                 <p className="workflow-stats">
                   {text("完成", "Completed")} {stats.completedCount}/
                   {stats.dueCount} · {text("完成率", "Rate")}{" "}
                   {Math.round(stats.completionRate * 100)}% ·{" "}
                   {text("连续", "Streak")} {stats.currentStreak}
+                  {" · "}
+                  {t("workflows.SKIPPED")} {stats.skippedCount}
                 </p>
-                <p>
-                  {t(`workflows.${rule.frequency}`)} · {rule.interval} ·{" "}
-                  {rule.timezone}
-                </p>
-                <button
+                <Button
                   type="button"
                   disabled={
                     busy ||
@@ -411,8 +422,8 @@ export function RecurrenceManager({
                   }}
                 >
                   {t("workflows.generate")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   disabled={busy || rule.state === "ENDED"}
                   onClick={() => {
@@ -435,8 +446,8 @@ export function RecurrenceManager({
                   {rule.state === "PAUSED"
                     ? text("恢复", "Resume")
                     : t("workflows.pause")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   disabled={busy || rule.state === "ENDED"}
                   onClick={() => {
@@ -454,63 +465,112 @@ export function RecurrenceManager({
                   }}
                 >
                   {text("结束", "End")}
-                </button>
+                </Button>
                 <p>
                   {text("状态", "State")}: {rule.state ?? "ACTIVE"}
                 </p>
-                <ul>
-                  {records
-                    .filter(
-                      (o) =>
-                        o.payload.kind === "OCCURRENCE" &&
-                        o.payload.definitionId === r.id,
-                    )
-                    .map((o) =>
-                      o.payload.kind !== "OCCURRENCE" ? null : (
-                        <li key={o.id}>
-                          {o.payload.day} · {t(`workflows.${o.payload.status}`)}
-                          {o.payload.status === "MISSED" && !r.deletedAt && (
-                            <div>
-                              <label>
-                                {t("workflows.completedAt")}
-                                <input
-                                  type="datetime-local"
-                                  value={completed[o.id] ?? ""}
-                                  onChange={(e) =>
-                                    setCompleted({
-                                      ...completed,
-                                      [o.id]: e.target.value,
-                                    })
-                                  }
-                                />
-                              </label>
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() =>
-                                  backfill(
-                                    o.id,
-                                    o.version,
-                                    completed[o.id]
-                                      ? new Date(completed[o.id]!).toISOString()
-                                      : null,
-                                  )
-                                }
-                              >
-                                {t("workflows.backfill")}
-                              </button>
-                            </div>
-                          )}
-                          {o.payload.completedAt && (
-                            <small>
-                              {t("workflows.completedAt")}:{" "}
-                              {o.payload.completedAt}
-                            </small>
-                          )}
-                        </li>
-                      ),
-                    )}
-                </ul>
+                {seriesOccurrences
+                  .filter(
+                    (entry) =>
+                      entry.payload.kind === "OCCURRENCE" &&
+                      ["OPEN", "CREATED"].includes(entry.payload.status),
+                  )
+                  .map((entry) => (
+                    <div className="ui-toolbar" key={entry.id}>
+                      <small>
+                        {entry.payload.kind === "OCCURRENCE"
+                          ? t(`workflows.${entry.payload.status}`)
+                          : ""}
+                        {" · "}
+                        {entry.payload.kind === "OCCURRENCE"
+                          ? entry.payload.day
+                          : ""}
+                      </small>
+                      {skip && (
+                        <Button
+                          disabled={busy || !!r.deletedAt}
+                          onClick={() => void skip(entry.id, entry.version)}
+                        >
+                          {text("跳过本次", "Skip this occurrence")}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                <details>
+                  <summary>
+                    {text("漏做", "Missed")}{" "}
+                    {
+                      occurrencePayloads.filter(
+                        (entry) => entry.status === "MISSED",
+                      ).length
+                    }{" "}
+                    ▸
+                  </summary>
+                  <ul>
+                    {seriesOccurrences
+                      .filter(
+                        (entry) =>
+                          entry.payload.kind === "OCCURRENCE" &&
+                          entry.payload.status === "MISSED",
+                      )
+                      .map((o) =>
+                        o.payload.kind !== "OCCURRENCE" ? null : (
+                          <li key={o.id}>
+                            {o.payload.day} ·{" "}
+                            {t(`workflows.${o.payload.status}`)}
+                            {o.payload.status === "MISSED" && !r.deletedAt && (
+                              <div>
+                                {backfillId !== o.id ? (
+                                  <Button onClick={() => setBackfillId(o.id)}>
+                                    {t("workflows.backfill")}
+                                  </Button>
+                                ) : (
+                                  <>
+                                    <label>
+                                      {t("workflows.completedAt")}
+                                      <DateTimeField
+                                        label={t("workflows.completedAt")}
+                                        value={completed[o.id] ?? ""}
+                                        onChange={(value) =>
+                                          setCompleted({
+                                            ...completed,
+                                            [o.id]: value,
+                                          })
+                                        }
+                                      />
+                                    </label>
+                                    <Button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() =>
+                                        backfill(
+                                          o.id,
+                                          o.version,
+                                          completed[o.id]
+                                            ? new Date(
+                                                completed[o.id]!,
+                                              ).toISOString()
+                                            : null,
+                                        )
+                                      }
+                                    >
+                                      {t("workflows.backfill")}
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                            {o.payload.completedAt && (
+                              <small>
+                                {t("workflows.completedAt")}:{" "}
+                                {o.payload.completedAt}
+                              </small>
+                            )}
+                          </li>
+                        ),
+                      )}
+                  </ul>
+                </details>
               </article>
             );
           })}

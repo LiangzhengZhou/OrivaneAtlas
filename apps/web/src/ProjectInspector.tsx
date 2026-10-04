@@ -2,16 +2,19 @@ import {
   availability,
   localCalendarDay,
   projectLifecycle,
-  projectPath,
   type WorkItem,
   type WorkStatus,
   workStatuses,
 } from "@arclattice/domain";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "./bootstrap";
+import { Button } from "./components/ui/Button";
+import { Select } from "./components/ui/Surfaces";
+import type { WorkspaceWorkIndex } from "./features/tasks/workspace-work-index";
 import { Markdown } from "./Markdown";
 
 export function ProjectInspector({
+  workIndex,
   item,
   snapshot,
   busy,
@@ -22,6 +25,7 @@ export function ProjectInspector({
   onStatus,
   onOrganize,
 }: {
+  workIndex: WorkspaceWorkIndex;
   item: WorkItem;
   snapshot: Snapshot;
   busy: boolean;
@@ -33,9 +37,7 @@ export function ProjectInspector({
   onOrganize(item: WorkItem, action: "archive" | "unarchive" | "delete"): void;
 }) {
   const { t } = useTranslation(["desk", "work", "common"]);
-  const archived = snapshot.organization?.find(
-    (entry) => entry.kind === "WORK" && entry.id === item.id,
-  )?.archived;
+  const archived = workIndex.isArchived(item);
   const today = localCalendarDay(
     new Date().toISOString(),
     snapshot.calendarTimezone ?? "UTC",
@@ -45,7 +47,9 @@ export function ProjectInspector({
       <h2>{t("inspector")}</h2>
       <h3>{item.title}</h3>
       <p className="muted">
-        {projectPath(item, snapshot.items) || t("noProject")}
+        {(item.type === "TASK"
+          ? workIndex.projectTitleByTaskId.get(item.id)
+          : workIndex.projectPathById.get(item.id)) || t("noProject")}
       </p>
       <dl>
         <dt>
@@ -78,7 +82,7 @@ export function ProjectInspector({
       {item.type === "TASK" && (
         <label className="field">
           <span>{t("work:status")}</span>
-          <select
+          <Select
             aria-label={t("work:status")}
             disabled={busy}
             value={item.status}
@@ -91,7 +95,7 @@ export function ProjectInspector({
                 {t(`work:statuses.${status}`)}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       )}
       {item.type === "PROJECT" && (
@@ -122,40 +126,41 @@ export function ProjectInspector({
             ))}
         </fieldset>
       )}
-      <button
+      <Button
+        variant="primary"
         type="button"
         className="button primary"
         disabled={busy}
         onClick={onEdit}
       >
         {item.type === "PROJECT" ? t("projectSettings") : t("work:detail")}
-      </button>
+      </Button>
       {item.type === "PROJECT" && (
-        <button
+        <Button
           type="button"
           className="button secondary"
           onClick={() => onProject(item.id)}
         >
           {t("openWorkspace")}
-        </button>
+        </Button>
       )}
       <div className="organization-toolbar">
-        <button
+        <Button
           type="button"
           className="chip"
           disabled={busy}
           onClick={() => onOrganize(item, archived ? "unarchive" : "archive")}
         >
           {t(archived ? "unarchive" : "archive")}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className="chip"
           disabled={busy}
           onClick={() => onOrganize(item, "delete")}
         >
           {t("common:delete")}
-        </button>
+        </Button>
       </div>
     </aside>
   );

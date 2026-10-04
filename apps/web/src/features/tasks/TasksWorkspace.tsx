@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, SegmentedControl, Toolbar } from "../../components/ui/Button";
 import { TaskList, WorkBoard, type WorkProps } from "../../WorkViews";
-import { selectTasks } from "./task-selectors";
+import { TaskTimeline } from "./TaskTimeline";
 
 export function TasksWorkspace({
   initialTab = "now",
@@ -15,18 +16,17 @@ export function TasksWorkspace({
   includeArchived?: boolean;
   onDependencies?: () => void;
 }) {
-  const { t } = useTranslation("desk");
+  const { t, i18n } = useTranslation("desk");
   const [tab, setTab] = useState(initialTab);
   useEffect(() => setTab(initialTab), [initialTab]);
-  const [board, setBoard] = useState(initialBoard);
-  const selected = selectTasks(
-    props.allItems,
-    props.edges,
-    props.today,
-    (item) =>
-      includeArchived ? !props.isArchived(item) : props.isArchived(item),
+  const [view, setView] = useState<"list" | "board" | "timeline">(
+    initialBoard ? "board" : "list",
   );
-  const ids = new Set(props.items.map((item) => item.id));
+  const selected = props.taskIndex;
+  const ids = useMemo(
+    () => new Set(props.items.map((item) => item.id)),
+    [props.items],
+  );
   const views = {
     now: selected.openActiveTasks,
     later: selected.laterTasks,
@@ -40,14 +40,14 @@ export function TasksWorkspace({
       <div className="view-count">
         <span>{items.length}</span>
       </div>
-      <div
+      <Toolbar
         className="organization-toolbar"
         role="tablist"
         aria-label={t("tasks")}
       >
         {(["now", "later", "scheduled", "completed", "all"] as const).map(
           (value) => (
-            <button
+            <Button
               type="button"
               role="tab"
               aria-selected={tab === value}
@@ -56,35 +56,42 @@ export function TasksWorkspace({
               onClick={() => setTab(value)}
             >
               {t("taskWorkspace." + value)}
-            </button>
+            </Button>
           ),
         )}
-        <button
-          type="button"
-          className="chip"
-          aria-pressed={!board}
-          onClick={() => setBoard(false)}
-        >
-          {t("taskWorkspace.list")}
-        </button>
-        <button
-          type="button"
-          className="chip"
-          aria-pressed={board}
-          onClick={() => setBoard(true)}
-        >
-          {t("taskWorkspace.board")}
-        </button>
-      </div>
+      </Toolbar>
+      <SegmentedControl<"list" | "board" | "timeline">
+        label={t("tasks")}
+        value={view}
+        options={[
+          { value: "list", label: t("taskWorkspace.list") },
+          { value: "board", label: t("taskWorkspace.board") },
+          {
+            value: "timeline",
+            label: i18n.language.startsWith("zh") ? "时间线" : "Timeline",
+          },
+        ]}
+        onChange={setView}
+      />
       {onDependencies && (
-        <button type="button" className="chip" onClick={onDependencies}>
+        <Button type="button" className="chip" onClick={onDependencies}>
           {t("dependencies")}
-        </button>
+        </Button>
       )}
-      {board ? (
-        <WorkBoard {...props} items={items} />
+      {view === "timeline" ? (
+        <TaskTimeline {...props} items={items} />
+      ) : view === "board" ? (
+        <WorkBoard
+          {...props}
+          items={items}
+          derived={props.derived ?? selected.derived}
+        />
       ) : (
-        <TaskList {...props} items={items} />
+        <TaskList
+          {...props}
+          items={items}
+          derived={props.derived ?? selected.derived}
+        />
       )}
     </section>
   );

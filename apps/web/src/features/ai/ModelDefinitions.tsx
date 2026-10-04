@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Button } from "../../components/ui/Button";
+import { Select } from "../../components/ui/Surfaces";
 import {
   configurationInput,
   type ModelSettingsSectionProps,
@@ -11,6 +13,7 @@ export function ModelDefinitions({
 }: ModelSettingsSectionProps) {
   const [connectionId, setConnectionId] = useState(""),
     [modelId, setModelId] = useState("");
+  const [adding, setAdding] = useState(false);
   const connectionNames = new Map(
     configuration.connections.map((connection) => [
       connection.id,
@@ -35,7 +38,7 @@ export function ModelDefinitions({
               {connectionNames.get(model.connectionId)} / {model.modelId}
             </strong>
             <details>
-              <summary>{zh ? "模型能力" : "Model capabilities"}</summary>
+              <summary>{zh ? "高级" : "Advanced"}</summary>
               <p>
                 {zh
                   ? "仅启用已确认受此模型及服务支持的能力；工具参数仍由系统严格校验。"
@@ -80,7 +83,7 @@ export function ModelDefinitions({
                 </label>
               ))}
             </details>
-            <button
+            <Button
               type="button"
               disabled={busy || used}
               onClick={() =>
@@ -91,69 +94,79 @@ export function ModelDefinitions({
               }
             >
               {zh ? "移除模型" : "Remove model"}
-            </button>
+            </Button>
           </div>
         );
       })}
-      <form
-        className="model-settings-form"
-        aria-label={zh ? "手工添加模型" : "Add model manually"}
-        onSubmit={async (event) => {
-          event.preventDefault();
-          if (
-            await save((current) => ({
-              ...configurationInput(current),
-              models: [
-                ...current.models,
-                {
-                  id: `m_${crypto.randomUUID().replaceAll("-", "")}`,
-                  connectionId,
-                  modelId,
-                  capabilities: {
-                    tools: false,
-                    jsonSchema: false,
-                    vision: false,
-                    streaming: false,
-                    embedding: false,
+      <Button disabled={busy} onClick={() => setAdding(true)}>
+        {zh ? "添加模型" : "Add model"}
+      </Button>
+      {adding && (
+        <form
+          className="model-settings-form"
+          aria-label={zh ? "手工添加模型" : "Add model manually"}
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (
+              await save((current) => ({
+                ...configurationInput(current),
+                models: [
+                  ...current.models,
+                  {
+                    id: `m_${crypto.randomUUID().replaceAll("-", "")}`,
+                    connectionId,
+                    modelId,
+                    capabilities: {
+                      tools: false,
+                      jsonSchema: false,
+                      vision: false,
+                      streaming: false,
+                      embedding: false,
+                    },
                   },
-                },
-              ],
-            }))
-          )
-            setModelId("");
-        }}
-      >
-        <label>
-          {zh ? "所属连接" : "Provider connection"}
-          <select
-            required
-            value={connectionId}
-            onChange={(event) => setConnectionId(event.target.value)}
-          >
-            <option value="">{zh ? "选择连接" : "Choose connection"}</option>
-            {configuration.connections.map((connection) => (
-              <option key={connection.id} value={connection.id}>
-                {connection.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {zh ? "模型标识" : "Model identifier"}
-          <input
-            required
-            maxLength={160}
-            value={modelId}
-            onChange={(event) => setModelId(event.target.value)}
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={busy || !connectionId || !modelId.trim()}
+                ],
+              }))
+            ) {
+              setModelId("");
+              setAdding(false);
+            }
+          }}
         >
-          {zh ? "添加模型" : "Add model"}
-        </button>
-      </form>
+          <label>
+            {zh ? "所属连接" : "Provider connection"}
+            <Select
+              required
+              value={connectionId}
+              onChange={(event) => setConnectionId(event.target.value)}
+            >
+              <option value="">{zh ? "选择连接" : "Choose connection"}</option>
+              {configuration.connections.map((connection) => (
+                <option key={connection.id} value={connection.id}>
+                  {connection.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label>
+            {zh ? "模型标识" : "Model identifier"}
+            <input
+              required
+              maxLength={160}
+              value={modelId}
+              onChange={(event) => setModelId(event.target.value)}
+            />
+          </label>
+          <Button
+            type="submit"
+            disabled={busy || !connectionId || !modelId.trim()}
+          >
+            {zh ? "添加模型" : "Add model"}
+          </Button>
+          <Button disabled={busy} onClick={() => setAdding(false)}>
+            {zh ? "取消" : "Cancel"}
+          </Button>
+        </form>
+      )}
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import type { AgentRun } from "@arclattice/application";
 import { useState } from "react";
 import type { Runtime } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
 
 const names: Record<string, [string, string]> = {
   search_documents: ["搜索文档", "Search documents"],
@@ -194,7 +195,7 @@ export function HarnessApproval({
           />
         </label>
       )}
-      <button
+      <Button
         type="button"
         disabled={busy}
         onClick={() =>
@@ -210,15 +211,15 @@ export function HarnessApproval({
         }
       >
         {zh ? "批准" : "Approve"}
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
         disabled={busy}
         onClick={() => setEditing((value) => !value)}
       >
         {zh ? "修改" : "Modify"}
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
         disabled={busy}
         onClick={() =>
@@ -228,7 +229,7 @@ export function HarnessApproval({
         }
       >
         {zh ? "拒绝" : "Reject"}
-      </button>
+      </Button>
     </section>
   );
 }

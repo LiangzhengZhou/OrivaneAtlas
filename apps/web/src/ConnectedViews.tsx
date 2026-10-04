@@ -2,6 +2,8 @@ import type { EntityRef, KnowledgeLink } from "@arclattice/application";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "./bootstrap";
+import { Button } from "./components/ui/Button";
+import { Select } from "./components/ui/Surfaces";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
 import { Markdown } from "./Markdown";
 
@@ -83,7 +85,7 @@ export function KnowledgeView({
                   .includes(query.toLowerCase()),
               )
               .map((e) => (
-                <button
+                <Button
                   type="button"
                   className={
                     "knowledge-result " +
@@ -98,7 +100,7 @@ export function KnowledgeView({
                   <small>{t(e.ref.kind)}</small>
                   <strong>{e.title}</strong>
                   <span>{e.body.slice(0, 120)}</span>
-                </button>
+                </Button>
               ))}
             {!entities.length && <p>{t("emptyKnowledge")}</p>}
           </div>
@@ -108,13 +110,13 @@ export function KnowledgeView({
             <>
               <div className="connected-heading">
                 <h2>{current.title}</h2>
-                <button
+                <Button
                   type="button"
                   className="button secondary"
                   onClick={() => onOpen(current.ref)}
                 >
                   {t("open")}
-                </button>
+                </Button>
               </div>
               <p>{t("referencesHint")}</p>
               <form
@@ -134,7 +136,7 @@ export function KnowledgeView({
               >
                 <label className="field">
                   {t("target")}
-                  <select
+                  <Select
                     required
                     aria-label={t("target")}
                     value={target}
@@ -148,11 +150,11 @@ export function KnowledgeView({
                           {t(e.ref.kind)} · {e.title}
                         </option>
                       ))}
-                  </select>
+                  </Select>
                 </label>
                 <label className="field">
                   {t("relation")}
-                  <select
+                  <Select
                     value={relation}
                     onChange={(e) =>
                       setRelation(e.target.value as KnowledgeLink["relation"])
@@ -160,15 +162,16 @@ export function KnowledgeView({
                   >
                     <option value="REFERENCES">{t("REFERENCES")}</option>
                     <option value="RELATED">{t("RELATED")}</option>
-                  </select>
+                  </Select>
                 </label>
-                <button
+                <Button
+                  variant="primary"
                   type="submit"
                   className="button primary"
                   disabled={busy || !target}
                 >
                   {t("addLink")}
-                </button>
+                </Button>
               </form>
               <h3>{t("connections", { count: links.length })}</h3>
               {links.map((link) => {
@@ -180,7 +183,7 @@ export function KnowledgeView({
                 return (
                   other && (
                     <div className="knowledge-link" key={link.id}>
-                      <button
+                      <Button
                         type="button"
                         onClick={() => {
                           setSelected(refKey(other.ref));
@@ -197,15 +200,15 @@ export function KnowledgeView({
                           )}
                         </small>
                         <strong>{other.title}</strong>
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         className="button secondary"
                         type="button"
                         disabled={busy}
                         onClick={() => void onUnlink(link)}
                       >
                         {t("unlink")}
-                      </button>
+                      </Button>
                     </div>
                   )
                 );

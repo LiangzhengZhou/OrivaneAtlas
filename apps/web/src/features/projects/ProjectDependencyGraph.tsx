@@ -1,11 +1,16 @@
 import type { EntityRef } from "@arclattice/application";
-import { dependency } from "@arclattice/domain";
 import { MarkerType } from "@xyflow/react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/Surfaces";
 import { GraphViewport } from "../graph/GraphViewport";
-import { dependencyNeighborhood } from "../graph/graph-scope";
+import { collectionRevision } from "../graph/graph-revision";
+import {
+  buildDependencyGraphIndex,
+  indexedDependencyNeighborhood,
+} from "../graph/graph-scope";
 import { dependencyDagreLayout } from "../graph/layouts/DependencyDagreLayout";
 import { useStructuralLayout } from "../graph/layouts/useStructuralLayout";
 import { TaskEntityPicker } from "../tasks/TaskEntityPicker";
@@ -22,6 +27,7 @@ export function ProjectDependencyGraph({
   onWorkspace,
   workspace = false,
   selectionId,
+  scopeProjectId,
 }: {
   snapshot: Snapshot;
   fullSnapshot?: Snapshot;
@@ -35,6 +41,7 @@ export function ProjectDependencyGraph({
   onWorkspace?(): void;
   workspace?: boolean;
   selectionId?: string | undefined;
+  scopeProjectId?: string;
 }) {
   const { i18n } = useTranslation();
   const text = (cn: string, en: string) =>
@@ -49,8 +56,27 @@ export function ProjectDependencyGraph({
     setScope(initialScope);
   }, [initialFocus, initialHops, initialScope]);
   const all = fullSnapshot ?? snapshot;
-  const tasks = snapshot.items.filter((i) => i.type === "TASK" && !i.deletedAt);
-  const scopedIds = new Set(tasks.map((i) => i.id));
+  const index = useMemo(
+    () => buildDependencyGraphIndex(all.items, all.edges),
+    [all.items, all.edges],
+  );
+  const { counts } = index;
+  const scopedIds = useMemo(
+    () =>
+      new Set(
+        snapshot.items
+          .filter((i) => i.type === "TASK" && !i.deletedAt)
+          .map((i) => i.id),
+      ),
+    [snapshot.items],
+  );
+  const externalBlockers = useMemo(() => {
+    const ids = new Set<string>();
+    for (const edge of index.connections) {
+      if (scopedIds.has(edge.target)) ids.add(edge.source);
+    }
+    return ids;
+  }, [scopedIds, index]);
   const update = (
     next: Partial<{ focus: string; hops: number; scope: string }>,
   ) => {
@@ -67,40 +93,30 @@ export function ProjectDependencyGraph({
             i.type === "TASK" &&
             !i.deletedAt &&
             (scopedIds.has(i.id) ||
-              (includeExternal &&
-                all.edges.some((e) => {
-                  const pair = dependency(e);
-                  return pair && pair[0] === i.id && scopedIds.has(pair[1]);
-                }))),
+              (includeExternal && externalBlockers.has(i.id))),
         )
-      : dependencyNeighborhood(all.items, all.edges, focus, hops);
+      : indexedDependencyNeighborhood(index, focus, hops);
   const ids = new Set(visible.map((i) => i.id));
-  const edges = all.edges.flatMap((edge) => {
-    const pair = dependency(edge);
-    return pair && ids.has(pair[0]) && ids.has(pair[1])
+  const edges = index.connections.flatMap((edge) => {
+    return ids.has(edge.source) && ids.has(edge.target)
       ? [
           {
             id: edge.id,
-            source: pair[0],
-            target: pair[1],
+            source: edge.source,
+            target: edge.target,
             markerEnd: { type: MarkerType.ArrowClosed },
           },
         ]
       : [];
   });
-  const positions = useStructuralLayout([...ids], edges, dependencyDagreLayout);
+  const layoutKey = `${collectionRevision(all.items)}:${collectionRevision(all.edges)}:${scope}:${focus}:${hops}:${includeExternal}:${[...scopedIds].join(",")}`;
+  const positions = useStructuralLayout(
+    [...ids],
+    edges,
+    dependencyDagreLayout,
+    layoutKey,
+  );
   const byId = new Map(positions.map((p) => [p.id, p.position]));
-  const counts = new Map<string, { blockers: number; dependents: number }>();
-  for (const edge of all.edges) {
-    const pair = dependency(edge);
-    if (!pair) continue;
-    const source = counts.get(pair[0]) ?? { blockers: 0, dependents: 0 },
-      target = counts.get(pair[1]) ?? { blockers: 0, dependents: 0 };
-    source.dependents++;
-    target.blockers++;
-    counts.set(pair[0], source);
-    counts.set(pair[1], target);
-  }
   const nodes = visible.map((task) => ({
     id: task.id,
     data: {
@@ -117,7 +133,8 @@ export function ProjectDependencyGraph({
             (counts.get(task.id)?.blockers ?? 0) +
               (counts.get(task.id)?.dependents ?? 0) >
               0 && (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 className="text-button"
                 aria-label={
@@ -131,7 +148,7 @@ export function ProjectDependencyGraph({
                 +
                 {(counts.get(task.id)?.blockers ?? 0) +
                   (counts.get(task.id)?.dependents ?? 0)}
-              </button>
+              </Button>
             )}
         </div>
       ),
@@ -146,6 +163,14 @@ export function ProjectDependencyGraph({
   return (
     <section className="dependency-focus-graph">
       <GraphViewport
+        emptyState={
+          !focus ? (
+            <EmptyState
+              title={text("选择一个焦点任务", "Select a focus task")}
+            />
+          ) : undefined
+        }
+        layoutKey={layoutKey}
         workspace={workspace}
         selectionId={selectionId}
         onWorkspace={onWorkspace}
@@ -155,10 +180,12 @@ export function ProjectDependencyGraph({
             <label>
               {text("焦点任务", "Focus task")}
               <TaskEntityPicker
+                key={scopeProjectId ?? "workspace"}
+                {...(scopeProjectId ? { scopeProjectId } : {})}
                 mode="single"
                 disabled={false}
                 label={text("选择焦点任务", "Choose focus task")}
-                items={all.items}
+                items={snapshot.items}
                 values={focus ? [focus] : []}
                 onChange={(values) =>
                   update({ focus: values.at(-1) ?? "", scope: "focus" })
@@ -166,24 +193,28 @@ export function ProjectDependencyGraph({
               />
             </label>
             {[1, 2].map((value) => (
-              <button
+              <Button
                 type="button"
                 className="chip"
                 key={value}
+                disabled={!focus}
                 aria-pressed={scope === "focus" && hops === value}
                 onClick={() => update({ hops: value, scope: "focus" })}
               >
-                {value} {text("跳", "hop")}
-              </button>
+                {value === 1
+                  ? text("直接关系", "Direct relations")
+                  : text("扩展两层", "Expand two levels")}
+              </Button>
             ))}
-            <button
+            <Button
               type="button"
               className="chip"
+              disabled={!focus}
               aria-pressed={scope === "project"}
               onClick={() => update({ scope: "project" })}
             >
-              {text("项目范围", "Project scope")}
-            </button>
+              {text("整个项目", "Entire project")}
+            </Button>
             {scope === "project" && (
               <label>
                 <input
@@ -191,7 +222,7 @@ export function ProjectDependencyGraph({
                   checked={includeExternal}
                   onChange={(e) => setExternal(e.target.checked)}
                 />
-                {text("外部阻塞", "External blockers")}
+                {text("包含项目外阻塞", "Include external blockers")}
               </label>
             )}
             {!focus && scope === "focus" && (

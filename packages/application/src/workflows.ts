@@ -175,7 +175,13 @@ export interface OccurrencePayload {
   definitionId: string;
   definitionVersion: number;
   day: string;
-  status: "MISSED" | "CREATED" | "OPEN" | "COMPLETED" | "BACKFILLED";
+  status:
+    | "MISSED"
+    | "SKIPPED"
+    | "CREATED"
+    | "OPEN"
+    | "COMPLETED"
+    | "BACKFILLED";
   expiresAt?: string;
   closedAt?: string | null;
   taskId: string | null;
@@ -188,6 +194,7 @@ export interface RecurrenceStats {
   dueCount: number;
   completedCount: number;
   missedCount: number;
+  skippedCount: number;
   backfilledCount: number;
   completionRate: number;
   currentStreak: number;
@@ -227,13 +234,18 @@ export function recurrenceStats(
     longestStreak = Math.max(longestStreak, streak);
   }
   const latest = sorted.at(-1);
+  const skippedCount = due.filter((entry) => entry.status === "SKIPPED").length;
   if (latest === today) currentStreak = streak;
   return {
     dueCount: due.length,
     completedCount: completed.length,
     missedCount: due.filter((entry) => entry.status === "MISSED").length,
+    skippedCount,
     backfilledCount: backfilled.length,
-    completionRate: due.length ? completed.length / due.length : 0,
+    completionRate:
+      due.length > skippedCount
+        ? completed.length / (due.length - skippedCount)
+        : 0,
     currentStreak,
     longestStreak,
   };
@@ -1345,6 +1357,7 @@ export class WorkflowService {
           occurrence.deletedAt ||
           payload.status === "COMPLETED" ||
           payload.status === "MISSED" ||
+          payload.status === "SKIPPED" ||
           (payload.status === "BACKFILLED" && payload.completedAt)
         )
           continue;
@@ -1371,16 +1384,34 @@ export class WorkflowService {
           if (
             task &&
             !task.deletedAt &&
-            task.status !== "CANCELED" &&
             (payload.ruleSnapshot?.closeIncomplete ?? rule.closeIncomplete)
-          )
-            await this.work(tx, context).update(
-              context,
-              task.id,
-              task.version,
-              { status: "CANCELED" },
-              "RECURRENCE_WINDOW_EXPIRED",
+          ) {
+            if (task.status !== "CANCELED")
+              await this.work(tx, context).update(
+                context,
+                task.id,
+                task.version,
+                { status: "CANCELED" },
+                "RECURRENCE_WINDOW_EXPIRED",
+              );
+            const old = (await tx.organizations()).find(
+              (entry) => entry.kind === "WORK" && entry.id === task.id,
             );
+            if (!old?.archived)
+              await tx.saveOrganization(
+                {
+                  kind: "WORK",
+                  id: task.id,
+                  workspaceId: context.workspaceId,
+                  version: (old?.version ?? 0) + 1,
+                  archived: true,
+                  folder: old?.folder ?? "",
+                  updatedAt: now,
+                  updatedBy: context.principalId,
+                },
+                old?.version ?? 0,
+              );
+          }
           await this.save(
             tx,
             context,
@@ -1485,6 +1516,45 @@ export class WorkflowService {
         );
       }
       return result;
+    });
+  }
+  async skipOccurrence(context: ActorContext, id: string, version: number) {
+    await this.auth.require(context, "work:update");
+    return this.uow.run(context.workspaceId, async (tx) => {
+      const records = await tx.workflows();
+      const old = records.find(
+        (record) => record.id === id && !record.deletedAt,
+      );
+      if (!old || old.payload.kind !== "OCCURRENCE")
+        throw new DomainError("NOT_FOUND");
+      if (old.version !== version) throw new DomainError("VERSION_CONFLICT");
+      if (old.payload.status !== "OPEN" && old.payload.status !== "CREATED")
+        throw new DomainError("VALIDATION_ERROR");
+      const occurrence = old.payload;
+      const definition = records.find(
+        (record) => record.id === occurrence.definitionId && !record.deletedAt,
+      );
+      if (!definition || definition.createdBy !== context.principalId)
+        throw new DomainError("FORBIDDEN");
+      if (occurrence.taskId) {
+        const task = await tx.get(occurrence.taskId);
+        if (task.status === "DONE" || task.deletedAt)
+          throw new DomainError("VALIDATION_ERROR");
+        if (task.status !== "CANCELED")
+          await this.work(tx, context).update(
+            context,
+            task.id,
+            task.version,
+            { status: "CANCELED" },
+            "RECURRENCE_USER_SKIPPED",
+          );
+      }
+      return this.save(
+        tx,
+        context,
+        { ...occurrence, status: "SKIPPED", closedAt: this.clock.now() },
+        old,
+      );
     });
   }
   async backfill(

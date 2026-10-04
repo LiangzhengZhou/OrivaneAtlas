@@ -15,6 +15,8 @@ import { useTranslation } from "react-i18next";
 import { DismissibleDialog } from "./app/DismissibleDialog";
 import { DateField } from "./components/DateField";
 import { RepeatFields, type RepeatRule } from "./components/RepeatFields";
+import { Button } from "./components/ui/Button";
+import { Select } from "./components/ui/Surfaces";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
 import { Markdown } from "./Markdown";
@@ -285,7 +287,7 @@ export function TaskEditor({
       >
         <div className="dialog-heading">
           <h2 id="editor-heading">{item ? t("work:detail") : t("create")}</h2>
-          <button
+          <Button
             type="button"
             className="icon-button"
             aria-label={t("close")}
@@ -293,7 +295,7 @@ export function TaskEditor({
             onClick={close}
           >
             <X size={20} aria-hidden="true" />
-          </button>
+          </Button>
         </div>
         {error && (
           <div className="error" role="alert">
@@ -303,7 +305,7 @@ export function TaskEditor({
         {discard && (
           <div className="error">
             {t("desk:discardHint")}
-            <button
+            <Button
               className="button danger"
               type="button"
               onClick={() =>
@@ -311,14 +313,14 @@ export function TaskEditor({
               }
             >
               {t("desk:discard")}
-            </button>
-            <button
+            </Button>
+            <Button
               className="button secondary"
               type="button"
               onClick={() => setDiscard(false)}
             >
               {t("cancel")}
-            </button>
+            </Button>
           </div>
         )}
         <label className="field">
@@ -335,7 +337,7 @@ export function TaskEditor({
         {item && (
           <label className="field">
             <span>{t("work:status")}</span>
-            <select
+            <Select
               aria-label={t("work:status")}
               value={status}
               onChange={(event) => setStatus(event.target.value as WorkStatus)}
@@ -345,13 +347,13 @@ export function TaskEditor({
                   {t("work:statuses." + value)}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         )}
         {
           <label className="field">
             <span>{t("work:priority")}</span>
-            <select
+            <Select
               aria-label={t("work:priority")}
               value={priority}
               onChange={(event) => setPriority(event.target.value as Priority)}
@@ -361,7 +363,7 @@ export function TaskEditor({
                   {t(`work:priorities.${value}`)}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         }
         {(item?.type ?? createType) === "TASK" && (
@@ -389,7 +391,7 @@ export function TaskEditor({
                     ? "此任务属于一个周期任务"
                     : "This task belongs to a recurring series"}
                 </p>
-                <button
+                <Button
                   type="button"
                   className={!seriesEditing ? "chip active" : "chip"}
                   onClick={() => {
@@ -409,8 +411,8 @@ export function TaskEditor({
                   {i18n.language.startsWith("zh")
                     ? "编辑本次"
                     : "Edit this occurrence"}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   className={seriesEditing ? "chip active" : "chip"}
                   disabled={!definition}
@@ -436,7 +438,7 @@ export function TaskEditor({
                   {i18n.language.startsWith("zh")
                     ? "编辑整个系列"
                     : "Edit entire series"}
-                </button>
+                </Button>
                 {seriesEditing && (
                   <RepeatFields
                     rule={repeat}
@@ -476,7 +478,7 @@ export function TaskEditor({
           {
             <label className="field">
               <span>{t("desk:activationPolicy")}</span>
-              <select
+              <Select
                 aria-label={t("desk:activationPolicy")}
                 value={activationPolicy}
                 onChange={(event) =>
@@ -488,7 +490,7 @@ export function TaskEditor({
                     {t("desk:activationPolicies." + policy)}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           }
           {(item?.type ?? createType) === "TASK" && (
@@ -510,7 +512,7 @@ export function TaskEditor({
           {activationPolicy === "MANUAL" && (
             <label className="field">
               <span>{t("desk:activationState")}</span>
-              <select
+              <Select
                 aria-label={t("desk:activationState")}
                 value={
                   activationState === "SCHEDULED" ? "INACTIVE" : activationState
@@ -525,7 +527,7 @@ export function TaskEditor({
                 <option value="INACTIVE">
                   {t("desk:activationStates.INACTIVE")}
                 </option>
-              </select>
+              </Select>
             </label>
           )}
           {activationPolicy === "AT_SCHEDULED_TIME" && (
@@ -558,7 +560,7 @@ export function TaskEditor({
         <label className="field">
           <span>{t("work:description")}</span>
           <div className="editor-toolbar">
-            <button
+            <Button
               className={!preview ? "chip active" : "chip"}
               type="button"
               onClick={() => {
@@ -566,8 +568,8 @@ export function TaskEditor({
               }}
             >
               {t("desk:write")}
-            </button>
-            <button
+            </Button>
+            <Button
               className={preview ? "chip active" : "chip"}
               type="button"
               onClick={() => {
@@ -575,7 +577,7 @@ export function TaskEditor({
               }}
             >
               {i18n.language === "zh-CN" ? "预览" : "Preview"}
-            </button>
+            </Button>
           </div>
           {preview ? (
             <Markdown text={descriptionMd} />
@@ -610,31 +612,32 @@ export function TaskEditor({
         )}
         <div className="dialog-actions">
           {onDelete && (
-            <button
+            <Button
               type="button"
               className="button danger"
               disabled={busy}
               onClick={() => void onDelete()}
             >
               {t("delete")}
-            </button>
+            </Button>
           )}
           <div className="action-spacer" />
-          <button
+          <Button
             type="button"
             className="button secondary"
             disabled={busy}
             onClick={close}
           >
             {t("cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
             type="submit"
             className="button primary"
             disabled={busy || !title.trim()}
           >
             {item ? t("save") : t("create")}
-          </button>
+          </Button>
         </div>
       </form>
     </DismissibleDialog>

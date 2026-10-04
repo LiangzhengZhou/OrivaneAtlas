@@ -1,6 +1,8 @@
 import { type AgentRun, parseAiTextEdits } from "@arclattice/application";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "./components/ui/Button";
+import { confirmAction } from "./components/ui/ConfirmationHost";
 import { DiffViewer } from "./features/documents/DiffViewer";
 export function AiEdits({
   run,
@@ -58,13 +60,14 @@ export function AiEdits({
           <h4>{zh ? "建议全文" : "Proposed full text"}</h4>
         </details>
       ))}
-      <button
+      <Button
+        variant="primary"
         type="button"
         className="button primary"
         disabled={busy || !selected.length}
-        onClick={() => {
+        onClick={async () => {
           if (
-            window.confirm(
+            await confirmAction(
               zh
                 ? "确认将所选建议写入文档？"
                 : "Write selected suggestions to documents?",
@@ -74,7 +77,7 @@ export function AiEdits({
         }}
       >
         {zh ? "确认应用所选建议" : "Confirm selected edits"}
-      </button>
+      </Button>
     </section>
   );
 }

@@ -1,7 +1,9 @@
 import type { AiContextItem } from "@arclattice/application";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AnchoredFloatingSurface } from "../../app/AnchoredFloatingSurface";
 import type { Snapshot } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
 import { DocumentDrilldownPicker } from "../documents/DocumentDrilldownPicker";
 import { SpacePicker } from "../knowledge/SpacePicker";
 import { ProjectDrilldownPicker } from "../projects/ProjectDrilldownPicker";
@@ -28,33 +30,36 @@ export function ContextBar({
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
   const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   return (
     <div
+      ref={containerRef}
       className="context-bar"
       aria-label={zh ? "对话上下文" : "Conversation context"}
     >
       {projectId && (
-        <button
+        <Button
           type="button"
           className="chip"
           disabled={disabled}
           onClick={() => onProject(null)}
         >
           {snapshot.items.find((entry) => entry.id === projectId)?.title} ×
-        </button>
+        </Button>
       )}
       {spaceId && (
-        <button
+        <Button
           type="button"
           className="chip"
           disabled={disabled}
           onClick={() => onSpace(null)}
         >
           {snapshot.library.find((entry) => entry.id === spaceId)?.title} ×
-        </button>
+        </Button>
       )}
       {context.map((entry) => (
-        <button
+        <Button
           type="button"
           className="chip"
           key={entry.ref.id}
@@ -64,9 +69,10 @@ export function ContextBar({
           }
         >
           {entry.title} ×
-        </button>
+        </Button>
       ))}
-      <button
+      <Button
+        ref={anchorRef}
         type="button"
         className="chip"
         disabled={disabled}
@@ -74,9 +80,16 @@ export function ContextBar({
         onClick={() => setOpen(!open)}
       >
         {zh ? "添加上下文" : "Add context"}
-      </button>
+      </Button>
       {open && (
-        <div className="context-picker panel">
+        <AnchoredFloatingSurface
+          anchorRef={anchorRef}
+          dismissBoundaryRef={containerRef}
+          portalTarget={containerRef.current ?? undefined}
+          onDismiss={() => setOpen(false)}
+          label={zh ? "对话上下文选择" : "Choose conversation context"}
+          className="context-picker panel"
+        >
           <ProjectDrilldownPicker
             projects={snapshot.items}
             mode="single"
@@ -129,7 +142,7 @@ export function ContextBar({
               }}
             />
           )}
-        </div>
+        </AnchoredFloatingSurface>
       )}
     </div>
   );

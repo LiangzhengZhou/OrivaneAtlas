@@ -4,10 +4,8 @@ import {
   type ActorContext,
   DomainError,
   defaultNavigationPreference,
-  inheritedArchiveSource,
   localCalendarDay,
   priorities,
-  projectDescendants,
   type WorkItem,
   type WorkStatus,
   workStatuses,
@@ -25,7 +23,7 @@ import {
   Search,
   Target,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AccountView, AdminView } from "./AccountViews";
 import { AppUpdater } from "./AppUpdater";
@@ -49,6 +47,9 @@ import { showToast, ToastHost } from "./app/ToastHost";
 import { Topbar } from "./app/Topbar";
 import { WorkspaceRouter } from "./app/WorkspaceRouter";
 import { type Runtime, readPreference, savePreference } from "./bootstrap";
+import { Button, Toolbar } from "./components/ui/Button";
+import { confirmAction } from "./components/ui/ConfirmationHost";
+import { Popover, Select } from "./components/ui/Surfaces";
 import { type DocumentRequest, DocumentWorkspace } from "./DocumentWorkspace";
 import { AssistantPane } from "./features/ai/AssistantPane";
 import { GraphWorkspace } from "./features/graph/GraphWorkspace";
@@ -57,6 +58,10 @@ import { PickerIdentityContext } from "./features/hierarchy/PickerIdentityContex
 import { MoreSheet } from "./features/mobile/MoreSheet";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 import { selectTasks } from "./features/tasks/task-selectors";
+import {
+  buildWorkspaceWorkIndex,
+  WorkspaceWorkIndexContext,
+} from "./features/tasks/workspace-work-index";
 import { LibraryView } from "./LibraryView";
 import { Login } from "./Login";
 import { PrivateImageContext } from "./Markdown";
@@ -67,6 +72,8 @@ import {
   parseProjectRoute,
   projectHash,
 } from "./projectRoute";
+import { nextCalendarDayInstant } from "./utils/next-calendar-day";
+import { useDebouncedValue } from "./utils/use-debounced-value";
 import { WorkflowManager } from "./WorkflowManager";
 import { WorkItemEditor } from "./WorkItemEditor";
 import { TaskList } from "./WorkViews";
@@ -215,6 +222,9 @@ function Workbench({
   const { snapshot, setSnapshot, loading, syncOffline, refresh } =
     useWorkspaceSync(runtime, setError);
   const [query, setQuery] = useState("");
+  const searchQuery = useDebouncedValue(query, 200);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+  const advancedFiltersAnchor = useRef<HTMLButtonElement>(null);
   const navigationPreference =
     snapshot.navigationPreference ?? defaultNavigationPreference();
   const navigationOrder = [
@@ -231,17 +241,16 @@ function Workbench({
   const [selectedNotes, setSelectedNotes] = useState<string[]>([]);
   const [folderFilter, setFolderFilter] = useState<string | null>(null);
   const [moveFolder, setMoveFolder] = useState("");
+  const workIndex = useMemo(
+    () => buildWorkspaceWorkIndex(snapshot.items, snapshot.organization ?? []),
+    [snapshot.items, snapshot.organization],
+  );
+  const { archiveSource, isArchived } = workIndex;
   const organization = (kind: "WORK" | "NOTE", id: string) =>
-    snapshot.organization?.find((e) => e.kind === kind && e.id === id);
-  const explicitlyArchived = (item: WorkItem) =>
-    organization("WORK", item.id)?.archived ?? false;
-  const archiveSource = (item: WorkItem) =>
-    inheritedArchiveSource(item, snapshot.items, explicitlyArchived);
-  const isArchived = (item: WorkItem) =>
-    explicitlyArchived(item) || !!archiveSource(item);
+    workIndex.organizationByKey.get(`${kind}:${id}`);
   async function organize(input: OrganizeInput) {
     if (documentDirty || libraryDraft.current || projectBriefDirty.current) {
-      window.alert(t("saveBeforeOrganize"));
+      showToast(t("saveBeforeOrganize"));
       return;
     }
     if (
@@ -330,7 +339,7 @@ function Workbench({
     return cause instanceof DomainError ? String(cause.code) : "UNAVAILABLE";
   }
   useEffect(() => {
-    const listener = () => {
+    const listener = async () => {
       const nextProject = parseProjectRoute(location.hash);
       const leavingProject =
         currentView() !== "projects" ||
@@ -339,7 +348,7 @@ function Workbench({
       if (
         (libraryDraft.current ||
           (projectBriefDirty.current && leavingProject)) &&
-        !window.confirm(a("leave"))
+        !(await confirmAction(a("leave")))
       ) {
         history.replaceState(null, "", acceptedHash.current);
         return;
@@ -443,12 +452,23 @@ function Workbench({
   const errorMessage = error
     ? t("errors:" + error, { defaultValue: t("connectionError") })
     : null;
-  const allItems = snapshot.items.filter((item) => !item.deletedAt);
-  const projects = allItems.filter((item) => item.type === "PROJECT");
-  const items = allItems.filter(
-    (item) => item.type !== "PROJECT" && !isArchived(item),
+  const allItems = useMemo(
+    () => snapshot.items.filter((item) => !item.deletedAt),
+    [snapshot.items],
   );
-  const notes = snapshot.notes.filter((note) => !note.deletedAt);
+  const projects = useMemo(
+    () => allItems.filter((item) => item.type === "PROJECT"),
+    [allItems],
+  );
+  const items = useMemo(
+    () =>
+      allItems.filter((item) => item.type !== "PROJECT" && !isArchived(item)),
+    [allItems, isArchived],
+  );
+  const notes = useMemo(
+    () => snapshot.notes.filter((note) => !note.deletedAt),
+    [snapshot.notes],
+  );
   const calendarTimezone = snapshot.calendarTimezone ?? "UTC";
   const [calendarInstant, setCalendarInstant] = useState(() =>
     new Date().toISOString(),
@@ -463,42 +483,92 @@ function Workbench({
     loading,
   );
   useEffect(() => {
-    const update = () => setCalendarInstant(new Date().toISOString());
-    const timer = window.setInterval(update, 30_000);
-    window.addEventListener("focus", update);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", update);
+    let timer: number;
+    const update = () => {
+      const now = new Date().toISOString();
+      setCalendarInstant((previous) =>
+        localCalendarDay(previous, calendarTimezone) ===
+        localCalendarDay(now, calendarTimezone)
+          ? previous
+          : now,
+      );
+      window.clearTimeout(timer);
+      timer = window.setTimeout(
+        update,
+        Math.max(
+          1,
+          nextCalendarDayInstant(Date.now(), calendarTimezone) -
+            Date.now() +
+            50,
+        ),
+      );
     };
-  }, []);
-  const taskSelection = selectTasks(
-    allItems,
-    snapshot.edges,
-    calendarDay,
-    isArchived,
-  );
-  const done = taskSelection.completedTasks;
-  const displayedTasks = showArchived
-    ? selectTasks(
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
+    update();
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [calendarTimezone]);
+  const taskSelection = useMemo(
+    () =>
+      selectTasks(
         allItems,
         snapshot.edges,
         calendarDay,
-        (item) => !isArchived(item),
-      )
-    : taskSelection;
+        isArchived,
+        undefined,
+        workIndex,
+      ),
+    [allItems, snapshot.edges, calendarDay, isArchived, workIndex],
+  );
+  const done = taskSelection.completedTasks;
+  const displayedTasks = showArchived ? taskSelection.archived : taskSelection;
   const executionActiveIds = new Set(
     displayedTasks.activeTasks.map((item) => item.id),
   );
-  const matches = (title: string, body: string) =>
-    (title + " " + body)
-      .toLocaleLowerCase(i18n.language)
-      .includes(query.toLocaleLowerCase(i18n.language));
-  const selectedProject = projects.find((p) => p.id === projectFilter);
-  const projectMemberIds = new Set(
-    selectedProject
-      ? projectDescendants(selectedProject, allItems).map((i) => i.id)
-      : [],
+  const searchTextById = useMemo(
+    () =>
+      new Map([
+        ...allItems.map(
+          (item) =>
+            [
+              item.id,
+              (item.title + " " + item.descriptionMd).toLocaleLowerCase(
+                i18n.language,
+              ),
+            ] as const,
+        ),
+        ...snapshot.notes.map(
+          (note) =>
+            [
+              note.id,
+              (note.title + " " + note.bodyMd).toLocaleLowerCase(i18n.language),
+            ] as const,
+        ),
+      ]),
+    [allItems, snapshot.notes, i18n.language],
   );
+  const normalizedQuery = searchQuery.toLocaleLowerCase(i18n.language);
+  const matches = (id: string) =>
+    !normalizedQuery ||
+    (searchTextById.get(id)?.includes(normalizedQuery) ?? false);
+  const projectMemberIds = useMemo(() => {
+    const ids = new Set<string>(),
+      pending = [projectFilter],
+      visited = new Set<string>();
+    while (pending.length) {
+      const id = pending.pop()!;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      for (const taskId of workIndex.tasksByProjectId.get(id) ?? [])
+        ids.add(taskId);
+      pending.push(...(workIndex.childrenByProjectId.get(id) ?? []));
+    }
+    return ids;
+  }, [projectFilter, workIndex]);
   const visible = displayedTasks.tasks
     .filter(
       (item) =>
@@ -506,7 +576,7 @@ function Workbench({
         (activationFilter === "ALL" ||
           executionActiveIds.has(item.id) ===
             (activationFilter === "ACTIVE")) &&
-        matches(item.title, item.descriptionMd) &&
+        matches(item.id) &&
         (view === "tasks" ||
           status === "ALL" ||
           (status === "UNFINISHED"
@@ -533,7 +603,7 @@ function Workbench({
       month: "short",
       day: "numeric",
     }).format(new Date(value));
-  function navigateProject(
+  async function navigateProject(
     id: string | null,
     tab: ProjectTab = "overview",
     scope: "DIRECT" | "SUBTREE" = "SUBTREE",
@@ -541,7 +611,7 @@ function Workbench({
     if (
       id !== activeProjectId &&
       projectBriefDirty.current &&
-      !window.confirm(a("leave"))
+      !(await confirmAction(a("leave")))
     )
       return;
     if (id !== activeProjectId) projectBriefDirty.current = false;
@@ -552,11 +622,11 @@ function Workbench({
     setView("projects");
     location.hash = hash;
   }
-  function navigate(next: View, requestedStatus?: WorkStatus) {
+  async function navigate(next: View, requestedStatus?: WorkStatus) {
     setDocumentVisible(false);
     if (
       (libraryDraft.current || projectBriefDirty.current) &&
-      !window.confirm(a("leave"))
+      !(await confirmAction(a("leave")))
     )
       return;
     projectBriefDirty.current = false;
@@ -657,6 +727,8 @@ function Workbench({
       "task:" + item.id + ":status",
     );
   const workProps = {
+    taskIndex: displayedTasks,
+    derived: taskSelection.derived,
     today: calendarDay,
     allItems,
     edges: snapshot.edges,
@@ -717,17 +789,17 @@ function Workbench({
             {t("selectVisible")}
           </label>
           <span>{t("selectionCount", { count: selectedNotes.length })}</span>
-          <button
+          <Button
             type="button"
             className="button secondary"
             disabled={!selectedNotes.length || busy}
             onClick={() => setSelectedNotes([])}
           >
             {t("clearSelection")}
-          </button>
+          </Button>
           <label>
             {t("folder")}
-            <select
+            <Select
               aria-label={t("folderFilter")}
               value={folderFilter === null ? "all" : "folder:" + folderFilter}
               onChange={(e) => {
@@ -752,7 +824,7 @@ function Workbench({
                     {folder}
                   </option>
                 ))}
-            </select>
+            </Select>
           </label>
           {selectedNotes.length > 0 && (
             <>
@@ -763,7 +835,7 @@ function Workbench({
                 maxLength={80}
                 onChange={(e) => setMoveFolder(e.target.value)}
               />
-              <button
+              <Button
                 type="button"
                 className="button secondary"
                 disabled={busy}
@@ -784,8 +856,8 @@ function Workbench({
                 }
               >
                 {t("moveSelected")}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 className="button secondary"
                 disabled={busy}
@@ -805,7 +877,7 @@ function Workbench({
                 }
               >
                 {t("deleteSelected")}
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -840,7 +912,7 @@ function Workbench({
                     {organization("NOTE", note.id)?.folder || t("unfiled")}
                   </span>
                 </label>
-                <button
+                <Button
                   type="button"
                   className="note-card"
                   key={note.id}
@@ -860,7 +932,7 @@ function Workbench({
                     <span>{t("private")}</span>
                     <ArrowUpRight size={16} />
                   </footer>
-                </button>
+                </Button>
               </article>
             ))}
         </div>
@@ -871,959 +943,1016 @@ function Workbench({
     ? (activeDocumentContext?.entity ?? null)
     : null;
   return (
-    <AppShell collapsed={sidebarCollapsed} mobileOpen={mobileNavigationOpen}>
-      <ToastHost />
-      {commandOpen && (
-        <CommandPalette
-          snapshot={snapshot}
-          onClose={() => setCommandOpen(false)}
-          onCreate={() => open("new")}
-          onOpen={(ref) => {
-            if (ref.kind === "WORK") {
-              const item = snapshot.items.find((entry) => entry.id === ref.id);
-              if (item) setEditor(item);
-            } else if (ref.kind === "NOTE") {
-              const entity = snapshot.notes.find(
-                (entry) => entry.id === ref.id,
-              );
-              if (entity)
-                openDocument({ key: entity.id, kind: entity.kind, entity });
-            } else {
-              const entity = snapshot.library.find(
-                (entry) => entry.id === ref.id,
-              );
-              if (entity)
-                openDocument({
-                  key: entity.id,
-                  kind: entity.kind,
-                  entity,
-                  spaceId: entity.spaceId,
-                });
-            }
-          }}
-        />
-      )}
-      {assistantOpen && (
-        <AssistantPane
-          onSource={openEntity}
-          snapshot={snapshot}
-          runtime={runtime}
-          projectId={
-            documentVisible
-              ? activeDocumentContext?.projectId
-              : (activeProjectId ?? undefined)
-          }
-          currentSpaceId={
-            assistantDocument && "spaceId" in assistantDocument
-              ? assistantDocument.kind === "SPACE"
-                ? assistantDocument.id
-                : (assistantDocument.spaceId ?? undefined)
-              : undefined
-          }
-          onClose={() => setAssistantOpen(false)}
-          context={
-            assistantDocument && activeDocumentContext
-              ? [
-                  {
-                    ref: {
-                      kind:
-                        activeDocumentContext.kind === "JOURNAL"
-                          ? "NOTE"
-                          : activeDocumentContext.kind,
-                      id: assistantDocument.id,
-                    },
-                    title: assistantDocument.title,
-                    version: assistantDocument.version,
-                    source: "current",
-                    tokenEstimate: Math.ceil(
-                      assistantDocument.bodyMd.length / 4,
-                    ),
-                    permission:
-                      assistantDocument.aiPolicy ?? privateContentPolicy,
-                  },
-                ]
-              : []
-          }
-        />
-      )}
-      <Sidebar
-        collapsed={sidebarCollapsed}
-        onToggleCollapsed={toggleSidebar}
-        mobileOpen={mobileNavigationOpen}
-        canAdmin={!runtime.account || runtime.account.role === "ADMIN"}
-        activeView={view}
-        navigationOrder={navigationOrder}
-        taskCount={count(taskSelection.openActiveTasks.length)}
-        noteCount={count(notes.filter((note) => note.kind === "NOTE").length)}
-        label={viewLabel}
-        onNavigate={navigate}
-        onToggleMobile={() => setMobileNavigationOpen((value) => !value)}
-        onDragNavigation={setDraggedNavigation}
-        onMoveNavigation={moveNavigation}
-        onLogout={() => {
-          if (
-            (documentDirty ||
-              libraryDraft.current ||
-              projectBriefDirty.current ||
-              editor) &&
-            !window.confirm(t("discardHint"))
-          )
-            return;
-          void run(() => runtime.logout()).then((ok) => {
-            if (ok) onLogout();
-          });
-        }}
-      />
-      <main className="workspace-main">
-        <Topbar workspace={t("personal")} location={viewLabel(view)}>
-          <span
-            className={"mode-badge " + (error || syncOffline ? "offline" : "")}
-            title={t(
-              view === "library" || view === "account" || view === "admin"
-                ? "spaces:refresh"
-                : "connected:syncHint",
-            )}
-          >
-            <span />
-            {loading
-              ? t("connecting")
-              : syncOffline
-                ? t("connected:offline")
-                : error
-                  ? t("attention")
-                  : busy
-                    ? t("saving")
-                    : saved
-                      ? t("saved")
-                      : view === "library" ||
-                          view === "account" ||
-                          view === "admin"
-                        ? t("spaces:connected")
-                        : t("connected:synced")}
-          </span>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label={t("refresh")}
-            disabled={busy}
-            onClick={() => void refresh()}
-          >
-            <RefreshCw size={17} />
-          </button>
-          {!(
-            [
-              "graph",
-              "settings",
-              "trash",
-              "ai",
-              "library",
-              "account",
-              "admin",
-            ] as string[]
-          ).includes(view) && (
-            <button
-              className="button primary compact-create"
-              type="button"
-              disabled={busy || loading}
-              onClick={create}
-            >
-              <Plus size={17} />
-              {t(
-                view === "notes"
-                  ? "newNote"
-                  : view === "journal"
-                    ? "todayJournal"
-                    : view === "projects"
-                      ? "newProject"
-                      : "newTask",
-              )}
-            </button>
-          )}
-        </Topbar>
-        {view === "calendar" && (
-          <p
-            className="calendar-timezone muted"
-            data-testid="calendar-timezone"
-          >
-            {t("calendarTimezone", { timezone: calendarTimezone })}
-          </p>
-        )}
-        <DocumentWorkspace
-          request={documentRequest}
-          visible={documentVisible}
-          onActive={setActiveDocumentContext}
-          runtime={runtime}
-          snapshot={snapshot}
-          onDirty={setDocumentDirty}
-          onChange={() => void refresh()}
-          onBrowse={() => setDocumentVisible(false)}
-          onVisibility={() => setDocumentVisible(true)}
-        />
-        <WorkspaceRouter view={view} hidden={documentVisible}>
-          {view === "graph" && parseGraphRoute(location.hash) && (
-            <GraphWorkspace
-              route={parseGraphRoute(location.hash)!}
-              snapshot={snapshot}
-              onOpen={openEntity}
-            />
-          )}
-          {errorMessage && !editor && !noteEditor && (
-            <div className="error" role="alert">
-              {errorMessage}
-              <button
-                type="button"
-                className="button secondary"
-                disabled={busy}
-                onClick={() => void refresh()}
-              >
-                {t("refresh")}
-              </button>
-              {error === "UNAUTHORIZED" && (
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={onLogout}
-                >
-                  {t("unlock")}
-                </button>
-              )}
-            </div>
-          )}
-          <SettingsRoute
-            notifications={notifications}
-            active={view === "settings" && !loading}
-            context={context}
-            runtime={runtime}
+    <WorkspaceWorkIndexContext.Provider value={workIndex}>
+      <AppShell collapsed={sidebarCollapsed} mobileOpen={mobileNavigationOpen}>
+        <ToastHost />
+        {commandOpen && (
+          <CommandPalette
             snapshot={snapshot}
-            busy={busy}
-            day={day}
-            preference={preference}
-            switchLanguage={switchLanguage}
-            run={run}
-            onNote={setNoteEditor}
-            onWork={setEditor}
-            openDocument={openDocument}
-            navigation={{
-              preference: navigationPreference,
-              busy: false,
-              label: viewLabel,
-              onSave: (preference) =>
-                run(() => service.setNavigationPreference(context, preference)),
-            }}
-            calendar={{
-              settings: snapshot.calendarSettings ?? {
-                version: 0,
-                timezone: null,
-              },
-              effective: calendarTimezone,
-              busy: false,
-              onSave: (version, timezone) =>
-                run(() =>
-                  service.setCalendarSettings(context, version, timezone),
-                ),
-            }}
-            onLogout={() => {
-              void (
-                (documentDirty || libraryDraft.current || editor) &&
-                !window.confirm(t("discardHint"))
-                  ? Promise.resolve(false)
-                  : run(() => runtime.logout())
-              ).then((ok) => {
-                if (ok) onLogout();
-              });
+            onClose={() => setCommandOpen(false)}
+            onCreate={() => open("new")}
+            onOpen={(ref) => {
+              if (ref.kind === "WORK") {
+                const item = snapshot.items.find(
+                  (entry) => entry.id === ref.id,
+                );
+                if (item) setEditor(item);
+              } else if (ref.kind === "NOTE") {
+                const entity = snapshot.notes.find(
+                  (entry) => entry.id === ref.id,
+                );
+                if (entity)
+                  openDocument({ key: entity.id, kind: entity.kind, entity });
+              } else {
+                const entity = snapshot.library.find(
+                  (entry) => entry.id === ref.id,
+                );
+                if (entity)
+                  openDocument({
+                    key: entity.id,
+                    kind: entity.kind,
+                    entity,
+                    spaceId: entity.spaceId,
+                  });
+              }
             }}
           />
-
-          {loading ? (
-            <div className="loading-panel" role="status">
-              {t("connecting")}
-            </div>
-          ) : view === "library" ? (
-            <LibraryView
-              onTrash={() => {
-                location.hash = "#trash?filter=library";
-              }}
-              onChanged={refresh}
-              runtime={runtime}
-              onOpen={openDocument}
-              snapshot={snapshot}
-            />
-          ) : view === "account" ? (
-            <AccountView
-              runtime={runtime}
-              onLogout={onLogout}
-              confirmLeave={() =>
-                !(documentDirty || libraryDraft.current || editor) ||
-                window.confirm(t("discardHint"))
+        )}
+        {assistantOpen && (
+          <AssistantPane
+            onSource={openEntity}
+            snapshot={snapshot}
+            runtime={runtime}
+            projectId={
+              documentVisible
+                ? activeDocumentContext?.projectId
+                : (activeProjectId ?? undefined)
+            }
+            currentSpaceId={
+              assistantDocument && "spaceId" in assistantDocument
+                ? assistantDocument.kind === "SPACE"
+                  ? assistantDocument.id
+                  : (assistantDocument.spaceId ?? undefined)
+                : undefined
+            }
+            onClose={() => setAssistantOpen(false)}
+            context={
+              assistantDocument && activeDocumentContext
+                ? [
+                    {
+                      ref: {
+                        kind:
+                          activeDocumentContext.kind === "JOURNAL"
+                            ? "NOTE"
+                            : activeDocumentContext.kind,
+                        id: assistantDocument.id,
+                      },
+                      title: assistantDocument.title,
+                      version: assistantDocument.version,
+                      source: "current",
+                      tokenEstimate: Math.ceil(
+                        assistantDocument.bodyMd.length / 4,
+                      ),
+                      permission:
+                        assistantDocument.aiPolicy ?? privateContentPolicy,
+                    },
+                  ]
+                : []
+            }
+          />
+        )}
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={toggleSidebar}
+          mobileOpen={mobileNavigationOpen}
+          canAdmin={!runtime.account || runtime.account.role === "ADMIN"}
+          activeView={view}
+          navigationOrder={navigationOrder}
+          taskCount={count(taskSelection.openActiveTasks.length)}
+          noteCount={count(notes.filter((note) => note.kind === "NOTE").length)}
+          label={viewLabel}
+          onNavigate={navigate}
+          onToggleMobile={() => setMobileNavigationOpen((value) => !value)}
+          onDragNavigation={setDraggedNavigation}
+          onMoveNavigation={moveNavigation}
+          onLogout={async () => {
+            if (
+              (documentDirty ||
+                libraryDraft.current ||
+                projectBriefDirty.current ||
+                editor) &&
+              !(await confirmAction(t("discardHint")))
+            )
+              return;
+            void run(() => runtime.logout()).then((ok) => {
+              if (ok) onLogout();
+            });
+          }}
+        />
+        <main className="workspace-main">
+          <Topbar workspace={t("personal")} location={viewLabel(view)}>
+            <span
+              className={
+                "mode-badge " + (error || syncOffline ? "offline" : "")
               }
-            />
-          ) : view === "admin" ? (
-            <AdminView runtime={runtime} />
-          ) : view === "ai" ? (
-            <AssistantPane
-              onSource={openEntity}
-              snapshot={snapshot}
-              runtime={runtime}
-              context={[]}
-              embedded
-              onClose={() => {}}
-            />
-          ) : view === "overview" ? (
-            <>
-              <div className="home-summary">
-                {[
-                  {
-                    label: "openTasks",
-                    value: taskSelection.openActiveTasks.length,
-                    icon: ListTodo,
-                    next: "tasks",
-                  },
-                  {
-                    label: "focus",
-                    value: focus.length,
-                    icon: Target,
-                    next: "focus",
-                  },
-                  {
-                    label: "completed",
-                    value: done.length,
-                    icon: CheckCheck,
-                    next: "tasks",
-                  },
-                  {
-                    label: "savedNotes",
-                    value: notes.length,
-                    icon: BookOpen,
-                    next: "notes",
-                  },
-                ].map(({ label, value, icon: Icon, next }) => (
-                  <button
-                    className="home-summary-link"
+              title={t(
+                view === "library" || view === "account" || view === "admin"
+                  ? "spaces:refresh"
+                  : "connected:syncHint",
+              )}
+            >
+              <span />
+              {loading
+                ? t("connecting")
+                : syncOffline
+                  ? t("connected:offline")
+                  : error
+                    ? t("attention")
+                    : busy
+                      ? t("saving")
+                      : saved
+                        ? t("saved")
+                        : view === "library" ||
+                            view === "account" ||
+                            view === "admin"
+                          ? t("spaces:connected")
+                          : t("connected:synced")}
+            </span>
+            <Button
+              className="icon-button"
+              type="button"
+              aria-label={t("refresh")}
+              disabled={busy}
+              onClick={() => void refresh()}
+            >
+              <RefreshCw size={17} />
+            </Button>
+            {!(
+              [
+                "graph",
+                "settings",
+                "trash",
+                "ai",
+                "library",
+                "account",
+                "admin",
+              ] as string[]
+            ).includes(view) && (
+              <Button
+                variant="primary"
+                className="button primary compact-create"
+                type="button"
+                disabled={busy || loading}
+                onClick={create}
+              >
+                <Plus size={17} />
+                {t(
+                  view === "notes"
+                    ? "newNote"
+                    : view === "journal"
+                      ? "todayJournal"
+                      : view === "projects"
+                        ? "newProject"
+                        : "newTask",
+                )}
+              </Button>
+            )}
+          </Topbar>
+          <DocumentWorkspace
+            request={documentRequest}
+            visible={documentVisible}
+            onActive={setActiveDocumentContext}
+            runtime={runtime}
+            snapshot={snapshot}
+            onDirty={setDocumentDirty}
+            onChange={() => void refresh()}
+            onBrowse={() => setDocumentVisible(false)}
+            onVisibility={() => setDocumentVisible(true)}
+          />
+          <WorkspaceRouter view={view} hidden={documentVisible}>
+            {view === "graph" && parseGraphRoute(location.hash) && (
+              <GraphWorkspace
+                workIndex={workIndex}
+                route={parseGraphRoute(location.hash)!}
+                snapshot={snapshot}
+                onOpen={openEntity}
+              />
+            )}
+            {errorMessage && !editor && !noteEditor && (
+              <div className="error" role="alert">
+                {errorMessage}
+                <Button
+                  type="button"
+                  className="button secondary"
+                  disabled={busy}
+                  onClick={() => void refresh()}
+                >
+                  {t("refresh")}
+                </Button>
+                {error === "UNAUTHORIZED" && (
+                  <Button
+                    className="button secondary"
                     type="button"
-                    key={label}
-                    onClick={() =>
-                      navigate(
-                        next as View,
-                        label === "completed" ? "DONE" : undefined,
-                      )
-                    }
+                    onClick={onLogout}
                   >
-                    <div>
-                      <span>{t(label)}</span>
-                      <Icon size={18} />
-                    </div>
-                    <strong>{count(value)}</strong>
-                    <small>
-                      {t("viewDetails")}
-                      <ArrowUpRight size={13} />
-                    </small>
-                  </button>
-                ))}
+                    {t("unlock")}
+                  </Button>
+                )}
               </div>
-              <div className="overview-grid">
-                <section className="panel">
-                  <div className="panel-heading">
-                    <div>
-                      <p className="eyebrow">{t("nextStep")}</p>
-                      <h2>{t("focus")}</h2>
-                    </div>
-                    <button
+            )}
+            <SettingsRoute
+              notifications={notifications}
+              active={view === "settings" && !loading}
+              context={context}
+              runtime={runtime}
+              snapshot={snapshot}
+              busy={busy}
+              day={day}
+              preference={preference}
+              switchLanguage={switchLanguage}
+              run={run}
+              onNote={setNoteEditor}
+              onWork={setEditor}
+              openDocument={openDocument}
+              navigation={{
+                preference: navigationPreference,
+                busy: false,
+                label: viewLabel,
+                onSave: (preference) =>
+                  run(() =>
+                    service.setNavigationPreference(context, preference),
+                  ),
+              }}
+              calendar={{
+                settings: snapshot.calendarSettings ?? {
+                  version: 0,
+                  timezone: null,
+                },
+                effective: calendarTimezone,
+                busy: false,
+                onSave: (version, timezone) =>
+                  run(() =>
+                    service.setCalendarSettings(context, version, timezone),
+                  ),
+              }}
+              onLogout={async () => {
+                void (
+                  (documentDirty || libraryDraft.current || editor) &&
+                  !(await confirmAction(t("discardHint")))
+                    ? Promise.resolve(false)
+                    : run(() => runtime.logout())
+                ).then((ok) => {
+                  if (ok) onLogout();
+                });
+              }}
+            />
+
+            {loading ? (
+              <div className="loading-panel" role="status">
+                {t("connecting")}
+              </div>
+            ) : view === "library" ? (
+              <LibraryView
+                onTrash={() => {
+                  location.hash = "#trash?filter=library";
+                }}
+                onChanged={refresh}
+                runtime={runtime}
+                onOpen={openDocument}
+                snapshot={snapshot}
+              />
+            ) : view === "account" ? (
+              <AccountView
+                runtime={runtime}
+                onLogout={onLogout}
+                confirmLeave={async () =>
+                  !(documentDirty || libraryDraft.current || editor) ||
+                  (await confirmAction(t("discardHint")))
+                }
+              />
+            ) : view === "admin" ? (
+              <AdminView runtime={runtime} />
+            ) : view === "ai" ? (
+              <AssistantPane
+                onSource={openEntity}
+                snapshot={snapshot}
+                runtime={runtime}
+                context={[]}
+                embedded
+                onClose={() => {}}
+              />
+            ) : view === "overview" ? (
+              <>
+                <div className="home-summary">
+                  {[
+                    {
+                      label: "openTasks",
+                      value: taskSelection.openActiveTasks.length,
+                      icon: ListTodo,
+                      next: "tasks",
+                    },
+                    {
+                      label: "focus",
+                      value: focus.length,
+                      icon: Target,
+                      next: "focus",
+                    },
+                    {
+                      label: "completed",
+                      value: done.length,
+                      icon: CheckCheck,
+                      next: "tasks",
+                    },
+                    {
+                      label: "savedNotes",
+                      value: notes.length,
+                      icon: BookOpen,
+                      next: "notes",
+                    },
+                  ].map(({ label, value, icon: Icon, next }) => (
+                    <Button
+                      className="home-summary-link"
                       type="button"
+                      key={label}
+                      onClick={() =>
+                        navigate(
+                          next as View,
+                          label === "completed" ? "DONE" : undefined,
+                        )
+                      }
+                    >
+                      <div>
+                        <span>{t(label)}</span>
+                        <Icon size={18} />
+                      </div>
+                      <strong>{count(value)}</strong>
+                      <small>
+                        {t("viewDetails")}
+                        <ArrowUpRight size={13} />
+                      </small>
+                    </Button>
+                  ))}
+                </div>
+                <div className="overview-grid">
+                  <section className="panel">
+                    <div className="panel-heading">
+                      <div>
+                        <p className="eyebrow">{t("nextStep")}</p>
+                        <h2>{t("focus")}</h2>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        className="text-button"
+                        onClick={() => navigate("focus")}
+                      >
+                        {t("viewAll")}
+                        <ArrowUpRight size={15} />
+                      </Button>
+                    </div>
+                    {focus.length ? (
+                      <TaskList items={focus.slice(0, 5)} {...workProps} />
+                    ) : (
+                      <div className="empty-state compact">
+                        <Target size={30} />
+                        <h3>{t("focusEmpty")}</h3>
+                        <p>{t("focusEmptyHint")}</p>
+                        <Button
+                          type="button"
+                          className="button secondary"
+                          onClick={() => open("new")}
+                        >
+                          {t("newTask")}
+                        </Button>
+                      </div>
+                    )}
+                  </section>
+                  <section className="today-panel">
+                    <span className="eyebrow">{t("dailySpace")}</span>
+                    <NotebookPen size={30} />
+                    <h2>{t("journalPrompt")}</h2>
+                    <p>{t("journalPromptHint")}</p>
+                    <Button
+                      className="button secondary"
+                      type="button"
+                      onClick={() =>
+                        openNote(
+                          notes.find(
+                            (n) => n.kind === "JOURNAL" && n.day === day,
+                          ) ?? "JOURNAL",
+                        )
+                      }
+                    >
+                      {t("todayJournal")}
+                      <ArrowUpRight size={16} />
+                    </Button>
+                    <div className="progress-label">
+                      <span>{t("completion")}</span>
+                      <strong>
+                        {taskSelection.tasks.length
+                          ? Math.round(
+                              (done.length / taskSelection.tasks.length) * 100,
+                            )
+                          : 0}
+                        %
+                      </strong>
+                    </div>
+                    <progress
+                      max={Math.max(taskSelection.tasks.length, 1)}
+                      value={done.length}
+                    />
+                  </section>
+                </div>
+                <section className="recent-notes">
+                  <div className="panel-heading">
+                    <h2>{t("recentNotes")}</h2>
+                    <Button
+                      variant="ghost"
                       className="text-button"
-                      onClick={() => navigate("focus")}
+                      type="button"
+                      onClick={() => navigate("notes")}
                     >
                       {t("viewAll")}
                       <ArrowUpRight size={15} />
-                    </button>
+                    </Button>
                   </div>
-                  {focus.length ? (
-                    <TaskList items={focus.slice(0, 5)} {...workProps} />
+                  {notes.length ? (
+                    noteCards(
+                      [...notes]
+                        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+                        .slice(0, 3),
+                    )
                   ) : (
-                    <div className="empty-state compact">
-                      <Target size={30} />
-                      <h3>{t("focusEmpty")}</h3>
-                      <p>{t("focusEmptyHint")}</p>
-                      <button
-                        type="button"
-                        className="button secondary"
-                        onClick={() => open("new")}
-                      >
-                        {t("newTask")}
-                      </button>
-                    </div>
+                    <Button
+                      className="note-empty"
+                      type="button"
+                      onClick={() => openNote("NOTE")}
+                    >
+                      <BookOpen size={22} />
+                      <span>{t("firstNote")}</span>
+                      <Plus size={18} />
+                    </Button>
                   )}
                 </section>
-                <section className="today-panel">
-                  <span className="eyebrow">{t("dailySpace")}</span>
-                  <NotebookPen size={30} />
-                  <h2>{t("journalPrompt")}</h2>
-                  <p>{t("journalPromptHint")}</p>
-                  <button
-                    className="button secondary"
-                    type="button"
-                    onClick={() =>
-                      openNote(
-                        notes.find(
-                          (n) => n.kind === "JOURNAL" && n.day === day,
-                        ) ?? "JOURNAL",
-                      )
-                    }
-                  >
-                    {t("todayJournal")}
-                    <ArrowUpRight size={16} />
-                  </button>
-                  <div className="progress-label">
-                    <span>{t("completion")}</span>
-                    <strong>
-                      {taskSelection.tasks.length
-                        ? Math.round(
-                            (done.length / taskSelection.tasks.length) * 100,
-                          )
-                        : 0}
-                      %
-                    </strong>
-                  </div>
-                  <progress
-                    max={Math.max(taskSelection.tasks.length, 1)}
-                    value={done.length}
-                  />
-                </section>
-              </div>
-              <section className="recent-notes">
-                <div className="panel-heading">
-                  <h2>{t("recentNotes")}</h2>
-                  <button
-                    className="text-button"
-                    type="button"
-                    onClick={() => navigate("notes")}
-                  >
-                    {t("viewAll")}
-                    <ArrowUpRight size={15} />
-                  </button>
-                </div>
-                {notes.length ? (
-                  noteCards(
-                    [...notes]
-                      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-                      .slice(0, 3),
-                  )
-                ) : (
-                  <button
-                    className="note-empty"
-                    type="button"
-                    onClick={() => openNote("NOTE")}
-                  >
-                    <BookOpen size={22} />
-                    <span>{t("firstNote")}</span>
-                    <Plus size={18} />
-                  </button>
-                )}
-              </section>
-            </>
-          ) : view === "projects" ? (
-            <>
-              {projects.find((project) => project.id === activeProjectId) ? (
-                <ProjectWorkspace
-                  today={calendarDay}
-                  isArchived={isArchived}
-                  archiveSource={archiveSource}
-                  onStatus={onStatus}
-                  onOrganize={workProps.onOrganize}
-                  briefDirtyRef={projectBriefDirty}
-                  onBriefSave={(base, markdown) =>
-                    run(() =>
-                      service.update(context, base.id, base.version, {
-                        descriptionMd: markdown,
-                      }),
-                    )
-                  }
-                  runtime={runtime}
-                  run={(operation) =>
-                    run(operation, "project:" + projectRoute.projectId)
-                  }
-                  key={activeProjectId}
-                  project={
-                    projects.find((project) => project.id === activeProjectId)!
-                  }
-                  snapshot={snapshot}
-                  busy={false}
-                  routeTab={projectRoute.tab}
-                  routeScope={projectRoute.scope}
-                  onRouteChange={(tab, scope) =>
-                    navigateProject(activeProjectId, tab, scope)
-                  }
-                  onBack={() => navigateProject(null)}
-                  onProject={(id) => navigateProject(id)}
-                  onOpen={openEntity}
-                  onNewPage={(spaceId) =>
-                    openDocument({
-                      key: `DOCUMENT:new:${crypto.randomUUID()}`,
-                      kind: "DOCUMENT",
-                      spaceId,
-                      projectId: activeProjectId ?? undefined,
-                    })
-                  }
-                  onCreate={(type, parentId) => {
-                    setCreation({ type, parentId });
-                    setError(null);
-                    setEditor("new");
-                  }}
-                  onLink={(from, to) =>
-                    run(() => runtime.link(from, to, "REFERENCES"))
-                  }
-                  onUnlink={(link) =>
-                    run(() => runtime.unlink(link.id, link.version))
-                  }
-                  onAddEdge={(from, to) =>
-                    run(() => service.addEdge(context, from, to))
-                  }
-                  onRemoveEdge={(id) =>
-                    run(() => service.removeEdge(context, id))
-                  }
-                />
-              ) : (
-                <>
-                  <ProjectView
-                    categories={snapshot.categories ?? []}
-                    onSaveCategory={(input) =>
-                      run(() => runtime.saveCategory(input))
-                    }
-                    projects={projects}
-                    items={allItems}
-                    busy={false}
+              </>
+            ) : view === "projects" ? (
+              <>
+                {projects.find((project) => project.id === activeProjectId) ? (
+                  <ProjectWorkspace
+                    workIndex={workIndex}
+                    taskIndex={taskSelection}
+                    today={calendarDay}
                     isArchived={isArchived}
                     archiveSource={archiveSource}
+                    onStatus={onStatus}
                     onOrganize={workProps.onOrganize}
-                    onOpen={(project) => navigateProject(project.id)}
-                    onTasks={(id) => {
-                      navigate("tasks");
-                      setProjectFilter(id);
-                      const project = projects.find((p) => p.id === id);
-                      setShowArchived(!!project && isArchived(project));
-                    }}
-                  />
-                  <WorkflowManager
-                    calendarTimezone={calendarTimezone}
-                    records={snapshot.workflows ?? []}
-                    projects={projects}
-                    items={allItems}
+                    briefDirtyRef={projectBriefDirty}
+                    onBriefSave={(base, markdown) =>
+                      run(() =>
+                        service.update(context, base.id, base.version, {
+                          descriptionMd: markdown,
+                        }),
+                      )
+                    }
+                    runtime={runtime}
+                    run={(operation) =>
+                      run(operation, "project:" + projectRoute.projectId)
+                    }
+                    key={activeProjectId}
+                    project={
+                      projects.find(
+                        (project) => project.id === activeProjectId,
+                      )!
+                    }
+                    snapshot={snapshot}
                     busy={false}
-                    preview={(projectId, manifest) =>
-                      run(() => runtime.previewPlan(projectId, manifest))
+                    routeTab={projectRoute.tab}
+                    routeScope={projectRoute.scope}
+                    onRouteChange={(tab, scope) =>
+                      navigateProject(activeProjectId, tab, scope)
                     }
-                    publish={(id, version) =>
-                      run(() => runtime.publishPlan(id, version))
+                    onBack={() => navigateProject(null)}
+                    onProject={(id) => navigateProject(id)}
+                    onOpen={openEntity}
+                    onNewPage={(spaceId) =>
+                      openDocument({
+                        key: `DOCUMENT:new:${crypto.randomUUID()}`,
+                        kind: "DOCUMENT",
+                        spaceId,
+                        projectId: activeProjectId ?? undefined,
+                      })
                     }
-                    save={(input) => run(() => runtime.saveRecurrence(input))}
-                    generate={(id, version, from, to) =>
-                      run(() =>
-                        runtime.generateRecurrence(id, version, from, to),
-                      )
+                    onCreate={(type, parentId) => {
+                      setCreation({ type, parentId });
+                      setError(null);
+                      setEditor("new");
+                    }}
+                    onLink={(from, to) =>
+                      run(() => runtime.link(from, to, "REFERENCES"))
                     }
-                    backfill={(id, version, completedAt) =>
-                      run(() =>
-                        runtime.backfillOccurrence(id, version, completedAt),
-                      )
+                    onUnlink={(link) =>
+                      run(() => runtime.unlink(link.id, link.version))
                     }
-                  />
-                </>
-              )}
-            </>
-          ) : view === "calendar" ? (
-            <CalendarView
-              items={items}
-              today={day}
-              onOpen={open}
-              journals={snapshot.notes}
-              onJournal={(date) => {
-                const entity =
-                  snapshot.notes.find(
-                    (n) =>
-                      n.kind === "JOURNAL" && n.day === date && !n.deletedAt,
-                  ) ??
-                  snapshot.notes
-                    .filter((n) => n.kind === "JOURNAL" && n.day === date)
-                    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-                openDocument({
-                  key: entity?.id ?? "journal-" + date,
-                  kind: "JOURNAL",
-                  entity,
-                  day: date,
-                });
-              }}
-            />
-          ) : view === "settings" ? null : (
-            <>
-              <div className="list-toolbar">
-                <div className={view === "tasks" ? "list-title" : "view-count"}>
-                  <h2>{t(view)}</h2>
-                  <span hidden={view === "tasks"}>
-                    {count(
-                      view === "notes" || view === "journal"
-                        ? notes.filter(
-                            (n) =>
-                              n.kind ===
-                              (view === "notes" ? "NOTE" : "JOURNAL"),
-                          ).length
-                        : view === "trash"
-                          ? snapshot.items.filter((i) => i.deletedAt).length +
-                            snapshot.notes.filter((n) => n.deletedAt).length
-                          : view === "focus"
-                            ? focus.length
-                            : visible.length,
-                    )}
-                  </span>
-                </div>
-                <label className="search">
-                  <Search size={16} />
-                  <input
-                    ref={search}
-                    aria-label={t("search")}
-                    placeholder={t("search")}
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                  />
-                  <kbd>/</kbd>
-                </label>
-              </div>
-              {view === "tasks" && (
-                <section className="task-query-panel">
-                  <div className="filter-bar">
-                    {view === "tasks" && (
-                      <label>
-                        <span>{t("activationState")}</span>
-                        <select
-                          aria-label={t("activationState")}
-                          value={activationFilter}
-                          onChange={(event) =>
-                            setActivationFilter(event.target.value)
-                          }
-                        >
-                          <option value="ALL">{t("all")}</option>
-                          <option value="ACTIVE">
-                            {t("activationStates.ACTIVE")}
-                          </option>
-                          <option value="INACTIVE">
-                            {t("activationStates.INACTIVE")}
-                          </option>
-                        </select>
-                      </label>
-                    )}
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={showArchived}
-                        onChange={(e) => setShowArchived(e.target.checked)}
-                      />
-                      {t("showArchived")}
-                    </label>
-                    <div className="field">
-                      <span>{t("project")}</span>
-                      <div className="project-filter-picker">
-                        <button
-                          type="button"
-                          className="chip"
-                          aria-pressed={projectFilter === "ALL"}
-                          onClick={() => setProjectFilter("ALL")}
-                        >
-                          {t("all")}
-                        </button>
-                        <button
-                          type="button"
-                          className="chip"
-                          aria-pressed={projectFilter === "NONE"}
-                          onClick={() => setProjectFilter("NONE")}
-                        >
-                          {t("noProject")}
-                        </button>
-                        <ProjectDrilldownPicker
-                          mode="single"
-                          projects={projects}
-                          value={
-                            ["ALL", "NONE"].includes(projectFilter)
-                              ? null
-                              : projectFilter
-                          }
-                          onChange={(value) =>
-                            setProjectFilter(
-                              typeof value === "string" ? value : "ALL",
-                            )
-                          }
-                        />
-                      </div>{" "}
-                    </div>
-                    <label>
-                      <span>{t("status")}</span>
-                      <select
-                        aria-label={t("status")}
-                        value={status}
-                        onChange={(event) => setStatus(event.target.value)}
-                      >
-                        <option value="ALL">{t("all")}</option>
-                        <option value="UNFINISHED">
-                          {t("unfinishedTasks")}
-                        </option>
-                        {workStatuses.map((s) => (
-                          <option key={s} value={s}>
-                            {t("work:statuses." + s)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>{t("priority")}</span>
-                      <select
-                        aria-label={t("priority")}
-                        value={priority}
-                        onChange={(event) => setPriority(event.target.value)}
-                      >
-                        <option value="ALL">{t("all")}</option>
-                        {priorities.map((p) => (
-                          <option key={p} value={p}>
-                            {t("work:priorities." + p)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="sort-control">
-                      <span>{t("sort")}</span>
-                      <select
-                        aria-label={t("sort")}
-                        value={sort}
-                        onChange={(event) => setSort(event.target.value)}
-                      >
-                        <option value="updated">{t("recentlyUpdated")}</option>
-                        <option value="priority">{t("priority")}</option>
-                        <option value="title">{t("title")}</option>
-                      </select>
-                    </label>
-                  </div>
-                </section>
-              )}
-              {view === "notes" || view === "journal" ? (
-                (() => {
-                  const entries = notes
-                    .filter(
-                      (n) =>
-                        n.kind === (view === "notes" ? "NOTE" : "JOURNAL") &&
-                        matches(n.title, n.bodyMd),
-                    )
-                    .sort((a, b) =>
-                      (b.day ?? b.updatedAt).localeCompare(
-                        a.day ?? a.updatedAt,
-                      ),
-                    );
-                  return entries.length ? (
-                    noteCards(entries)
-                  ) : (
-                    <div className="empty-state">
-                      <BookOpen size={30} />
-                      <h2>{t(query ? "noResults" : "captureThought")}</h2>
-                      <p>{t("notesHint")}</p>
-                      <button
-                        type="button"
-                        className="button secondary"
-                        onClick={create}
-                      >
-                        {t(view === "journal" ? "todayJournal" : "newNote")}
-                      </button>
-                    </div>
-                  );
-                })()
-              ) : view === "trash" ? (
-                <TrashRoute
-                  snapshot={snapshot}
-                  runtime={runtime}
-                  query={query}
-                  busy={busy}
-                  run={run}
-                />
-              ) : view === "focus" ? (
-                focus.filter((i) => matches(i.title, i.descriptionMd))
-                  .length ? (
-                  <TaskList
-                    items={focus.filter((i) =>
-                      matches(i.title, i.descriptionMd),
-                    )}
-                    {...workProps}
+                    onAddEdge={(from, to) =>
+                      run(() => service.addEdge(context, from, to))
+                    }
+                    onRemoveEdge={(id) =>
+                      run(() => service.removeEdge(context, id))
+                    }
                   />
                 ) : (
-                  <div className="empty-state">
-                    <Target size={30} />
-                    <h2>{t("focusEmpty")}</h2>
-                    <p>{t("focusEmptyHint")}</p>
-                  </div>
-                )
-              ) : view === "tasks" ? (
-                <TasksRoute
-                  runtime={runtime}
-                  context={context}
-                  snapshot={snapshot}
-                  calendarTimezone={calendarTimezone}
-                  projects={projects}
-                  workProps={workProps}
-                  visible={visible}
-                  showArchived={showArchived}
-                  status={status}
-                  taskDependenciesOpen={taskDependenciesOpen}
-                  onToggleDependencies={() =>
-                    setTaskDependenciesOpen((open) => !open)
-                  }
-                  run={run}
-                  onOpen={setEditor}
-                />
-              ) : visible.length ? (
-                <TaskList items={visible} {...workProps} />
-              ) : (
-                <div className="empty-state">
-                  <ListTodo size={30} />
-                  <h2>
-                    {t(taskSelection.tasks.length ? "noResults" : "firstTask")}
-                  </h2>
-                  <p>{t("tasksHint")}</p>
-                  <button
-                    className="button secondary"
-                    type="button"
-                    onClick={() => open("new")}
-                  >
-                    {t("newTask")}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </WorkspaceRouter>
-      </main>
-      <nav
-        className="mobile-bottom-navigation"
-        aria-label={t("mobileNavigation")}
-      >
-        {navigationPreference.mobile.pinned
-          .map((id) => navigation.find((item) => item.view === id)!)
-          .filter(
-            (item) =>
-              item.view !== "admin" ||
-              !runtime.account ||
-              runtime.account.role === "ADMIN",
-          )
-          .map(({ view: next, icon: Icon }) => (
-            <button
-              key={next}
-              type="button"
-              aria-current={view === next ? "page" : undefined}
-              onClick={() => navigate(next)}
-            >
-              <Icon size={20} aria-hidden="true" />
-              <span>{viewLabel(next)}</span>
-            </button>
-          ))}
-        <button
-          type="button"
-          aria-expanded={mobileNavigationOpen}
-          aria-controls="workspace-navigation"
-          onClick={() => {
-            setMobileNavigationOpen((open) => !open);
-          }}
-        >
-          <PanelLeft size={20} aria-hidden="true" />
-          <span>{t("moreNavigation")}</span>
-        </button>
-      </nav>
-      {mobileNavigationOpen && (
-        <MoreSheet
-          entries={[
-            ...navigation
-              .filter(
-                ({ view: next }) =>
-                  !navigationPreference.mobile.pinned.includes(next),
-              )
-              .filter(
-                ({ view: next }) =>
-                  next !== "admin" ||
-                  !runtime.account ||
-                  runtime.account.role === "ADMIN",
-              )
-              .map(({ view: next }) => ({ id: next, label: viewLabel(next) })),
-            { id: "settings", label: viewLabel("settings") },
-          ]}
-          onNavigate={(next) => navigate(next as View)}
-          onClose={() => setMobileNavigationOpen(false)}
-        />
-      )}
-      {editor && (
-        <WorkItemEditor
-          key={editor === "new" ? "new" : editor.id + "-" + editor.version}
-          item={editor === "new" ? null : editor}
-          projects={projects}
-          categories={snapshot.categories ?? []}
-          items={allItems}
-          createType={creation.type}
-          edges={snapshot.edges}
-          today={calendarDay}
-          workflows={snapshot.workflows ?? []}
-          calendarTimezone={calendarTimezone}
-          onSaveRepeat={async (input) => {
-            if (
-              await run(
-                () => runtime.saveTaskRecurrence(input),
-                editorPendingKey,
-              )
-            )
-              setEditorState((current) =>
-                current === editor ? null : current,
-              );
-          }}
-          initialProjectId={creation.parentId}
-          busy={busy}
-          error={errorMessage}
-          onClose={() => setEditor(null)}
-          onSave={async (input) => {
-            if (
-              await run(
-                () =>
-                  editor === "new"
-                    ? service.create(context, {
-                        ...input,
-                        type: creation.type,
-                      })
-                    : service.update(context, editor.id, editor.version, input),
-                editorPendingKey,
-              )
-            )
-              setEditorState((current) =>
-                current === editor ? null : current,
-              );
-          }}
-          onDelete={
-            editor === "new"
-              ? null
-              : async () => {
-                  if (
-                    await run(async () => {
-                      const deleted = await service.setDeleted(
-                        context,
-                        editor.id,
-                        editor.version,
-                        true,
-                      );
-                      showToast(t("movedToTrash"), async () => {
-                        await service.setDeleted(
-                          context,
-                          deleted.id,
-                          deleted.version,
-                          false,
-                        );
-                        await refresh();
-                      });
-                    }, editorPendingKey)
+                  <>
+                    <ProjectView
+                      categories={snapshot.categories ?? []}
+                      onSaveCategory={(input) =>
+                        run(() => runtime.saveCategory(input))
+                      }
+                      projects={projects}
+                      items={allItems}
+                      busy={false}
+                      isArchived={isArchived}
+                      archiveSource={archiveSource}
+                      onOrganize={workProps.onOrganize}
+                      onOpen={(project) => navigateProject(project.id)}
+                      onTasks={(id) => {
+                        navigate("tasks");
+                        setProjectFilter(id);
+                        const project = projects.find((p) => p.id === id);
+                        setShowArchived(!!project && isArchived(project));
+                      }}
+                    />
+                    <WorkflowManager
+                      calendarTimezone={calendarTimezone}
+                      records={snapshot.workflows ?? []}
+                      projects={projects}
+                      items={allItems}
+                      busy={false}
+                      preview={(projectId, manifest) =>
+                        run(() => runtime.previewPlan(projectId, manifest))
+                      }
+                      publish={(id, version) =>
+                        run(() => runtime.publishPlan(id, version))
+                      }
+                      save={(input) => run(() => runtime.saveRecurrence(input))}
+                      generate={(id, version, from, to) =>
+                        run(() =>
+                          runtime.generateRecurrence(id, version, from, to),
+                        )
+                      }
+                      backfill={(id, version, completedAt) =>
+                        run(() =>
+                          runtime.backfillOccurrence(id, version, completedAt),
+                        )
+                      }
+                    />
+                  </>
+                )}
+              </>
+            ) : view === "calendar" ? (
+              <CalendarView
+                pickerItems={allItems}
+                reminders={snapshot.reminders ?? []}
+                onSaveReminder={(id, version, input, deleted) =>
+                  run(
+                    () => runtime.saveReminder(id, version, input, deleted),
+                    "reminder:" + (id ?? "new"),
                   )
-                    setEditorState((current) =>
-                      current === editor ? null : current,
-                    );
                 }
-          }
-        />
-      )}
-    </AppShell>
+                timezone={calendarTimezone}
+                records={snapshot.workflows ?? []}
+                items={items}
+                today={day}
+                onOpen={open}
+                journals={snapshot.notes}
+                onJournal={(date) => {
+                  const entity =
+                    snapshot.notes.find(
+                      (n) =>
+                        n.kind === "JOURNAL" && n.day === date && !n.deletedAt,
+                    ) ??
+                    snapshot.notes
+                      .filter((n) => n.kind === "JOURNAL" && n.day === date)
+                      .sort((a, b) =>
+                        b.updatedAt.localeCompare(a.updatedAt),
+                      )[0];
+                  openDocument({
+                    key: entity?.id ?? "journal-" + date,
+                    kind: "JOURNAL",
+                    entity,
+                    day: date,
+                  });
+                }}
+              />
+            ) : view === "settings" || view === "graph" ? null : (
+              <>
+                <div className="list-toolbar">
+                  <div
+                    className={view === "tasks" ? "list-title" : "view-count"}
+                  >
+                    <h2>{t(view)}</h2>
+                    <span hidden={view === "tasks"}>
+                      {count(
+                        view === "notes" || view === "journal"
+                          ? notes.filter(
+                              (n) =>
+                                n.kind ===
+                                (view === "notes" ? "NOTE" : "JOURNAL"),
+                            ).length
+                          : view === "trash"
+                            ? snapshot.items.filter((i) => i.deletedAt).length +
+                              snapshot.notes.filter((n) => n.deletedAt).length
+                            : view === "focus"
+                              ? focus.length
+                              : visible.length,
+                      )}
+                    </span>
+                  </div>
+                  <label className="search">
+                    <Search size={16} />
+                    <input
+                      ref={search}
+                      aria-label={t("search")}
+                      placeholder={t("search")}
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                    />
+                    <kbd>/</kbd>
+                  </label>
+                </div>
+                {view === "tasks" && (
+                  <section className="task-query-panel">
+                    <Toolbar className="filter-bar">
+                      <div className="task-project-filter">
+                        <span>{t("project")}</span>
+                        <div className="project-filter-picker">
+                          <Button
+                            type="button"
+                            className="chip"
+                            aria-pressed={projectFilter === "ALL"}
+                            onClick={() => setProjectFilter("ALL")}
+                          >
+                            {t("all")}
+                          </Button>
+                          <Button
+                            type="button"
+                            className="chip"
+                            aria-pressed={projectFilter === "NONE"}
+                            onClick={() => setProjectFilter("NONE")}
+                          >
+                            {t("noProject")}
+                          </Button>
+                          <ProjectDrilldownPicker
+                            mode="single"
+                            projects={projects}
+                            value={
+                              ["ALL", "NONE"].includes(projectFilter)
+                                ? null
+                                : projectFilter
+                            }
+                            onChange={(value) =>
+                              setProjectFilter(
+                                typeof value === "string" ? value : "ALL",
+                              )
+                            }
+                          />
+                        </div>{" "}
+                      </div>
+                      <label>
+                        <span>{t("status")}</span>
+                        <Select
+                          aria-label={t("status")}
+                          value={status}
+                          onChange={(event) => setStatus(event.target.value)}
+                        >
+                          <option value="ALL">{t("all")}</option>
+                          <option value="UNFINISHED">
+                            {t("unfinishedTasks")}
+                          </option>
+                          {workStatuses.map((s) => (
+                            <option key={s} value={s}>
+                              {t("work:statuses." + s)}
+                            </option>
+                          ))}
+                        </Select>
+                      </label>
+                      <label>
+                        <span>{t("priority")}</span>
+                        <Select
+                          aria-label={t("priority")}
+                          value={priority}
+                          onChange={(event) => setPriority(event.target.value)}
+                        >
+                          <option value="ALL">{t("all")}</option>
+                          {priorities.map((p) => (
+                            <option key={p} value={p}>
+                              {t("work:priorities." + p)}
+                            </option>
+                          ))}
+                        </Select>
+                      </label>
+                      <label className="sort-control">
+                        <span>{t("sort")}</span>
+                        <Select
+                          aria-label={t("sort")}
+                          value={sort}
+                          onChange={(event) => setSort(event.target.value)}
+                        >
+                          <option value="updated">
+                            {t("recentlyUpdated")}
+                          </option>
+                          <option value="priority">{t("priority")}</option>
+                          <option value="title">{t("title")}</option>
+                        </Select>
+                      </label>
+                      <Button
+                        ref={advancedFiltersAnchor}
+                        aria-expanded={advancedFiltersOpen}
+                        onClick={() =>
+                          setAdvancedFiltersOpen((value) => !value)
+                        }
+                      >
+                        {i18n.language.startsWith("zh")
+                          ? "更多筛选"
+                          : "More filters"}
+                      </Button>
+                      {advancedFiltersOpen && (
+                        <Popover
+                          anchorRef={advancedFiltersAnchor}
+                          label={
+                            i18n.language.startsWith("zh")
+                              ? "更多筛选"
+                              : "More filters"
+                          }
+                          onDismiss={() => setAdvancedFiltersOpen(false)}
+                        >
+                          {" "}
+                          {view === "tasks" && (
+                            <label>
+                              <span>{t("activationState")}</span>
+                              <Select
+                                aria-label={t("activationState")}
+                                value={activationFilter}
+                                onChange={(event) =>
+                                  setActivationFilter(event.target.value)
+                                }
+                              >
+                                <option value="ALL">{t("all")}</option>
+                                <option value="ACTIVE">
+                                  {t("activationStates.ACTIVE")}
+                                </option>
+                                <option value="INACTIVE">
+                                  {t("activationStates.INACTIVE")}
+                                </option>
+                              </Select>
+                            </label>
+                          )}
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={showArchived}
+                              onChange={(e) =>
+                                setShowArchived(e.target.checked)
+                              }
+                            />
+                            {t("showArchived")}
+                          </label>
+                        </Popover>
+                      )}
+                    </Toolbar>
+                  </section>
+                )}
+                {view === "notes" || view === "journal" ? (
+                  (() => {
+                    const entries = notes
+                      .filter(
+                        (n) =>
+                          n.kind === (view === "notes" ? "NOTE" : "JOURNAL") &&
+                          matches(n.id),
+                      )
+                      .sort((a, b) =>
+                        (b.day ?? b.updatedAt).localeCompare(
+                          a.day ?? a.updatedAt,
+                        ),
+                      );
+                    return entries.length ? (
+                      noteCards(entries)
+                    ) : (
+                      <div className="empty-state">
+                        <BookOpen size={30} />
+                        <h2>{t(query ? "noResults" : "captureThought")}</h2>
+                        <p>{t("notesHint")}</p>
+                        <Button
+                          type="button"
+                          className="button secondary"
+                          onClick={create}
+                        >
+                          {t(view === "journal" ? "todayJournal" : "newNote")}
+                        </Button>
+                      </div>
+                    );
+                  })()
+                ) : view === "trash" ? (
+                  <TrashRoute
+                    snapshot={snapshot}
+                    runtime={runtime}
+                    query={query}
+                    busy={busy}
+                    run={run}
+                  />
+                ) : view === "focus" ? (
+                  focus.filter((i) => matches(i.id)).length ? (
+                    <TaskList
+                      items={focus.filter((i) => matches(i.id))}
+                      {...workProps}
+                    />
+                  ) : (
+                    <div className="empty-state">
+                      <Target size={30} />
+                      <h2>{t("focusEmpty")}</h2>
+                      <p>{t("focusEmptyHint")}</p>
+                    </div>
+                  )
+                ) : view === "tasks" ? (
+                  <TasksRoute
+                    runtime={runtime}
+                    context={context}
+                    snapshot={snapshot}
+                    calendarTimezone={calendarTimezone}
+                    projects={projects}
+                    workProps={workProps}
+                    visible={visible}
+                    showArchived={showArchived}
+                    status={status}
+                    taskDependenciesOpen={taskDependenciesOpen}
+                    onToggleDependencies={() =>
+                      setTaskDependenciesOpen((open) => !open)
+                    }
+                    run={run}
+                    onOpen={setEditor}
+                  />
+                ) : visible.length ? (
+                  <TaskList items={visible} {...workProps} />
+                ) : (
+                  <div className="empty-state">
+                    <ListTodo size={30} />
+                    <h2>
+                      {t(
+                        taskSelection.tasks.length ? "noResults" : "firstTask",
+                      )}
+                    </h2>
+                    <p>{t("tasksHint")}</p>
+                    <Button
+                      className="button secondary"
+                      type="button"
+                      onClick={() => open("new")}
+                    >
+                      {t("newTask")}
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </WorkspaceRouter>
+        </main>
+        <nav
+          className="mobile-bottom-navigation"
+          aria-label={t("mobileNavigation")}
+        >
+          {navigationPreference.mobile.pinned
+            .map((id) => navigation.find((item) => item.view === id)!)
+            .filter(
+              (item) =>
+                item.view !== "admin" ||
+                !runtime.account ||
+                runtime.account.role === "ADMIN",
+            )
+            .map(({ view: next, icon: Icon }) => (
+              <Button
+                key={next}
+                type="button"
+                aria-current={view === next ? "page" : undefined}
+                onClick={() => navigate(next)}
+              >
+                <Icon size={20} aria-hidden="true" />
+                <span>{viewLabel(next)}</span>
+              </Button>
+            ))}
+          <Button
+            type="button"
+            aria-expanded={mobileNavigationOpen}
+            aria-controls="workspace-navigation"
+            onClick={() => {
+              setMobileNavigationOpen((open) => !open);
+            }}
+          >
+            <PanelLeft size={20} aria-hidden="true" />
+            <span>{t("moreNavigation")}</span>
+          </Button>
+        </nav>
+        {mobileNavigationOpen && (
+          <MoreSheet
+            entries={[
+              ...navigation
+                .filter(
+                  ({ view: next }) =>
+                    !navigationPreference.mobile.pinned.includes(next),
+                )
+                .filter(
+                  ({ view: next }) =>
+                    next !== "admin" ||
+                    !runtime.account ||
+                    runtime.account.role === "ADMIN",
+                )
+                .map(({ view: next }) => ({
+                  id: next,
+                  label: viewLabel(next),
+                })),
+              { id: "settings", label: viewLabel("settings") },
+            ]}
+            onNavigate={(next) => navigate(next as View)}
+            onClose={() => setMobileNavigationOpen(false)}
+          />
+        )}
+        {editor && (
+          <WorkItemEditor
+            key={editor === "new" ? "new" : editor.id + "-" + editor.version}
+            item={editor === "new" ? null : editor}
+            projects={projects}
+            categories={snapshot.categories ?? []}
+            items={allItems}
+            createType={creation.type}
+            edges={snapshot.edges}
+            today={calendarDay}
+            workflows={snapshot.workflows ?? []}
+            calendarTimezone={calendarTimezone}
+            onSaveRepeat={async (input) => {
+              if (
+                await run(
+                  () => runtime.saveTaskRecurrence(input),
+                  editorPendingKey,
+                )
+              )
+                setEditorState((current) =>
+                  current === editor ? null : current,
+                );
+            }}
+            initialProjectId={creation.parentId}
+            busy={busy}
+            error={errorMessage}
+            onClose={() => setEditor(null)}
+            onSave={async (input) => {
+              if (
+                await run(
+                  () =>
+                    editor === "new"
+                      ? service.create(context, {
+                          ...input,
+                          type: creation.type,
+                        })
+                      : service.update(
+                          context,
+                          editor.id,
+                          editor.version,
+                          input,
+                        ),
+                  editorPendingKey,
+                )
+              )
+                setEditorState((current) =>
+                  current === editor ? null : current,
+                );
+            }}
+            onDelete={
+              editor === "new"
+                ? null
+                : async () => {
+                    if (
+                      await run(async () => {
+                        const deleted = await service.setDeleted(
+                          context,
+                          editor.id,
+                          editor.version,
+                          true,
+                        );
+                        showToast(t("movedToTrash"), async () => {
+                          await service.setDeleted(
+                            context,
+                            deleted.id,
+                            deleted.version,
+                            false,
+                          );
+                          await refresh();
+                        });
+                      }, editorPendingKey)
+                    )
+                      setEditorState((current) =>
+                        current === editor ? null : current,
+                      );
+                  }
+            }
+          />
+        )}
+      </AppShell>
+    </WorkspaceWorkIndexContext.Provider>
   );
 }

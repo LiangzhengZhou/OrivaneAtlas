@@ -62,9 +62,16 @@ export async function recurrenceLifecycleScenario(
   const closed = await run(actor, (uow) =>
     uow.run(actor.workspaceId, async (tx) => ({
       task: await tx.get(taskId),
+      organization: (await tx.organizations()).find(
+        (entry) => entry.kind === "WORK" && entry.id === taskId,
+      ),
     })),
   );
   expect(closed.task.status).toBe("CANCELED");
+  expect(closed.organization).toMatchObject({
+    archived: true,
+    updatedBy: actor.principalId,
+  });
   expect((await inspect()).activity).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ reason: "RECURRENCE_WINDOW_EXPIRED" }),
@@ -260,6 +267,43 @@ export async function recurrenceLifecycleScenario(
         r.payload.definitionId === newRepeat.definition.id,
     ),
   ).toHaveLength(1);
+  const skipTarget = (
+    await run(actor, (uow) => workflow(uow).list(actor))
+  ).find(
+    (record) =>
+      record.payload.kind === "OCCURRENCE" &&
+      record.payload.definitionId === newRepeat.definition.id,
+  )!;
+  const skipped = await run(actor, (uow) =>
+    workflow(uow).skipOccurrence(actor, skipTarget.id, skipTarget.version),
+  );
+  expect(skipped.payload).toMatchObject({
+    status: "SKIPPED",
+    completedAt: null,
+  });
+  expect(
+    (
+      await run(actor, (uow) =>
+        uow.run(actor.workspaceId, (tx) => tx.get(newRepeat.task!.id)),
+      )
+    ).status,
+  ).toBe("CANCELED");
+  await expect(
+    run(actor, (uow) =>
+      workflow(uow).skipOccurrence(actor, skipTarget.id, skipTarget.version),
+    ),
+  ).rejects.toThrow("VERSION_CONFLICT");
+  await run(actor, (uow) => workflow(uow).tick(actor, newRepeat.definition.id));
+  expect(
+    (await run(actor, (uow) => workflow(uow).list(actor))).find(
+      (record) => record.id === skipTarget.id,
+    )?.payload,
+  ).toMatchObject({ status: "SKIPPED" });
+  expect((await inspect()).activity).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ reason: "RECURRENCE_USER_SKIPPED" }),
+    ]),
+  );
   const foreign = { ...actor, workspaceId: "workspace-b" };
   await expect(
     run(foreign, (uow) =>

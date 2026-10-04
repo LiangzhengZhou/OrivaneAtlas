@@ -2,6 +2,7 @@ import type { CategoryService, ProjectCategory } from "@arclattice/application";
 import type { WorkItem } from "@arclattice/domain";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "./components/ui/Button";
 import "./category-presentation.css";
 export function CategoryManager({
   categories,
@@ -98,13 +99,13 @@ export function CategoryManager({
             />
           </label>
         </div>
-        <button type="submit" disabled={busy || !name.trim()}>
+        <Button type="submit" disabled={busy || !name.trim()}>
           {t("categories.save")}
-        </button>
+        </Button>
         {editing && (
-          <button type="button" onClick={reset}>
+          <Button type="button" onClick={reset}>
             {t("categories.cancel")}
-          </button>
+          </Button>
         )}
       </form>
       <ul>
@@ -131,7 +132,7 @@ export function CategoryManager({
               </span>{" "}
               ·{" "}
               {projects.filter((project) => project.categoryId === c.id).length}{" "}
-              <button
+              <Button
                 type="button"
                 disabled={busy || !!c.deletedAt}
                 onClick={() => {
@@ -143,8 +144,8 @@ export function CategoryManager({
                 }}
               >
                 {t("categories.edit")}
-              </button>{" "}
-              <button
+              </Button>{" "}
+              <Button
                 type="button"
                 disabled={busy}
                 onClick={() =>
@@ -157,7 +158,7 @@ export function CategoryManager({
                 }
               >
                 {t(c.deletedAt ? "categories.restore" : "categories.delete")}
-              </button>
+              </Button>
             </li>
           ))}
       </ul>

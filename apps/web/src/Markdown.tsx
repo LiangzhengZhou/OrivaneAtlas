@@ -1,9 +1,11 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, memo, useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeKatex from "rehype-katex";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { Button } from "./components/ui/Button";
 import { ImageLoadError } from "./imageResponse";
 import "katex/dist/katex.min.css";
 
@@ -60,7 +62,7 @@ function PrivateImage({ src, alt }: { src: string; alt: string }) {
               : "imageLoadFailed",
         )}
         {alt ? ` (${alt})` : ""}{" "}
-        <button
+        <Button
           type="button"
           onMouseDown={(event) => {
             event.preventDefault();
@@ -69,7 +71,7 @@ function PrivateImage({ src, alt }: { src: string; alt: string }) {
           onClick={() => setAttempt((value) => value + 1)}
         >
           {t("imageRetry")}
-        </button>
+        </Button>
       </span>
     );
   return url ? (
@@ -112,11 +114,11 @@ const markdownComponents: Components = {
 };
 
 // No raw HTML, external images or executable links. User Markdown remains unchanged.
-export function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
     <div className="markdown">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
         rehypePlugins={[[rehypeKatex, { strict: "ignore", trust: false }]]}
         components={markdownComponents}
       >
@@ -124,4 +126,4 @@ export function Markdown({ text }: { text: string }) {
       </ReactMarkdown>
     </div>
   );
-}
+});

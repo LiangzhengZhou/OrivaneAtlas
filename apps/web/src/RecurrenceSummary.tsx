@@ -1,3 +1,4 @@
+import { Button } from "./components/ui/Button";
 import "./styles/recurrence.css";
 import { recurrenceStats, type WorkflowRecord } from "@arclattice/application";
 import { localCalendarDay } from "@arclattice/domain";
@@ -46,21 +47,21 @@ export function RecurrenceSummary({
           </span>
         );
       })}
-      <button className="chip" type="button" onClick={() => setDetail(true)}>
+      <Button className="chip" type="button" onClick={() => setDetail(true)}>
         {text("查看统计", "View statistics")}
-      </button>
-      <button type="button" onClick={onManage}>
+      </Button>
+      <Button type="button" onClick={onManage}>
         {text("管理周期任务", "Manage recurring tasks")}
-      </button>
+      </Button>
       {detail && (
         <DismissibleDialog
           className="recurrence-statistics-dialog"
           aria-label={text("周期任务统计", "Recurring statistics")}
           onRequestClose={() => setDetail(false)}
         >
-          <button type="button" onClick={() => setDetail(false)}>
+          <Button type="button" onClick={() => setDetail(false)}>
             {text("关闭", "Close")}
-          </button>
+          </Button>
           <RecurrenceStatisticsBoard records={records} timezone={timezone} />
         </DismissibleDialog>
       )}

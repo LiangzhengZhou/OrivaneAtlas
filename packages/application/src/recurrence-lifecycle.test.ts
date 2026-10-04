@@ -48,14 +48,16 @@ test("statistics preserve completed occurrences after task purge and exclude arb
       { ...base, status: "COMPLETED" },
       { ...base, status: "MISSED", taskId: "unrelated-done" },
       { ...base, status: "OPEN", taskId: "other-done" },
+      { ...base, status: "SKIPPED", taskId: "other-done" },
     ],
     new Set(["unrelated-done", "other-done"]),
     "2026-10-03",
   );
   expect(stats).toMatchObject({
-    dueCount: 3,
+    dueCount: 4,
     completedCount: 1,
     missedCount: 1,
+    skippedCount: 1,
     completionRate: 1 / 3,
   });
 });

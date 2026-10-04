@@ -165,6 +165,7 @@ export function savePreference(value: LocalePreference) {
   }
 }
 export interface Snapshot extends WorkSnapshot {
+  reminders?: import("@arclattice/domain").Reminder[];
   wikiLinks?: DocumentWikiLink[];
   projectMaterials: ProjectMaterial[];
   categories?: ProjectCategory[];
@@ -345,7 +346,8 @@ export async function bootstrap() {
     current = null;
     return value.context;
   }
-  let cursor = "";
+  let cursor = "",
+    syncEpoch = "";
   let current: Snapshot | null = null;
   let context: ActorContext | null = null;
   let unavailable = false;
@@ -423,16 +425,31 @@ export async function bootstrap() {
     const generation = serverGeneration;
     const job = syncQueue.then(async () => {
       if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
-      const data = await request<{
-        cursor: string;
-        snapshot: Snapshot | null;
-        changes?: WorkspaceChanges;
-      }>("/api/sync?incremental=1&cursor=" + encodeURIComponent(cursor));
-      if (data.snapshot) current = normalizeSnapshot(data.snapshot);
-      else if (data.changes && current)
-        current = applyWorkspaceChanges(current, data.changes);
+      let more = true;
+      while (more) {
+        const data = await request<{
+          cursor: number;
+          epoch: string;
+          snapshot: Snapshot | null;
+          changes?: WorkspaceChanges;
+          hasMore: boolean;
+        }>(
+          current && cursor
+            ? "/api/sync?after=" +
+                encodeURIComponent(cursor) +
+                "&epoch=" +
+                encodeURIComponent(syncEpoch)
+            : "/api/sync",
+        );
+        if (data.snapshot) current = normalizeSnapshot(data.snapshot);
+        else if (data.changes && current)
+          current = applyWorkspaceChanges(current, data.changes);
+        if (!current) throw new Error("Invalid sync response");
+        cursor = String(data.cursor);
+        syncEpoch = data.epoch;
+        more = data.hasMore;
+      }
       if (!current) throw new Error("Invalid sync response");
-      cursor = data.cursor;
       if (context && current.calendarSettings?.version === 0) {
         const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         if (timezone) {
@@ -839,11 +856,32 @@ export async function bootstrap() {
         ...(modelRouting ? { modelRouting } : {}),
         ...(session ?? {}),
       }),
-    agentSessions: () => request<AgentSession[]>("/api/ai/sessions"),
+    agentSessions: () =>
+      request<import("@arclattice/application").AgentSessionSummary[]>(
+        "/api/ai/sessions",
+      ),
+    agentSessionPage: (id: string, before?: number) =>
+      request<import("@arclattice/application").AgentSessionPage>(
+        `/api/ai/sessions/messages?id=${encodeURIComponent(id)}${before === undefined ? "" : `&before=${before}`}`,
+      ),
+    updateAgentSession: (
+      id: string,
+      version: number,
+      changes: Parameters<
+        import("@arclattice/application").AgentSessionService["update"]
+      >[3],
+    ) =>
+      request<AgentSession>("/api/ai/sessions/update", {
+        id,
+        version,
+        ...changes,
+      }),
     async streamAiEvents(
       id: string,
       signal: AbortSignal,
-      onEvents: (events: ModelEvent[]) => void,
+      onEvents: (
+        page: import("@arclattice/application").ModelEventPage,
+      ) => void,
     ) {
       if (native) throw new Error("STREAM_UNAVAILABLE");
       const response = await fetch(
@@ -869,9 +907,10 @@ export async function bootstrap() {
             if (data) {
               const packet = JSON.parse(data.slice(6)) as {
                 events: ModelEvent[];
+                cursor: number;
                 done: boolean;
               };
-              onEvents(packet.events);
+              onEvents(packet);
               if (packet.done) return;
             }
             boundary = buffer.indexOf("\n\n");
@@ -886,8 +925,10 @@ export async function bootstrap() {
         }
       }
     },
-    aiEvents: (id: string) =>
-      request<ModelEvent[]>("/api/ai/events?id=" + encodeURIComponent(id)),
+    aiEvents: (id: string, after = 0) =>
+      request<import("@arclattice/application").ModelEventPage>(
+        "/api/ai/events?id=" + encodeURIComponent(id) + "&after=" + after,
+      ),
     createAgentSession: (
       title: string,
       modelProfileOverride: string | null = null,
@@ -979,6 +1020,20 @@ export async function bootstrap() {
         from,
         to,
       }),
+    saveReminder: (
+      id: string | null,
+      version: number,
+      input: import("@arclattice/domain").ReminderInput,
+      deleted = false,
+    ) =>
+      request<import("@arclattice/domain").Reminder>("/api/reminders/save", {
+        id,
+        version,
+        input,
+        deleted,
+      }),
+    skipOccurrence: (id: string, version: number) =>
+      request<WorkflowRecord>("/api/recurrences/skip", { id, version }),
     backfillOccurrence: (
       id: string,
       version: number,

@@ -1,11 +1,20 @@
 import {
+  createContext,
   type ReactNode,
   type RefObject,
+  useContext,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+
+interface FloatingFamily {
+  parent: FloatingFamily | null;
+  descendants: Set<HTMLElement>;
+}
+const FloatingFamilyContext = createContext<FloatingFamily | null>(null);
 
 export function AnchoredFloatingSurface({
   anchorRef,
@@ -14,6 +23,8 @@ export function AnchoredFloatingSurface({
   label,
   className = "",
   placement = "top-start",
+  portalTarget,
+  dismissBoundaryRef,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
   onDismiss(): void;
@@ -21,7 +32,14 @@ export function AnchoredFloatingSurface({
   label: string;
   className?: string;
   placement?: "top-start" | "bottom-start";
+  portalTarget?: Element | undefined;
+  dismissBoundaryRef?: RefObject<HTMLElement | null>;
 }) {
+  const parent = useContext(FloatingFamilyContext);
+  const family = useMemo<FloatingFamily>(
+    () => ({ parent, descendants: new Set() }),
+    [parent],
+  );
   const surface = useRef<HTMLDivElement>(null);
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
@@ -30,6 +48,11 @@ export function AnchoredFloatingSurface({
     const anchor = anchorRef.current;
     const node = surface.current;
     if (!anchor || !node) return;
+    const ancestors: FloatingFamily[] = [];
+    for (let ancestor = parent; ancestor; ancestor = ancestor.parent) {
+      ancestor.descendants.add(node);
+      ancestors.push(ancestor);
+    }
     const update = () => {
       const rect = anchor.getBoundingClientRect();
       const bounds = node.getBoundingClientRect();
@@ -55,14 +78,17 @@ export function AnchoredFloatingSurface({
       });
     };
     const outside = (event: MouseEvent) => {
+      const path = event.composedPath();
       if (
-        !event.composedPath().includes(node) &&
-        !event.composedPath().includes(anchor)
+        !path.includes(node) &&
+        !path.includes(anchor) &&
+        !path.includes(dismissBoundaryRef?.current ?? anchor) &&
+        ![...family.descendants].some((descendant) => path.includes(descendant))
       )
         dismiss.current();
     };
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && family.descendants.size === 0) {
         event.preventDefault();
         event.stopPropagation();
         dismiss.current();
@@ -78,6 +104,7 @@ export function AnchoredFloatingSurface({
     document.addEventListener("click", outside);
     document.addEventListener("keydown", key);
     return () => {
+      for (const ancestor of ancestors) ancestor.descendants.delete(node);
       observer.disconnect();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
@@ -85,25 +112,27 @@ export function AnchoredFloatingSurface({
       document.removeEventListener("keydown", key);
       if (anchor.isConnected) anchor.focus();
     };
-  }, [anchorRef, placement]);
+  }, [anchorRef, placement, parent, family, dismissBoundaryRef]);
   return createPortal(
-    <div
-      ref={surface}
-      role="menu"
-      aria-label={label}
-      className={className}
-      style={{
-        position: "fixed",
-        ...position,
-        maxWidth: "calc(100vw - 16px)",
-        maxHeight: "calc(100vh - 16px)",
-        overflow: "auto",
-        zIndex: 1000,
-        background: "var(--surface, var(--bg))",
-      }}
-    >
-      {children}
-    </div>,
-    anchorRef.current?.closest("dialog[open]") ?? document.body,
+    <FloatingFamilyContext.Provider value={family}>
+      <div
+        ref={surface}
+        role="menu"
+        aria-label={label}
+        className={className}
+        style={{
+          position: "fixed",
+          ...position,
+          maxWidth: "calc(100vw - 16px)",
+          maxHeight: "calc(100vh - 16px)",
+          overflow: "auto",
+          zIndex: 1000,
+          background: "var(--surface, var(--bg))",
+        }}
+      >
+        {children}
+      </div>
+    </FloatingFamilyContext.Provider>,
+    portalTarget ?? anchorRef.current?.closest("dialog[open]") ?? document.body,
   );
 }

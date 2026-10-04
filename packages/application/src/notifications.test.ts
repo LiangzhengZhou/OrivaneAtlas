@@ -12,6 +12,52 @@ const base = {
   today: "2026-03-08",
   now: "2026-03-08T05:00:00.000Z",
 };
+test("formal reminders schedule minute precision and offsets, excluding terminal and foreign records", () => {
+  const reminder: import("@arclattice/domain").Reminder = {
+    id: "reminder",
+    workspaceId: base.actor.workspaceId,
+    version: 1,
+    title: "Call",
+    bodyMd: "Private body",
+    day: base.today,
+    time: "09:45",
+    timezone: base.timezone,
+    notifyMode: "MINUTES_BEFORE",
+    notifyOffsetMinutes: 15,
+    linkedProjectId: null,
+    linkedTaskId: null,
+    state: "ACTIVE",
+    deletedAt: null,
+    createdAt: base.now,
+    updatedAt: base.now,
+    createdBy: "human",
+    updatedBy: "human",
+  };
+  expect(planner.plan({ ...base, reminders: [reminder] })).toEqual([
+    expect.objectContaining({
+      kind: "REMINDER",
+      title: "Call",
+      scheduledAt: "2026-03-08T13:30:00.000Z",
+    }),
+  ]);
+  expect(
+    planner.plan({
+      ...base,
+      reminders: [{ ...reminder, notifyMode: "AT_TIME" }],
+    })[0]?.scheduledAt,
+  ).toBe("2026-03-08T13:45:00.000Z");
+  for (const value of [
+    { ...reminder, state: "DONE" as const },
+    { ...reminder, state: "DISMISSED" as const },
+    { ...reminder, deletedAt: base.now },
+    { ...reminder, workspaceId: "foreign" },
+    { ...reminder, notifyMode: "NONE" as const },
+  ])
+    expect(planner.plan({ ...base, reminders: [value] })).toEqual([]);
+  expect(
+    JSON.stringify(planner.plan({ ...base, reminders: [reminder] })),
+  ).not.toContain(reminder.bodyMd);
+});
 test("planner generates all task kinds with local wall time across DST and stable IDs", () => {
   const input = {
     ...base,

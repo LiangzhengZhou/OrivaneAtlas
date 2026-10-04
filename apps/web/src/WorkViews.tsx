@@ -17,12 +17,18 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { type CSSProperties, useMemo, useState } from "react";
+import { type CSSProperties, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "./components/ui/Button";
+import { Select } from "./components/ui/Surfaces";
 import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
-import { taskDerivedIndex } from "./features/tasks/task-index";
+import type { taskDerivedIndex } from "./features/tasks/task-index";
+import type { TaskWorkspaceIndex } from "./features/tasks/task-selectors";
+import { VirtualTaskCollection } from "./features/tasks/VirtualTaskCollection";
 
 export interface WorkProps {
+  taskIndex: TaskWorkspaceIndex;
+  derived: ReturnType<typeof taskDerivedIndex>;
   today: string;
   items: readonly WorkItem[];
   allItems: readonly WorkItem[];
@@ -66,7 +72,7 @@ function Task({
       style={
         {
           "--task-hue":
-            [...item.id].reduce(
+            [...(item.projectIds?.[0] ?? item.id)].reduce(
               (hash, ch) => (hash * 31 + ch.charCodeAt(0)) >>> 0,
               0,
             ) % 360,
@@ -79,14 +85,15 @@ function Task({
           size={17}
           aria-hidden="true"
         />
-        <button
+        <Button
+          variant="ghost"
           type="button"
           className="task-title"
           aria-label={t("openTask", { title: item.title })}
           onClick={() => onOpen(item)}
         >
           {item.title}
-        </button>
+        </Button>
       </div>
       <div className="task-meta">
         {inherited && (
@@ -94,7 +101,7 @@ function Task({
             {t("desk:inheritedArchive", { title: inherited.title })}
           </small>
         )}
-        <button
+        <Button
           type="button"
           className="icon-button"
           disabled={busy || !!inherited}
@@ -117,8 +124,8 @@ function Task({
           ) : (
             <Archive size={18} />
           )}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className="icon-button"
           disabled={busy}
@@ -127,7 +134,7 @@ function Task({
           onClick={() => onOrganize(item, "delete")}
         >
           <Trash2 size={18} />
-        </button>
+        </Button>
         {!!item.projectIds?.length && (
           <span className="task-project">
             {derived.projectTitlesByTaskId.get(item.id)}
@@ -167,7 +174,7 @@ function Task({
         <span className={`priority priority-${item.priority}`}>
           {t(`work:priorities.${item.priority}`)}
         </span>
-        <select
+        <Select
           className="status-select"
           aria-label={t("statusLabel", { title: item.title })}
           value={item.status}
@@ -181,30 +188,25 @@ function Task({
               {t(`work:statuses.${status}`)}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
     </article>
   );
 }
 export function TaskList({ items, ...props }: WorkProps) {
-  const derived = useMemo(
-    () => taskDerivedIndex(props.allItems, props.edges, props.today),
-    [props.allItems, props.edges, props.today],
-  );
+  const derived = props.derived;
   return (
     <div className="task-list">
-      {items.map((item) => (
-        <Task key={item.id} item={item} {...props} derived={derived} />
-      ))}
+      <VirtualTaskCollection
+        items={items}
+        render={(item) => <Task item={item} {...props} derived={derived} />}
+      />
     </div>
   );
 }
 export function WorkBoard({ items, ...props }: WorkProps) {
   const { t, i18n } = useTranslation("work");
-  const derived = useMemo(
-    () => taskDerivedIndex(props.allItems, props.edges, props.today),
-    [props.allItems, props.edges, props.today],
-  );
+  const derived = props.derived;
   return (
     <div className="board">
       {workStatuses.map((status) => {
@@ -238,9 +240,13 @@ export function WorkBoard({ items, ...props }: WorkProps) {
                 {new Intl.NumberFormat(i18n.language).format(group.length)}
               </span>
             </h3>
-            {group.map((item) => (
-              <Task key={item.id} item={item} {...props} derived={derived} />
-            ))}
+            <VirtualTaskCollection
+              board
+              items={group}
+              render={(item) => (
+                <Task item={item} {...props} derived={derived} />
+              )}
+            />
           </section>
         );
       })}
@@ -310,7 +316,8 @@ export function Dependencies({
             onChange={(values) => setTo(values[0] ?? "")}
           />
         </label>
-        <button
+        <Button
+          variant="primary"
           type="submit"
           className="button primary"
           disabled={
@@ -323,7 +330,7 @@ export function Dependencies({
         >
           <Plus size={16} aria-hidden="true" />
           {t("work:addDependency")}
-        </button>
+        </Button>
       </form>
       <div className="edge-list">
         {edges.length === 0 ? (
@@ -347,7 +354,7 @@ export function Dependencies({
                 <strong>
                   {items.find((item) => item.id === pair[1])?.title}
                 </strong>
-                <button
+                <Button
                   type="button"
                   className="icon-button"
                   aria-label={t("remove")}
@@ -355,7 +362,7 @@ export function Dependencies({
                   onClick={() => void onRemove(edge.id)}
                 >
                   <X size={16} aria-hidden="true" />
-                </button>
+                </Button>
               </div>
             );
           })

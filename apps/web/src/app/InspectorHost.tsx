@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Button } from "../components/ui/Button";
 
 export function InspectorHost({
   title,
@@ -13,9 +14,9 @@ export function InspectorHost({
     <aside className="inspector-host" aria-label={title}>
       <header>
         <strong>{title}</strong>
-        <button type="button" className="icon-button" onClick={onClose}>
+        <Button type="button" className="icon-button" onClick={onClose}>
           ×
-        </button>
+        </Button>
       </header>
       {children}
     </aside>

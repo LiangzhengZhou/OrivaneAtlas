@@ -10,17 +10,19 @@
     "preview": "vite preview --host 127.0.0.1 --port 1420 --strictPort"
   },
   "dependencies": {
-    "@codemirror/autocomplete": "^6.20.0",
     "@arclattice/application": "workspace:*",
     "@arclattice/domain": "workspace:*",
     "@arclattice/i18n": "workspace:*",
     "@arclattice/storage-memory": "workspace:*",
+    "@arclattice/wiki-core": "workspace:*",
+    "@codemirror/autocomplete": "^6.20.0",
     "@codemirror/commands": "^6.11.0",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.7.4",
     "@codemirror/view": "^6.43.11",
     "@dagrejs/dagre": "^3.1.1",
+    "@tanstack/react-virtual": "^3.14.13",
     "@tauri-apps/api": "^2.11.1",
     "@xyflow/react": "^12.11.6",
     "d3-force": "^3.0.0",
@@ -31,10 +33,10 @@
     "react-i18next": "17.0.13",
     "react-markdown": "10.1.0",
     "rehype-katex": "7.0.1",
+    "remark-breaks": "^4.0.0",
     "remark-gfm": "4.0.1",
     "remark-math": "6.0.0",
-    "uuid": "14.0.2",
-    "@arclattice/wiki-core": "workspace:*"
+    "uuid": "14.0.2"
   },
   "devDependencies": {
     "@types/d3-force": "^3.0.10",

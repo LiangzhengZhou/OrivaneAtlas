@@ -1,4 +1,5 @@
 import type { AgentSessionMessage, EntityRef } from "@arclattice/application";
+import { Button } from "../../components/ui/Button";
 export function AnswerSources({
   evidence,
   zh,
@@ -15,14 +16,14 @@ export function AnswerSources({
         {zh ? "来源" : "Sources"} {evidence.length}
       </h3>
       {evidence.map((source) => (
-        <button
+        <Button
           key={source.ref.kind + source.ref.id}
           type="button"
           title={`${source.title} · v${source.version}`}
           onClick={() => onOpen(source.ref)}
         >
           {source.title}
-        </button>
+        </Button>
       ))}
     </section>
   );

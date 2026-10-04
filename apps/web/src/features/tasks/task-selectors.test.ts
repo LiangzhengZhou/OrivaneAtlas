@@ -2,6 +2,27 @@ import { expect, it } from "vitest";
 import { edge, work } from "../../../../../tests/fixtures";
 import { selectTasks } from "./task-selectors";
 
+it("shares derived state and indexes 1500 tasks without changing scope collections", () => {
+  const items = Array.from({ length: 1500 }, (_, index) => ({
+    ...work(`task-${index}`),
+    projectIds: [`project-${index % 150}`],
+  }));
+  const initial = selectTasks(items, [], "2026-10-04", () => false);
+  const archived = selectTasks(
+    items,
+    [],
+    "2026-10-04",
+    () => true,
+    initial.derived,
+  );
+  expect(initial.taskIds).toHaveLength(1500);
+  expect(initial.openActiveIds).toEqual(initial.taskIds);
+  expect(initial.tasksByProjectId.get("project-0")).toHaveLength(10);
+  expect(initial.tasksByStatus.get("TODO")).toHaveLength(1500);
+  expect(archived.derived).toBe(initial.derived);
+  expect(archived.taskIds).toEqual([]);
+});
+
 it("counts only live, unarchived execution-active tasks across projections", () => {
   const items = [
     work("now"),

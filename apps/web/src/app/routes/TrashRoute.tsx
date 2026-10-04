@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
+import { confirmAction } from "../../components/ui/ConfirmationHost";
+import { Select } from "../../components/ui/Surfaces";
 
 export function TrashRoute({
   snapshot,
@@ -60,7 +63,7 @@ export function TrashRoute({
     <div className="trash-list">
       <label>
         {zh ? "类型" : "Type"}
-        <select
+        <Select
           aria-label={zh ? "类型" : "Type"}
           value={filter}
           onChange={(event) => {
@@ -73,12 +76,12 @@ export function TrashRoute({
           </option>
           <option value="note">{t("notes")}</option>
           <option value="library">{zh ? "知识库" : "Library"}</option>
-        </select>
+        </Select>
       </label>
       {entries.map((entry) => (
         <div key={`${entry.kind}:${entry.id}`}>
           <span>{entry.title}</span>
-          <button
+          <Button
             type="button"
             className="button secondary"
             disabled={busy}
@@ -98,14 +101,14 @@ export function TrashRoute({
             }
           >
             {t("common:restore")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             className="button danger"
             disabled={busy}
-            onClick={() => {
+            onClick={async () => {
               if (
-                window.confirm(
+                await confirmAction(
                   t("permanentDeleteConfirm", { title: entry.title }),
                 )
               )
@@ -123,7 +126,7 @@ export function TrashRoute({
             }}
           >
             {t("permanentDelete")}
-          </button>
+          </Button>
         </div>
       ))}
       {entries.length === 0 && (

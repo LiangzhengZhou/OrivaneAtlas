@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
 import { noteWikiReferences } from "./note-wiki-references";
 
 export function WikiRelations({
@@ -18,32 +20,45 @@ export function WikiRelations({
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
   const links = snapshot.wikiLinks ?? [];
-  const backlinks = links.filter(
-    (link) => link.targetDocumentId === documentId,
+  const documents = useMemo(
+    () =>
+      new Map(
+        snapshot.library
+          .filter((entry) => !entry.deletedAt)
+          .map((entry) => [entry.id, entry]),
+      ),
+    [snapshot.library],
   );
-  const broken = links.filter(
-    (link) =>
-      link.sourceDocumentId === documentId &&
-      (!link.targetDocumentId ||
-        !snapshot.library.some(
-          (entry) => entry.id === link.targetDocumentId && !entry.deletedAt,
-        )),
+  const noteReferences = useMemo(
+    () => noteWikiReferences(snapshot.notes, snapshot.library),
+    [snapshot.notes, snapshot.library],
+  );
+  const backlinks = useMemo(
+    () => links.filter((link) => link.targetDocumentId === documentId),
+    [links, documentId],
+  );
+  const broken = useMemo(
+    () =>
+      links.filter(
+        (link) =>
+          link.sourceDocumentId === documentId &&
+          (!link.targetDocumentId || !documents.has(link.targetDocumentId)),
+      ),
+    [links, documentId, documents],
   );
   return (
     <aside className="wiki-relations">
       <h3>{zh ? "反向链接" : "Backlinks"}</h3>
       {backlinks.map((link, index) => (
-        <button
+        <Button
+          variant="ghost"
           type="button"
           className="text-button"
           key={`${link.sourceDocumentId}:${index}`}
           onClick={() => onOpen(link.sourceDocumentId)}
         >
-          {
-            snapshot.library.find((entry) => entry.id === link.sourceDocumentId)
-              ?.title
-          }
-        </button>
+          {documents.get(link.sourceDocumentId)?.title}
+        </Button>
       ))}
       {(["NOTE", "JOURNAL"] as const).map((kind) => (
         <section key={kind}>
@@ -56,21 +71,22 @@ export function WikiRelations({
                 ? "日记"
                 : "Journal"}
           </h4>
-          {noteWikiReferences(snapshot.notes, snapshot.library)
+          {noteReferences
             .filter(
               (link) =>
                 link.targetDocumentId === documentId &&
                 link.sourceKind === kind,
             )
             .map((link, index) => (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 className="text-button"
                 key={link.sourceId + ":" + index}
                 onClick={() => onOpen(link.sourceId)}
               >
                 {link.sourceTitle}
-              </button>
+              </Button>
             ))}
         </section>
       ))}
@@ -79,13 +95,13 @@ export function WikiRelations({
         <p key={`${link.targetText}:${index}`}>
           {link.alias ?? link.targetText}
           {!link.targetDocumentId && (
-            <button
+            <Button
               type="button"
               disabled={busy}
               onClick={() => onCreate(link.targetText)}
             >
               {zh ? "创建页面" : "Create page"} · {link.targetText}
-            </button>
+            </Button>
           )}
         </p>
       ))}

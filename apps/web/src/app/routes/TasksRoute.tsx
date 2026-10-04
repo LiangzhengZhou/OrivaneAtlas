@@ -2,6 +2,7 @@ import type { ActorContext, WorkItem } from "@arclattice/domain";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
 import { ProjectDependencyGraph } from "../../features/projects/ProjectDependencyGraph";
 import { TasksWorkspace } from "../../features/tasks/TasksWorkspace";
 import { RecurrenceManager } from "../../RecurrenceManager";
@@ -57,10 +58,13 @@ export function TasksRoute({
           aria-label={label}
           onRequestClose={() => setManage(false)}
         >
-          <button type="button" onClick={() => setManage(false)}>
+          <Button type="button" onClick={() => setManage(false)}>
             {i18n.language.startsWith("zh") ? "关闭" : "Close"}
-          </button>
+          </Button>
           <RecurrenceManager
+            skip={(id, version) =>
+              run(() => runtime.skipOccurrence(id, version))
+            }
             calendarTimezone={calendarTimezone}
             records={snapshot.workflows ?? []}
             projects={projects}

@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { LibraryEntry, LibraryStore } from "@arclattice/application";
-import { referencedLibraryAssetIds } from "@arclattice/application";
+import {
+  MAX_LIBRARY_ENTRIES,
+  referencedLibraryAssetIds,
+} from "@arclattice/application";
 import { type ActorContext, DomainError } from "@arclattice/domain";
 import { indexDocument, normalizeWikiTitle } from "@arclattice/wiki-core";
 import { purgeRelations } from "./purge";
@@ -248,7 +251,7 @@ export function libraryStore(
                 "SELECT count(*) n FROM library_entry WHERE workspace_id=?",
               )
               .get(context.workspaceId)?.n,
-          ) >= 2000
+          ) >= MAX_LIBRARY_ENTRIES
         )
           throw new DomainError("FORBIDDEN");
         db.prepare("INSERT INTO library_entry VALUES (?,?,?,?)").run(

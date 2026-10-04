@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Button } from "../../components/ui/Button";
 
 export function DocumentPopover({
   label,
@@ -36,14 +37,14 @@ export function DocumentPopover({
   }, [open]);
   return (
     <div className={className + " document-popover"} ref={root}>
-      <button
+      <Button
         type="button"
         className="chip"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         {label}
-      </button>
+      </Button>
       {open && (
         <div className="document-popover-panel" role="dialog">
           {children}

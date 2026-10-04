@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orivane Atlas workspace API",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "description": "HTTPS self-hosted accounts with isolated workspaces. Registration is PENDING until admin approval. Legacy-key session alone binds ADMIN to original workspace. Cookie + CSRF or 30/90/365-day or non-expiring revocable Bearer credentials: write allows create/update/delete and responses may include the affected entity (not append-only or confidential blind-write); read-write explicitly permits all private workspace content reads. Bearer forbids admin/accounts/tokens/backup/server AI. Business POSTs use atomic durable Idempotency-Key receipts and current versions. Claim/password/token issuance consume keys without replaying secret responses (409 on consumed key). Passwords and secret-response plaintext are never in receipts. Registration requires a key but deduplicates by unique normalized username (retry after success can return 400). Login/logout/read-only backup do not use receipts. No server AI configuration needed for local AI uploads. No email recovery/MFA/offline replication/public sharing or unrestricted autonomous tools. PDF is client browser print, not a PDF-generation API. Legacy /api and versioned /api/v1 aliases have identical behavior. Owner-encrypted Provider Connections, Models, Profiles and Bindings support bounded multi-provider Atlas execution. Model routing is separate from retrieval; precedence Explicit > Space > Project > Personal. Tools use real version-bound approval, shared capability services and bounded durable audit. Read old 2.0.2 encrypted provider arrays, atomically write catalog format 2 without returning keys. SQLite backup excludes the separate provider vault and its master key."
   },
   "servers": [
@@ -3439,21 +3439,19 @@
         "summary": "Consistent server-authoritative conditional snapshot, not offline replication",
         "parameters": [
           {
-            "name": "cursor",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Previous response digest. Unknown or absent returns snapshot; equal returns null."
-          },
-          {
-            "name": "incremental",
+            "name": "after",
             "in": "query",
             "schema": {
               "type": "integer",
-              "enum": [1]
-            },
-            "description": "Return changes when the cursor is retained; otherwise return a full snapshot."
+              "minimum": 0
+            }
+          },
+          {
+            "name": "epoch",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3466,7 +3464,8 @@
                   "additionalProperties": false,
                   "properties": {
                     "cursor": {
-                      "type": "string"
+                      "type": "integer",
+                      "minimum": 0
                     },
                     "snapshot": {
                       "anyOf": [
@@ -3507,9 +3506,30 @@
                         }
                       },
                       "required": ["collections", "values"]
+                    },
+                    "epoch": {
+                      "type": "string"
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    },
+                    "recovery": {
+                      "type": "boolean"
+                    },
+                    "records": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WorkspaceChange"
+                      }
                     }
                   },
-                  "required": ["cursor", "snapshot"]
+                  "required": [
+                    "cursor",
+                    "snapshot",
+                    "epoch",
+                    "hasMore",
+                    "recovery"
+                  ]
                 }
               }
             }
@@ -3532,7 +3552,8 @@
           {
             "integration": []
           }
-        ]
+        ],
+        "description": "Durable transaction change sequence. Pages contain at most 500 changes. Invalid cursors or epochs recover with a complete snapshot."
       }
     },
     "/api/ai": {
@@ -6257,21 +6278,19 @@
         "summary": "Consistent server-authoritative conditional snapshot, not offline replication",
         "parameters": [
           {
-            "name": "cursor",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Previous response digest. Unknown or absent returns snapshot; equal returns null."
-          },
-          {
-            "name": "incremental",
+            "name": "after",
             "in": "query",
             "schema": {
               "type": "integer",
-              "enum": [1]
-            },
-            "description": "Return changes when the cursor is retained; otherwise return a full snapshot."
+              "minimum": 0
+            }
+          },
+          {
+            "name": "epoch",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -6284,7 +6303,8 @@
                   "additionalProperties": false,
                   "properties": {
                     "cursor": {
-                      "type": "string"
+                      "type": "integer",
+                      "minimum": 0
                     },
                     "snapshot": {
                       "anyOf": [
@@ -6325,9 +6345,30 @@
                         }
                       },
                       "required": ["collections", "values"]
+                    },
+                    "epoch": {
+                      "type": "string"
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    },
+                    "recovery": {
+                      "type": "boolean"
+                    },
+                    "records": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WorkspaceChange"
+                      }
                     }
                   },
-                  "required": ["cursor", "snapshot"]
+                  "required": [
+                    "cursor",
+                    "snapshot",
+                    "epoch",
+                    "hasMore",
+                    "recovery"
+                  ]
                 }
               }
             }
@@ -6350,7 +6391,8 @@
           {
             "integration": []
           }
-        ]
+        ],
+        "description": "Durable transaction change sequence. Pages contain at most 500 changes. Invalid cursors or epochs recover with a complete snapshot."
       }
     },
     "/api/v1/ai": {
@@ -8383,7 +8425,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AgentSession"
+                    "$ref": "#/components/schemas/AgentSessionSummary"
                   }
                 }
               }
@@ -8401,7 +8443,8 @@
           "409": {
             "description": "Stale version or idempotency conflict"
           }
-        }
+        },
+        "description": "Only summary metadata is returned. Messages are loaded through the messages endpoint."
       }
     },
     "/api/v1/ai/sessions": {
@@ -8421,7 +8464,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AgentSession"
+                    "$ref": "#/components/schemas/AgentSessionSummary"
                   }
                 }
               }
@@ -8439,7 +8482,8 @@
           "409": {
             "description": "Stale version or idempotency conflict"
           }
-        }
+        },
+        "description": "Only summary metadata is returned. Messages are loaded through the messages endpoint."
       }
     },
     "/api/ai/sessions/create": {
@@ -8594,6 +8638,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         ],
         "responses": {
@@ -8602,10 +8654,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ModelEvent"
-                  }
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ModelEvent"
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/ModelEventPage"
+                    }
+                  ]
                 }
               }
             }
@@ -8641,6 +8700,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         ],
         "responses": {
@@ -8649,10 +8716,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ModelEvent"
-                  }
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ModelEvent"
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/ModelEventPage"
+                    }
+                  ]
                 }
               }
             }
@@ -9506,7 +9580,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Server sent AI events; each frame contains events and completion state.",
+            "description": "Server sent immutable new event deltas with cursor and completion state; subsequent frames never replay the complete event array.",
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -9733,7 +9807,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Server sent AI events; each frame contains events and completion state.",
+            "description": "Server sent immutable new event deltas with cursor and completion state; subsequent frames never replay the complete event array.",
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -10926,12 +11000,6 @@
         "summary": "Human decide a pending Atlas tool run",
         "description": "Cookie + CSRF only; workspace/principal ownership and optimistic run version. Decisions also bind current session, route and context versions. Models and Bearer clients cannot approve themselves. Stop executes no tool and remains available after context changes.",
         "responses": {
-          "400": {
-            "description": "Invalid arguments"
-          },
-          "409": {
-            "description": "Stale version, context, session or call"
-          },
           "200": {
             "content": {
               "application/json": {
@@ -10942,8 +11010,14 @@
             },
             "description": "Persisted run"
           },
+          "400": {
+            "description": "Invalid arguments"
+          },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "Stale version, context, session or call"
           }
         },
         "requestBody": {
@@ -11007,12 +11081,6 @@
         "summary": "Human decide a pending Atlas tool run",
         "description": "Cookie + CSRF only; workspace/principal ownership and optimistic run version. Decisions also bind current session, route and context versions. Models and Bearer clients cannot approve themselves. Stop executes no tool and remains available after context changes.",
         "responses": {
-          "400": {
-            "description": "Invalid arguments"
-          },
-          "409": {
-            "description": "Stale version, context, session or call"
-          },
           "200": {
             "content": {
               "application/json": {
@@ -11023,8 +11091,14 @@
             },
             "description": "Persisted run"
           },
+          "400": {
+            "description": "Invalid arguments"
+          },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "Stale version, context, session or call"
           }
         },
         "requestBody": {
@@ -11088,12 +11162,6 @@
         "summary": "Human stop a pending Atlas tool run",
         "description": "Cookie + CSRF only; workspace/principal ownership and optimistic run version. Decisions also bind current session, route and context versions. Models and Bearer clients cannot approve themselves. Stop executes no tool and remains available after context changes.",
         "responses": {
-          "400": {
-            "description": "Invalid arguments"
-          },
-          "409": {
-            "description": "Stale version, context, session or call"
-          },
           "200": {
             "content": {
               "application/json": {
@@ -11104,8 +11172,14 @@
             },
             "description": "Persisted run"
           },
+          "400": {
+            "description": "Invalid arguments"
+          },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "Stale version, context, session or call"
           }
         },
         "requestBody": {
@@ -11159,12 +11233,6 @@
         "summary": "Human stop a pending Atlas tool run",
         "description": "Cookie + CSRF only; workspace/principal ownership and optimistic run version. Decisions also bind current session, route and context versions. Models and Bearer clients cannot approve themselves. Stop executes no tool and remains available after context changes.",
         "responses": {
-          "400": {
-            "description": "Invalid arguments"
-          },
-          "409": {
-            "description": "Stale version, context, session or call"
-          },
           "200": {
             "content": {
               "application/json": {
@@ -11175,8 +11243,14 @@
             },
             "description": "Persisted run"
           },
+          "400": {
+            "description": "Invalid arguments"
+          },
           "403": {
             "description": "Forbidden"
+          },
+          "409": {
+            "description": "Stale version, context, session or call"
           }
         },
         "requestBody": {
@@ -11216,9 +11290,6 @@
           }
         ],
         "responses": {
-          "503": {
-            "description": "Connection limit reached"
-          },
           "200": {
             "content": {
               "text/event-stream": {
@@ -11231,6 +11302,9 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "503": {
+            "description": "Connection limit reached"
           }
         },
         "description": "Cookie-authenticated browser SSE, cursor-only invalidation. In-memory host epoch + workspace revision, no durable DB event log. Initial event recovers restart; duplicates coalesce. Client pulls authorized incremental snapshot. Heartbeat rechecks authorization; hidden/offline clients disconnect. Optional cursor is a reconnect hint, never authorization."
@@ -11250,9 +11324,6 @@
           }
         ],
         "responses": {
-          "503": {
-            "description": "Connection limit reached"
-          },
           "200": {
             "content": {
               "text/event-stream": {
@@ -11265,9 +11336,500 @@
           },
           "403": {
             "description": "Forbidden"
+          },
+          "503": {
+            "description": "Connection limit reached"
           }
         },
         "description": "Cookie-authenticated browser SSE, cursor-only invalidation. In-memory host epoch + workspace revision, no durable DB event log. Initial event recovers restart; duplicates coalesce. Client pulls authorized incremental snapshot. Heartbeat rechecks authorization; hidden/offline clients disconnect. Optional cursor is a reconnect hint, never authorization."
+      }
+    },
+    "/api/v1/recurrences/skip": {
+      "post": {
+        "operationId": "recurrences_skipV1",
+        "summary": "Explicitly skip an open recurrence occurrence",
+        "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Checks workspace, creator, entity version and open occurrence state. Cancels unfinished task with RECURRENCE_USER_SKIPPED and saves SKIPPED in the same transaction. Skips are separate from missed occurrences and excluded from the completion-rate denominator. Legacy /api alias supported.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Versioned workflow record(s), also in snapshot.workflows"
+          },
+          "400": {
+            "description": "Invalid data"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "409": {
+            "description": "Stale version or graph revision"
+          }
+        }
+      }
+    },
+    "/api/reminders/save": {
+      "post": {
+        "operationId": "saveReminder",
+        "summary": "Create, edit, complete, dismiss, soft delete or restore a reminder",
+        "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Workspace scoped optimistic versions; entity and Reminder Activity/Outbox commit in one transaction. Reminders are independent from Tasks and appear in snapshot.reminders. NotificationPlanner schedules ACTIVE reminders only, preserving explicit local time and timezone. Native notification scheduler reconciles the same intents.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version", "input"],
+                "properties": {
+                  "id": {
+                    "type": ["string", "null"]
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "input": {
+                    "$ref": "#/components/schemas/ReminderInput"
+                  },
+                  "deleted": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved versioned Reminder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reminder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "409": {
+            "description": "Stale version"
+          }
+        }
+      }
+    },
+    "/api/v1/reminders/save": {
+      "post": {
+        "operationId": "saveReminderV1",
+        "summary": "Create, edit, complete, dismiss, soft delete or restore a reminder",
+        "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Workspace scoped optimistic versions; entity and Reminder Activity/Outbox commit in one transaction. Reminders are independent from Tasks and appear in snapshot.reminders. NotificationPlanner schedules ACTIVE reminders only, preserving explicit local time and timezone. Native notification scheduler reconciles the same intents.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version", "input"],
+                "properties": {
+                  "id": {
+                    "type": ["string", "null"]
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "input": {
+                    "$ref": "#/components/schemas/ReminderInput"
+                  },
+                  "deleted": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved versioned Reminder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Reminder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "409": {
+            "description": "Stale version"
+          }
+        }
+      }
+    },
+    "/api/ai/sessions/messages": {
+      "get": {
+        "summary": "Read one conversation message page",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        },
+        "description": "Latest 50 messages, ascending within the page. before is the exclusive ordinal cursor; hasMore enables loading earlier history. Workspace and creator isolation apply."
+      }
+    },
+    "/api/ai/sessions/update": {
+      "post": {
+        "summary": "Rename archive restore soft delete or bind a conversation",
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 240
+                  },
+                  "projectId": {
+                    "type": ["string", "null"]
+                  },
+                  "spaceId": {
+                    "type": ["string", "null"]
+                  },
+                  "archivedAt": {
+                    "type": ["string", "null"]
+                  },
+                  "deletedAt": {
+                    "type": ["string", "null"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSession"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/sessions/messages": {
+      "get": {
+        "summary": "Read one conversation message page",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "Forbidden or human approval required"
+          },
+          "404": {
+            "description": "Unknown or inaccessible entity"
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict"
+          }
+        },
+        "description": "Latest 50 messages, ascending within the page. before is the exclusive ordinal cursor; hasMore enables loading earlier history. Workspace and creator isolation apply."
+      }
+    },
+    "/api/v1/ai/sessions/update": {
+      "post": {
+        "summary": "Rename archive restore soft delete or bind a conversation",
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 240
+                  },
+                  "projectId": {
+                    "type": ["string", "null"]
+                  },
+                  "spaceId": {
+                    "type": ["string", "null"]
+                  },
+                  "archivedAt": {
+                    "type": ["string", "null"]
+                  },
+                  "deletedAt": {
+                    "type": ["string", "null"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSession"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -12775,7 +13337,11 @@
             "type": "string"
           },
           "reason": {
-            "enum": ["RECURRENCE_WINDOW_EXPIRED", null],
+            "enum": [
+              "RECURRENCE_WINDOW_EXPIRED",
+              "RECURRENCE_USER_SKIPPED",
+              null
+            ],
             "description": "Internal cancellation cause, not caller-controlled work update input."
           }
         },
@@ -13848,6 +14414,15 @@
           "modelProfileOverride": {
             "type": ["string", "null"],
             "maxLength": 64
+          },
+          "projectId": {
+            "type": ["string", "null"]
+          },
+          "spaceId": {
+            "type": ["string", "null"]
+          },
+          "archivedAt": {
+            "type": ["string", "null"]
           }
         },
         "required": [
@@ -14387,6 +14962,267 @@
         ],
         "additionalProperties": false,
         "type": "object"
+      },
+      "ReminderInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "bodyMd",
+          "day",
+          "time",
+          "timezone",
+          "notifyMode",
+          "notifyOffsetMinutes",
+          "linkedProjectId",
+          "linkedTaskId",
+          "state"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "bodyMd": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "day": {
+            "type": "string",
+            "format": "date"
+          },
+          "time": {
+            "type": ["string", "null"],
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "notifyMode": {
+            "type": "string",
+            "enum": ["NONE", "AT_TIME", "MINUTES_BEFORE"]
+          },
+          "notifyOffsetMinutes": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "maximum": 43200
+          },
+          "linkedProjectId": {
+            "type": ["string", "null"]
+          },
+          "linkedTaskId": {
+            "type": ["string", "null"]
+          },
+          "state": {
+            "type": "string",
+            "enum": ["ACTIVE", "DONE", "DISMISSED"]
+          }
+        }
+      },
+      "Reminder": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "bodyMd",
+          "day",
+          "time",
+          "timezone",
+          "notifyMode",
+          "notifyOffsetMinutes",
+          "linkedProjectId",
+          "linkedTaskId",
+          "state",
+          "id",
+          "workspaceId",
+          "version",
+          "createdAt",
+          "createdBy",
+          "updatedAt",
+          "updatedBy",
+          "deletedAt"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "bodyMd": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "day": {
+            "type": "string",
+            "format": "date"
+          },
+          "time": {
+            "type": ["string", "null"],
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "notifyMode": {
+            "type": "string",
+            "enum": ["NONE", "AT_TIME", "MINUTES_BEFORE"]
+          },
+          "notifyOffsetMinutes": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "maximum": 43200
+          },
+          "linkedProjectId": {
+            "type": ["string", "null"]
+          },
+          "linkedTaskId": {
+            "type": ["string", "null"]
+          },
+          "state": {
+            "type": "string",
+            "enum": ["ACTIVE", "DONE", "DISMISSED"]
+          },
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "deletedAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          }
+        }
+      },
+      "WorkspaceChange": {
+        "type": "object",
+        "required": [
+          "seq",
+          "workspaceId",
+          "collection",
+          "entityId",
+          "op",
+          "version"
+        ],
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "entityId": {
+            "type": "string"
+          },
+          "op": {
+            "type": "string",
+            "enum": ["UPSERT", "DELETE"]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ModelEventPage": {
+        "type": "object",
+        "required": ["events", "cursor", "done"],
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelEvent"
+            }
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "done": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AgentSessionSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "updatedAt",
+          "projectId",
+          "spaceId",
+          "archivedAt",
+          "messageCount",
+          "preview"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": ["string", "null"]
+          },
+          "spaceId": {
+            "type": ["string", "null"]
+          },
+          "archivedAt": {
+            "type": ["string", "null"]
+          },
+          "messageCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "preview": {
+            "type": "string",
+            "maxLength": 160
+          }
+        }
+      },
+      "AgentSessionPage": {
+        "type": "object",
+        "required": ["session", "before", "hasMore"],
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/AgentSession"
+          },
+          "before": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        }
       }
     }
   }

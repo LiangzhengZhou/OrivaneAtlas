@@ -2,6 +2,8 @@ import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnchoredFloatingSurface } from "../app/AnchoredFloatingSurface";
+import { Button } from "./ui/Button";
+import { Select } from "./ui/Surfaces";
 import "./date-field.css";
 import { calendarMonth, formatDateField } from "../utils/date-format";
 
@@ -11,6 +13,7 @@ export function DateField({
   min = "0001-01-01",
   max = "9999-12-31",
   required = false,
+  disabled = false,
   "aria-label": label,
 }: {
   value: string;
@@ -18,6 +21,7 @@ export function DateField({
   min?: string;
   max?: string;
   required?: boolean;
+  disabled?: boolean;
   "aria-label"?: string;
 }) {
   const { i18n } = useTranslation();
@@ -64,9 +68,10 @@ export function DateField({
   const display = formatDateField(value, i18n.language);
   return (
     <>
-      <button
+      <Button
         ref={anchor}
         type="button"
+        disabled={disabled}
         className="date-field"
         aria-label={label}
         aria-haspopup="dialog"
@@ -78,13 +83,14 @@ export function DateField({
       >
         <span>{display}</span>
         <CalendarDays size={16} />
-      </button>
+      </Button>
       <input
         ref={validity}
         className="date-field-validity"
         tabIndex={-1}
         aria-hidden="true"
         required={required}
+        disabled={disabled}
         value={value}
         onChange={() => {}}
         onInvalid={(event) => {
@@ -106,13 +112,13 @@ export function DateField({
             aria-label={label || text("选择日期", "Choose date")}
           >
             <div className="calendar-heading">
-              <button
+              <Button
                 type="button"
                 aria-label={text("上个月", "Previous month")}
                 onClick={() => shift(-1)}
               >
                 <ChevronLeft size={16} />
-              </button>
+              </Button>
               <strong>
                 {zh
                   ? year + "年" + monthNumber + "月"
@@ -122,13 +128,13 @@ export function DateField({
                       timeZone: "UTC",
                     }).format(first)}
               </strong>
-              <button
+              <Button
                 type="button"
                 aria-label={text("下个月", "Next month")}
                 onClick={() => shift(1)}
               >
                 <ChevronRight size={16} />
-              </button>
+              </Button>
             </div>
             <div className="calendar-month-controls">
               <label>
@@ -151,7 +157,7 @@ export function DateField({
               </label>
               <label>
                 {text("月", "Month")}
-                <select
+                <Select
                   value={monthNumber}
                   onChange={(event) =>
                     setMonth(
@@ -171,7 +177,7 @@ export function DateField({
                           }).format(new Date(Date.UTC(2026, m - 1, 1)))}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
             <div
@@ -215,7 +221,7 @@ export function DateField({
                 <span key={"blank" + i} />
               ))}
               {Array.from({ length: days }, (_, i) => i + 1).map((day) => (
-                <button
+                <Button
                   type="button"
                   key={day}
                   data-date={date(day)}
@@ -225,20 +231,20 @@ export function DateField({
                   onClick={() => select(date(day))}
                 >
                   {day}
-                </button>
+                </Button>
               ))}
             </div>
             <div className="calendar-actions">
-              <button
+              <Button
                 type="button"
                 disabled={!allowed(today)}
                 onClick={() => select(today)}
               >
                 {text("今天", "Today")}
-              </button>
-              <button type="button" onClick={() => select("")}>
+              </Button>
+              <Button type="button" onClick={() => select("")}>
                 {text("清除", "Clear")}
-              </button>
+              </Button>
             </div>
           </div>
         </AnchoredFloatingSurface>

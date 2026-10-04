@@ -45,6 +45,7 @@ import { organizationStore } from "./organization";
 import { projectStore } from "./project-materials";
 import { purgeRelations } from "./purge";
 import { workflowPort } from "./workflows";
+import { workspaceChangePort } from "./workspace-changes";
 
 export { StorageError } from "./database";
 export { currentSchemaVersion } from "./migrations";
@@ -466,6 +467,78 @@ export class SqliteUnitOfWork implements UnitOfWork {
       return hydrate({ ...row } as unknown as WorkItem);
     };
     const tx: WorkTransaction = {
+      ...workspaceChangePort(this.db, workspaceId, guard),
+      reminders: async () => {
+        guard();
+        return this.db
+          .prepare(
+            "SELECT payload FROM reminder WHERE workspace_id=? ORDER BY day,id",
+          )
+          .all(workspaceId)
+          .map(
+            (row) =>
+              JSON.parse(
+                String(row.payload),
+              ) as import("@arclattice/domain").Reminder,
+          );
+      },
+      saveReminder: async (value, expected) => {
+        guard();
+        member(value.updatedBy);
+        if (value.workspaceId !== workspaceId)
+          throw new DomainError("FORBIDDEN");
+        if (value.version !== expected + 1)
+          throw new DomainError("VERSION_CONFLICT");
+        const payload = JSON.stringify(value);
+        const result =
+          expected === 0
+            ? this.db
+                .prepare("INSERT OR IGNORE INTO reminder VALUES (?,?,?,?,?)")
+                .run(workspaceId, value.id, value.version, value.day, payload)
+            : this.db
+                .prepare(
+                  "UPDATE reminder SET version=?,day=?,payload=? WHERE workspace_id=? AND id=? AND version=?",
+                )
+                .run(
+                  value.version,
+                  value.day,
+                  payload,
+                  workspaceId,
+                  value.id,
+                  expected,
+                );
+        if (result.changes !== 1) throw new DomainError("VERSION_CONFLICT");
+        const eventId = randomUUID();
+        this.db
+          .prepare("INSERT INTO reminder_activity VALUES (?,?,?)")
+          .run(workspaceId, eventId, payload);
+        this.db
+          .prepare(
+            "INSERT INTO reminder_outbox VALUES (?,?,'REMINDER_CHANGED')",
+          )
+          .run(workspaceId, eventId);
+      },
+      organizations: async () => {
+        guard();
+        return this.db
+          .prepare(
+            "SELECT payload FROM organization WHERE workspace_id=? ORDER BY kind,id",
+          )
+          .all(workspaceId)
+          .map(
+            (row) =>
+              JSON.parse(
+                String(row.payload),
+              ) as import("@arclattice/application").Organization,
+          );
+      },
+      saveOrganization: async (value, expected) => {
+        await organizationStore(
+          this.db,
+          { workspaceId, principalId: value.updatedBy },
+          guard,
+        ).save(value, expected);
+      },
       navigationPreference: async (principalId) => {
         guard();
         const row = this.db

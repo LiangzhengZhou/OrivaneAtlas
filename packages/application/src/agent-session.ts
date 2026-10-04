@@ -17,6 +17,9 @@ export interface AgentSessionMessage {
   createdAt: string;
 }
 export interface AgentSession {
+  projectId?: string | null;
+  spaceId?: string | null;
+  archivedAt?: string | null;
   modelProfileOverride?: string | null;
   id: string;
   workspaceId: string;
@@ -30,8 +33,43 @@ export interface AgentSession {
 }
 export interface AgentSessionStore {
   list(): Promise<AgentSession[]>;
+  summaries(): Promise<AgentSessionSummary[]>;
+  page(
+    id: string,
+    before: number | null,
+    limit: number,
+  ): Promise<AgentSessionPage>;
   get(id: string): Promise<AgentSession>;
   save(session: AgentSession, expected: number): Promise<void>;
+}
+export interface AgentSessionSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+  projectId: string | null;
+  spaceId: string | null;
+  archivedAt: string | null;
+  messageCount: number;
+  preview: string;
+}
+export interface AgentSessionPage {
+  session: AgentSession;
+  before: number;
+  hasMore: boolean;
+}
+export function agentSessionSummary(
+  session: AgentSession,
+): AgentSessionSummary {
+  return {
+    id: session.id,
+    title: session.title,
+    updatedAt: session.updatedAt,
+    projectId: session.projectId ?? null,
+    spaceId: session.spaceId ?? null,
+    archivedAt: session.archivedAt ?? null,
+    messageCount: session.messages.length,
+    preview: session.messages.at(-1)?.text.slice(0, 160) ?? "",
+  };
 }
 export class AgentSessionService {
   constructor(
@@ -40,6 +78,69 @@ export class AgentSessionService {
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
   ) {}
+  async summaries(actor: ActorContext) {
+    await this.authorization.require(actor, "work:read");
+    return this.store.summaries();
+  }
+  async page(
+    actor: ActorContext,
+    id: string,
+    before: number | null = null,
+    limit = 50,
+  ) {
+    await this.authorization.require(actor, "work:read");
+    if (
+      (before !== null && (!Number.isSafeInteger(before) || before < 0)) ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    const result = await this.store.page(id, before, limit);
+    if (
+      result.session.workspaceId !== actor.workspaceId ||
+      result.session.createdBy !== actor.principalId ||
+      result.session.deletedAt
+    )
+      throw new DomainError("NOT_FOUND");
+    return result;
+  }
+  async update(
+    actor: ActorContext,
+    id: string,
+    expected: number,
+    changes: {
+      title?: string;
+      archivedAt?: string | null;
+      deletedAt?: string | null;
+      projectId?: string | null;
+      spaceId?: string | null;
+    },
+  ) {
+    await this.authorization.require(actor, "work:update");
+    const previous = await this.store.get(id);
+    if (
+      previous.workspaceId !== actor.workspaceId ||
+      previous.createdBy !== actor.principalId
+    )
+      throw new DomainError("NOT_FOUND");
+    if (previous.version !== expected)
+      throw new DomainError("VERSION_CONFLICT");
+    if (
+      changes.title !== undefined &&
+      (!changes.title.trim() || changes.title.length > 240)
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    const session = {
+      ...previous,
+      ...changes,
+      ...(changes.title === undefined ? {} : { title: changes.title.trim() }),
+      version: expected + 1,
+      updatedAt: this.clock.now(),
+    };
+    await this.store.save(session, expected);
+    return session;
+  }
   async list(actor: ActorContext) {
     await this.authorization.require(actor, "work:read");
     return (await this.store.list())

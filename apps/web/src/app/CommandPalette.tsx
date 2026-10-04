@@ -2,6 +2,7 @@ import type { EntityRef } from "@arclattice/application";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../bootstrap";
+import { Button } from "../components/ui/Button";
 import { DismissibleDialog } from "./DismissibleDialog";
 
 export function CommandPalette({
@@ -58,7 +59,7 @@ export function CommandPalette({
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
-      <button
+      <Button
         type="button"
         onClick={() => {
           onClose();
@@ -66,8 +67,8 @@ export function CommandPalette({
         }}
       >
         {zh ? "新建" : "Create"}
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
         onClick={() => {
           onClose();
@@ -75,9 +76,9 @@ export function CommandPalette({
         }}
       >
         {zh ? "询问 Atlas" : "Ask Atlas"}
-      </button>
+      </Button>
       {entries.map((entry) => (
-        <button
+        <Button
           type="button"
           className="agenda-item"
           key={`${entry.ref.kind}:${entry.ref.id}`}
@@ -87,11 +88,11 @@ export function CommandPalette({
           }}
         >
           {entry.title}
-        </button>
+        </Button>
       ))}
-      <button type="button" onClick={onClose}>
+      <Button type="button" onClick={onClose}>
         {zh ? "关闭" : "Close"}
-      </button>
+      </Button>
     </DismissibleDialog>
   );
 }

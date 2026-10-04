@@ -6,6 +6,7 @@ import {
 import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "../components/ui/Button";
 
 export function NavigationSettings({
   preference,
@@ -41,7 +42,7 @@ export function NavigationSettings({
       <h3>{t("desktopNavigation")}</h3>
       {draft.desktop.order.map((id) => (
         <div className="organization-toolbar navigation-reorder-row" key={id}>
-          <button
+          <Button
             type="button"
             className="icon-button navigation-drag-handle"
             draggable={!busy}
@@ -70,9 +71,9 @@ export function NavigationSettings({
             }}
           >
             <GripVertical size={16} />
-          </button>
+          </Button>
           <span>{label(id)}</span>
-          <button
+          <Button
             type="button"
             className="icon-button"
             disabled={busy}
@@ -80,8 +81,8 @@ export function NavigationSettings({
             onClick={() => reorder(id, -1, false)}
           >
             <ChevronUp size={16} />
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             className="icon-button"
             disabled={busy}
@@ -89,7 +90,7 @@ export function NavigationSettings({
             onClick={() => reorder(id, 1, false)}
           >
             <ChevronDown size={16} />
-          </button>
+          </Button>
           <label>
             <input
               type="checkbox"
@@ -136,7 +137,7 @@ export function NavigationSettings({
       <p>{t("mobileNavigationHint")}</p>
       {draft.mobile.pinned.map((id) => (
         <div className="organization-toolbar navigation-reorder-row" key={id}>
-          <button
+          <Button
             type="button"
             className="icon-button navigation-drag-handle"
             draggable={!busy}
@@ -165,9 +166,9 @@ export function NavigationSettings({
             }}
           >
             <GripVertical size={16} />
-          </button>
+          </Button>
           <span>{label(id)}</span>
-          <button
+          <Button
             type="button"
             className="icon-button"
             disabled={busy}
@@ -175,8 +176,8 @@ export function NavigationSettings({
             onClick={() => reorder(id, -1, true)}
           >
             <ChevronUp size={16} />
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             className="icon-button"
             disabled={busy}
@@ -184,7 +185,7 @@ export function NavigationSettings({
             onClick={() => reorder(id, 1, true)}
           >
             <ChevronDown size={16} />
-          </button>
+          </Button>
         </div>
       ))}
       {draft.desktop.order.map((id) => (
@@ -213,15 +214,16 @@ export function NavigationSettings({
       ))}
       {conflict && <p role="alert">{t("errors:VERSION_CONFLICT")}</p>}
       <div className="organization-toolbar">
-        <button
+        <Button
+          variant="primary"
           type="button"
           className="button primary"
           disabled={busy || conflict}
           onClick={() => void onSave(draft)}
         >
           {t("common:save")}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className="button secondary"
           disabled={busy}
@@ -233,7 +235,7 @@ export function NavigationSettings({
           }
         >
           {t("restoreNavigation")}
-        </button>
+        </Button>
       </div>
     </section>
   );

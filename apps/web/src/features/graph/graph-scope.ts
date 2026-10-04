@@ -1,9 +1,7 @@
 import { dependency, type WorkEdge, type WorkItem } from "@arclattice/domain";
-export function dependencyNeighborhood(
+export function buildDependencyGraphIndex(
   items: readonly WorkItem[],
   edges: readonly WorkEdge[],
-  focus: string,
-  hops: number,
 ) {
   const tasks = new Map(
     items
@@ -11,15 +9,35 @@ export function dependencyNeighborhood(
       .map((i) => [i.id, i]),
   );
   const neighbors = new Map<string, Set<string>>();
+  const counts = new Map<string, { blockers: number; dependents: number }>();
+  const connections: { id: string; source: string; target: string }[] = [];
+  const order = new Map([...tasks.keys()].map((id, index) => [id, index]));
   for (const edge of edges) {
     const pair = dependency(edge);
-    if (!pair || !tasks.has(pair[0]) || !tasks.has(pair[1])) continue;
+    if (!pair) continue;
+    const source = counts.get(pair[0]) ?? { blockers: 0, dependents: 0 };
+    const target = counts.get(pair[1]) ?? { blockers: 0, dependents: 0 };
+    source.dependents++;
+    target.blockers++;
+    counts.set(pair[0], source);
+    counts.set(pair[1], target);
+    connections.push({ id: edge.id, source: pair[0], target: pair[1] });
+    if (!tasks.has(pair[0]) || !tasks.has(pair[1])) continue;
     for (const [a, b] of [pair, [pair[1], pair[0]]] as [string, string][]) {
       const set = neighbors.get(a) ?? new Set<string>();
       set.add(b);
       neighbors.set(a, set);
     }
   }
+  return { tasks, neighbors, counts, connections, order };
+}
+
+export function indexedDependencyNeighborhood(
+  index: ReturnType<typeof buildDependencyGraphIndex>,
+  focus: string,
+  hops: number,
+) {
+  const { tasks, neighbors, order } = index;
   const visible = new Set<string>(tasks.has(focus) ? [focus] : []);
   let frontier = [...visible];
   for (let hop = 0; hop < Math.min(2, Math.max(0, hops)); hop++) {
@@ -33,7 +51,22 @@ export function dependencyNeighborhood(
       }
     frontier = next;
   }
-  return items.filter((i) => visible.has(i.id));
+  return [...visible]
+    .sort((a, b) => order.get(a)! - order.get(b)!)
+    .map((id) => tasks.get(id)!);
+}
+
+export function dependencyNeighborhood(
+  items: readonly WorkItem[],
+  edges: readonly WorkEdge[],
+  focus: string,
+  hops: number,
+) {
+  return indexedDependencyNeighborhood(
+    buildDependencyGraphIndex(items, edges),
+    focus,
+    hops,
+  );
 }
 export function projectDepth(
   items: readonly WorkItem[],

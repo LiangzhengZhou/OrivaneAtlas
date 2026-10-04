@@ -1,3 +1,95 @@
+async function openCalendarJournal(page: Page, title: string) {
+  const action = page
+    .locator(".agenda-panel section")
+    .filter({ has: page.getByRole("heading", { name: title, exact: true }) })
+    .getByRole("button");
+  await action.evaluate((element) =>
+    element.scrollIntoView({ block: "center" }),
+  );
+  await action.click();
+}
+async function answerConfirmation(
+  page: Page,
+  accept: boolean,
+  message?: string,
+) {
+  const dialog = page.getByRole("dialog", {
+    name: /^(确认操作|Confirm action)$/,
+  });
+  await expect(dialog).toBeVisible();
+  if (message) await expect(dialog).toContainText(message);
+  await dialog
+    .getByRole("button", {
+      name: accept ? /^(确认|Confirm)$/ : /^(取消|Cancel)$/,
+      exact: true,
+    })
+    .click();
+}
+async function openProjectDependencyScope(
+  page: Page,
+  taskTitle: string,
+  zh: boolean,
+) {
+  await page
+    .getByRole("button", {
+      name: zh ? "打开依赖视图" : "Open dependency view",
+      exact: true,
+    })
+    .click();
+  const graph = page.locator(".project-workspace .dependency-focus-graph");
+  const scope = graph.getByRole("button", {
+    name: zh ? "整个项目" : "Entire project",
+    exact: true,
+  });
+  await expect(scope).toBeDisabled();
+  await graph
+    .getByRole("button", {
+      name: zh ? "选择焦点任务" : "Choose focus task",
+      exact: true,
+    })
+    .click();
+  const snapshot: {
+    items: {
+      id: string;
+      title: string;
+      projectIds?: string[];
+      parentProjectId?: string | null;
+    }[];
+  } = await page.evaluate(async () => {
+    const response = await fetch("/api/snapshot");
+    if (!response.ok) throw new Error("Snapshot HTTP " + response.status);
+    return response.json();
+  });
+  const task = snapshot.items.find((item) => item.title === taskTitle);
+  expect(task).toBeDefined();
+  const path: string[] = [];
+  let project = snapshot.items.find(
+    (item) => item.id === task?.projectIds?.[0],
+  );
+  while (project) {
+    path.unshift(project.title);
+    project = snapshot.items.find(
+      (item) => item.id === project?.parentProjectId,
+    );
+  }
+  const picker = page.locator(".hierarchy-browser");
+  await expect(
+    picker.getByRole("button", { name: zh ? "项目" : "Projects", exact: true }),
+  ).toHaveCount(0);
+  for (const title of path) {
+    const child = picker.getByRole("button", {
+      name: title + " ›",
+      exact: true,
+    });
+    if (await child.count()) await child.click();
+  }
+  await picker
+    .getByRole("button", { name: new RegExp("^" + taskTitle) })
+    .click();
+  await expect(scope).toBeEnabled();
+  await scope.click();
+}
+
 async function chooseDate(page: Page, field: Locator, iso: string) {
   await field.click();
   const calendar = page.locator(".calendar-popover");
@@ -10,7 +102,7 @@ async function chooseDate(page: Page, field: Locator, iso: string) {
   await calendar.getByRole("button", { name: iso, exact: true }).click();
 }
 
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -21,7 +113,9 @@ import {
   type Page,
   type Response,
 } from "@playwright/test";
+import type { ActorContext } from "../../packages/domain/src/index";
 import { localCalendarDay } from "../../packages/domain/src/index";
+import { v22PerformanceFixture } from "../performance/v2.2-fixture";
 
 const resources = Object.fromEntries(
   ["en-US", "zh-CN"].map((locale) => [
@@ -57,6 +151,7 @@ const test = base.extend<{
     url: string;
     secret: string;
     advanceRecurrenceTime(now: string): Promise<void>;
+    seedPerformance(actor: ActorContext): Promise<void>;
   };
 }>({
   workbench: async ({}, use, info) => {
@@ -65,6 +160,7 @@ const test = base.extend<{
     const port =
       Number(process.env.ATLAS_E2E_BASE_PORT ?? 1420) + info.parallelIndex;
     let recurrenceNow: string | null = null;
+    let modelAttempts = 0;
     const host = await createHost({
       clock: { now: () => recurrenceNow ?? new Date().toISOString() },
       calendarTimezone: info.title.includes("authoritative calendar")
@@ -294,11 +390,17 @@ const test = base.extend<{
                 timeoutMs: info.title.includes("streaming") ? 6000 : 2000,
                 maxRunsPerDay: 2,
               },
-              complete: async (prompt: string) =>
-                JSON.stringify({
+              complete: async (prompt: string) => {
+                if (
+                  info.title.includes("model failure") &&
+                  modelAttempts++ === 0
+                )
+                  throw new Error("MODEL_REQUEST_FAILED");
+                return JSON.stringify({
                   kind: "FINAL",
                   text: "# Reviewed result\n\n" + prompt,
-                }),
+                });
+              },
               ...(info.title.includes("streaming")
                 ? {
                     providerAdapter: {
@@ -318,7 +420,12 @@ const test = base.extend<{
                           text: "Visible streaming ",
                         };
                         await new Promise((resolve) =>
-                          setTimeout(resolve, 2200),
+                          setTimeout(
+                            resolve,
+                            info.title.includes("cursor fallback")
+                              ? 4200
+                              : 2200,
+                          ),
                         );
                         if (signal.aborted) throw new Error("Cancelled");
                         yield { type: "text-delta" as const, text: "answer" };
@@ -363,6 +470,52 @@ const test = base.extend<{
       await use({
         url: "http://127.0.0.1:" + port,
         secret,
+        seedPerformance: async (actor) => {
+          const fixture = v22PerformanceFixture(
+            actor,
+            new Date().toISOString().slice(0, 10),
+          );
+          await host.db.request(
+            actor,
+            null,
+            async (
+              uow,
+              _notes,
+              _connected,
+              library,
+              _organization,
+              _projects,
+              sessions,
+            ) => {
+              await uow.run(actor.workspaceId, async (tx) => {
+                for (const item of [...fixture.projects, ...fixture.tasks]) {
+                  await tx.insert(item);
+                  const event = {
+                    id: randomUUID(),
+                    workspaceId: actor.workspaceId,
+                    principalId: actor.principalId,
+                    entityId: item.id,
+                    type: "WORK_ITEM_CREATED" as const,
+                    occurredAt: item.createdAt,
+                    entityVersion: 1,
+                  };
+                  await tx.appendActivity(event);
+                  await tx.appendOutbox({
+                    ...event,
+                    activityId: event.id,
+                    type: "WORK_CHANGED",
+                  });
+                }
+                for (const edge of fixture.edges) await tx.addEdge(edge);
+              });
+              await library.save(fixture.space, 0);
+              for (const document of fixture.documents)
+                await library.save(document, 0);
+              for (const session of fixture.sessions)
+                await sessions.save(session, 0);
+            },
+          );
+        },
         advanceRecurrenceTime: async (now) => {
           recurrenceNow = now;
           await host.reconcileRecurrences();
@@ -389,6 +542,160 @@ const test = base.extend<{
 function words(locale: string) {
   return resources[locale.endsWith("zh") ? "zh-CN" : "en-US"];
 }
+
+test("v2.2 1500 tasks release virtualization and scope benchmark", async ({
+  page,
+  workbench,
+}, info) => {
+  test.setTimeout(180000);
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const session = await (
+    await page.request.get(workbench.url + "/api/session")
+  ).json();
+  for (let index = 0; index < 1500; index++) {
+    const response = await page.request.post(
+      workbench.url + "/api/work/create",
+      {
+        data: { title: `Perf task ${String(index).padStart(4, "0")}` },
+        headers: {
+          Origin: workbench.url,
+          "X-CSRF-Token": session.csrf,
+          "Idempotency-Key": randomUUID(),
+        },
+      },
+    );
+    expect(response.ok()).toBe(true);
+  }
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  const scroll = page.locator(".task-list .virtual-task-scroll");
+  await expect(scroll).toHaveAttribute("data-task-count", "1500");
+  await expect
+    .poll(() => page.locator(".task-list .task-card").count())
+    .toBeGreaterThan(0);
+  const listRows = await page.locator(".task-list .task-card").count();
+  expect(listRows).toBeLessThan(100);
+  await scroll.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(
+    page.locator(".task-list .task-card").filter({ hasText: "Perf task 1499" }),
+  ).toBeVisible();
+  const started = performance.now();
+  await page
+    .locator(".ui-segmented")
+    .getByRole("button", { name: w.desk.taskWorkspace.board, exact: true })
+    .click();
+  await expect(page.locator(".virtual-board-scroll")).toHaveCount(1);
+  const boardRows = await page.locator(".board .task-card").count();
+  expect(boardRows).toBeLessThan(100);
+  const evidence = {
+    tasks: 1500,
+    listRows,
+    boardRows,
+    boardInteractionWallMs: performance.now() - started,
+    measurement: "Playwright action to settled DOM; wall clock, not JS CPU",
+  };
+  writeFileSync(
+    resolve(
+      ".artifacts",
+      `session107-task-benchmark-${info.project.name}.json`,
+    ),
+    JSON.stringify(evidence, null, 2),
+  );
+  await page.screenshot({
+    path: resolve(
+      ".artifacts",
+      `session107-task-board-${info.project.name}.png`,
+    ),
+    fullPage: true,
+  });
+  await info.attach("release-task-benchmark.json", {
+    body: JSON.stringify({
+      tasks: 1500,
+      listRows,
+      boardRows,
+      boardInteractionWallMs: performance.now() - started,
+    }),
+    contentType: "application/json",
+  });
+});
+
+test("v2.2 recurrence skip is distinct from missed and version protected", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh"),
+    today = new Date().toISOString().slice(0, 10);
+  await workbench.advanceRecurrenceTime(today + "T00:30:00Z");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const definition = await mutation(page, "/api/recurrences/save", {
+    version: 0,
+    deleted: false,
+    rule: {
+      title: "Skip series",
+      descriptionMd: "",
+      startDate: today,
+      timezone: "UTC",
+      frequency: "DAILY",
+      interval: 1,
+    },
+  });
+  await mutation(page, "/api/recurrences/generate", {
+    id: definition.id,
+    version: definition.version,
+    from: today,
+    to: today,
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await page
+    .getByRole("button", {
+      name: zh ? "管理周期任务" : "Manage recurring tasks",
+      exact: true,
+    })
+    .click();
+  const series = page.locator(".recurrence-manager .workflow-proposal");
+  await expect(series.locator("details")).not.toHaveAttribute("open", "");
+  await expect(
+    series.getByRole("button", {
+      name: zh ? "跳过本次" : "Skip this occurrence",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await series
+    .getByRole("button", {
+      name: zh ? "跳过本次" : "Skip this occurrence",
+      exact: true,
+    })
+    .click();
+  await expect(series).toContainText(zh ? "已跳过" : "Skipped");
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  const occurrence = snapshot.workflows.find(
+    (record: { payload: { kind: string; definitionId?: string } }) =>
+      record.payload.kind === "OCCURRENCE" &&
+      record.payload.definitionId === definition.id,
+  );
+  expect(occurrence.payload.status).toBe("SKIPPED");
+  expect(
+    snapshot.items.find(
+      (item: { id: string }) => item.id === occurrence.payload.taskId,
+    ).status,
+  ).toBe("CANCELED");
+  await workbench.advanceRecurrenceTime(today + "T23:59:59Z");
+  const after = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    after.workflows.find(
+      (record: { id: string }) => record.id === occurrence.id,
+    ).payload.status,
+  ).toBe("SKIPPED");
+});
 
 test("hardening recurring lifecycle expiry auto-close pause resume end and calendar statistics", async ({
   page,
@@ -972,6 +1279,7 @@ test("activation separates execution views from task planning", async ({
     .getByRole("tab", { name: w.desk.taskWorkspace.all, exact: true })
     .click();
   await expect(cards).toHaveCount(9);
+  await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
   await page
     .getByLabel(w.desk.activationState, { exact: true })
     .selectOption("INACTIVE");
@@ -1015,6 +1323,7 @@ test("activation separates execution views from task planning", async ({
     ),
   ).toBe(true);
   await nav(page, w.desk.planning);
+  await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
   await expect(
     page.getByLabel(w.desk.activationState, { exact: true }),
   ).toHaveValue("ALL");
@@ -1167,12 +1476,17 @@ test("project workspace connects materials, children and external dependencies",
   await page
     .getByRole("tab", { name: w.desk.projectHub.tasks, exact: true })
     .click();
-  await page
-    .getByRole("button", {
-      name: info.project.name.endsWith("zh") ? "项目范围" : "Project scope",
-      exact: true,
-    })
-    .click();
+  await expect(
+    page.locator(".project-workspace .project-brief-editor"),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(".project-workspace .dependency-focus-graph"),
+  ).toHaveCount(0);
+  await openProjectDependencyScope(
+    page,
+    "Measure sample",
+    info.project.name.endsWith("zh"),
+  );
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   await expect(
     page.locator(".react-flow__node").filter({ hasText: "Unrelated task" }),
@@ -1387,6 +1701,10 @@ test("named AI profiles persist independently and bind reviewed proposals", asyn
     .getByLabel(zh ? "连接名称" : "Connection name", { exact: true })
     .fill("Research provider");
   await connection
+    .locator("summary")
+    .filter({ hasText: zh ? "高级" : "Advanced" })
+    .click();
+  await connection
     .getByLabel(zh ? "API 基址" : "API base URL", { exact: true })
     .fill("https://provider.example/v1");
   await connection
@@ -1404,6 +1722,12 @@ test("named AI profiles persist independently and bind reviewed proposals", asyn
     })
     .click();
   await expect(connection).toHaveCount(0);
+  await page
+    .getByRole("button", {
+      name: zh ? "添加模型" : "Add model",
+      exact: true,
+    })
+    .click();
   const modelForm = page.getByRole("form", {
     name: zh ? "手工添加模型" : "Add model manually",
   });
@@ -1419,9 +1743,7 @@ test("named AI profiles persist independently and bind reviewed proposals", asyn
   await modelForm
     .getByRole("button", { name: zh ? "添加模型" : "Add model", exact: true })
     .click();
-  await expect(
-    modelForm.getByLabel(zh ? "模型标识" : "Model identifier", { exact: true }),
-  ).toHaveValue("");
+  await expect(modelForm).toHaveCount(0);
   await page
     .getByRole("button", {
       name: zh ? "添加模型配置" : "Add model profile",
@@ -1754,8 +2076,18 @@ test("2.1 Provider catalog routing Explicit Space Project Personal and Unlimited
   await expect(selector).toHaveValue("");
   expect(
     (
-      await (await page.request.get(workbench.url + "/api/ai/sessions")).json()
-    )[0].modelProfileOverride,
+      await (
+        await page.request.get(
+          workbench.url +
+            "/api/ai/sessions/messages?id=" +
+            (
+              await (
+                await page.request.get(workbench.url + "/api/ai/sessions")
+              ).json()
+            )[0].id,
+        )
+      ).json()
+    ).session.modelProfileOverride,
   ).toBeNull();
   await page.screenshot({
     path: info.outputPath("model-routing-catalog.png"),
@@ -2365,10 +2697,11 @@ test("account experience: revoke, switch, isolate and forget shortcuts", async (
   await expect(
     page.getByRole("heading", { name: "image-editor", exact: true }),
   ).toHaveCount(0);
-  page.once("dialog", (dialog) => dialog.accept());
+  const confirmation1 = answerConfirmation(page, true);
   await page
     .getByRole("button", { name: w.spaces.revokeAllSessions, exact: true })
     .click();
+  await confirmation1;
   await expect(
     page.getByRole("heading", { name: w.spaces.login, exact: true }),
   ).toBeVisible();
@@ -2578,19 +2911,22 @@ test("native updater UI: check, consent, progress, failure and retry", async ({
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  page.once("dialog", (dialog) => dialog.dismiss());
+  const confirmation2 = answerConfirmation(page, false);
   await panel.getByRole("button", { name: w.settings.updateInstall }).click();
+  await confirmation2;
   await expect(panel.getByRole("status")).toHaveText(
     w.settings.updateState_ready,
   );
-  page.once("dialog", (dialog) => dialog.accept());
+  const confirmation3 = answerConfirmation(page, true);
   await panel.getByRole("button", { name: w.settings.updateInstall }).click();
+  await confirmation3;
   await expect(panel.getByRole("progressbar")).toHaveAttribute("value", "50");
   await expect(panel.getByRole("status")).toHaveText(
     w.settings.updateState_error,
   );
-  page.once("dialog", (dialog) => dialog.accept());
+  const confirmation4 = answerConfirmation(page, true);
   await panel.getByRole("button", { name: w.settings.updateInstall }).click();
+  await confirmation4;
   await expect(panel.getByRole("status")).toHaveText(
     w.settings.updateState_installer,
   );
@@ -2801,6 +3137,7 @@ test("organization selection archive delete scannable rows and readable typograp
     .getByRole("button", { name: w.desk.archive + ": First task", exact: true })
     .click();
   await expect(page.locator(".task-card")).toHaveCount(2);
+  await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
   await page.getByLabel(w.desk.showArchived).check();
   await expect(page.locator(".task-card")).toHaveCount(1);
   await page
@@ -2810,8 +3147,9 @@ test("organization selection archive delete scannable rows and readable typograp
     })
     .click();
   await expect(page.locator(".task-card")).toHaveCount(0);
+  await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
   await page.getByLabel(w.desk.showArchived).uncheck();
-  page.once("dialog", (d) => d.accept());
+
   await page
     .getByRole("button", {
       name: w.desk.deleteItem + ": Second task",
@@ -2837,7 +3175,7 @@ test("organization selection archive delete scannable rows and readable typograp
     path: info.outputPath("bulk-notes.png"),
     fullPage: true,
   });
-  page.once("dialog", (d) => d.accept());
+
   await page
     .getByRole("button", { name: w.desk.deleteSelected, exact: true })
     .click();
@@ -3425,7 +3763,9 @@ test("knowledge references and AI approval preserve private content and never au
   const assistant = page.getByRole("complementary", {
     name: "Atlas Assistant",
   });
-  await assistant.getByRole("textbox").fill("Only explicit request");
+  await assistant
+    .getByRole("textbox", { name: /^(Ask Atlas|向 Atlas 提问)$/ })
+    .fill("Only explicit request");
   await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
   await expect(
     assistant.getByRole("heading", { name: /AI will read|AI 将读取/ }),
@@ -3509,7 +3849,7 @@ test("Agent Harness uses real evidence, reviews a write and keeps structured act
     await (await page.request.get(workbench.url + "/api/ai/sessions")).json(),
   ).toHaveLength(0);
   await assistant
-    .getByRole("textbox")
+    .getByRole("textbox", { name: /^(Ask Atlas|向 Atlas 提问)$/ })
     .fill("Atlas evidence: read, then propose one task");
   await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
   await assistant
@@ -3574,7 +3914,7 @@ test("Agent Harness batch plan waits for review, accepts task edits and publishe
     name: "Atlas Assistant",
   });
   await assistant
-    .getByRole("textbox")
+    .getByRole("textbox", { name: /^(Ask Atlas|向 Atlas 提问)$/ })
     .fill(
       `Import these lectures into project=${project.id}:\nLecture 1\nLecture 2\nLecture 3`,
     );
@@ -3621,50 +3961,126 @@ test("Agent Harness batch plan waits for review, accepts task edits and publishe
   });
 });
 
-test("AI approval streaming displays real deltas and resumes persisted conversation after reload", async ({
-  page,
-  workbench,
-}, info) => {
-  const w = words(info.project.name);
-  await unlock(page, workbench.url, workbench.secret, w);
-  await page.keyboard.press("Control+j");
-  const assistant = page.getByRole("complementary", {
-    name: "Atlas Assistant",
+for (const transport of ["SSE", "cursor fallback"])
+  test(`AI approval streaming displays real deltas and resumes persisted conversation after reload (${transport})`, async ({
+    page,
+    workbench,
+  }, info) => {
+    const w = words(info.project.name);
+    const pollingCursors: number[] = [];
+    const pollingTimes: number[] = [];
+    if (transport === "cursor fallback") {
+      await page.route("**/api/ai/events/stream?*", (route) =>
+        route.abort("failed"),
+      );
+      page.on("request", (request) => {
+        const url = new URL(request.url());
+        if (url.pathname === "/api/ai/events") {
+          pollingCursors.push(Number(url.searchParams.get("after")));
+          pollingTimes.push(performance.now());
+        }
+      });
+    }
+    await unlock(page, workbench.url, workbench.secret, w);
+    await page.keyboard.press("Control+j");
+    const assistant = page.getByRole("complementary", {
+      name: "Atlas Assistant",
+    });
+    await assistant
+      .getByRole("textbox", { name: /^(Ask Atlas|向 Atlas 提问)$/ })
+      .fill("Streaming question");
+    await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
+    await assistant
+      .getByRole("button", { name: /Approve request|批准本次请求/ })
+      .click();
+    await expect(assistant).toContainText("Visible streaming");
+    await expect(
+      assistant.locator('[data-message-kind="ASSISTANT"]'),
+    ).toHaveCount(0);
+    await expect(
+      assistant.locator('[data-message-kind="ASSISTANT"]'),
+    ).toContainText("Visible streaming answer", {
+      timeout: transport === "cursor fallback" ? 10000 : 5000,
+    });
+    if (transport === "cursor fallback") {
+      expect(pollingCursors[0]).toBe(0);
+      expect(pollingCursors.some((cursor) => cursor > 0)).toBe(true);
+      expect(pollingTimes).toHaveLength(3);
+      expect(
+        (pollingTimes[1] ?? NaN) - (pollingTimes[0] ?? NaN),
+      ).toBeGreaterThanOrEqual(1800);
+      expect(
+        (pollingTimes[2] ?? NaN) - (pollingTimes[1] ?? NaN),
+      ).toBeGreaterThanOrEqual(3800);
+    }
+    const finishedRuns = await (
+      await page.request.get(workbench.url + "/api/ai")
+    ).json();
+    const finishedId = finishedRuns.runs[0].id;
+    const eventPage = await (
+      await page.request.get(
+        workbench.url + "/api/ai/events?id=" + finishedId + "&after=0",
+      )
+    ).json();
+    expect(eventPage.cursor).toBeGreaterThan(1);
+    expect(
+      eventPage.events.filter(
+        (event: { type: string }) => event.type === "text-delta",
+      ),
+    ).toHaveLength(2);
+    const tail = await (
+      await page.request.get(
+        workbench.url +
+          "/api/ai/events?id=" +
+          finishedId +
+          "&after=" +
+          (eventPage.cursor - 1),
+      )
+    ).json();
+    expect(tail.events).toEqual([eventPage.events.at(-1)]);
+    expect(
+      (
+        await (
+          await page.request.get(
+            workbench.url +
+              "/api/ai/events?id=" +
+              finishedId +
+              "&after=" +
+              eventPage.cursor,
+          )
+        ).json()
+      ).events,
+    ).toEqual([]);
+    await page.reload();
+    await page.keyboard.press("Control+j");
+    await expect(assistant.locator('[data-message-kind="USER"]')).toContainText(
+      "Streaming question",
+    );
+    await expect(
+      assistant.locator('[data-message-kind="ASSISTANT"]'),
+    ).toContainText("Visible streaming answer");
+    await assistant
+      .getByRole("textbox", { name: /^(Ask Atlas|向 Atlas 提问)$/ })
+      .fill("Continue");
+    await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
+    const sessions = await (
+      await page.request.get(workbench.url + "/api/ai/sessions")
+    ).json();
+    expect(sessions).toHaveLength(1);
+    expect(
+      (
+        await (
+          await page.request.get(
+            workbench.url + "/api/ai/sessions/messages?id=" + sessions[0].id,
+          )
+        ).json()
+      ).session.messages.map((message: { kind: string }) => message.kind),
+    ).toEqual(["USER", "ASSISTANT", "USER"]);
+    await page.screenshot({
+      path: info.outputPath("streaming-session.png"),
+      fullPage: true,
+    });
   });
-  await assistant.getByRole("textbox").fill("Streaming question");
-  await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
-  await assistant
-    .getByRole("button", { name: /Approve request|批准本次请求/ })
-    .click();
-  await expect(assistant).toContainText("Visible streaming");
-  await expect(
-    assistant.locator('[data-message-kind="ASSISTANT"]'),
-  ).toHaveCount(0);
-  await expect(
-    assistant.locator('[data-message-kind="ASSISTANT"]'),
-  ).toContainText("Visible streaming answer");
-  await page.reload();
-  await page.keyboard.press("Control+j");
-  await expect(assistant.locator('[data-message-kind="USER"]')).toContainText(
-    "Streaming question",
-  );
-  await expect(
-    assistant.locator('[data-message-kind="ASSISTANT"]'),
-  ).toContainText("Visible streaming answer");
-  await assistant.getByRole("textbox").fill("Continue");
-  await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
-  const sessions = await (
-    await page.request.get(workbench.url + "/api/ai/sessions")
-  ).json();
-  expect(sessions).toHaveLength(1);
-  expect(
-    sessions[0].messages.map((message: { kind: string }) => message.kind),
-  ).toEqual(["USER", "ASSISTANT", "USER"]);
-  await page.screenshot({
-    path: info.outputPath("streaming-session.png"),
-    fullPage: true,
-  });
-});
 
 test("document knowledge graph preserves wiki neighbors and hides work and isolated pages", async ({
   page,
@@ -3730,7 +4146,9 @@ test("document knowledge graph preserves wiki neighbors and hides work and isola
   await expect(documents).toHaveCount(2);
   await expect(graph).not.toContainText("Isolated page");
   // Scope topology changes preserve the existing viewport; the user can fit explicitly.
-  await graph.getByRole("button", { name: "Fit View", exact: true }).click();
+  await graph
+    .getByRole("button", { name: zh ? "适应视图" : "Fit View", exact: true })
+    .click();
   await graph
     .locator(".react-flow__node")
     .filter({ hasText: "Symmetry lecture" })
@@ -3891,7 +4309,9 @@ test("AI approval project scope is shared by search, Wiki autocomplete, graph an
   const assistant = page.getByRole("complementary", {
     name: "Atlas Assistant",
   });
-  await assistant.getByRole("textbox").fill("Storage");
+  await assistant
+    .getByRole("textbox", { name: /^(Ask Atlas|向 Atlas 提问)$/ })
+    .fill("Storage");
   await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
   await expect(
     assistant.getByRole("heading", { name: /AI will read|AI 将读取/ }),
@@ -4097,6 +4517,8 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
   });
   await page.reload();
   await page.locator(".calendar-day.is-today").click();
+  await expect(page.locator(".document-pane:not([hidden])")).toHaveCount(0);
+  await openCalendarJournal(page, w.desk.journal);
   await expect(pane(page)).toBeVisible();
   expect(
     (await (await page.request.get(workbench.url + "/api/snapshot")).json())
@@ -4545,12 +4967,30 @@ test("notes, safe reading, revision restore, journal and export", async ({
     .getByLabel(w.desk.noteTitle, { exact: true })
     .fill("Original note");
   const text =
-    "# 原文\n<script>window.hacked=true</script>\n- [ ] Preserve this";
+    "# 原文\nFirst line\n第二行\n\n<script>window.hacked=true</script>\n- [ ] Preserve this";
   await page.getByLabel(w.desk.noteBody, { exact: true }).fill(text);
   await documentMode(page, w.desk.read);
   await expect(pane(page).locator(".document-reading .markdown")).toContainText(
     "<script>window.hacked=true</script>",
   );
+  const lineParagraph = pane(page)
+    .locator(".document-reading .markdown p")
+    .filter({ hasText: "First line" });
+  await expect(lineParagraph.locator("br")).toHaveCount(1);
+  expect(
+    await lineParagraph.evaluate((element) => {
+      const nodes = [...element.childNodes].filter(
+        (node) =>
+          node.nodeType === Node.TEXT_NODE && !!node.textContent?.trim(),
+      );
+      const bounds = nodes.map((node) => {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return range.getBoundingClientRect().top;
+      });
+      return (bounds[1] ?? NaN) > (bounds[0] ?? NaN);
+    }),
+  ).toBe(true);
   expect(
     await page.evaluate(() => Reflect.get(window, "hacked")),
   ).toBeUndefined();
@@ -4663,6 +5103,8 @@ test("live blocks autosave IME tabs and calendar journal recovery", async ({
     .toBe("输入中的讲义");
   await nav(page, w.desk.calendar);
   await page.locator(".calendar-day.is-today").click();
+  await expect(page.locator(".document-pane:not([hidden])")).toHaveCount(0);
+  await openCalendarJournal(page, w.desk.journal);
   await expect(pane(page).getByLabel(w.desk.noteTitle)).not.toHaveValue(
     "输入中的讲义",
   );
@@ -4675,12 +5117,16 @@ test("live blocks autosave IME tabs and calendar journal recovery", async ({
   await expect(pane(page).locator(".md-live-widget table")).toBeVisible();
   await nav(page, w.desk.calendar);
   await page.locator(".calendar-day.is-today").click();
+  await expect(page.locator(".document-pane:not([hidden])")).toHaveCount(0);
+  await openCalendarJournal(page, w.desk.journal);
   await expect(body).toHaveText("Today's unique journal");
   expect(await page.getByRole("tab").count()).toBe(2);
-  page.once("dialog", (dialog) => dialog.accept());
+
   await documentAction(page, w.common.delete);
   await nav(page, w.desk.calendar);
   await page.locator(".calendar-day.is-today").click();
+  await expect(page.locator(".document-pane:not([hidden])")).toHaveCount(0);
+  await openCalendarJournal(page, w.desk.journal);
   await pane(page)
     .getByRole("button", { name: /^(恢复文档|Restore document)$/ })
     .click();
@@ -4703,6 +5149,33 @@ test("localized product layouts, unsaved draft guard and lock", async ({
   await page.goto(workbench.url);
   await page.screenshot({ path: info.outputPath("login.png"), fullPage: true });
   await unlock(page, workbench.url, workbench.secret, w);
+  const primary = page.locator(".topbar .compact-create");
+  const contrast = await primary.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const luminance = (color: string) => {
+      const channels =
+        color
+          .match(/[\d.]+/g)
+          ?.slice(0, 3)
+          .map((value) => {
+            const channel = Number(value) / 255;
+            return channel <= 0.04045
+              ? channel / 12.92
+              : ((channel + 0.055) / 1.055) ** 2.4;
+          }) ?? [];
+      return (
+        (channels[0] ?? 0) * 0.2126 +
+        (channels[1] ?? 0) * 0.7152 +
+        (channels[2] ?? 0) * 0.0722
+      );
+    };
+    const text = luminance(style.color),
+      background = luminance(style.backgroundColor);
+    return (
+      (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05)
+    );
+  });
+  expect(contrast).toBeGreaterThanOrEqual(4.5);
   await page.screenshot({
     path: info.outputPath("empty-overview.png"),
     fullPage: true,
@@ -4784,19 +5257,21 @@ test("localized product layouts, unsaved draft guard and lock", async ({
   await page.keyboard.insertText("unsaved");
   await expect(draftBody).toHaveText("unsaved");
   await expect(pane(page).getByRole("alert")).toBeVisible();
-  page.once("dialog", (dialog) => dialog.dismiss());
+  const confirmation5 = answerConfirmation(page, false);
   await page
     .locator(".document-tab")
     .getByRole("button", { name: /^(Close|关闭) / })
     .click();
+  await confirmation5;
   await expect(
     pane(page).getByLabel(w.desk.noteBody, { exact: true }),
   ).toHaveText("unsaved");
-  page.once("dialog", (dialog) => dialog.accept());
+  const confirmation6 = answerConfirmation(page, true);
   await page
     .locator(".document-tab")
     .getByRole("button", { name: /^(Close|关闭) / })
     .click();
+  await confirmation6;
   await nav(page, w.desk.settings);
   await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
   await expect(page.getByLabel(w.spaces.username)).toBeVisible();
@@ -4993,12 +5468,13 @@ for (const legacy of [false, true])
       path: info.outputPath("draft-recovery.png"),
       fullPage: true,
     });
-    page.once("dialog", (dialog) => dialog.accept());
+    const confirmation7 = answerConfirmation(page, true);
     await pane(page)
       .getByRole("button", {
         name: /^(Confirm merge and save my draft|确认合并并保存我的草稿)$/,
       })
       .click();
+    await confirmation7;
     await expect
       .poll(async () => {
         const s = await (
@@ -5250,10 +5726,11 @@ test("project hierarchy and URL preserve scope tabs and browser history", async 
     .click();
   await expect(brief).toHaveValue("Unsaved route draft");
   const accepted = page.url();
-  page.once("dialog", (dialog) => dialog.dismiss());
+  const confirmation8 = answerConfirmation(page, false);
   await page.evaluate(() => {
     location.hash = "#projects";
   });
+  await confirmation8;
   await expect(page).toHaveURL(accepted);
   await expect(brief).toHaveValue("Unsaved route draft");
 });
@@ -5541,12 +6018,11 @@ test("parent picker excludes descendants and dependency nodes open task inspecto
     .click();
   await expect(page.locator(".react-flow__edge")).toHaveCount(0);
   expect(snapshot.edges).toHaveLength(0);
-  await page
-    .getByRole("button", {
-      name: info.project.name.endsWith("zh") ? "项目范围" : "Project scope",
-      exact: true,
-    })
-    .click();
+  await openProjectDependencyScope(
+    page,
+    "Inspect task",
+    info.project.name.endsWith("zh"),
+  );
   await page
     .locator(".react-flow__node")
     .filter({ hasText: "Inspect task" })
@@ -5764,6 +6240,14 @@ test.describe("host calendar authority", () => {
       day,
     );
     await page.locator(".calendar-day.is-today").click();
+    await expect(page.locator(".document-pane:not([hidden])")).toHaveCount(0);
+    await page
+      .locator(".agenda-panel section")
+      .filter({
+        has: page.getByRole("heading", { name: w.desk.journal, exact: true }),
+      })
+      .getByRole("button")
+      .click();
     const body = pane(page).getByLabel(w.desk.noteBody);
     await body.fill("Journal on the authoritative day");
     await body.press("Control+s");
@@ -5838,7 +6322,9 @@ test("AI approval follows the active document tab and excludes hidden document c
   const assistant = page.getByRole("complementary", {
     name: "Atlas Assistant",
   });
-  await assistant.getByRole("textbox").fill("Question");
+  await assistant
+    .getByRole("textbox", { name: /^(Ask Atlas|向 Atlas 提问)$/ })
+    .fill("Question");
   await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
   await expect(
     assistant.getByRole("heading", { name: /AI will read|AI 将读取/ }),
@@ -5856,7 +6342,9 @@ test("AI approval follows the active document tab and excludes hidden document c
     .getByRole("button", { name: zh ? "工作台" : "Workspace", exact: true })
     .click();
   await page.keyboard.press("Control+j");
-  await assistant.getByRole("textbox").fill("Unrelated request");
+  await assistant
+    .getByRole("textbox", { name: /^(Ask Atlas|向 Atlas 提问)$/ })
+    .fill("Unrelated request");
   await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
   await expect(
     assistant.getByRole("heading", { name: /AI will read|AI 将读取/ }),
@@ -6067,12 +6555,32 @@ test("Atlas main workspace is conversation with explicit context and no provider
   const atlas = page.locator(".atlas-conversation");
   await expect(atlas).toBeVisible();
   await expect(atlas.locator(".personal-ai-settings, .ai-run")).toHaveCount(0);
+  const sidebar = await atlas.locator(".conversation-sidebar").boundingBox();
+  const messages = await atlas.locator(".conversation-messages").boundingBox();
+  const composer = await atlas.locator(".conversation-composer").boundingBox();
+  expect(sidebar).not.toBeNull();
+  expect(messages).not.toBeNull();
+  expect(composer).not.toBeNull();
+  if (!info.project.name.startsWith("mobile")) {
+    expect(sidebar!.x + sidebar!.width).toBeLessThanOrEqual(messages!.x);
+    expect(composer!.x).toBeGreaterThanOrEqual(messages!.x);
+  } else {
+    expect(sidebar!.y).toBeLessThan(messages!.y);
+  }
   await atlas
     .getByRole("button", {
       name: zh ? "添加上下文" : "Add context",
       exact: true,
     })
     .click();
+  await atlas
+    .locator(".hierarchy-picker")
+    .getByRole("button", { name: zh ? "项目" : "Projects", exact: true })
+    .click();
+  await expect(page.locator(".hierarchy-browser")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".hierarchy-browser")).toHaveCount(0);
+  await expect(atlas.locator(".context-picker")).toBeVisible();
   await chooseProject(atlas.locator(".hierarchy-picker"), ["Context project"]);
   await expect(atlas.locator(".context-bar")).toContainText(
     "Context project ×",
@@ -6081,9 +6589,19 @@ test("Atlas main workspace is conversation with explicit context and no provider
     .getByRole("button", { name: "Context project ×", exact: true })
     .first()
     .click();
+  await expect(atlas.locator(".context-bar")).not.toContainText(
+    "Context project ×",
+  );
+  const contextTrigger = atlas.getByRole("button", {
+    name: zh ? "添加上下文" : "Add context",
+    exact: true,
+  });
+  await expect(contextTrigger).toHaveAttribute("aria-expanded", "false");
+  await contextTrigger.click();
   await expect(atlas.locator(".hierarchy-selected")).not.toContainText(
     "Context project ×",
   );
+  await contextTrigger.click();
   if (info.project.name.startsWith("mobile")) {
     const send = await atlas
       .getByRole("button", { name: "发送", exact: true })
@@ -6131,16 +6649,15 @@ test("Project dependency graph shows external blockers only on explicit request"
     type: "BLOCKS",
   });
   await page.goto(workbench.url + "/#projects/" + project.id + "?tab=tasks");
-  await page
-    .getByRole("button", {
-      name: info.project.name.endsWith("zh") ? "项目范围" : "Project scope",
-      exact: true,
-    })
-    .click();
+  await openProjectDependencyScope(
+    page,
+    "Local deliverable",
+    info.project.name.endsWith("zh"),
+  );
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   await page
     .getByRole("checkbox", {
-      name: zh ? "外部阻塞" : "External blockers",
+      name: zh ? "包含项目外阻塞" : "Include external blockers",
       exact: true,
     })
     .check();
@@ -6153,6 +6670,33 @@ test("Project dependency graph shows external blockers only on explicit request"
   await expect(
     page.locator(".react-flow__node").filter({ hasText: "Outside indirect" }),
   ).toHaveCount(0);
+  await page
+    .locator(".react-flow__node")
+    .filter({ hasText: "Outside prerequisite" })
+    .click();
+  await expect(page.locator(".project-inspector h3")).toHaveText(
+    "Outside prerequisite",
+  );
+  const graph = page.locator(".project-workspace .dependency-focus-graph");
+  await expect(graph.locator(".hierarchy-selected")).toContainText(
+    "Local deliverable",
+  );
+  await expect(graph.locator(".hierarchy-selected")).not.toContainText(
+    "Outside prerequisite",
+  );
+  await graph
+    .getByRole("button", {
+      name: zh ? "选择焦点任务" : "Choose focus task",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator(".hierarchy-browser")).toContainText(
+    "Local deliverable",
+  );
+  await expect(page.locator(".hierarchy-browser")).not.toContainText(
+    "Outside prerequisite",
+  );
+  await page.keyboard.press("Escape");
   await page.screenshot({
     path: info.outputPath("external-blockers.png"),
     fullPage: true,
@@ -6364,12 +6908,11 @@ test("hardening editors outside click retain dirty drafts settings borders and e
     projectIds: [root.id],
   });
   await page.goto(workbench.url + "/#projects/" + root.id + "?tab=tasks");
-  await page
-    .getByRole("button", {
-      name: info.project.name.endsWith("zh") ? "项目范围" : "Project scope",
-      exact: true,
-    })
-    .click();
+  await openProjectDependencyScope(
+    page,
+    "Graph selected task",
+    info.project.name.endsWith("zh"),
+  );
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   await page.locator(".react-flow__node").first().click();
   const viewport = await page
@@ -6578,18 +7121,17 @@ test("hardening Trash soft delete Undo restore and permanent purge across entity
     .click();
   await nav(page, w.desk.trash);
   page.off("dialog", rejectUnexpected);
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("Purge UI task");
-    await dialog.dismiss();
-  });
+  const confirmation9 = answerConfirmation(page, false, "Purge UI task");
   await trashRow
     .getByRole("button", { name: w.desk.permanentDelete, exact: true })
     .click();
+  await confirmation9;
   await expect(trashRow).toBeVisible();
-  page.once("dialog", async (dialog) => dialog.accept());
+  const confirmation10 = answerConfirmation(page, true);
   await trashRow
     .getByRole("button", { name: w.desk.permanentDelete, exact: true })
     .click();
+  await confirmation10;
   await expect(trashRow).toHaveCount(0);
   const note = await mutation(page, "/api/note/save", {
     id: null,
@@ -6644,10 +7186,11 @@ test("hardening Trash soft delete Undo restore and permanent purge across entity
   ]) {
     const entry = page.locator(".trash-list > div").filter({ hasText: title });
     await expect(entry).toBeVisible();
-    page.once("dialog", async (dialog) => dialog.accept());
+    const confirmation11 = answerConfirmation(page, true);
     await entry
       .getByRole("button", { name: w.desk.permanentDelete, exact: true })
       .click();
+    await confirmation11;
     await expect(entry).toHaveCount(0);
   }
   const snapshot = await (
@@ -7203,7 +7746,10 @@ test("2.1 Graph Workspace directed depth dependency hops URL refresh Back and In
   );
   await expect(workspace.locator(".react-flow__node")).toHaveCount(3);
   await workspace
-    .getByRole("button", { name: "2 " + text("跳", "hop"), exact: true })
+    .getByRole("button", {
+      name: text("扩展两层", "Expand two levels"),
+      exact: true,
+    })
     .click();
   await expect(workspace.locator(".react-flow__node")).toHaveCount(4);
   await expect(page).toHaveURL(/hops=2/);
@@ -7236,7 +7782,9 @@ test("2.1 Graph Workspace directed depth dependency hops URL refresh Back and In
       exact: true,
     }),
   ).toContainText("Hop task 1");
-  await workspace.locator(".react-flow__controls-fitview").click();
+  await workspace
+    .getByRole("button", { name: text("适应视图", "Fit View"), exact: true })
+    .click();
   await page.screenshot({
     path: info.outputPath("graph-workspace.png"),
     fullPage: true,
@@ -7309,7 +7857,12 @@ test("2.1 Knowledge Graph workspace local hops excludes isolated universe and re
   );
   await expect(nodes).toHaveCount(2);
   await expect(nodes.filter({ hasText: "Graph C" })).toHaveCount(0);
-  await workspace.getByRole("button", { name: "1 hop", exact: true }).click();
+  await workspace
+    .getByRole("button", {
+      name: info.project.name.endsWith("zh") ? "直接关系" : "Direct relations",
+      exact: true,
+    })
+    .click();
   await expect(nodes).toHaveCount(3);
   await expect(page).toHaveURL(/hops=2/);
   await page.reload();
@@ -7388,7 +7941,7 @@ test("Agent Harness safety boundaries reject unknown invalid tools, enforce step
       })
       .click();
     await assistant
-      .getByRole("textbox")
+      .getByRole("textbox", { name: /^(Ask Atlas|向 Atlas 提问)$/ })
       .fill(`boundary:${mode} task=${task.id}`);
     await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
     await assistant
@@ -7464,4 +8017,663 @@ test("Agent Harness safety boundaries reject unknown invalid tools, enforce step
   await expect(assistant.locator('[data-message-kind="ERROR"]')).toContainText(
     "LIMIT_REACHED",
   );
+});
+
+test("2.2 Calendar selects day independently and formal reminders create edit complete dismiss", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.calendar);
+  await page.locator(".calendar-day.is-today").click();
+  await expect(page.locator(".document-pane")).toHaveCount(0);
+  await expect(
+    page.locator(".calendar-panel").getByTestId("calendar-timezone"),
+  ).toBeVisible();
+  await page
+    .getByRole("button", {
+      name: zh ? "添加提醒" : "Add reminder",
+      exact: true,
+    })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: zh ? "提醒" : "Reminder",
+    exact: true,
+  });
+  await dialog
+    .getByLabel(zh ? "标题" : "Title", { exact: true })
+    .fill("Dentist reminder");
+  await dialog.getByLabel(zh ? "时间" : "Time", { exact: true }).fill("14:30");
+  await dialog
+    .getByLabel(zh ? "通知" : "Notification", { exact: true })
+    .selectOption("MINUTES_BEFORE");
+  await dialog.getByLabel(zh ? "提前分钟" : "Minutes before").fill("30");
+  await dialog
+    .getByRole("button", { name: zh ? "保存" : "Save", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  const panel = page.locator(".calendar-reminders");
+  await expect(panel).toContainText("Dentist reminder");
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(snapshot.reminders).toHaveLength(1);
+  expect(snapshot.items).toHaveLength(0);
+  expect(snapshot.reminders[0]).toMatchObject({
+    notifyMode: "MINUTES_BEFORE",
+    notifyOffsetMinutes: 30,
+    time: "14:30",
+    state: "ACTIVE",
+  });
+  await panel.getByRole("button", { name: /Dentist reminder/ }).click();
+  await dialog
+    .getByLabel(zh ? "标题" : "Title", { exact: true })
+    .fill("Updated reminder");
+  await dialog
+    .getByRole("button", { name: zh ? "保存" : "Save", exact: true })
+    .click();
+  await expect(panel).toContainText("Updated reminder");
+  await panel
+    .getByRole("button", { name: zh ? "完成" : "Complete", exact: true })
+    .click();
+  await expect(panel).toContainText(zh ? "已完成" : "Done");
+  const entry = (
+    await (await page.request.get(workbench.url + "/api/snapshot")).json()
+  ).reminders[0];
+  const {
+    title,
+    bodyMd,
+    day,
+    time,
+    timezone,
+    notifyMode,
+    notifyOffsetMinutes,
+    linkedProjectId,
+    linkedTaskId,
+  } = entry;
+  await mutation(page, "/api/reminders/save", {
+    id: entry.id,
+    version: entry.version,
+    input: {
+      title,
+      bodyMd,
+      day,
+      time,
+      timezone,
+      notifyMode,
+      notifyOffsetMinutes,
+      linkedProjectId,
+      linkedTaskId,
+      state: "ACTIVE",
+    },
+  });
+  await page.reload();
+  await panel
+    .getByRole("button", { name: zh ? "忽略" : "Dismiss", exact: true })
+    .click();
+  await expect(panel).toContainText(zh ? "已忽略" : "Dismissed");
+  await panel
+    .getByRole("button", {
+      name: zh ? "删除提醒" : "Delete reminder",
+      exact: true,
+    })
+    .click();
+  await expect(
+    panel.getByRole("button", { name: /Updated reminder/ }),
+  ).toHaveCount(0);
+  await panel
+    .getByRole("button", { name: zh ? "撤销" : "Undo", exact: true })
+    .click();
+  await expect(
+    panel.getByRole("button", { name: /Updated reminder/ }),
+  ).toBeVisible();
+  const restoredReminder = (
+    await (await page.request.get(workbench.url + "/api/snapshot")).json()
+  ).reminders[0];
+  expect(restoredReminder.deletedAt).toBeNull();
+  expect(restoredReminder.state).toBe("DISMISSED");
+  await page.screenshot({
+    path: info.outputPath("calendar-reminders.png"),
+    fullPage: true,
+  });
+});
+test("Atlas conversation summaries support rename archive restore delete undo and project binding", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "Conversation project",
+    type: "PROJECT",
+  });
+  const first = await mutation(page, "/api/ai/sessions/create", {
+    title: "First conversation",
+  });
+  await mutation(page, "/api/ai/sessions/update", {
+    id: first.id,
+    version: first.version,
+    projectId: project.id,
+  });
+  await mutation(page, "/api/ai/sessions/create", {
+    title: "Second conversation",
+  });
+  const summaries = await (
+    await page.request.get(workbench.url + "/api/ai/sessions")
+  ).json();
+  expect(summaries).toHaveLength(2);
+  for (const summary of summaries) {
+    expect(summary).not.toHaveProperty("messages");
+    expect(summary.messageCount).toBe(0);
+  }
+  expect(
+    summaries.find((entry: { id: string }) => entry.id === first.id).projectId,
+  ).toBe(project.id);
+  await page.keyboard.press("Control+j");
+  const assistant = page.getByRole("complementary", {
+    name: "Atlas Assistant",
+  });
+  await assistant
+    .getByRole("button", { name: "Second conversation", exact: true })
+    .click();
+  await assistant
+    .locator(".conversation-list")
+    .getByRole("button", { name: zh ? "项目" : "Projects", exact: true })
+    .click();
+  await expect(
+    assistant
+      .locator(".conversation-list")
+      .getByRole("heading", { name: "Conversation project", exact: true }),
+  ).toBeVisible();
+  await expect(
+    assistant.locator(".conversation-list").getByRole("heading", {
+      name: zh ? "未关联项目" : "No project",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await assistant
+    .getByRole("button", { name: zh ? "重命名" : "Rename", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: zh ? "重命名对话" : "Rename conversation",
+  });
+  await dialog.getByRole("textbox").fill("Renamed conversation");
+  await dialog
+    .getByRole("button", { name: zh ? "保存" : "Save", exact: true })
+    .click();
+  await expect(
+    assistant.getByRole("button", {
+      name: "Renamed conversation",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await assistant
+    .locator(".conversation-messages")
+    .getByRole("button", { name: zh ? "归档" : "Archive", exact: true })
+    .click();
+  await expect(
+    assistant.getByRole("button", {
+      name: "Renamed conversation",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await assistant
+    .locator(".conversation-list")
+    .getByRole("button", { name: zh ? "归档" : "Archived", exact: true })
+    .click();
+  await assistant
+    .getByRole("button", { name: "Renamed conversation", exact: true })
+    .click();
+  await assistant
+    .getByRole("button", { name: zh ? "恢复" : "Restore", exact: true })
+    .click();
+  await assistant
+    .locator(".conversation-list")
+    .getByRole("button", { name: zh ? "最近" : "Recent", exact: true })
+    .click();
+  await assistant
+    .getByRole("button", {
+      name: zh ? "删除对话" : "Delete conversation",
+      exact: true,
+    })
+    .click();
+  await expect(
+    assistant.getByRole("button", {
+      name: "Renamed conversation",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await assistant
+    .getByRole("button", { name: zh ? "撤销" : "Undo", exact: true })
+    .click();
+  await expect(
+    assistant.getByRole("button", {
+      name: "Renamed conversation",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await assistant
+    .getByRole("textbox", { name: zh ? "搜索对话" : "Search conversations" })
+    .fill("First");
+  await expect(
+    assistant.getByRole("button", { name: /First conversation/ }),
+  ).toBeVisible();
+  await expect(
+    assistant.getByRole("button", {
+      name: "Renamed conversation",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: info.outputPath("atlas-conversation-lifecycle.png"),
+    fullPage: true,
+  });
+});
+test("v2.2 complete release fixture interaction and editor benchmark", async ({
+  page,
+  workbench,
+}, info) => {
+  test.setTimeout(360000);
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const identity = await (
+    await page.request.get(workbench.url + "/api/session")
+  ).json();
+  await workbench.seedPerformance(identity.context);
+  await page.reload();
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.items.filter((item: { type: string }) => item.type === "PROJECT"),
+  ).toHaveLength(150);
+  expect(
+    snapshot.items.filter((item: { type: string }) => item.type === "TASK"),
+  ).toHaveLength(1500);
+  expect(snapshot.edges).toHaveLength(3000);
+  expect(
+    snapshot.library.filter(
+      (entry: { kind: string }) => entry.kind === "DOCUMENT",
+    ),
+  ).toHaveLength(2000);
+  expect(snapshot.wikiLinks).toHaveLength(5000);
+  const sessionsResponse = await page.request.get(
+    workbench.url + "/api/ai/sessions",
+  );
+  const summaries = await sessionsResponse.json();
+  expect(summaries).toHaveLength(100);
+  expect(
+    summaries.every(
+      (entry: { messageCount: number }) => entry.messageCount === 1000,
+    ),
+  ).toBe(true);
+  expect((await sessionsResponse.body()).length).toBeLessThan(40000);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Performance.enable");
+  const metrics = async () => {
+    const result = await cdp.send("Performance.getMetrics");
+    return new Map(
+      result.metrics.map((entry: { name: string; value: number }) => [
+        entry.name,
+        entry.value,
+      ]),
+    );
+  };
+  const evidence: Record<string, unknown> = {
+    fixture: {
+      projects: 150,
+      tasks: 1500,
+      edges: 3000,
+      documents: 2000,
+      wikiLinks: 5000,
+      sessions: 100,
+      messagesPerSession: 1000,
+    },
+    build: "Vite production release",
+    measurement:
+      "CDP ScriptDuration and TaskDuration deltas; Playwright settled-DOM wall separately",
+    sessionSummaryBytes: (await sessionsResponse.body()).length,
+  };
+  const measure = async (
+    name: string,
+    action: () => Promise<unknown>,
+    settled: () => Promise<unknown>,
+  ) => {
+    const before = await metrics(),
+      started = performance.now();
+    await action();
+    await settled();
+    const after = await metrics();
+    evidence[name] = {
+      wallMs: performance.now() - started,
+      scriptMs:
+        ((after.get("ScriptDuration") ?? 0) -
+          (before.get("ScriptDuration") ?? 0)) *
+        1000,
+      taskMs:
+        ((after.get("TaskDuration") ?? 0) - (before.get("TaskDuration") ?? 0)) *
+        1000,
+    };
+  };
+  await nav(page, w.desk.tasks);
+  await measure(
+    "Now→Scheduled",
+    () =>
+      page
+        .getByRole("tab", {
+          name: w.desk.taskWorkspace.scheduled,
+          exact: true,
+        })
+        .click(),
+    () =>
+      expect(page.locator(".task-list .virtual-task-scroll")).toHaveAttribute(
+        "data-task-count",
+        "200",
+      ),
+  );
+  await measure(
+    "Task tab switch",
+    () =>
+      page
+        .getByRole("tab", { name: w.desk.taskWorkspace.all, exact: true })
+        .click(),
+    () =>
+      expect(page.locator(".task-list .virtual-task-scroll")).toHaveAttribute(
+        "data-task-count",
+        "1500",
+      ),
+  );
+  evidence.liveListRows = await page.locator(".task-list .task-card").count();
+  expect(Number(evidence.liveListRows)).toBeLessThan(100);
+  const projectPicker = page.locator(
+    ".project-filter-picker .hierarchy-picker",
+  );
+  await measure(
+    "Project filter",
+    () =>
+      chooseProject(projectPicker, ["Perf project 001", "Perf project 016"]),
+    () => expect(page.locator(".task-list .task-card")).toHaveCount(10),
+  );
+  await projectPicker
+    .getByRole("button", { name: "Perf project 016 ×", exact: true })
+    .click();
+  await expect(page.locator(".task-list .virtual-task-scroll")).toHaveAttribute(
+    "data-task-count",
+    "1500",
+  );
+  await measure(
+    "List→Board",
+    () =>
+      page
+        .locator(".ui-segmented")
+        .getByRole("button", {
+          name: w.desk.taskWorkspace.board,
+          exact: true,
+        })
+        .click(),
+    () => expect(page.locator(".board")).toBeVisible(),
+  );
+  evidence.liveBoardRows = await page.locator(".board .task-card").count();
+  expect(Number(evidence.liveBoardRows)).toBeLessThan(150);
+  await measure(
+    "Calendar open",
+    () => nav(page, w.desk.calendar),
+    () =>
+      expect(page.locator(".calendar-day")).toHaveCount(
+        new Date(
+          new Date().getFullYear(),
+          new Date().getMonth() + 1,
+          0,
+        ).getDate(),
+      ),
+  );
+  await measure(
+    "Calendar month switch",
+    () =>
+      page.getByRole("button", { name: w.desk.nextMonth, exact: true }).click(),
+    () =>
+      expect(page.locator(".calendar-panel .panel-heading h2")).toBeVisible(),
+  );
+  await measure(
+    "Dependency local graph",
+    () =>
+      page.evaluate(() => {
+        location.hash =
+          "#graph/project/perf-project-1?mode=dependencies&view=graph&focus=perf-task-1&scope=focus&hops=1";
+      }),
+    () => expect(page.locator(".react-flow__node").first()).toBeVisible(),
+  );
+  await expect(page.locator(".task-list")).toHaveCount(0);
+  // Resolve the pointer target before sampling: role-selector traversal is
+  // automation preparation, not work performed when a user opens this picker.
+  const focusPickerButton = page.getByRole("button", {
+    name: zh ? "选择焦点任务" : "Choose focus task",
+    exact: true,
+  });
+  await focusPickerButton.scrollIntoViewIfNeeded();
+  const focusPickerBounds = await focusPickerButton.boundingBox();
+  expect(focusPickerBounds).not.toBeNull();
+  await measure(
+    "Task picker open",
+    () =>
+      page.mouse.click(
+        focusPickerBounds!.x + focusPickerBounds!.width / 2,
+        focusPickerBounds!.y + focusPickerBounds!.height / 2,
+      ),
+    () => expect(page.locator(".hierarchy-browser")).toBeVisible(),
+  );
+  await measure(
+    "Task picker drill-down",
+    () =>
+      page
+        .locator(".hierarchy-browser")
+        .getByRole("button", { name: "Perf project 016 ›", exact: true })
+        .click(),
+    () =>
+      expect(page.locator(".hierarchy-browser")).toContainText(
+        "Perf task 0016",
+      ),
+  );
+  await page.keyboard.press("Escape");
+  await measure(
+    "Knowledge local graph",
+    () =>
+      page.evaluate(() => {
+        location.hash = "#graph/document/perf-document-0?view=graph&hops=1";
+      }),
+    () => expect(page.locator(".react-flow__node").first()).toBeVisible(),
+  );
+  for (const [id, kb] of [
+    ["perf-document-0", 50],
+    ["perf-document-1", 100],
+  ] as const) {
+    await page.evaluate((documentId) => {
+      location.hash = "#graph/document/" + documentId + "?view=graph&hops=1";
+    }, id);
+    await page
+      .getByRole("button", {
+        name: zh ? "打开详情" : "Open details",
+        exact: true,
+      })
+      .click();
+    const editor = page.locator(".document-pane:not([hidden]) .cm-content");
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await page.keyboard.press("Control+End");
+    await cdp.send("Profiler.enable");
+    await cdp.send("Profiler.start");
+    const samples: number[] = [];
+    for (let index = 0; index < 30; index++) {
+      const before = await metrics();
+      await page.keyboard.insertText("x");
+      const after = await metrics();
+      samples.push(
+        ((after.get("TaskDuration") ?? 0) - (before.get("TaskDuration") ?? 0)) *
+          1000,
+      );
+    }
+    samples.sort((a, b) => a - b);
+    const { profile } = await cdp.send("Profiler.stop");
+    writeFileSync(
+      resolve(
+        ".artifacts",
+        `session107-editor-${kb}KB-${info.project.name}.cpuprofile`,
+      ),
+      JSON.stringify(profile),
+    );
+    await info.attach(`${kb}KB CPU profile`, {
+      body: JSON.stringify(profile),
+      contentType: "application/json",
+    });
+    evidence[`${kb}KB typing`] = {
+      p95TaskMs: samples[Math.ceil(samples.length * 0.95) - 1],
+      samples,
+    };
+    await page.keyboard.press("Control+s");
+    const original = snapshot.library.find(
+      (entry: { id: string }) => entry.id === id,
+    ).bodyMd;
+    await expect
+      .poll(async () => {
+        const current = await (
+          await page.request.get(workbench.url + "/api/snapshot")
+        ).json();
+        return current.library.find((entry: { id: string }) => entry.id === id)
+          ?.bodyMd;
+      })
+      .toBe(original + "x".repeat(30));
+  }
+  await measure(
+    "Atlas conversation list",
+    () => nav(page, "Atlas"),
+    () =>
+      expect(
+        page
+          .locator(".conversation-list")
+          .getByRole("button", { name: /^Perf conversation/ }),
+      ).toHaveCount(100),
+  );
+  await measure(
+    "Atlas conversation open",
+    () =>
+      page
+        .locator(".conversation-list")
+        .getByRole("button", { name: /Perf conversation 001/ })
+        .click(),
+    () =>
+      expect(
+        page.locator(".conversation-messages [data-message-kind]"),
+      ).toHaveCount(50),
+  );
+  await page
+    .getByRole("button", {
+      name: zh ? "加载更早消息" : "Load earlier messages",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.locator(".conversation-messages [data-message-kind]"),
+  ).toHaveCount(100);
+  writeFileSync(
+    resolve(
+      ".artifacts",
+      `session107-complete-benchmark-${info.project.name}.json`,
+    ),
+    JSON.stringify(evidence, null, 2),
+  );
+  await info.attach("release-complete-benchmark.json", {
+    body: JSON.stringify(evidence),
+    contentType: "application/json",
+  });
+});
+
+test("AI approval model failure uses friendly error details and real retry", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await page.keyboard.press("Control+j");
+  const assistant = page.getByRole("complementary", {
+    name: "Atlas Assistant",
+  });
+  await assistant
+    .getByRole("textbox", { name: /^(Ask Atlas|向 Atlas 提问)$/ })
+    .fill("Retry this question");
+  await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
+  await assistant
+    .getByRole("button", { name: /Approve request|批准本次请求/ })
+    .click();
+  const failure = assistant.locator('[data-message-kind="ERROR"]');
+  await expect(failure).toContainText(
+    zh ? "模型请求失败" : "Model request failed",
+  );
+  await expect(
+    failure.getByText("MODEL_REQUEST_FAILED", { exact: true }),
+  ).not.toBeVisible();
+  await failure.locator("details > summary").click();
+  await expect(failure.locator("code")).toHaveText("MODEL_REQUEST_FAILED");
+  await failure
+    .getByRole("button", { name: zh ? "重新尝试" : "Retry", exact: true })
+    .click();
+  await assistant
+    .getByRole("button", { name: /Approve request|批准本次请求/ })
+    .click();
+  await expect(
+    assistant.locator('[data-message-kind="ASSISTANT"]'),
+  ).toContainText("Reviewed result");
+  const summaries = await (
+    await page.request.get(workbench.url + "/api/ai/sessions")
+  ).json();
+  expect(summaries).toHaveLength(1);
+  const runs = await (await page.request.get(workbench.url + "/api/ai")).json();
+  expect(runs.runs).toHaveLength(2);
+  expect(runs.runs.map((run: { status: string }) => run.status).sort()).toEqual(
+    ["FAILED", "SUCCEEDED"],
+  );
+});
+
+test("v2.2 application icons and protected Sidebar logo are served independently", async ({
+  page,
+  workbench,
+}, info) => {
+  await unlock(page, workbench.url, workbench.secret, words(info.project.name));
+  await expect(page.locator("img.brand-logo")).toHaveAttribute(
+    "src",
+    "/orivane-atlas.png",
+  );
+  const logo = await page.request.get(workbench.url + "/orivane-atlas.png");
+  expect(logo.status()).toBe(200);
+  expect(
+    createHash("sha256")
+      .update(await logo.body())
+      .digest("hex")
+      .toUpperCase(),
+  ).toBe("12E98E78FD60082975FA0FD655AD1C80C00598186232971AE22CA4971E7BB176");
+  await expect(page.locator('head link[rel="icon"]')).toHaveAttribute(
+    "href",
+    "/favicon.png",
+  );
+  for (const file of [
+    "/favicon.png",
+    "/application-icon-192.png",
+    "/application-icon-512.png",
+  ]) {
+    const icon = await page.request.get(workbench.url + file);
+    expect(icon.status()).toBe(200);
+    expect((await icon.body()).subarray(1, 4).toString()).toBe("PNG");
+    expect(
+      createHash("sha256")
+        .update(await icon.body())
+        .digest("hex")
+        .toUpperCase(),
+    ).not.toBe(
+      "12E98E78FD60082975FA0FD655AD1C80C00598186232971AE22CA4971E7BB176",
+    );
+  }
 });

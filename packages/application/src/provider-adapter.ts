@@ -49,6 +49,11 @@ export type ModelEvent =
   | { type: "usage"; usage: ModelUsage }
   | { type: "completed" }
   | { type: "error"; error: string };
+export interface ModelEventPage {
+  events: ModelEvent[];
+  cursor: number;
+  done: boolean;
+}
 export interface ModelProviderAdapter {
   capabilities: ModelProviderCapabilities;
   respond?(

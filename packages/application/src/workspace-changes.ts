@@ -6,6 +6,12 @@ const identity = (value: unknown): string => {
   if (!value || typeof value !== "object")
     throw new Error("INVALID_SYNC_ENTITY");
   const entry = value as Record<string, unknown>;
+  if (
+    (entry.kind === "WORK" || entry.kind === "NOTE") &&
+    "archived" in entry &&
+    typeof entry.id === "string"
+  )
+    return entry.kind + ":" + entry.id;
   return typeof entry.id === "string" ? entry.id : JSON.stringify(entry);
 };
 

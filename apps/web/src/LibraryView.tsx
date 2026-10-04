@@ -4,9 +4,11 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { showToast } from "./app/ToastHost";
 import type { Runtime, Snapshot } from "./bootstrap";
+import { Button } from "./components/ui/Button";
 import type { DocumentRequest } from "./DocumentWorkspace";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
 import { Markdown } from "./Markdown";
+import { useDebouncedValue } from "./utils/use-debounced-value";
 export function LibraryView({
   runtime,
   onOpen,
@@ -48,12 +50,30 @@ export function LibraryView({
   }
   const spaces = entries.filter((e) => e.kind === "SPACE" && !e.deletedAt),
     space = spaces.find((e) => e.id === spaceId);
+  const settledQuery = useDebouncedValue(query).toLocaleLowerCase();
+  const searchIndex = useMemo(
+    () =>
+      new Map(
+        entries.map((entry) => [
+          entry.id,
+          (entry.title + " " + entry.bodyMd).toLocaleLowerCase(),
+        ]),
+      ),
+    [entries],
+  );
+  const documentCountBySpaceId = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of entries)
+      if (entry.kind === "DOCUMENT" && !entry.deletedAt && entry.spaceId)
+        counts.set(entry.spaceId, (counts.get(entry.spaceId) ?? 0) + 1);
+    return counts;
+  }, [entries]);
   const docs = entries.filter(
     (e) =>
       e.kind === "DOCUMENT" &&
       !e.deletedAt &&
       e.spaceId === spaceId &&
-      (e.title + " " + e.bodyMd).toLowerCase().includes(query.toLowerCase()),
+      searchIndex.get(e.id)?.includes(settledQuery),
   );
   const paths = useMemo(() => {
     const result = new Map<string, string[]>();
@@ -113,34 +133,39 @@ export function LibraryView({
         />
       )}
       <div className="library-toolbar action-row">
-        <button
+        <Button
           type="button"
           className="chip"
           aria-pressed={graphOpen}
           onClick={() => setGraphOpen(!graphOpen)}
         >
           {zh ? "知识图谱" : "Knowledge graph"}
-        </button>
+        </Button>
 
-        <button
+        <Button
           className="button secondary"
           type="button"
           onClick={() => setSpaceId(null)}
         >
           {t("back")}
-        </button>
-        <button
+        </Button>
+        <Button
           className="button secondary"
           type="button"
           disabled={busy}
           onClick={() => void run(async () => {})}
         >
           {t("refresh")}
-        </button>
-        <button className="button primary" type="button" onClick={() => open()}>
+        </Button>
+        <Button
+          variant="primary"
+          className="button primary"
+          type="button"
+          onClick={() => open()}
+        >
           <Plus size={16} />
           {t(space ? "newLecture" : "newSpace")}
-        </button>
+        </Button>
       </div>
       {space ? (
         <>
@@ -149,14 +174,14 @@ export function LibraryView({
             <h2>{space.title}</h2>
             <Markdown text={space.bodyMd} />
             <div className="action-row">
-              <button
+              <Button
                 className="button secondary"
                 type="button"
                 onClick={() => open(space)}
               >
                 {t("edit")}
-              </button>
-              <button
+              </Button>
+              <Button
                 className="button secondary"
                 type="button"
                 disabled={busy}
@@ -183,7 +208,7 @@ export function LibraryView({
                 }
               >
                 {t("delete")}
-              </button>
+              </Button>
             </div>
           </section>
           <label className="field">
@@ -192,7 +217,7 @@ export function LibraryView({
           </label>
           <div className="note-grid">
             {docs.map((doc) => (
-              <button
+              <Button
                 className="note-card"
                 type="button"
                 key={doc.id}
@@ -208,7 +233,7 @@ export function LibraryView({
                 <footer>
                   {t(doc.provenance)} · v{doc.version}
                 </footer>
-              </button>
+              </Button>
             ))}
           </div>
           {!docs.length && <p>{t("empty")}</p>}{" "}
@@ -218,7 +243,7 @@ export function LibraryView({
           <p className="subtitle">{t("spaceHint")}</p>
           <div className="note-grid">
             {spaces.map((item) => (
-              <button
+              <Button
                 className="note-card space-card"
                 type="button"
                 key={item.id}
@@ -228,20 +253,22 @@ export function LibraryView({
                 <h2>{item.title}</h2>
                 <p>{item.bodyMd.slice(0, 160)}</p>
                 <footer>
-                  {
-                    entries.filter((e) => e.spaceId === item.id && !e.deletedAt)
-                      .length
-                  }{" "}
+                  {documentCountBySpaceId.get(item.id) ?? 0}{" "}
                   {t("documentCount")}
                 </footer>
-              </button>
+              </Button>
             ))}
           </div>
         </>
       )}
-      <button type="button" className="text-button" onClick={onTrash}>
+      <Button
+        variant="ghost"
+        type="button"
+        className="text-button"
+        onClick={onTrash}
+      >
         {zh ? "查看回收站 →" : "View Trash →"}
-      </button>
+      </Button>
     </div>
   );
 }

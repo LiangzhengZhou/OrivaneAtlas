@@ -43,6 +43,7 @@ import {
   privateContentPolicy,
   projectKnowledgeScope,
   type RecurrencePayload,
+  ReminderService,
   RetrievalService,
   resolveProjectKnowledgeScope,
   type TrustedAiEndpoint,
@@ -53,7 +54,7 @@ import {
   validateTrustedAiEndpoint,
   WorkflowService,
   WorkService,
-  workspaceChanges,
+  type WorkspaceChanges,
 } from "@arclattice/application";
 import {
   type ActorContext,
@@ -225,7 +226,6 @@ export async function createHost(options: HostOptions) {
   const controllers = new Set<AbortController>();
   const modelEvents = new Map<string, ModelEvent[]>();
   const eventListeners = new Map<string, Set<() => void>>();
-  const syncCache = new Map<string, { cursor: string; data: object }>();
   const model = options.model ?? null;
   function resolveModel(
     actor: ActorContext,
@@ -543,15 +543,7 @@ export async function createHost(options: HostOptions) {
                 modelEvents.set(run.id, []);
               }
               const events = modelEvents.get(run.id)!;
-              const previous = events.at(-1);
-              if (
-                previous?.type === "text-delta" &&
-                event.type === "text-delta"
-              )
-                previous.text += event.text;
-              else {
-                if (events.length < 10000) events.push(event);
-              }
+              if (events.length < 10000) events.push(event);
               for (const listener of eventListeners.get(run.id) ?? [])
                 listener();
             },
@@ -1720,12 +1712,191 @@ export async function createHost(options: HostOptions) {
           (path === "/api/snapshot" || path === "/api/sync") &&
           req.method === "GET"
         ) {
-          const data = await db.request(
+          if (path === "/api/sync" && url.searchParams.has("after")) {
+            await authorization.require(context);
+            const afterText = url.searchParams.get("after")!;
+            const after = Number(afterText);
+            if (!/^\d+$/.test(afterText) || !Number.isSafeInteger(after))
+              fail(400, "VALIDATION_ERROR");
+            const incremental = await db.request(
+              context,
+              null,
+              (uow) =>
+                uow.run(context.workspaceId, async (tx) => {
+                  const page = await tx.workspaceChanges(
+                    after,
+                    url.searchParams.get("epoch") ?? undefined,
+                  );
+                  const changes: WorkspaceChanges = {
+                    collections: {},
+                    values: {},
+                  };
+                  if (!page.recovery) {
+                    const entities = new Map(
+                      page.changes.map((entry) => [
+                        entry.collection + ":" + entry.entityId,
+                        entry,
+                      ]),
+                    );
+                    const relatedLinks = new Map<
+                      string,
+                      import("@arclattice/application").KnowledgeLink
+                    >();
+                    const endpointCache = new Map<string, Promise<unknown>>();
+                    const readEndpoint = (
+                      ref: import("@arclattice/application").EntityRef,
+                    ) => {
+                      const collection =
+                        ref.kind === "WORK"
+                          ? "items"
+                          : ref.kind === "NOTE"
+                            ? "notes"
+                            : "library";
+                      const key = collection + ":" + ref.id;
+                      let value = endpointCache.get(key);
+                      if (!value) {
+                        value = tx.workspaceEntity(collection, ref.id);
+                        endpointCache.set(key, value);
+                      }
+                      return value;
+                    };
+                    for (const entry of entities.values()) {
+                      if (
+                        entry.collection === "navigationPreference" &&
+                        entry.entityId !== context.principalId
+                      )
+                        continue;
+                      const value = await tx.workspaceEntity(
+                        entry.collection,
+                        entry.entityId,
+                      );
+                      const kinds =
+                        entry.collection === "items"
+                          ? ["WORK"]
+                          : entry.collection === "notes"
+                            ? ["NOTE"]
+                            : entry.collection === "library"
+                              ? ["SPACE", "DOCUMENT"]
+                              : [];
+                      for (const kind of kinds)
+                        for (const link of await tx.workspaceRelatedLinks(
+                          kind,
+                          entry.entityId,
+                        ))
+                          relatedLinks.set(link.id, link);
+                      if (entry.collection === "links" && value)
+                        relatedLinks.set(
+                          entry.entityId,
+                          value as import("@arclattice/application").KnowledgeLink,
+                        );
+                      if (
+                        ["calendarSettings", "navigationPreference"].includes(
+                          entry.collection,
+                        )
+                      ) {
+                        if (value) changes.values[entry.collection] = value;
+                        if (entry.collection === "calendarSettings")
+                          changes.values.calendarTimezone =
+                            (value as { timezone?: string | null } | null)
+                              ?.timezone ??
+                            clock.calendarTimezone ??
+                            "UTC";
+                      } else {
+                        const collection = changes.collections[
+                          entry.collection
+                        ] ?? { upserts: [], removed: [] };
+                        if (value) collection.upserts.push(value);
+                        else collection.removed.push(entry.entityId);
+                        changes.collections[entry.collection] = collection;
+                      }
+                    }
+                    if (relatedLinks.size) {
+                      const linkChanges = changes.collections.links ?? {
+                        upserts: [],
+                        removed: [],
+                      };
+                      const upserts = new Map(
+                        linkChanges.upserts.map((entry) => [
+                          (entry as { id: string }).id,
+                          entry,
+                        ]),
+                      );
+                      const removed = new Set(linkChanges.removed);
+                      for (const link of relatedLinks.values()) {
+                        let visible = !link.deletedAt;
+                        for (const ref of [link.from, link.to]) {
+                          const endpoint = (await readEndpoint(ref)) as {
+                            deletedAt?: string | null;
+                            kind?: string;
+                            spaceId?: string | null;
+                          } | null;
+                          if (!endpoint || endpoint.deletedAt) {
+                            visible = false;
+                            break;
+                          }
+                          if (
+                            endpoint.kind === "DOCUMENT" &&
+                            endpoint.spaceId
+                          ) {
+                            const space = (await readEndpoint({
+                              kind: "SPACE",
+                              id: endpoint.spaceId,
+                            })) as { deletedAt?: string | null } | null;
+                            if (!space || space.deletedAt) {
+                              visible = false;
+                              break;
+                            }
+                          }
+                        }
+                        if (visible) {
+                          upserts.set(link.id, link);
+                          removed.delete(link.id);
+                        } else {
+                          upserts.delete(link.id);
+                          removed.add(link.id);
+                        }
+                      }
+                      changes.collections.links = {
+                        upserts: [...upserts.values()],
+                        removed: [...removed],
+                      };
+                    }
+                  }
+                  return {
+                    epoch: page.epoch,
+                    cursor: page.cursor,
+                    recovery: page.recovery,
+                    hasMore: page.hasMore,
+                    records: page.changes.filter(
+                      (entry) =>
+                        entry.collection !== "navigationPreference" ||
+                        entry.entityId === context.principalId,
+                    ),
+                    changes,
+                  };
+                }),
+              requireAccess,
+            );
+            if (!incremental.recovery) {
+              json(res, 200, { ...incremental, snapshot: null });
+              return;
+            }
+          }
+          const snapshotData = await db.request(
             context,
             null,
             async (uow, store, connected, library, organization, projects) => ({
+              syncState: await uow.run(context.workspaceId, (tx) =>
+                tx.workspaceChanges(Number.MAX_SAFE_INTEGER),
+              ),
               projectMaterials: await projects.list(),
               organization: await organization.list(),
+              reminders: await new ReminderService(
+                uow,
+                authorization,
+                clock,
+                ids,
+              ).list(context),
               workflows: await new WorkflowService(
                 uow,
                 authorization,
@@ -1755,6 +1926,7 @@ export async function createHost(options: HostOptions) {
               wikiLinks: (await library.wikiLinks?.()) ?? [],
             }),
           );
+          const { syncState, ...data } = snapshotData;
           const live = new Set([
             ...data.library
               .filter(
@@ -1779,28 +1951,15 @@ export async function createHost(options: HostOptions) {
               live.has(l.from.kind + ":" + l.from.id) &&
               live.has(l.to.kind + ":" + l.to.id),
           );
-          const cursor = digest(JSON.stringify(data));
-          if (path === "/api/sync") {
-            const cacheKey = context.workspaceId + ":" + context.principalId;
-            const previous = syncCache.get(cacheKey);
-            const requestedCursor = url.searchParams.get("cursor");
-            const incremental = url.searchParams.get("incremental") === "1";
-            const changes =
-              incremental && previous?.cursor === requestedCursor
-                ? workspaceChanges(previous.data, data)
-                : null;
-            syncCache.delete(cacheKey);
-            syncCache.set(cacheKey, { cursor, data });
-            if (syncCache.size > 128) {
-              const oldest = syncCache.keys().next().value;
-              if (oldest) syncCache.delete(oldest);
-            }
+          if (path === "/api/sync")
             json(res, 200, {
-              cursor,
-              snapshot: requestedCursor === cursor || changes ? null : data,
-              ...(changes ? { changes } : {}),
+              cursor: syncState.cursor,
+              epoch: syncState.epoch,
+              snapshot: data,
+              hasMore: false,
+              recovery: true,
             });
-          } else json(res, 200, data);
+          else json(res, 200, data);
           return;
         }
         if (path === "/api/ai" && req.method === "GET") {
@@ -1860,20 +2019,26 @@ export async function createHost(options: HostOptions) {
             "X-Accel-Buffering": "no",
           });
           let closed = false,
-            queue = Promise.resolve();
+            queue = Promise.resolve(),
+            eventCursor = 0;
           const send = () => {
             queue = queue
               .then(async () => {
                 if (closed) return;
                 const run = await readRun();
                 if (closed || res.writableEnded || res.destroyed) return;
-                const done = !["RUNNING", "WAITING_APPROVAL"].includes(
-                  run.status,
-                );
+                const done =
+                  run.status !== "RUNNING" ||
+                  (run.harness?.status === "WAITING_APPROVAL" &&
+                    !run.toolApprovals?.[run.harness.pending[0]?.id ?? ""]);
+                const events = modelEvents.get(id) ?? [];
+                const delta = events.slice(eventCursor);
+                eventCursor = events.length;
                 res.write(
                   "data: " +
                     JSON.stringify({
-                      events: modelEvents.get(id) ?? [],
+                      events: delta,
+                      cursor: eventCursor,
                       done,
                     }) +
                     "\n\n",
@@ -1911,12 +2076,45 @@ export async function createHost(options: HostOptions) {
             },
             requireAccess,
           );
-          json(res, 200, modelEvents.get(id) ?? []);
+          const events = modelEvents.get(id) ?? [];
+          const after = url.searchParams.get("after");
+          if (after === null) json(res, 200, events);
+          else {
+            const cursor = Number(after);
+            if (
+              !/^\d+$/.test(after) ||
+              !Number.isSafeInteger(cursor) ||
+              cursor < 0 ||
+              cursor > events.length
+            )
+              fail(400, "VALIDATION_ERROR");
+            const run = await db.request(
+              context,
+              null,
+              async (_uow, _notes, connected) => connected.getRun(id),
+              requireAccess,
+            );
+            json(res, 200, {
+              events: events.slice(cursor),
+              cursor: events.length,
+              done:
+                run.status !== "RUNNING" ||
+                (run.harness?.status === "WAITING_APPROVAL" &&
+                  !run.toolApprovals?.[run.harness.pending[0]?.id ?? ""]),
+            });
+          }
           return;
         }
-        if (path === "/api/ai/sessions" && req.method === "GET") {
+        if (
+          (path === "/api/ai/sessions" ||
+            path === "/api/ai/sessions/messages") &&
+          req.method === "GET"
+        ) {
           if (credential) fail(403, "FORBIDDEN");
-          const result = await db.request(
+          const result = await db.request<
+            | import("@arclattice/application").AgentSessionSummary[]
+            | import("@arclattice/application").AgentSessionPage
+          >(
             context,
             null,
             (
@@ -1928,9 +2126,25 @@ export async function createHost(options: HostOptions) {
               _projects,
               sessions,
             ) =>
-              new AgentSessionService(sessions, authorization, clock, ids).list(
-                context,
-              ),
+              path.endsWith("/messages")
+                ? new AgentSessionService(
+                    sessions,
+                    authorization,
+                    clock,
+                    ids,
+                  ).page(
+                    context,
+                    string(url.searchParams.get("id")),
+                    url.searchParams.has("before")
+                      ? Number(url.searchParams.get("before"))
+                      : null,
+                  )
+                : new AgentSessionService(
+                    sessions,
+                    authorization,
+                    clock,
+                    ids,
+                  ).summaries(context),
             requireAccess,
           );
           json(res, 200, result);
@@ -2353,6 +2567,56 @@ export async function createHost(options: HostOptions) {
                 await connected.saveRun(decision, run.version);
                 approved = decision;
                 return decision;
+              }
+              case "/api/ai/sessions/update": {
+                if (credential) fail(403, "FORBIDDEN");
+                keys(value, [
+                  "id",
+                  "version",
+                  "title",
+                  "archivedAt",
+                  "deletedAt",
+                  "projectId",
+                  "spaceId",
+                ]);
+                const changes: Parameters<AgentSessionService["update"]>[3] =
+                  {};
+                if (value.title !== undefined)
+                  changes.title = string(value.title, 240);
+                for (const key of ["archivedAt", "deletedAt"] as const) {
+                  if (value[key] !== undefined)
+                    changes[key] = value[key] === null ? null : clock.now();
+                }
+                if (value.projectId !== undefined) {
+                  changes.projectId =
+                    value.projectId === null ? null : string(value.projectId);
+                  if (changes.projectId)
+                    await uow.run(context.workspaceId, async (tx) => {
+                      const project = await tx.get(changes.projectId!);
+                      if (project.type !== "PROJECT" || project.deletedAt)
+                        throw new DomainError("NOT_FOUND");
+                    });
+                }
+                if (value.spaceId !== undefined) {
+                  changes.spaceId =
+                    value.spaceId === null ? null : string(value.spaceId);
+                  if (changes.spaceId) {
+                    const space = await library.get(changes.spaceId);
+                    if (space.kind !== "SPACE" || space.deletedAt)
+                      throw new DomainError("NOT_FOUND");
+                  }
+                }
+                return new AgentSessionService(
+                  sessions,
+                  authorization,
+                  clock,
+                  ids,
+                ).update(
+                  context,
+                  string(value.id),
+                  version(value.version),
+                  changes,
+                );
               }
               case "/api/ai/sessions/create": {
                 if (credential) fail(403, "FORBIDDEN");
@@ -3466,6 +3730,44 @@ export async function createHost(options: HostOptions) {
                   string(value.id),
                   version(value.version),
                   value.completedAt === null ? null : string(value.completedAt),
+                );
+              }
+              case "/api/reminders/save": {
+                if (credential) fail(403, "FORBIDDEN");
+                keys(value, ["id", "version", "input", "deleted"]);
+                const input = object(value.input);
+                keys(input, [
+                  "title",
+                  "bodyMd",
+                  "day",
+                  "time",
+                  "timezone",
+                  "notifyMode",
+                  "notifyOffsetMinutes",
+                  "linkedProjectId",
+                  "linkedTaskId",
+                  "state",
+                ]);
+                return new ReminderService(uow, authorization, clock, ids).save(
+                  context,
+                  value.id === null ? null : string(value.id),
+                  version(value.version),
+                  input as unknown as import("@arclattice/domain").ReminderInput,
+                  value.deleted === undefined ? false : boolean(value.deleted),
+                );
+              }
+              case "/api/recurrences/skip": {
+                if (credential) fail(403, "FORBIDDEN");
+                keys(value, ["id", "version"]);
+                return new WorkflowService(
+                  uow,
+                  authorization,
+                  clock,
+                  ids,
+                ).skipOccurrence(
+                  context,
+                  string(value.id),
+                  version(value.version),
                 );
               }
               case "/api/work/create": {

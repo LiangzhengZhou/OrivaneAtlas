@@ -1,6 +1,7 @@
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnchoredFloatingSurface } from "../../app/AnchoredFloatingSurface";
+import { Button } from "../../components/ui/Button";
 import { currentLevel, type HierarchyEntry, hierarchyPath } from "./hierarchy";
 import { PickerIdentityContext } from "./PickerIdentityContext";
 import { cleanRecent, recentKey } from "./recent";
@@ -99,7 +100,7 @@ export function HierarchyPicker({
     <section className="hierarchy-picker" aria-label={label} ref={root}>
       <div className="hierarchy-selected">
         {values.map((id) => (
-          <button
+          <Button
             type="button"
             className="chip"
             key={id}
@@ -110,9 +111,9 @@ export function HierarchyPicker({
             onClick={() => onChange(values.filter((value) => value !== id))}
           >
             {entries.find((entry) => entry.id === id)?.title ?? id} ×
-          </button>
+          </Button>
         ))}
-        <button
+        <Button
           type="button"
           className="chip"
           disabled={disabled}
@@ -121,7 +122,7 @@ export function HierarchyPicker({
           onClick={() => setOpen(!open)}
         >
           {values.length ? (zh ? "更改 / 添加" : "Change / Add") : label}
-        </button>
+        </Button>
       </div>
       {open && (
         <AnchoredFloatingSurface
@@ -132,24 +133,26 @@ export function HierarchyPicker({
           placement="bottom-start"
         >
           <nav aria-label={zh ? "层级路径" : "Hierarchy path"}>
-            <button
+            <Button
+              variant="ghost"
               type="button"
               className="text-button"
               onClick={() => navigate(null)}
             >
               {rootLabel}
-            </button>
+            </Button>
             {hierarchyPath(entries, parentId).map((entry) => (
               <span key={entry.id}>
                 {" "}
                 /{" "}
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   className="text-button"
                   onClick={() => navigate(entry.id)}
                 >
                   {entry.title}
-                </button>
+                </Button>
               </span>
             ))}
           </nav>
@@ -163,7 +166,7 @@ export function HierarchyPicker({
             onChange={(event) => setQuery(event.target.value)}
           />
           {mode === "single" && (
-            <button
+            <Button
               type="button"
               className="chip"
               disabled={disabled}
@@ -173,7 +176,7 @@ export function HierarchyPicker({
               }}
             >
               {rootLabel}
-            </button>
+            </Button>
           )}
           <ul
             aria-label={label}
@@ -207,7 +210,7 @@ export function HierarchyPicker({
               );
               return (
                 <li key={entry.id} className="parent-tree-row">
-                  <button
+                  <Button
                     type="button"
                     className="parent-tree-choice"
                     disabled={disabled || excludedIds?.has(entry.id)}
@@ -219,8 +222,8 @@ export function HierarchyPicker({
                   >
                     {entry.title}
                     {children && " ›"}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     className="chip"
                     aria-pressed={values.includes(entry.id)}
@@ -228,7 +231,7 @@ export function HierarchyPicker({
                     onClick={() => select(entry.id)}
                   >
                     {values.includes(entry.id) ? "✓" : zh ? "选择" : "Select"}
-                  </button>
+                  </Button>
                 </li>
               );
             })}
@@ -238,13 +241,14 @@ export function HierarchyPicker({
               {zh ? "当前层没有匹配项" : "No matches at this level"}
             </p>
           )}
-          <button
+          <Button
+            variant="ghost"
             type="button"
             className="text-button"
             onClick={() => setOpen(false)}
           >
             {zh ? "完成" : "Done"}
-          </button>
+          </Button>
         </AnchoredFloatingSurface>
       )}
     </section>

@@ -25,6 +25,17 @@ let directory: string,
   base: string,
   cookie: string,
   csrf: string;
+async function latestConversation() {
+  const summaries = await (await call("/api/ai/sessions")).json();
+  expect(summaries[0]).not.toHaveProperty("messages");
+  return (
+    await (
+      await call(
+        "/api/ai/sessions/messages?id=" + encodeURIComponent(summaries[0].id),
+      )
+    ).json()
+  ).session;
+}
 const ownerPassword = "Test-only-password-123";
 async function seedOwner() {
   const existing = await host.db.accounts((store) => store.find("owner"));
@@ -627,7 +638,7 @@ it("records capability calls and proposals inside the authorized persisted conve
     sessionVersion: conversation.version,
   });
   expect(result.status).toBe(200);
-  const session = (await (await call("/api/ai/sessions")).json())[0];
+  const session = await latestConversation();
   expect(
     session.messages.map((message: { kind: string }) => message.kind),
   ).toEqual(["TOOL_CALL", "TOOL_RESULT"]);
@@ -721,9 +732,7 @@ it("records capability calls and proposals inside the authorized persisted conve
     sessionVersion: session.version,
   });
   expect(proposal.status).toBe(200);
-  expect(
-    (await (await call("/api/ai/sessions")).json())[0].messages.at(-1).kind,
-  ).toBe("PROPOSAL");
+  expect((await latestConversation()).messages.at(-1).kind).toBe("PROPOSAL");
   expect(
     (await (await call("/api/library")).json()).find(
       (entry: { id: string }) => entry.id === document.id,
@@ -1581,6 +1590,25 @@ describe("private HTTP host", () => {
     const replay = await call("/api/ai/events/stream?id=" + run!.id);
     expect(replay.headers.get("content-type")).toBe("text/event-stream");
     expect(await replay.text()).toContain('"done":true');
+    const eventPage = await (
+      await call("/api/ai/events?id=" + run!.id + "&after=0")
+    ).json();
+    expect(eventPage).toMatchObject({
+      done: true,
+      cursor: eventPage.events.length,
+    });
+    expect(eventPage).toEqual({ events: [], cursor: 0, done: true });
+    const unchangedEvents = await (
+      await call("/api/ai/events?id=" + run!.id + "&after=" + eventPage.cursor)
+    ).json();
+    expect(unchangedEvents).toEqual({
+      events: [],
+      cursor: eventPage.cursor,
+      done: true,
+    });
+    expect(
+      (await call("/api/ai/events?id=" + run!.id + "&after=-1")).status,
+    ).toBe(400);
     expect(
       (
         await call("/api/ai/events/stream?id=" + run!.id, undefined, {
@@ -2536,14 +2564,12 @@ describe("private HTTP host", () => {
       approve: true,
     });
     await vi.waitFor(async () =>
-      expect(
-        (await (await call("/api/ai/sessions")).json())[0].messages,
-      ).toHaveLength(2),
+      expect((await latestConversation()).messages).toHaveLength(2),
     );
     await host.close();
     await start(undefined, model);
     await login();
-    const resumed = (await (await call("/api/ai/sessions")).json())[0];
+    const resumed = await latestConversation();
     expect(
       resumed.messages.map((message: { text: string }) => message.text),
     ).toEqual(["First", "Session answer"]);
@@ -2564,11 +2590,9 @@ describe("private HTTP host", () => {
     await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(2));
     expect(complete.mock.calls[1]?.[0]).toContain("Session answer");
     await vi.waitFor(async () =>
-      expect(
-        (await (await call("/api/ai/sessions")).json())[0].messages,
-      ).toHaveLength(4),
+      expect((await latestConversation()).messages).toHaveLength(4),
     );
-    const current = (await (await call("/api/ai/sessions")).json())[0];
+    const current = await latestConversation();
     const rejected = await (
       await call("/api/ai/propose", {
         prompt: "Rejected private question",
@@ -2585,7 +2609,7 @@ describe("private HTTP host", () => {
         })
       ).status,
     ).toBe(200);
-    const after = (await (await call("/api/ai/sessions")).json())[0];
+    const after = await latestConversation();
     expect(after.messages.at(-1).kind).toBe("ERROR");
     const retry = await (
       await call("/api/ai/propose", {
@@ -2741,8 +2765,7 @@ describe("private HTTP host", () => {
     expect(tasks.map((task: { title: string }) => task.title)).toEqual([
       "Human revised task",
     ]);
-    const messages = (await (await call("/api/ai/sessions")).json())[0]
-      .messages;
+    const messages = (await latestConversation()).messages;
     expect(messages.map((message: { kind: string }) => message.kind)).toEqual([
       "USER",
       "TOOL_CALL",
@@ -2851,7 +2874,7 @@ describe("private HTTP host", () => {
     await login();
     const first = await (await call("/api/sync")).json();
     expect(
-      (await (await call("/api/sync?cursor=" + first.cursor)).json()).snapshot,
+      (await (await call("/api/sync?after=" + first.cursor)).json()).snapshot,
     ).toBeNull();
     const a = await note(),
       b = await create();
@@ -2894,14 +2917,23 @@ describe("private HTTP host", () => {
       { "Idempotency-Key": key },
     );
     const changed = await (
-      await call("/api/sync?cursor=" + first.cursor)
+      await call("/api/sync?after=" + first.cursor)
     ).json();
     expect(changed.cursor).not.toBe(first.cursor);
-    expect(changed.snapshot.links).toHaveLength(1);
+    expect(changed.snapshot).toBeNull();
+    expect(changed.changes.collections.links.upserts).toHaveLength(1);
     await call("/api/note/delete", { id: a.id, version: 1, deleted: true });
     expect((await (await call("/api/snapshot")).json()).links).toEqual([]);
+    const hiddenDelta = await (
+      await call("/api/sync?after=" + changed.cursor)
+    ).json();
+    expect(hiddenDelta.changes.collections.links.removed).toEqual([link.id]);
     await call("/api/note/delete", { id: a.id, version: 2, deleted: false });
     expect((await (await call("/api/snapshot")).json()).links).toHaveLength(1);
+    const restoredDelta = await (
+      await call("/api/sync?after=" + hiddenDelta.cursor)
+    ).json();
+    expect(restoredDelta.changes.collections.links.upserts).toHaveLength(1);
     expect(
       (await call("/api/link/delete", { id: link.id, version: 99 })).status,
     ).toBe(409);
@@ -3560,28 +3592,25 @@ it("calendar authority is exposed and invalid zones are rejected before creating
 
 it("incremental workspace sync sends only changed entities and safely resets unknown cursors", async () => {
   await login();
-  const initial = await (await call("/api/sync?incremental=1")).json();
+  const initial = await (await call("/api/sync")).json();
   expect(initial.snapshot).not.toBeNull();
   const unchanged = await (
-    await call("/api/sync?incremental=1&cursor=" + initial.cursor)
+    await call("/api/sync?after=" + initial.cursor)
   ).json();
   expect(unchanged.snapshot).toBeNull();
   expect(unchanged.changes).toEqual({ collections: {}, values: {} });
   const task = await create("Incremental task");
   const changed = await (
-    await call("/api/sync?incremental=1&cursor=" + initial.cursor)
+    await call("/api/sync?after=" + initial.cursor)
   ).json();
   expect(changed.snapshot).toBeNull();
   expect(changed.changes.collections.items.upserts).toEqual([task]);
   expect(changed.changes.collections.items.removed).toEqual([]);
   expect(changed.changes.collections.notes).toBeUndefined();
   expect(
-    (await (await call("/api/sync?incremental=1&cursor=unknown")).json())
-      .snapshot,
+    (await (await call("/api/sync?after=999999999")).json()).snapshot,
   ).not.toBeNull();
-  expect(
-    (await call("/api/sync?incremental=1", undefined, { Cookie: "" })).status,
-  ).toBe(401);
+  expect((await call("/api/sync", undefined, { Cookie: "" })).status).toBe(401);
 });
 
 it("legacy project document mutations require explicit Space and cannot create a hidden Space", async () => {
@@ -3804,6 +3833,9 @@ it("pending Harness approval cannot survive a changed context and can be safely 
     );
     expect(waiting.harness.status).toBe("WAITING_APPROVAL");
   });
+  const approvalEvents = await call("/api/ai/events?id=" + run.id + "&after=0");
+  expect(approvalEvents.status).toBe(200);
+  expect(await approvalEvents.json()).toMatchObject({ done: true });
   expect(
     (
       await call("/api/library/save", {

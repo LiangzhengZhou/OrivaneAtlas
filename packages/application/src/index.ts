@@ -19,6 +19,8 @@ import type { WorkflowRecord } from "./workflows";
 export * from "./connected";
 export * from "./notebook";
 export * from "./organization";
+export * from "./reminders";
+export * from "./workspace-change-log";
 
 import type {
   ActivationPolicy,
@@ -67,7 +69,10 @@ export interface IdGenerator {
   next(): string;
 }
 export interface ActivityEvent {
-  readonly reason?: "RECURRENCE_WINDOW_EXPIRED" | null;
+  readonly reason?:
+    | "RECURRENCE_WINDOW_EXPIRED"
+    | "RECURRENCE_USER_SKIPPED"
+    | null;
   readonly fromId?: string | null;
   readonly toId?: string | null;
   readonly edgeType?: EdgeType | null;
@@ -103,6 +108,25 @@ export interface WorkSnapshot {
 }
 /** A transaction is already bound to one workspace by UnitOfWork.run. */
 export interface WorkTransaction {
+  workspaceChanges(
+    after: number,
+    epoch?: string,
+  ): Promise<import("./workspace-change-log").WorkspaceChangePage>;
+  workspaceEntity(collection: string, entityId: string): Promise<unknown>;
+  workspaceRelatedLinks(
+    kind: string,
+    entityId: string,
+  ): Promise<import("./connected").KnowledgeLink[]>;
+  reminders(): Promise<import("@arclattice/domain").Reminder[]>;
+  saveReminder(
+    value: import("@arclattice/domain").Reminder,
+    expectedVersion: number,
+  ): Promise<void>;
+  organizations(): Promise<import("./organization").Organization[]>;
+  saveOrganization(
+    value: import("./organization").Organization,
+    expectedVersion: number,
+  ): Promise<void>;
   navigationPreference(principalId: string): Promise<NavigationPreference>;
   saveNavigationPreference(
     principalId: string,
@@ -328,7 +352,7 @@ export class WorkService {
     id: string,
     expectedVersion: number,
     input: UpdateWorkInput,
-    reason?: "RECURRENCE_WINDOW_EXPIRED",
+    reason?: "RECURRENCE_WINDOW_EXPIRED" | "RECURRENCE_USER_SKIPPED",
   ): Promise<WorkItem> {
     await this.authorization.require(context, "work:update");
     this.prerequisites(input.prerequisiteIds);
@@ -1074,7 +1098,7 @@ export class WorkService {
     type: ActivityEvent["type"],
     occurredAt: string,
     edge?: WorkEdge,
-    reason?: "RECURRENCE_WINDOW_EXPIRED",
+    reason?: "RECURRENCE_WINDOW_EXPIRED" | "RECURRENCE_USER_SKIPPED",
   ): Promise<void> {
     const id = this.ids.next();
     await tx.appendActivity({

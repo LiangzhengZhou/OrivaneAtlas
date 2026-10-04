@@ -316,6 +316,9 @@ body {
   }
 }
 @media (max-width: 800px) {
+  html {
+    scroll-padding-bottom: calc(90px + env(safe-area-inset-bottom));
+  }
   .app-shell,
   .app-shell.sidebar-collapsed {
     display: block;

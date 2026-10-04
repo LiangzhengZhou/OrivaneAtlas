@@ -2,6 +2,7 @@ import type { LibraryEntry, Note } from "@arclattice/application";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
 import { DocumentDrilldownPicker } from "../documents/DocumentDrilldownPicker";
 import { noteWikiReferences } from "./note-wiki-references";
 import { SpacePicker } from "./SpacePicker";
@@ -43,22 +44,22 @@ export function NoteKnowledgeActions({
       className="note-knowledge-actions no-print"
       aria-label={zh ? "整理为知识" : "Organize knowledge"}
     >
-      <button
+      <Button
         type="button"
         className="chip"
         disabled={disabled || pending}
         onClick={() => setAction("promote")}
       >
         {zh ? "提升为 Wiki 页面" : "Promote to Wiki page"}
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
         className="chip"
         disabled={disabled || pending}
         onClick={() => setAction("link")}
       >
         {zh ? "链接到知识空间" : "Link to knowledge space"}
-      </button>
+      </Button>
       {linked.map((link) => (
         <p key={link.id}>
           {zh ? "已链接到" : "Linked to"}:{" "}
@@ -71,13 +72,14 @@ export function NoteKnowledgeActions({
           {noteWikiReferences([note], snapshot.library).map((link, index) => (
             <span key={String(index)}>
               {link.targetDocumentId ? (
-                <button
+                <Button
+                  variant="ghost"
                   type="button"
                   className="text-button"
                   onClick={() => onOpenWiki(link.targetDocumentId!)}
                 >
                   {link.alias ?? link.targetText}
-                </button>
+                </Button>
               ) : (
                 <span className="muted">
                   {link.alias ?? link.targetText} ·{" "}
@@ -131,7 +133,8 @@ export function NoteKnowledgeActions({
               </label>
             </>
           )}
-          <button
+          <Button
+            variant="primary"
             type="button"
             className="button primary"
             disabled={!spaceId || pending}
@@ -169,15 +172,16 @@ export function NoteKnowledgeActions({
               : zh
                 ? "链接"
                 : "Link"}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             type="button"
             className="text-button"
             disabled={pending}
             onClick={() => setAction(null)}
           >
             {zh ? "取消" : "Cancel"}
-          </button>
+          </Button>
         </div>
       )}
       {error && <p role="alert">{error}</p>}

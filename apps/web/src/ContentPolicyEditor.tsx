@@ -1,5 +1,6 @@
 import type { ContentPolicy } from "@arclattice/application";
 import { useTranslation } from "react-i18next";
+import { Select } from "./components/ui/Surfaces";
 
 export function ContentPolicyEditor({
   value,
@@ -24,7 +25,7 @@ export function ContentPolicyEditor({
       </p>
       <label>
         {zh ? "AI 访问" : "AI access"}
-        <select
+        <Select
           disabled={disabled}
           value={value.aiAccess}
           onChange={(e) =>
@@ -37,11 +38,11 @@ export function ContentPolicyEditor({
           <option value="DENY">{zh ? "永不" : "Never"}</option>
           <option value="ASK">{zh ? "询问" : "Ask"}</option>
           <option value="ALLOW">{zh ? "允许" : "Allowed"}</option>
-        </select>
+        </Select>
       </label>
       <label>
         {zh ? "处理位置" : "Processing boundary"}
-        <select
+        <Select
           disabled={disabled}
           value={value.processingBoundary}
           onChange={(e) =>
@@ -64,11 +65,11 @@ export function ContentPolicyEditor({
           <option value="ANY">
             {zh ? "允许已审批的云服务" : "Allow approved cloud services"}
           </option>
-        </select>
+        </Select>
       </label>
       <label>
         {zh ? "敏感级别" : "Classification"}
-        <select
+        <Select
           disabled={disabled}
           value={value.classification}
           onChange={(e) =>
@@ -85,7 +86,7 @@ export function ContentPolicyEditor({
           <option value="SECRET">
             {zh ? "机密（禁止 AI）" : "Secret (AI blocked)"}
           </option>
-        </select>
+        </Select>
       </label>
     </details>
   );

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   type LibraryEntry,
   type LibraryStore,
+  MAX_LIBRARY_ENTRIES,
   referencedLibraryAssetIds,
 } from "@arclattice/application";
 import { type ActorContext, DomainError } from "@arclattice/domain";
@@ -285,7 +286,17 @@ export function libraryStore(
       )
         throw new DomainError("VERSION_CONFLICT");
       if (expected === 0) {
-        if ((await list()).length >= 2000) throw new DomainError("FORBIDDEN");
+        if (
+          Number(
+            (
+              await client.query(
+                "SELECT count(*) AS count FROM arclattice.library_entry WHERE workspace_id=$1",
+                [context.workspaceId],
+              )
+            ).rows[0]?.count,
+          ) >= MAX_LIBRARY_ENTRIES
+        )
+          throw new DomainError("FORBIDDEN");
         await client.query(
           "INSERT INTO arclattice.library_entry VALUES ($1,$2,$3,$4)",
           [context.workspaceId, entry.id, entry.version, JSON.stringify(entry)],

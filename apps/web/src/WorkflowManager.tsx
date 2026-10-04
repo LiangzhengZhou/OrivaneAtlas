@@ -5,9 +5,11 @@ import {
 import { type WorkItem } from "@arclattice/domain";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "./components/ui/Button";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 
 export interface WorkflowManagerProps {
+  skip?(id: string, version: number): Promise<boolean>;
   calendarTimezone?: string;
   records: WorkflowRecord[];
   projects: readonly WorkItem[];
@@ -139,9 +141,9 @@ export function WorkflowManager({
             />
           </label>
           {error && <p role="alert">{t("workflows.invalidJson")}</p>}
-          <button type="submit" disabled={busy}>
+          <Button type="submit" disabled={busy}>
             {t("workflows.preview")}
-          </button>
+          </Button>
         </form>
         {records
           .filter((r) => r.payload.kind === "PLAN" && !r.deletedAt)
@@ -254,13 +256,13 @@ export function WorkflowManager({
                     ),
                 )}
                 {!r.payload.published && (
-                  <button
+                  <Button
                     type="button"
                     disabled={busy}
                     onClick={() => publish(r.id, r.version)}
                   >
                     {t("workflows.publish")}
-                  </button>
+                  </Button>
                 )}
               </article>
             ),

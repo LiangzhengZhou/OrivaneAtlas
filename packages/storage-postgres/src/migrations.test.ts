@@ -545,5 +545,7 @@ it("upgrades 2.0.2 schema19 preserving reason/outbox and adds explicit conversio
     name,
     "INSERT INTO arclattice.activity(workspace_id,id,principal_id,entity_id,type,occurred_at) VALUES ('w','conversion','p','task','RECURRENCE_TASK_CONVERTED','2026-10-04')",
   );
-  expect(await h.client(name, (client) => inspectSchema(client))).toBe(20);
+  expect(await h.client(name, (client) => inspectSchema(client))).toBe(
+    migrations.length,
+  );
 }, 30000);

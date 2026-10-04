@@ -1,3 +1,4 @@
+import { Select } from "./ui/Surfaces";
 import "../styles/recurrence.css";
 import type { RecurrencePayload } from "@arclattice/application";
 import { useTranslation } from "react-i18next";
@@ -29,7 +30,7 @@ export function RepeatFields({
     <div className="repeat-fields">
       <label>
         {text("重复", "Repeat")}
-        <select
+        <Select
           aria-label={text("重复", "Repeat")}
           value={rule?.frequency ?? "NONE"}
           onChange={(e) => {
@@ -53,7 +54,7 @@ export function RepeatFields({
           <option value="DAILY">{text("每天", "Daily")}</option>
           <option value="WEEKLY">{text("每周", "Weekly")}</option>
           <option value="MONTHLY">{text("每月", "Monthly")}</option>
-        </select>
+        </Select>
       </label>
       {rule && (
         <>
@@ -111,7 +112,7 @@ export function RepeatFields({
           </label>
           <label>
             {text("到期行为", "Expiration")}
-            <select
+            <Select
               value={rule.closePolicy}
               onChange={(e) =>
                 update({
@@ -135,7 +136,7 @@ export function RepeatFields({
               <option value="DURATION">
                 {text("创建后指定时间关闭", "Close after a duration")}
               </option>
-            </select>
+            </Select>
           </label>
           {rule.closePolicy === "DURATION" && (
             <div>
@@ -152,7 +153,7 @@ export function RepeatFields({
                   }
                 />
               </label>
-              <select
+              <Select
                 aria-label={text("时间单位", "Duration unit")}
                 value={rule.durationUnit ?? "HOUR"}
                 onChange={(e) =>
@@ -161,7 +162,7 @@ export function RepeatFields({
               >
                 <option value="HOUR">{text("小时", "Hours")}</option>
                 <option value="DAY">{text("天", "Days")}</option>
-              </select>
+              </Select>
             </div>
           )}
           <label>

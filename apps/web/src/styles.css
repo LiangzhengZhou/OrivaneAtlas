@@ -1,4 +1,26 @@
 @import url("./base.css");
+@import url("./components/ui/controls.css");
+.virtual-task-scroll {
+  height: min(65dvh, 760px);
+  min-height: 280px;
+  overflow: auto;
+  overflow-anchor: none;
+}
+.virtual-board-scroll {
+  height: min(62dvh, 720px);
+}
+.task-card {
+  border-left: 3px solid transparent;
+  background: var(--surface);
+}
+.task-card:hover {
+  border-left-color: hsl(var(--task-hue, 255) 35% 55%);
+  background: color-mix(
+    in srgb,
+    hsl(var(--task-hue, 255) 35% 55%) 5%,
+    var(--surface)
+  );
+}
 .project-memberships {
   min-width: 0;
   margin: 0;
@@ -15,23 +37,6 @@
   gap: 10px;
   min-height: 40px;
   overflow-wrap: anywhere;
-}
-/* Stable per-item tint: nearly white behind the title, stronger at the right. */
-.task-card {
-  background: linear-gradient(
-    100deg,
-    hsl(var(--task-hue, 255) 65% 98%) 0%,
-    hsl(var(--task-hue, 255) 65% 94%) 45%,
-    hsl(var(--task-hue, 255) 68% 84%) 100%
-  );
-  border-color: hsl(var(--task-hue, 255) 45% 80%);
-}
-.task-card:hover {
-  background: linear-gradient(
-    100deg,
-    hsl(var(--task-hue, 255) 65% 97%),
-    hsl(var(--task-hue, 255) 68% 81%)
-  );
 }
 .organization-toolbar {
   display: flex;
@@ -165,11 +170,8 @@ input[type="checkbox"] {
   border-top: 1px solid var(--border);
 }
 .task-query-panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 20px;
+  padding: 8px 0;
+  margin-bottom: 12px;
 }
 .task-scope-heading {
   display: flex;
@@ -187,8 +189,10 @@ input[type="checkbox"] {
 }
 .task-query-panel .filter-bar {
   padding: 0;
-  gap: 16px;
-  color: #626b7b;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  color: var(--muted);
 }
 .task-query-panel .filter-bar label {
   flex-wrap: wrap;
@@ -213,7 +217,7 @@ input[type="checkbox"] {
 }
 .calendar-layout {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
   gap: 20px;
   align-items: start;
 }

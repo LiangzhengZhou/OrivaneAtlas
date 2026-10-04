@@ -5,6 +5,8 @@ import type {
 } from "@arclattice/application";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "./components/ui/Button";
+import { confirmAction } from "./components/ui/ConfirmationHost";
 
 export function AppUpdater({ updates }: { updates: AppUpdates }) {
   const { t } = useTranslation("settings");
@@ -29,7 +31,11 @@ export function AppUpdater({ updates }: { updates: AppUpdates }) {
     }
   }
   async function install() {
-    if (busy.current || !info?.version || !window.confirm(t("updateConfirm")))
+    if (
+      busy.current ||
+      !info?.version ||
+      !(await confirmAction(t("updateConfirm")))
+    )
       return;
     busy.current = true;
     setState("installing");
@@ -72,13 +78,13 @@ export function AppUpdater({ updates }: { updates: AppUpdates }) {
           </pre>
         </details>
       )}
-      <button type="button" disabled={working} onClick={check}>
+      <Button type="button" disabled={working} onClick={check}>
         {t("updateCheck")}
-      </button>
+      </Button>
       {info?.version && (
-        <button type="button" disabled={working} onClick={install}>
+        <Button type="button" disabled={working} onClick={install}>
           {t("updateInstall")}
-        </button>
+        </Button>
       )}
     </section>
   );

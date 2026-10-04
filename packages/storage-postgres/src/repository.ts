@@ -1,4 +1,5 @@
-import type { WorkTransaction } from "@arclattice/application";
+import { randomUUID } from "node:crypto";
+import type { Organization, WorkTransaction } from "@arclattice/application";
 import {
   DomainError,
   defaultNavigationPreference,
@@ -17,6 +18,7 @@ import {
 } from "./fields";
 import { purgeRelations } from "./purge";
 import { workflowPort } from "./workflows";
+import { workspaceChangePort } from "./workspace-changes";
 
 function values<T extends object>(
   fields: Partial<Record<keyof T, string>>,
@@ -137,6 +139,102 @@ export function repository(client: PoolClient, workspaceId: string) {
     );
   };
   const port: WorkTransaction = {
+    ...workspaceChangePort(client, workspaceId, schedule),
+    reminders: () =>
+      schedule(async () => {
+        const result = await client.query(
+          "SELECT payload FROM arclattice.reminder WHERE workspace_id=$1 ORDER BY day,id",
+          [workspaceId],
+        );
+        return result.rows.map(
+          (row) => row.payload as import("@arclattice/domain").Reminder,
+        );
+      }),
+    saveReminder: (value, expected) =>
+      schedule(async () => {
+        scope(value);
+        await member(value.updatedBy);
+        if (value.version !== expected + 1)
+          throw new DomainError("VERSION_CONFLICT");
+        const payload = JSON.stringify(value);
+        const result =
+          expected === 0
+            ? await client.query(
+                "INSERT INTO arclattice.reminder VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+                [workspaceId, value.id, value.version, value.day, payload],
+              )
+            : await client.query(
+                "UPDATE arclattice.reminder SET version=$1,day=$2,payload=$3 WHERE workspace_id=$4 AND id=$5 AND version=$6",
+                [
+                  value.version,
+                  value.day,
+                  payload,
+                  workspaceId,
+                  value.id,
+                  expected,
+                ],
+              );
+        if (result.rowCount !== 1) throw new DomainError("VERSION_CONFLICT");
+        const id = randomUUID();
+        await client.query(
+          "INSERT INTO arclattice.reminder_activity VALUES ($1,$2,$3)",
+          [workspaceId, id, payload],
+        );
+        await client.query(
+          "INSERT INTO arclattice.reminder_outbox VALUES ($1,$2,'REMINDER_CHANGED')",
+          [workspaceId, id],
+        );
+      }),
+    organizations: () =>
+      schedule(async () => {
+        const result = await client.query(
+          "SELECT payload FROM arclattice.organization WHERE workspace_id=$1 ORDER BY kind,id",
+          [workspaceId],
+        );
+        return result.rows.map(
+          (row) => JSON.parse(String(row.payload)) as Organization,
+        );
+      }),
+    saveOrganization: (value, expected) =>
+      schedule(async () => {
+        scope(value);
+        await member(value.updatedBy);
+        if (value.version !== expected + 1)
+          throw new DomainError("VERSION_CONFLICT");
+        const result =
+          expected === 0
+            ? await client.query(
+                "INSERT INTO arclattice.organization VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+                [
+                  workspaceId,
+                  value.kind,
+                  value.id,
+                  value.version,
+                  JSON.stringify(value),
+                ],
+              )
+            : await client.query(
+                "UPDATE arclattice.organization SET version=$1,payload=$2 WHERE workspace_id=$3 AND kind=$4 AND id=$5 AND version=$6",
+                [
+                  value.version,
+                  JSON.stringify(value),
+                  workspaceId,
+                  value.kind,
+                  value.id,
+                  expected,
+                ],
+              );
+        if (result.rowCount !== 1) throw new DomainError("VERSION_CONFLICT");
+        const id = randomUUID();
+        await client.query(
+          "INSERT INTO arclattice.organization_activity VALUES ($1,$2,$3)",
+          [workspaceId, id, JSON.stringify(value)],
+        );
+        await client.query(
+          "INSERT INTO arclattice.organization_outbox VALUES ($1,$2,'ORGANIZATION_CHANGED')",
+          [workspaceId, id],
+        );
+      }),
     navigationPreference: (principalId) =>
       schedule(async () => {
         const row = (

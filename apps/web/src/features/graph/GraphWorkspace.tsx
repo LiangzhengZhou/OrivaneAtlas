@@ -1,22 +1,27 @@
 import type { EntityRef } from "@arclattice/application";
-import { projectPath, projectScope } from "@arclattice/domain";
+import { projectScope } from "@arclattice/domain";
 import { MarkerType } from "@xyflow/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../../bootstrap";
+import { Button } from "../../components/ui/Button";
 import { KnowledgeGraph } from "../knowledge/KnowledgeGraph";
 import { ProjectDependencyGraph } from "../projects/ProjectDependencyGraph";
 import { ProjectStructureTree } from "../projects/ProjectStructureTree";
+import type { WorkspaceWorkIndex } from "../tasks/workspace-work-index";
 import { GraphViewport } from "./GraphViewport";
+import { collectionRevision } from "./graph-revision";
 import { type GraphRoute, graphHash } from "./graph-route";
 import { projectDepth } from "./graph-scope";
 import { dependencyDagreLayout } from "./layouts/DependencyDagreLayout";
 import { useStructuralLayout } from "./layouts/useStructuralLayout";
 export function GraphWorkspace({
+  workIndex,
   route,
   snapshot,
   onOpen,
 }: {
+  workIndex: WorkspaceWorkIndex;
   route: GraphRoute;
   snapshot: Snapshot;
   onOpen(ref: EntityRef): void;
@@ -37,7 +42,10 @@ export function GraphWorkspace({
   const document = snapshot.library.find(
     (i) => i.id === route.id && !i.deletedAt,
   );
-  const structure = projectDepth(snapshot.items, route.id, route.depth);
+  const structure =
+    route.mode === "structure"
+      ? projectDepth(snapshot.items, route.id, route.depth)
+      : [];
   const structureIds = new Set(structure.map((item) => item.id));
   const edges = structure.flatMap((item) =>
     item.parentProjectId && structureIds.has(item.parentProjectId)
@@ -55,6 +63,7 @@ export function GraphWorkspace({
     structure.map((p) => p.id),
     edges,
     dependencyDagreLayout,
+    `${collectionRevision(snapshot.items)}:${route.id}:${route.depth}`,
   );
   const positionById = new Map(positions.map((p) => [p.id, p.position]));
   const selected =
@@ -78,7 +87,11 @@ export function GraphWorkspace({
           </p>
           {"type" in selected ? (
             <>
-              <p>{projectPath(selected, snapshot.items)}</p>
+              <p>
+                {selected.type === "TASK"
+                  ? workIndex.projectTitleByTaskId.get(selected.id)
+                  : workIndex.projectPathById.get(selected.id)}
+              </p>
               {selected.type === "TASK" && (
                 <p>{t("work:priorities." + selected.priority)}</p>
               )}
@@ -87,7 +100,7 @@ export function GraphWorkspace({
           ) : (
             <p>{selected.bodyMd.slice(0, 400)}</p>
           )}
-          <button
+          <Button
             type="button"
             className="chip"
             onClick={() =>
@@ -98,7 +111,7 @@ export function GraphWorkspace({
             }
           >
             {text("打开详情", "Open details")}
-          </button>
+          </Button>
         </>
       )}
     </aside>
@@ -119,21 +132,21 @@ export function GraphWorkspace({
   )
     return (
       <section>
-        <button
+        <Button
           type="button"
           onClick={() => {
             location.hash = route.back;
           }}
         >
           {text("返回", "Back")}
-        </button>
+        </Button>
         <p>{text("找不到图谱对象", "Graph entity is unavailable")}</p>
       </section>
     );
   return (
     <section className="graph-workspace">
       <header className="action-row">
-        <button
+        <Button
           type="button"
           className="chip"
           onClick={() => {
@@ -143,7 +156,7 @@ export function GraphWorkspace({
           }}
         >
           {text("返回", "Back")}
-        </button>
+        </Button>
         <h2>
           {project?.title ?? document?.title} · {text("图谱", "Graph")}
         </h2>
@@ -155,7 +168,7 @@ export function GraphWorkspace({
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
-        <button
+        <Button
           type="button"
           className="chip"
           onClick={async () => {
@@ -168,7 +181,7 @@ export function GraphWorkspace({
           }}
         >
           {text("复制链接", "Copy link")}
-        </button>
+        </Button>
       </header>
       {copyError && (
         <label role="alert">
@@ -203,7 +216,7 @@ export function GraphWorkspace({
             )
             .slice(0, 50)
             .map((item) => (
-              <button
+              <Button
                 type="button"
                 role="option"
                 aria-selected={route.selection === item.id}
@@ -218,14 +231,14 @@ export function GraphWorkspace({
                 }}
               >
                 {item.title}
-              </button>
+              </Button>
             ))}
         </div>
       )}
       {route.kind === "project" && (
         <div className="action-row">
           {["structure", "dependencies", "knowledge"].map((mode) => (
-            <button
+            <Button
               className="chip"
               type="button"
               key={mode}
@@ -245,7 +258,7 @@ export function GraphWorkspace({
                 }[mode] ?? mode,
                 mode,
               )}
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -253,7 +266,7 @@ export function GraphWorkspace({
         <>
           <div className="action-row">
             {[1, 2].map((depth) => (
-              <button
+              <Button
                 type="button"
                 className="chip"
                 key={depth}
@@ -261,34 +274,34 @@ export function GraphWorkspace({
                 onClick={() => update({ depth })}
               >
                 {depth} {text("层", "level")}
-              </button>
+              </Button>
             ))}
-            <button
+            <Button
               type="button"
               className="chip"
               aria-pressed={tree}
               onClick={() => update({ view: "tree" })}
             >
               {text("树形", "Tree")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               className="chip"
               aria-pressed={!tree}
               onClick={() => update({ view: "graph" })}
             >
               {text("图形", "Graph")}
-            </button>
+            </Button>
           </div>
           {tree ? (
             <div className="graph-body">
               <div>
-                <button
+                <Button
                   type="button"
                   onClick={() => update({ selection: route.id })}
                 >
                   {project?.title}
-                </button>
+                </Button>
                 <ProjectStructureTree
                   key={route.depth}
                   initialDepth={route.depth}
@@ -302,6 +315,7 @@ export function GraphWorkspace({
             </div>
           ) : (
             <GraphViewport
+              layoutKey={`${collectionRevision(snapshot.items)}:${route.id}:${route.depth}`}
               workspace
               selectionId={route.selection}
               inspector={inspector}
@@ -320,11 +334,12 @@ export function GraphWorkspace({
       {route.mode === "dependencies" && (
         <ProjectDependencyGraph
           key={route.id + route.mode}
+          scopeProjectId={route.id}
           workspace
           snapshot={scopedSnapshot}
           fullSnapshot={snapshot}
           inspector={inspector}
-          initialFocus={route.focus}
+          initialFocus={scopedTaskIds.has(route.focus) ? route.focus : ""}
           initialHops={route.hops}
           initialScope={route.scope}
           selectionId={route.selection}

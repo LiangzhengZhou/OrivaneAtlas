@@ -4,10 +4,13 @@ import type {
   ProjectActivity,
   ProjectMaterial,
 } from "@arclattice/application";
-import { projectPath, type WorkEdge, type WorkItem } from "@arclattice/domain";
-import { useEffect, useState } from "react";
+import { type WorkEdge, type WorkItem } from "@arclattice/domain";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "./components/ui/Button";
 import { FilePicker } from "./FilePicker";
+import { VirtualTaskCollection } from "./features/tasks/VirtualTaskCollection";
+import { buildWorkspaceWorkIndex } from "./features/tasks/workspace-work-index";
 
 export function ProjectMaterials({
   projectId,
@@ -104,9 +107,14 @@ export function ProjectMaterials({
           value={spaceTitle}
           onChange={(event) => setSpaceTitle(event.target.value)}
         />
-        <button type="submit" className="button primary" disabled={busy}>
+        <Button
+          variant="primary"
+          type="submit"
+          className="button primary"
+          disabled={busy}
+        >
           {zh ? "创建 Wiki" : "Create Wiki"}
-        </button>
+        </Button>
       </form>
       <details>
         <summary>{zh ? "链接现有空间" : "Link existing space"}</summary>
@@ -127,7 +135,8 @@ export function ProjectMaterials({
           )
           .slice(0, 20)
           .map((entry) => (
-            <button
+            <Button
+              variant="ghost"
               type="button"
               key={entry.id}
               className="text-button"
@@ -141,7 +150,7 @@ export function ProjectMaterials({
               }
             >
               {entry.title}
-            </button>
+            </Button>
           ))}
       </details>
       {(["OWNED", "LINKED"] as const).map((ownership) => (
@@ -158,7 +167,7 @@ export function ProjectMaterials({
           {spaces
             .filter((space) => space.ownership === ownership)
             .map((space) => (
-              <button
+              <Button
                 type="button"
                 className="chip"
                 key={space.id}
@@ -171,7 +180,7 @@ export function ProjectMaterials({
               >
                 {space.role === "PRIMARY" ? "★ " : ""}
                 {space.title}
-              </button>
+              </Button>
             ))}
         </section>
       ))}
@@ -179,7 +188,7 @@ export function ProjectMaterials({
         <section aria-label={zh ? "继承空间" : "Inherited spaces"}>
           <h3>{zh ? "继承空间" : "Inherited spaces"}</h3>
           {inheritedSpaces.map((space) => (
-            <button
+            <Button
               type="button"
               className="chip"
               key={space.id}
@@ -188,11 +197,12 @@ export function ProjectMaterials({
               }
             >
               {space.title}
-            </button>
+            </Button>
           ))}
         </section>
       )}
-      <button
+      <Button
+        variant="primary"
         type="button"
         className="button primary"
         disabled={busy || !spaces.length}
@@ -203,11 +213,11 @@ export function ProjectMaterials({
         }}
       >
         {zh ? "新建页面" : "Create page"}
-      </button>
+      </Button>
       {choosingPageSpace && (
         <section aria-label={zh ? "选择页面空间" : "Choose page space"}>
           {spaces.map((space) => (
-            <button
+            <Button
               type="button"
               className="chip"
               key={space.id}
@@ -217,7 +227,7 @@ export function ProjectMaterials({
               }}
             >
               {space.title}
-            </button>
+            </Button>
           ))}
         </section>
       )}
@@ -277,7 +287,8 @@ export function ProjectMaterials({
         .filter((entry) => entry.kind !== "SPACE")
         .map((entry) => (
           <div className="project-material" key={entry.id}>
-            <button
+            <Button
+              variant="ghost"
               type="button"
               className="text-button"
               disabled={!!entry.deletedAt}
@@ -289,7 +300,7 @@ export function ProjectMaterials({
             >
               {entry.kind === "SPACE" ? "◈ " : ""}
               {entry.title}
-            </button>
+            </Button>
             <small>
               {entry.ownership === "OWNED"
                 ? zh
@@ -305,7 +316,7 @@ export function ProjectMaterials({
                   ?.title
               }
             </small>
-            <button
+            <Button
               type="button"
               className="chip"
               disabled={busy}
@@ -318,7 +329,7 @@ export function ProjectMaterials({
                 : zh
                   ? "删除"
                   : "Delete"}
-            </button>
+            </Button>
           </div>
         ))}
     </section>
@@ -449,30 +460,37 @@ export function ProjectTimeline({
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
+  const workIndex = useMemo(() => buildWorkspaceWorkIndex(items, []), [items]);
+  const sorted = useMemo(
+    () =>
+      [...tasks].sort((left, right) =>
+        (left.startDate ?? left.dueDate ?? "9999").localeCompare(
+          right.startDate ?? right.dueDate ?? "9999",
+        ),
+      ),
+    [tasks],
+  );
   return (
     <section className="panel project-summary">
       <h2>{zh ? "项目时间线" : "Project timeline"}</h2>
-      {[...tasks]
-        .sort((left, right) =>
-          (left.startDate ?? left.dueDate ?? "9999").localeCompare(
-            right.startDate ?? right.dueDate ?? "9999",
-          ),
-        )
-        .map((task) => (
-          <button
+      <VirtualTaskCollection
+        items={sorted}
+        render={(task) => (
+          <Button
             key={task.id}
             type="button"
             className="agenda-item"
             onClick={() => onOpen({ kind: "WORK", id: task.id })}
           >
             <strong>{task.title}</strong>
-            <small>{projectPath(task, items)}</small>
+            <small>{workIndex.projectTitleByTaskId.get(task.id)}</small>
             <small>
               {task.startDate ?? "—"} →{" "}
               {task.dueDate ?? (zh ? "尚未排期" : "Unscheduled")}
             </small>
-          </button>
-        ))}
+          </Button>
+        )}
+      />
     </section>
   );
 }

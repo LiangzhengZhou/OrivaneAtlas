@@ -10,7 +10,7 @@
 
 ## What it is
 
-Orivane Atlas 2.1.0 is a self-hostable, knowledge-centric workspace with optional AI assistance. Projects organize work and bind knowledge spaces; documents retain Markdown, revisions, aliases and Wiki relationships. Web and native clients connect to the same server; the server remains the source of truth while clients may keep local drafts.
+Orivane Atlas 2.2.0 is a self-hostable, knowledge-centric workspace with optional AI assistance. Projects organize work and bind knowledge spaces; documents retain Markdown, revisions, aliases and Wiki relationships. Web and native clients connect to the same server; the server remains the source of truth while clients may keep local drafts.
 
 AI integration is optional. Orivane Atlas is not a handoff-only project: this repository is for people who want to run, use, extend, or contribute to the product.
 
@@ -25,6 +25,8 @@ AI integration is optional. Orivane Atlas is not a handoff-only project: this re
 - Controlled Atlas Agent tools, structured human approvals, reviewed Plan imports and real Sources
 - Provider Connections, Models, routing profiles and inheriting Project/Space overrides
 - Task-integrated recurrence, localized dates, focused Graph Workspace and browser SSE invalidation
+- Virtualized task lists/boards, shared workspace indexes and durable cursor-based incremental reads
+- Calendar reminders, explicit skipped occurrences and conversation summaries with paged history
 - Shared AI capabilities, provider adapters and explicitly trusted local/private endpoints
 - Notes, journals, tasks, calendar views, boards, import, export and recovery
 - Account and workspace isolation

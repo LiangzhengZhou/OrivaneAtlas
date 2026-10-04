@@ -1,6 +1,7 @@
 import type { ActorContext } from "@arclattice/domain";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Select } from "./components/ui/Surfaces";
 import "./density.css";
 
 export type InterfaceDensity = "comfortable" | "compact";
@@ -41,7 +42,7 @@ export function DensitySettings({
   return (
     <label className="density-settings">
       {chinese ? "界面密度" : "Interface density"}
-      <select
+      <Select
         aria-label={chinese ? "界面密度" : "Interface density"}
         value={density}
         onChange={(event) => {
@@ -55,7 +56,7 @@ export function DensitySettings({
       >
         <option value="comfortable">{chinese ? "舒适" : "Comfortable"}</option>
         <option value="compact">{chinese ? "紧凑" : "Compact"}</option>
-      </select>
+      </Select>
     </label>
   );
 }

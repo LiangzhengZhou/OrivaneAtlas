@@ -2,6 +2,7 @@ import type { CalendarSettings as Preference } from "@arclattice/application";
 import { requireCalendarTimezone } from "@arclattice/domain";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "./components/ui/Button";
 
 export function CalendarSettings({
   settings,
@@ -76,13 +77,15 @@ export function CalendarSettings({
       {invalid && <p role="alert">{t("invalidTimezone")}</p>}
       {conflict && <p role="alert">{t("errors:VERSION_CONFLICT")}</p>}
       <div className="organization-toolbar">
-        <button
+        <Button
+          variant="primary"
+          type="submit"
           className="button primary"
           disabled={busy || !dirty || conflict}
         >
           {t("common:save")}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className="button secondary"
           disabled={busy}
@@ -93,15 +96,15 @@ export function CalendarSettings({
           }}
         >
           {t("common:cancel")}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className="chip"
           disabled={busy}
           onClick={() => setTimezone("")}
         >
           {t("inheritTimezone")}
-        </button>
+        </Button>
       </div>
     </form>
   );
