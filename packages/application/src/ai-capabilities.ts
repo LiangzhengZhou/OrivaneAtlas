@@ -1,17 +1,39 @@
-import { type ActorContext, DomainError } from "@arclattice/domain";
+import {
+  type ActorContext,
+  DomainError,
+  type Priority,
+} from "@arclattice/domain";
 import {
   type AiCapability,
   aiCapabilities,
   type ExecutionApproval,
   requiresExecutionApproval,
 } from "./ai-context";
+import {
+  capabilityDefinition,
+  validateCapabilityInput,
+} from "./capability-registry";
 import type { ConnectedService } from "./connected";
 import type { AuthorizationService, WorkService } from "./index";
 import type { LibraryEntry, LibraryService, LibraryStore } from "./library";
 import type { ProjectKnowledgeScope } from "./project-knowledge-scope";
 import type { RetrievalResult, RetrievalService } from "./retrieval";
+import type { WorkflowService } from "./workflows";
 
 export type AiCapabilityCall =
+  | {
+      name: "preview_plan";
+      projectId?: string;
+      manifest: Record<string, unknown>;
+    }
+  | {
+      name: "publish_plan";
+      id: string;
+      version: number;
+      manifest?: Record<string, unknown>;
+    }
+  | { name: "create_document"; spaceId: string; title: string; bodyMd: string }
+  | { name: "move_document"; id: string; version: number; spaceId: string }
   | {
       name: "search_documents";
       query: string;
@@ -22,6 +44,33 @@ export type AiCapabilityCall =
   | { name: "get_project"; id: string }
   | { name: "list_project_tasks"; projectId: string }
   | { name: "create_task"; title: string; projectIds?: string[] }
+  | {
+      name: "update_task";
+      id: string;
+      version: number;
+      title?: string;
+      descriptionMd?: string;
+    }
+  | { name: "complete_task"; id: string; version: number }
+  | {
+      name: "reschedule_task";
+      id: string;
+      version: number;
+      startDate?: string;
+      dueDate?: string;
+    }
+  | {
+      name: "set_task_priority";
+      id: string;
+      version: number;
+      priority: Priority;
+    }
+  | {
+      name: "move_task_to_project";
+      id: string;
+      version: number;
+      projectIds: string[];
+    }
   | { name: "propose_document_edit"; id: string; markdown: string }
   | { name: "link_documents"; fromId: string; toId: string };
 
@@ -30,6 +79,36 @@ export function parseAiCapabilityCall(
   input: Record<string, unknown>,
   scope: ProjectKnowledgeScope,
 ): AiCapabilityCall {
+  validateCapabilityInput(capabilityDefinition(name).inputSchema, input);
+  if (
+    [
+      "preview_plan",
+      "publish_plan",
+      "create_document",
+      "move_document",
+    ].includes(name)
+  )
+    return { ...input, name } as Extract<
+      AiCapabilityCall,
+      {
+        name:
+          | "preview_plan"
+          | "publish_plan"
+          | "create_document"
+          | "move_document";
+      }
+    >;
+  if (
+    [
+      "update_task",
+      "complete_task",
+      "reschedule_task",
+      "set_task_priority",
+      "move_task_to_project",
+    ].includes(name)
+  ) {
+    return { ...input, name } as Extract<AiCapabilityCall, { version: number }>;
+  }
   const text = (key: string, max = 240) => {
     const value = input[key];
     if (typeof value !== "string" || !value.trim() || value.length > max)
@@ -93,6 +172,7 @@ export class AiCapabilityService {
     readonly retrieval: RetrievalService,
     private readonly connected?: ConnectedService,
     private readonly externalDisclosure = false,
+    private readonly workflows?: WorkflowService,
   ) {}
   private async readableDocument(
     context: ActorContext,
@@ -189,6 +269,46 @@ export class AiCapabilityService {
     if (!capability) throw new DomainError("VALIDATION_ERROR");
     await this.authorize(context, capability, approval, approved);
     switch (call.name) {
+      case "preview_plan":
+        if (!this.workflows) throw new DomainError("FORBIDDEN");
+        return this.workflows.preview(
+          context,
+          call.projectId ?? null,
+          call.manifest,
+          "EXTERNAL_AI",
+        );
+      case "publish_plan":
+        if (!this.workflows || !approved) throw new DomainError("FORBIDDEN");
+        if (call.manifest) {
+          const revised = await this.workflows.revisePreview(
+            context,
+            call.id,
+            call.version,
+            call.manifest,
+          );
+          return this.workflows.publish(
+            context,
+            call.id,
+            revised.version,
+            true,
+          );
+        }
+        return this.workflows.publish(context, call.id, call.version, true);
+      case "create_document":
+        return this.documents.save(context, null, 0, {
+          kind: "DOCUMENT",
+          spaceId: call.spaceId,
+          title: call.title,
+          bodyMd: call.bodyMd,
+        });
+      case "move_document":
+        await this.readDocument(context, call.id);
+        return this.documents.moveDocument(
+          context,
+          call.id,
+          call.version,
+          call.spaceId,
+        );
       case "search_documents":
         return this.searchDocuments(
           context,
@@ -207,6 +327,24 @@ export class AiCapabilityService {
           title: call.title,
           ...(call.projectIds ? { projectIds: call.projectIds } : {}),
         });
+      case "update_task":
+      case "complete_task":
+      case "reschedule_task":
+      case "set_task_priority":
+      case "move_task_to_project": {
+        const task = (await this.work.snapshot(context)).items.find(
+          (item) =>
+            item.id === call.id && item.type === "TASK" && !item.deletedAt,
+        );
+        if (!task) throw new DomainError("NOT_FOUND");
+        const { name, id, version, ...changes } = call;
+        return this.work.update(
+          context,
+          id,
+          version,
+          name === "complete_task" ? { status: "DONE" } : changes,
+        );
+      }
       case "propose_document_edit":
         return this.proposeDocumentEdit(context, call.id, call.markdown);
       case "link_documents": {
@@ -238,8 +376,10 @@ export class AiCapabilityService {
             ? "work:create"
             : "work:update",
     );
-    if (requiresExecutionApproval(capability.risk, approval) && !approved)
-      throw new DomainError("FORBIDDEN");
+    const review = capability.previewOnly
+      ? approval === "REVIEW_EVERYTHING"
+      : requiresExecutionApproval(capability.risk, approval);
+    if (review && !approved) throw new DomainError("FORBIDDEN");
   }
   async readDocument(context: ActorContext, id: string) {
     await this.authorization.require(context, "work:read");

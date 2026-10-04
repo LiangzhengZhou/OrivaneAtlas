@@ -15,6 +15,7 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "./bootstrap";
+import { openGraph } from "./features/graph/graph-route";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
 import { ProjectDependencyGraph } from "./features/projects/ProjectDependencyGraph";
 import { ProjectStructureTree } from "./features/projects/ProjectStructureTree";
@@ -331,6 +332,19 @@ export function ProjectWorkspace({
           />
           <section>
             <h2>{t("projectHub.children")}</h2>
+            <button
+              type="button"
+              className="chip"
+              onClick={() =>
+                openGraph({
+                  kind: "project",
+                  id: project.id,
+                  mode: "structure",
+                })
+              }
+            >
+              {t("openGraphWorkspace")}
+            </button>
             <ProjectStructureTree
               projects={liveItems}
               parentId={project.id}
@@ -553,6 +567,26 @@ export function ProjectWorkspace({
             <p className="muted">{t("inspectHint")}</p>
             <div className="project-canvas-layout">
               <ProjectDependencyGraph
+                initialFocus={
+                  snapshot.items.some(
+                    (i) => i.id === inspectedId && i.type === "TASK",
+                  )
+                    ? inspectedId
+                    : ""
+                }
+                onWorkspace={() =>
+                  openGraph({
+                    kind: "project",
+                    id: project.id,
+                    mode: "dependencies",
+                    focus: snapshot.items.some(
+                      (i) => i.id === inspectedId && i.type === "TASK",
+                    )
+                      ? inspectedId
+                      : "",
+                    selection: inspectedId,
+                  })
+                }
                 inspector={
                   <ProjectInspector
                     item={

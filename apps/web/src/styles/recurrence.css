@@ -1,0 +1,50 @@
+.repeat-fields {
+  display: grid;
+  gap: 12px;
+  margin-block: 12px;
+}
+.repeat-fields label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.recurrence-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding-block: 12px;
+  border-bottom: 1px solid var(--border-default);
+}
+.recurring-series-dialog,
+.recurrence-statistics-dialog {
+  width: min(900px, calc(100vw - 24px));
+  max-height: 85vh;
+  overflow: auto;
+}
+
+.recurring-series-dialog,
+.recurrence-statistics-dialog {
+  padding: 24px;
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  box-shadow: 0 20px 70px #0003;
+}
+.recurring-series-dialog::backdrop,
+.recurrence-statistics-dialog::backdrop {
+  background: #0005;
+}
+@media (max-width: 767px) {
+  .recurrence-statistics-dialog .recurrence-statistics-grid {
+    grid-template-columns: 1fr;
+  }
+  .recurring-series-dialog,
+  .recurrence-statistics-dialog {
+    padding: 16px;
+    max-height: 80dvh;
+  }
+}

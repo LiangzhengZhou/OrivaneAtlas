@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orivane Atlas workspace API",
-    "version": "2.0.2",
-    "description": "HTTPS self-hosted accounts with isolated workspaces. Registration is PENDING until admin approval. Legacy-key session alone binds ADMIN to original workspace. Cookie + CSRF or 30/90/365-day or non-expiring revocable Bearer credentials: write allows create/update/delete and responses may include the affected entity (not append-only or confidential blind-write); read-write explicitly permits all private workspace content reads. Bearer forbids admin/accounts/tokens/backup/server AI. Business POSTs use atomic durable Idempotency-Key receipts and current versions. Claim/password/token issuance consume keys without replaying secret responses (409 on consumed key). Passwords and secret-response plaintext are never in receipts. Registration requires a key but deduplicates by unique normalized username (retry after success can return 400). Login/logout/read-only backup do not use receipts. No server AI configuration needed for local AI uploads. No email recovery/MFA/offline replication/public sharing or autonomous tools. PDF is client browser print, not a PDF-generation API. Legacy /api and versioned /api/v1 aliases have identical behavior. Personal encrypted provider settings support Chat Completions and Responses. Explicit review authorizes one call with selected versioned documents; results never auto-apply. SQLite backup excludes the separate provider vault and its master key."
+    "version": "2.1.0",
+    "description": "HTTPS self-hosted accounts with isolated workspaces. Registration is PENDING until admin approval. Legacy-key session alone binds ADMIN to original workspace. Cookie + CSRF or 30/90/365-day or non-expiring revocable Bearer credentials: write allows create/update/delete and responses may include the affected entity (not append-only or confidential blind-write); read-write explicitly permits all private workspace content reads. Bearer forbids admin/accounts/tokens/backup/server AI. Business POSTs use atomic durable Idempotency-Key receipts and current versions. Claim/password/token issuance consume keys without replaying secret responses (409 on consumed key). Passwords and secret-response plaintext are never in receipts. Registration requires a key but deduplicates by unique normalized username (retry after success can return 400). Login/logout/read-only backup do not use receipts. No server AI configuration needed for local AI uploads. No email recovery/MFA/offline replication/public sharing or unrestricted autonomous tools. PDF is client browser print, not a PDF-generation API. Legacy /api and versioned /api/v1 aliases have identical behavior. Owner-encrypted Provider Connections, Models, Profiles and Bindings support bounded multi-provider Atlas execution. Model routing is separate from retrieval; precedence Explicit > Space > Project > Personal. Tools use real version-bound approval, shared capability services and bounded durable audit. Read old 2.0.2 encrypted provider arrays, atomically write catalog format 2 without returning keys. SQLite backup excludes the separate provider vault and its master key."
   },
   "servers": [
     {
@@ -2354,7 +2354,7 @@
     },
     "/api/v1/library/upload-chunk": {
       "post": {
-        "operationId": "v1UploadImageChunk",
+        "operationId": "uploadImageChunkV1",
         "summary": "Upload a bounded image chunk; no whole-file or workspace image size cap",
         "description": "Send sequential indices starting at zero with identical uploadId, spaceId, name and mime. Each chunk decodes to 1–262144 bytes; the first validates the image signature. Set final only on the last chunk. Only finalized images are readable. Retry an identical request with the same Idempotency-Key. Incomplete uploads expire after 24 hours. Null spaceId means workspace ownership. Requires an active session or read-write integration token.",
         "security": [
@@ -3805,7 +3805,7 @@
       "post": {
         "operationId": "proposeAgentRun",
         "summary": "Persist input for review; does not send to model",
-        "description": "Cookie only. Resolve personal scope config and explicitly selected own live documents at exact versions (max20). SPACE scope restricts sources to that space. Combined prompt plus context is capped at32000 characters. Does not call provider until approval. Default empty sources. Changed config invalidates approval.",
+        "description": "Cookie only. Resolve personal scope config and explicitly selected own live documents at exact versions (max20). SPACE scope restricts sources to that space. Combined prompt plus context is capped at32000 characters. Does not call provider until approval. Default empty sources. Changed config invalidates approval. modelRouting enables Explicit conversation > current Space > current Project > personal default selection independently of retrieval. Existing session explicit profile is inherited when omitted. Unknown explicit overrides fail closed.",
         "parameters": [
           {
             "name": "Origin",
@@ -3910,6 +3910,17 @@
                   "sessionVersion": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "modelRouting": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "explicitProfileId": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+                      }
+                    },
+                    "required": []
                   }
                 },
                 "required": ["prompt"]
@@ -6612,7 +6623,7 @@
       "post": {
         "operationId": "proposeAgentRunV1",
         "summary": "Persist input for review; does not send to model",
-        "description": "Cookie only. Resolve personal scope config and explicitly selected own live documents at exact versions (max20). SPACE scope restricts sources to that space. Combined prompt plus context is capped at32000 characters. Does not call provider until approval. Default empty sources. Changed config invalidates approval.",
+        "description": "Cookie only. Resolve personal scope config and explicitly selected own live documents at exact versions (max20). SPACE scope restricts sources to that space. Combined prompt plus context is capped at32000 characters. Does not call provider until approval. Default empty sources. Changed config invalidates approval. modelRouting enables Explicit conversation > current Space > current Project > personal default selection independently of retrieval. Existing session explicit profile is inherited when omitted. Unknown explicit overrides fail closed.",
         "parameters": [
           {
             "name": "Origin",
@@ -6717,6 +6728,17 @@
                   "sessionVersion": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "modelRouting": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "explicitProfileId": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+                      }
+                    },
+                    "required": []
                   }
                 },
                 "required": ["prompt"]
@@ -8451,6 +8473,10 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 240
+                  },
+                  "modelProfileOverride": {
+                    "type": ["string", "null"],
+                    "maxLength": 64
                   }
                 },
                 "required": ["title"]
@@ -8515,6 +8541,10 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 240
+                  },
+                  "modelProfileOverride": {
+                    "type": ["string", "null"],
+                    "maxLength": 64
                   }
                 },
                 "required": ["title"]
@@ -8645,7 +8675,7 @@
     "/api/ai/capability": {
       "post": {
         "summary": "Execute the shared application capability registry",
-        "description": "Cookie/CSRF only. READ requires read authorization. PROPOSE and WRITE require explicit human approved=true. MCP uses the same registry and rejects unapproved writes/proposals; it cannot supply approved=true. Mutation receipts prevent duplicate effects. Optional sessionId/sessionVersion binds persisted TOOL_CALL/TOOL_RESULT/PROPOSAL messages to the actor-owned conversation in the same transaction. MCP document disclosure requires document and Space ALLOW/ANY policies, never SECRET.",
+        "description": "Cookie/CSRF only. Canonical registry drives MCP and Atlas via AiCapabilityService. READ uses permission and disclosure policy; writes require real human approval. Private plan preview does not publish; publication always requires separate review. Models cannot pass approved or bypass versions. Mutation and tool audit share one transaction. MCP aliases remain for compatibility; Bearer cannot self-approve writes.",
         "security": [
           {
             "ownerSession": []
@@ -8677,12 +8707,21 @@
                       "list_project_tasks",
                       "create_task",
                       "propose_document_edit",
-                      "link_documents"
+                      "link_documents",
+                      "update_task",
+                      "complete_task",
+                      "reschedule_task",
+                      "set_task_priority",
+                      "move_task_to_project",
+                      "preview_plan",
+                      "publish_plan",
+                      "create_document",
+                      "move_document"
                     ]
                   },
                   "input": {
                     "type": "object",
-                    "description": "search_documents: query, optional projectId/currentSpaceId; read_document/get_project: id; list_project_tasks: projectId; create_task: title, optional projectIds; propose_document_edit: id, markdown; link_documents: fromId, toId. Other fields are rejected."
+                    "description": "Canonical tool schemas are generated from packages/application/src/capability-registry.ts. Task updates require id/version; dates remain ISO. Preview validates an additive manifest without publication. Publish requires an actual human approval; optional manifest is human-edited review input. Document movement preserves content and rejects non-leaf moves."
                   },
                   "approved": {
                     "type": "boolean",
@@ -8728,7 +8767,7 @@
     "/api/v1/ai/capability": {
       "post": {
         "summary": "Execute the shared application capability registry",
-        "description": "Cookie/CSRF only. READ requires read authorization. PROPOSE and WRITE require explicit human approved=true. MCP uses the same registry and rejects unapproved writes/proposals; it cannot supply approved=true. Mutation receipts prevent duplicate effects. Optional sessionId/sessionVersion binds persisted TOOL_CALL/TOOL_RESULT/PROPOSAL messages to the actor-owned conversation in the same transaction. MCP document disclosure requires document and Space ALLOW/ANY policies, never SECRET.",
+        "description": "Cookie/CSRF only. Canonical registry drives MCP and Atlas via AiCapabilityService. READ uses permission and disclosure policy; writes require real human approval. Private plan preview does not publish; publication always requires separate review. Models cannot pass approved or bypass versions. Mutation and tool audit share one transaction. MCP aliases remain for compatibility; Bearer cannot self-approve writes.",
         "security": [
           {
             "ownerSession": []
@@ -8760,12 +8799,21 @@
                       "list_project_tasks",
                       "create_task",
                       "propose_document_edit",
-                      "link_documents"
+                      "link_documents",
+                      "update_task",
+                      "complete_task",
+                      "reschedule_task",
+                      "set_task_priority",
+                      "move_task_to_project",
+                      "preview_plan",
+                      "publish_plan",
+                      "create_document",
+                      "move_document"
                     ]
                   },
                   "input": {
                     "type": "object",
-                    "description": "search_documents: query, optional projectId/currentSpaceId; read_document/get_project: id; list_project_tasks: projectId; create_task: title, optional projectIds; propose_document_edit: id, markdown; link_documents: fromId, toId. Other fields are rejected."
+                    "description": "Canonical tool schemas are generated from packages/application/src/capability-registry.ts. Task updates require id/version; dates remain ISO. Preview validates an additive manifest without publication. Publish requires an actual human approval; optional manifest is human-edited review input. Document movement preserves content and rejects non-leaf moves."
                   },
                   "approved": {
                     "type": "boolean",
@@ -10062,6 +10110,1164 @@
             "description": "Version conflict or remaining descendants"
           }
         }
+      }
+    },
+    "/api/recurrences/task": {
+      "post": {
+        "operationId": "saveTaskRecurrence",
+        "summary": "Atomically save repeat draft or convert an existing versioned task without duplicates",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["draft", "recurrence"],
+                "additionalProperties": false,
+                "properties": {
+                  "task": {
+                    "type": "object",
+                    "required": ["id", "version"],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "draft": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {},
+                    "required": ["title"]
+                  },
+                  "recurrence": {
+                    "type": "object",
+                    "required": ["version", "deleted", "rule"],
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "deleted": {
+                        "type": "boolean"
+                      },
+                      "rule": {
+                        "type": "object"
+                      },
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved definition and optional occurrence task"
+          },
+          "409": {
+            "description": "Version or existing series conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/recurrences/task": {
+      "post": {
+        "operationId": "saveTaskRecurrenceV1",
+        "summary": "Atomically save repeat draft or convert an existing versioned task without duplicates",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["draft", "recurrence"],
+                "additionalProperties": false,
+                "properties": {
+                  "task": {
+                    "type": "object",
+                    "required": ["id", "version"],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "draft": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {},
+                    "required": ["title"]
+                  },
+                  "recurrence": {
+                    "type": "object",
+                    "required": ["version", "deleted", "rule"],
+                    "properties": {
+                      "version": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "deleted": {
+                        "type": "boolean"
+                      },
+                      "rule": {
+                        "type": "object"
+                      },
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved definition and optional occurrence task"
+          },
+          "409": {
+            "description": "Version or existing series conflict"
+          }
+        }
+      }
+    },
+    "/api/ai/configuration": {
+      "get": {
+        "operationId": "getModelConfiguration",
+        "summary": "Read connections, models, profiles and bindings without keys",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConfiguration"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace."
+      }
+    },
+    "/api/ai/configuration/save": {
+      "post": {
+        "operationId": "saveModelConfiguration",
+        "summary": "Atomically save a private model catalog",
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "input": {
+                    "$ref": "#/components/schemas/ModelConfigurationInput"
+                  }
+                },
+                "required": ["version", "input"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConfiguration"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/connections/models": {
+      "post": {
+        "operationId": "discoverConnectionModels",
+        "summary": "Test connection and discover models through the provider adapter",
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "connectionId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+                  }
+                },
+                "required": ["connectionId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "capabilities": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "tools": {
+                          "type": "boolean"
+                        },
+                        "jsonSchema": {
+                          "type": "boolean"
+                        },
+                        "vision": {
+                          "type": "boolean"
+                        },
+                        "streaming": {
+                          "type": "boolean"
+                        },
+                        "embedding": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "tools",
+                        "jsonSchema",
+                        "vision",
+                        "streaming",
+                        "embedding"
+                      ]
+                    }
+                  },
+                  "required": ["models", "capabilities"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/sessions/profile": {
+      "post": {
+        "operationId": "setConversationModelProfile",
+        "summary": "Versioned explicit conversation model override",
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "profileId": {
+                    "type": ["string", "null"],
+                    "maxLength": 64
+                  }
+                },
+                "required": ["id", "version", "profileId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSession"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/configuration": {
+      "get": {
+        "operationId": "getModelConfigurationV1",
+        "summary": "Read connections, models, profiles and bindings without keys",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConfiguration"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace."
+      }
+    },
+    "/api/v1/ai/configuration/save": {
+      "post": {
+        "operationId": "saveModelConfigurationV1",
+        "summary": "Atomically save a private model catalog",
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "input": {
+                    "$ref": "#/components/schemas/ModelConfigurationInput"
+                  }
+                },
+                "required": ["version", "input"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConfiguration"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/connections/models": {
+      "post": {
+        "operationId": "discoverConnectionModelsV1",
+        "summary": "Test connection and discover models through the provider adapter",
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "connectionId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+                  }
+                },
+                "required": ["connectionId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "capabilities": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "tools": {
+                          "type": "boolean"
+                        },
+                        "jsonSchema": {
+                          "type": "boolean"
+                        },
+                        "vision": {
+                          "type": "boolean"
+                        },
+                        "streaming": {
+                          "type": "boolean"
+                        },
+                        "embedding": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "tools",
+                        "jsonSchema",
+                        "vision",
+                        "streaming",
+                        "embedding"
+                      ]
+                    }
+                  },
+                  "required": ["models", "capabilities"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/sessions/profile": {
+      "post": {
+        "operationId": "setConversationModelProfileV1",
+        "summary": "Versioned explicit conversation model override",
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "profileId": {
+                    "type": ["string", "null"],
+                    "maxLength": 64
+                  }
+                },
+                "required": ["id", "version", "profileId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSession"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/harness/decide": {
+      "post": {
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          },
+          {
+            "name": "X-CSRF-Token",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          }
+        ],
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "summary": "Human decide a pending Atlas tool run",
+        "description": "Cookie + CSRF only; workspace/principal ownership and optimistic run version. Decisions also bind current session, route and context versions. Models and Bearer clients cannot approve themselves. Stop executes no tool and remains available after context changes.",
+        "responses": {
+          "400": {
+            "description": "Invalid arguments"
+          },
+          "409": {
+            "description": "Stale version, context, session or call"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRun"
+                }
+              }
+            },
+            "description": "Persisted run"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "input": {
+                    "description": "Optional human revised arguments, validated against the shared capability schema.",
+                    "type": "object"
+                  },
+                  "version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "approve": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "callId": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "version", "callId", "approve"],
+                "additionalProperties": false,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v1/ai/harness/decide": {
+      "post": {
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          },
+          {
+            "name": "X-CSRF-Token",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          }
+        ],
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "summary": "Human decide a pending Atlas tool run",
+        "description": "Cookie + CSRF only; workspace/principal ownership and optimistic run version. Decisions also bind current session, route and context versions. Models and Bearer clients cannot approve themselves. Stop executes no tool and remains available after context changes.",
+        "responses": {
+          "400": {
+            "description": "Invalid arguments"
+          },
+          "409": {
+            "description": "Stale version, context, session or call"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRun"
+                }
+              }
+            },
+            "description": "Persisted run"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "input": {
+                    "description": "Optional human revised arguments, validated against the shared capability schema.",
+                    "type": "object"
+                  },
+                  "version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "approve": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "callId": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "version", "callId", "approve"],
+                "additionalProperties": false,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/ai/harness/stop": {
+      "post": {
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          },
+          {
+            "name": "X-CSRF-Token",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          }
+        ],
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "summary": "Human stop a pending Atlas tool run",
+        "description": "Cookie + CSRF only; workspace/principal ownership and optimistic run version. Decisions also bind current session, route and context versions. Models and Bearer clients cannot approve themselves. Stop executes no tool and remains available after context changes.",
+        "responses": {
+          "400": {
+            "description": "Invalid arguments"
+          },
+          "409": {
+            "description": "Stale version, context, session or call"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRun"
+                }
+              }
+            },
+            "description": "Persisted run"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": ["id", "version"],
+                "additionalProperties": false,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v1/ai/harness/stop": {
+      "post": {
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          },
+          {
+            "name": "X-CSRF-Token",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "in": "header"
+          }
+        ],
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "summary": "Human stop a pending Atlas tool run",
+        "description": "Cookie + CSRF only; workspace/principal ownership and optimistic run version. Decisions also bind current session, route and context versions. Models and Bearer clients cannot approve themselves. Stop executes no tool and remains available after context changes.",
+        "responses": {
+          "400": {
+            "description": "Invalid arguments"
+          },
+          "409": {
+            "description": "Stale version, context, session or call"
+          },
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRun"
+                }
+              }
+            },
+            "description": "Persisted run"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": ["id", "version"],
+                "additionalProperties": false,
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/workspace/events": {
+      "get": {
+        "summary": "Workspace cursor invalidation stream",
+        "parameters": [
+          {
+            "name": "cursor",
+            "schema": {
+              "maxLength": 96,
+              "type": "string"
+            },
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "503": {
+            "description": "Connection limit reached"
+          },
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "SSE id and data {cursor} only, with heartbeat comments."
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "description": "Cookie-authenticated browser SSE, cursor-only invalidation. In-memory host epoch + workspace revision, no durable DB event log. Initial event recovers restart; duplicates coalesce. Client pulls authorized incremental snapshot. Heartbeat rechecks authorization; hidden/offline clients disconnect. Optional cursor is a reconnect hint, never authorization."
+      }
+    },
+    "/api/v1/workspace/events": {
+      "get": {
+        "summary": "Workspace cursor invalidation stream",
+        "parameters": [
+          {
+            "name": "cursor",
+            "schema": {
+              "maxLength": 96,
+              "type": "string"
+            },
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "503": {
+            "description": "Connection limit reached"
+          },
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "SSE id and data {cursor} only, with heartbeat comments."
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "description": "Cookie-authenticated browser SSE, cursor-only invalidation. In-memory host epoch + workspace revision, no durable DB event log. Initial event recovers restart; duplicates coalesce. Client pulls authorized incremental snapshot. Heartbeat rechecks authorization; hidden/offline clients disconnect. Optional cursor is a reconnect hint, never authorization."
       }
     }
   },
@@ -11815,6 +13021,15 @@
             "pattern": "^[a-zA-Z0-9_-]{1,64}$",
             "default": "default",
             "description": "Named route within this account and scope. Missing means legacy default; unknown named routes never fall back."
+          },
+          "requestLimit": {
+            "$ref": "#/components/schemas/DailyRequestLimit"
+          },
+          "quotaKey": {
+            "type": "string"
+          },
+          "legacyQuotaScope": {
+            "type": "string"
           }
         },
         "required": [
@@ -11991,6 +13206,42 @@
           "sessionVersion": {
             "type": "integer",
             "minimum": 1
+          },
+          "harness": {
+            "$ref": "#/components/schemas/HarnessState"
+          },
+          "parentRunId": {
+            "description": "Controlled per-step provider reservation, bound to the approved running parent.",
+            "type": "string"
+          },
+          "toolApprovals": {
+            "additionalProperties": {
+              "properties": {
+                "sessionVersion": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "decision": {
+                  "enum": ["APPROVED", "REJECTED"]
+                }
+              },
+              "required": ["decision", "sessionVersion"],
+              "additionalProperties": false,
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "retrievalScope": {
+            "properties": {
+              "projectId": {
+                "type": "string"
+              },
+              "currentSpaceId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "type": "object"
           }
         },
         "required": [
@@ -12355,6 +13606,41 @@
           "supportsStreaming": {
             "type": "boolean",
             "description": "Set false for a non-streaming provider. Gateway then invokes complete; no simulated deltas or automatic retry of sent requests."
+          },
+          "providerKind": {
+            "enum": [
+              "OPENAI",
+              "ANTHROPIC",
+              "GEMINI",
+              "DEEPSEEK",
+              "OPENROUTER",
+              "OLLAMA",
+              "LM_STUDIO",
+              "VLLM",
+              "CUSTOM_OPENAI"
+            ]
+          },
+          "modelCapabilities": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tools": {
+                "type": "boolean"
+              },
+              "jsonSchema": {
+                "type": "boolean"
+              },
+              "vision": {
+                "type": "boolean"
+              },
+              "streaming": {
+                "type": "boolean"
+              },
+              "embedding": {
+                "type": "boolean"
+              }
+            },
+            "required": []
           }
         },
         "required": [
@@ -12488,6 +13774,38 @@
           },
           "createdAt": {
             "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "properties": {
+                "ref": {
+                  "$ref": "#/components/schemas/EntityRef"
+                },
+                "version": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "source": {
+                  "enum": [
+                    "current",
+                    "selected",
+                    "retrieved",
+                    "linked",
+                    "mentioned"
+                  ]
+                },
+                "title": {
+                  "maxLength": 1000,
+                  "type": "string"
+                }
+              },
+              "required": ["ref", "title", "version", "source"],
+              "additionalProperties": false,
+              "type": "object"
+            },
+            "maxItems": 20,
+            "type": "array",
+            "description": "Host-verified evidence for this answer. Titles and IDs are not accepted from model output."
           }
         },
         "required": ["id", "kind", "text", "runId", "createdAt"]
@@ -12526,6 +13844,10 @@
           },
           "deletedAt": {
             "type": ["string", "null"]
+          },
+          "modelProfileOverride": {
+            "type": ["string", "null"],
+            "maxLength": 64
           }
         },
         "required": [
@@ -12668,6 +13990,403 @@
           "enabled",
           "workspaceId"
         ]
+      },
+      "DailyRequestLimit": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "UNLIMITED"
+              }
+            },
+            "required": ["kind"]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "LIMITED"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              }
+            },
+            "required": ["kind", "count"]
+          }
+        ]
+      },
+      "ProviderConnection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "kind": {
+            "enum": [
+              "OPENAI",
+              "ANTHROPIC",
+              "GEMINI",
+              "DEEPSEEK",
+              "OPENROUTER",
+              "OLLAMA",
+              "LM_STUDIO",
+              "VLLM",
+              "CUSTOM_OPENAI"
+            ]
+          },
+          "endpoint": {
+            "type": "string",
+            "format": "uri"
+          },
+          "credentialRef": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          },
+          "credentialConfigured": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "endpoint",
+          "credentialRef",
+          "credentialConfigured"
+        ]
+      },
+      "ModelDefinition": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          },
+          "connectionId": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          },
+          "modelId": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tools": {
+                "type": "boolean"
+              },
+              "jsonSchema": {
+                "type": "boolean"
+              },
+              "vision": {
+                "type": "boolean"
+              },
+              "streaming": {
+                "type": "boolean"
+              },
+              "embedding": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "tools",
+              "jsonSchema",
+              "vision",
+              "streaming",
+              "embedding"
+            ]
+          }
+        },
+        "required": ["id", "connectionId", "modelId", "capabilities"]
+      },
+      "ModelProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "primaryModelId": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          },
+          "fallbackModelIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+            },
+            "maxItems": 2,
+            "uniqueItems": true
+          },
+          "requestLimit": {
+            "$ref": "#/components/schemas/DailyRequestLimit"
+          },
+          "budget": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "currency": {
+                "const": "USD"
+              },
+              "dailyMicros": {
+                "oneOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000000000
+                  },
+                  {
+                    "const": "UNLIMITED"
+                  }
+                ]
+              },
+              "inputMicrosPerMillion": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "outputMicrosPerMillion": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "currency",
+              "dailyMicros",
+              "inputMicrosPerMillion",
+              "outputMicrosPerMillion"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "workload": {
+            "enum": ["TEXT", "JSON", "EMBEDDING"]
+          },
+          "legacyScope": {
+            "type": "string",
+            "description": "Read-only compatibility metadata. Host preserves its original value."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "primaryModelId",
+          "fallbackModelIds",
+          "requestLimit",
+          "budget"
+        ]
+      },
+      "ModelBinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "enum": ["PERSONAL", "PROJECT", "SPACE"]
+          },
+          "entityId": {
+            "type": ["string", "null"]
+          },
+          "profileId": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+          }
+        },
+        "required": ["scope", "entityId", "profileId"]
+      },
+      "ModelConfiguration": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderConnection"
+            }
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelDefinition"
+            }
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelProfile"
+            }
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelBinding"
+            }
+          }
+        },
+        "required": ["version", "connections", "models", "profiles", "bindings"]
+      },
+      "ModelConfigurationInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderConnection"
+            }
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelDefinition"
+            }
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelProfile"
+            }
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelBinding"
+            }
+          },
+          "credentials": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "connectionId": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+                },
+                "key": {
+                  "type": "string",
+                  "maxLength": 4096,
+                  "writeOnly": true,
+                  "description": "Encrypted server-side; empty keeps an existing connection key."
+                }
+              },
+              "required": ["connectionId", "key"]
+            }
+          }
+        },
+        "required": [
+          "connections",
+          "models",
+          "profiles",
+          "bindings",
+          "credentials"
+        ]
+      },
+      "HarnessToolCall": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "input": {
+            "type": "object"
+          },
+          "id": {
+            "maxLength": 240,
+            "type": "string"
+          }
+        },
+        "required": ["id", "name", "input"],
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "HarnessState": {
+        "properties": {
+          "status": {
+            "enum": [
+              "RUNNING",
+              "WAITING_APPROVAL",
+              "FINAL",
+              "ERROR",
+              "INTERRUPTED",
+              "LIMIT_REACHED"
+            ]
+          },
+          "startedAt": {
+            "type": "number"
+          },
+          "error": {
+            "type": "string"
+          },
+          "pending": {
+            "items": {
+              "$ref": "#/components/schemas/HarnessToolCall"
+            },
+            "type": "array"
+          },
+          "activeMs": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "toolCalls": {
+            "minimum": 0,
+            "maximum": 12,
+            "type": "integer"
+          },
+          "steps": {
+            "minimum": 0,
+            "maximum": 8,
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "description": "Bounded provider-neutral messages. Native signed provider blocks are opaque adapter data.",
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "writes": {
+            "minimum": 0,
+            "maximum": 5,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "steps",
+          "toolCalls",
+          "writes",
+          "startedAt",
+          "messages",
+          "pending"
+        ],
+        "additionalProperties": false,
+        "type": "object"
       }
     }
   }

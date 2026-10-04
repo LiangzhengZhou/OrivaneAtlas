@@ -217,7 +217,6 @@ body {
     .library-toolbar,
     .calendar-grid,
     .calendar-day,
-    .workspace-switch,
     .project-workspace-header,
     .project-summary
   ) {
@@ -639,4 +638,24 @@ body {
   .mobile-bottom-navigation {
     display: none !important;
   }
+}
+
+.dependency-node-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+}
+.dependency-node-label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dependency-node-label small {
+  color: var(--muted);
+}
+.dependency-node-label button {
+  align-self: start;
+  padding: 3px 6px;
+  font-size: 11px;
 }

@@ -9,6 +9,7 @@ import {
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DismissibleDialog } from "./app/DismissibleDialog";
+import { DateField } from "./components/DateField";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 import type { WorkEditorProps } from "./WorkItemEditor";
 
@@ -265,22 +266,22 @@ export function ProjectEditor({
         <div className="schedule-fields">
           <label className="field">
             <span>{t("desk:startDate")}</span>
-            <input
-              type="date"
+            <DateField
+              aria-label={t("desk:startDate")}
               min="0001-01-01"
               max={due || "9999-12-31"}
               value={start}
-              onChange={(event) => setStart(event.target.value)}
+              onChange={setStart}
             />
           </label>
           <label className="field">
             <span>{t("desk:dueDate")}</span>
-            <input
-              type="date"
+            <DateField
+              aria-label={t("desk:dueDate")}
               min={start || "0001-01-01"}
               max="9999-12-31"
               value={due}
-              onChange={(event) => setDue(event.target.value)}
+              onChange={setDue}
             />
           </label>
         </div>

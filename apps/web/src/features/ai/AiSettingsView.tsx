@@ -1,13 +1,16 @@
-import type { AgentRun, ModelRoute } from "@arclattice/application";
-import { useEffect, useState } from "react";
+import type {
+  AgentRun,
+  ModelConfiguration,
+  ModelRoute,
+} from "@arclattice/application";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AiEdits } from "../../AiEdits";
 import type { Runtime, Snapshot } from "../../bootstrap";
 import { GatewayRunDetails } from "../../GatewaySettings";
 import { Markdown } from "../../Markdown";
-import { PersonalAISettings } from "../../PersonalAISettings";
-import { SpacePicker } from "../knowledge/SpacePicker";
-import { ProjectDrilldownPicker } from "../projects/ProjectDrilldownPicker";
+import { ModelSettings } from "./ModelSettings";
+
 export function AiSettingsView({
   runtime,
   snapshot,
@@ -17,57 +20,32 @@ export function AiSettingsView({
 }) {
   const { t, i18n } = useTranslation("connected");
   const zh = i18n.language.startsWith("zh");
-  const [activityOpen, setActivityOpen] = useState(false);
-  const [scope, setScope] = useState("personal");
-  const [scopeKind, setScopeKind] = useState("personal");
-  const changeScope = (value: string) => {
-    setScope(value);
-    setProfileId("default");
-    setData(null);
-    setSources([]);
-    setPrompt("");
-  };
-  const [sources, setSources] = useState<string[]>([]);
-  const contextOptions = [
-    ...snapshot.notes
-      .filter((e) => !e.deletedAt)
-      .map((e) => ({ ...e, refKind: "NOTE" as const })),
-    ...snapshot.library
-      .filter(
-        (e) =>
-          !e.deletedAt &&
-          (e.kind === "SPACE" ||
-            snapshot.library.some((p) => p.id === e.spaceId && !p.deletedAt)),
-      )
-      .map((e) => ({ ...e, refKind: e.kind })),
-  ].filter(
-    (e) =>
-      !scope.startsWith("SPACE:") ||
-      e.id === scope.slice(6) ||
-      ("spaceId" in e && e.spaceId === scope.slice(6)),
-  );
+  const [configuration, setConfiguration] = useState<ModelConfiguration | null>(
+      null,
+    ),
+    [activityOpen, setActivityOpen] = useState(false),
+    [testingOpen, setTestingOpen] = useState(false),
+    [refreshVersion, setRefreshVersion] = useState(0);
+  const [profileId, setProfileId] = useState("default"),
+    [prompt, setPrompt] = useState(""),
+    [sources, setSources] = useState<string[]>([]),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
   const [data, setData] = useState<{
     route: ModelRoute | null;
     routes: ModelRoute[];
     runs: AgentRun[];
   } | null>(null);
-  const [profileId, setProfileId] = useState("default");
-  const [prompt, setPrompt] = useState(""),
-    [error, setError] = useState(false),
-    [busy, setBusy] = useState(false);
   useEffect(() => {
-    let active = true,
-      pending = false;
+    if (!activityOpen && !testingOpen) return;
+    let active = true;
     const load = async () => {
-      if (pending || document.hidden) return;
-      pending = true;
       try {
-        const result = await runtime.ai(scope, profileId, activityOpen);
-        if (active) setData(result);
-      } catch {
-        if (active) setError(true);
-      } finally {
-        pending = false;
+        const data = await runtime.ai("personal", profileId, activityOpen);
+        if (active) setData(data);
+      } catch (failure) {
+        if (active)
+          setError(failure instanceof Error ? failure.message : "UNAVAILABLE");
       }
     };
     void load();
@@ -79,275 +57,128 @@ export function AiSettingsView({
       active = false;
       document.removeEventListener("visibilitychange", visible);
     };
-  }, [runtime, scope, profileId, activityOpen]);
+  }, [runtime, profileId, activityOpen, testingOpen, refreshVersion]);
+  useEffect(() => {
+    if (!activityOpen) return;
+    const running = data?.runs.find((run) => run.status === "RUNNING");
+    if (!running) return;
+    const controller = new AbortController();
+    void runtime
+      .streamAiEvents(running.id, controller.signal, () => {})
+      .then(() => {
+        if (!controller.signal.aborted) setRefreshVersion((value) => value + 1);
+      })
+      .catch((failure) => {
+        if (!controller.signal.aborted)
+          setError(
+            failure instanceof Error
+              ? failure.message
+              : "ACTIVITY_STREAM_FAILED",
+          );
+      });
+    return () => controller.abort();
+  }, [
+    runtime,
+    activityOpen,
+    data?.runs.find((run) => run.status === "RUNNING")?.id,
+  ]);
+  const contextOptions = useMemo(() => {
+    const spaces = new Set(
+      snapshot.library
+        .filter((entry) => entry.kind === "SPACE" && !entry.deletedAt)
+        .map((entry) => entry.id),
+    );
+    return [
+      ...snapshot.notes
+        .filter((entry) => !entry.deletedAt)
+        .map((entry) => ({ ...entry, refKind: "NOTE" as const })),
+      ...snapshot.library
+        .filter(
+          (entry) =>
+            !entry.deletedAt &&
+            (entry.kind === "SPACE" || spaces.has(entry.spaceId ?? "")),
+        )
+        .map((entry) => ({ ...entry, refKind: entry.kind })),
+    ];
+  }, [snapshot.notes, snapshot.library]);
   async function act(action: () => Promise<unknown>) {
     setBusy(true);
-    setError(false);
+    setError("");
     try {
       await action();
-      setData(await runtime.ai(scope, profileId));
-    } catch {
-      setError(true);
+      setRefreshVersion((value) => value + 1);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "OPERATION_FAILED");
     } finally {
       setBusy(false);
     }
   }
+  const today = new Date().toISOString().slice(0, 10),
+    todayRuns = (data?.runs ?? []).filter(
+      (run) => run.approvedAt?.slice(0, 10) === today,
+    );
+  const charged = todayRuns.reduce(
+    (total, run) => total + (run.attempt?.money?.chargedMicros ?? 0),
+    0,
+  );
   return (
     <>
-      <fieldset className="field">
-        <legend>{zh ? "配置应用于" : "Apply configuration to"}</legend>
-        {(["personal", "project", "space"] as const).map((kind) => (
-          <label key={kind}>
-            <input
-              type="radio"
-              name="ai-configuration-kind"
-              checked={scopeKind === kind}
-              disabled={busy}
-              onChange={() => {
-                setScopeKind(kind);
-                changeScope("personal");
-              }}
-            />
-            {kind === "personal"
-              ? zh
-                ? "个人工作区"
-                : "Personal workspace"
-              : kind === "project"
-                ? zh
-                  ? "项目"
-                  : "Project"
-                : zh
-                  ? "知识空间"
-                  : "Knowledge space"}
-          </label>
-        ))}
-        {scopeKind === "project" && (
-          <ProjectDrilldownPicker
-            mode="single"
-            projects={snapshot.items}
-            value={scope.startsWith("WORK:") ? scope.slice(5) : null}
-            disabled={busy}
-            onChange={(value) =>
-              changeScope(
-                typeof value === "string" ? "WORK:" + value : "personal",
-              )
-            }
-          />
-        )}
-        {scopeKind === "space" && (
-          <SpacePicker
-            spaces={snapshot.library}
-            value={scope.startsWith("SPACE:") ? scope.slice(6) : null}
-            disabled={busy}
-            projectSpaceIds={
-              new Set(
-                snapshot.projectMaterials
-                  .filter(
-                    (binding) =>
-                      binding.kind === "SPACE" &&
-                      !binding.deletedAt &&
-                      binding.targetId,
-                  )
-                  .map((binding) => binding.targetId!),
-              )
-            }
-            onChange={(value) => changeScope("SPACE:" + value)}
-          />
-        )}
-      </fieldset>
-      <label className="field">
-        {zh ? "本次使用的模型配置" : "Model profile for this request"}
-        <select
-          value={profileId}
-          disabled={busy}
-          onChange={(e) => {
-            setProfileId(e.target.value);
-            setData(null);
+      <ModelSettings
+        runtime={runtime}
+        snapshot={snapshot}
+        onConfiguration={setConfiguration}
+        onChanged={() => setRefreshVersion((value) => value + 1)}
+      />
+      <details
+        className="model-settings-section ai-activity"
+        open={activityOpen}
+      >
+        <summary
+          onClick={(event) => {
+            event.preventDefault();
+            setActivityOpen(!activityOpen);
           }}
         >
-          <option value="default">{zh ? "默认配置" : "Default profile"}</option>
-          {(data?.routes ?? [])
-            .filter((route) => route.profileId && route.profileId !== "default")
-            .map((route) => (
-              <option key={route.profileId} value={route.profileId}>
-                {route.profileId} · {route.model}
-              </option>
-            ))}
-          {profileId !== "default" &&
-            !data?.routes?.some((route) => route.profileId === profileId) && (
-              <option value={profileId}>{profileId}</option>
-            )}
-        </select>
-      </label>
-      <PersonalAISettings
-        key={scope + ":" + profileId}
-        runtime={runtime}
-        scope={scope}
-        profileId={profileId}
-        onProfileChange={(id) => {
-          setProfileId(id);
-          setData(null);
-        }}
-        onChange={() => void act(async () => {})}
-      />
-      <div className="ai-layout">
-        <section className="connected-panel">
-          <h2>{t("newRun")}</h2>
-          <p>{t("aiPrivacy")}</p>
-          {!data ? (
-            <p>{t("loading")}</p>
-          ) : !data.route ? (
-            <div className="connected-notice">{t("unconfigured")}</div>
-          ) : (
-            <div className="connected-notice">
-              <strong>{data.route.model}</strong>
-              <div>{data.route.provider}</div>
-              <small>
-                {t("limits", {
-                  input: data.route.maxInputChars,
-                  output: data.route.maxOutputTokens,
-                  calls:
-                    data.route.gateway?.dailyRequests ??
-                    data.route.maxRunsPerDay,
-                })}
-              </small>
-            </div>
-          )}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void act(async () => {
-                await runtime.propose(
-                  prompt,
-                  scope,
-                  contextOptions
-                    .filter((e) => sources.includes(e.refKind + ":" + e.id))
-                    .map((e) => ({
-                      kind: e.refKind,
-                      id: e.id,
-                      version: e.version,
-                    })),
-                  profileId,
-                );
-                setPrompt("");
-                setSources([]);
-                setActivityOpen(true);
-              });
-            }}
-          >
-            <label className="field">
-              {t("prompt")}
-              <textarea
-                rows={10}
-                aria-label={t("prompt")}
-                value={prompt}
-                maxLength={data?.route?.maxInputChars ?? 32000}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={t("promptHint")}
-                required
-              />
-            </label>
-            <details>
-              <summary>
-                {zh
-                  ? "选择本次允许 AI 读取的文档（默认不选）"
-                  : "Select documents for this request (none by default)"}
-              </summary>
-              <p>
-                {zh
-                  ? "这些正文会出现在下一步审批预览中；批准后才会发给所选提供商。最多20份，总输入最多32000字符。"
-                  : "These texts appear in the approval preview and are sent only after approval. Maximum 20 documents and 32,000 input characters."}
-              </p>
-              {contextOptions.map((e) => (
-                <label className="field" key={e.refKind + e.id}>
-                  <span>
-                    <input
-                      type="checkbox"
-                      checked={sources.includes(e.refKind + ":" + e.id)}
-                      onChange={(event) =>
-                        setSources((old) =>
-                          event.target.checked
-                            ? [...old, e.refKind + ":" + e.id]
-                            : old.filter((id) => id !== e.refKind + ":" + e.id),
-                        )
-                      }
-                    />
-                    {e.title} · v{e.version}
-                  </span>
-                </label>
-              ))}
-            </details>
-            <button
-              type="submit"
-              className="button primary"
-              disabled={busy || !data?.route || !prompt.trim()}
-            >
-              {t("propose")}
-            </button>
-          </form>
-          {error && (
-            <p className="error" role="alert">
-              {t("aiError")}
+          {zh ? "用量与预算 / Activity" : "Usage & Budget / Activity"}
+        </summary>
+        {activityOpen && (
+          <>
+            <p>
+              {zh ? "今日（UTC）已批准请求" : "Approved requests today (UTC)"}:{" "}
+              {todayRuns.length} · {zh ? "已记账费用" : "Recorded charges"}: $
+              {(charged / 1_000_000).toFixed(4)}
             </p>
-          )}
-        </section>
-        <details className="connected-panel ai-activity" open={activityOpen}>
-          <summary
-            onClick={(event) => {
-              event.preventDefault();
-              setActivityOpen(!activityOpen);
-            }}
-          >
-            {t("runHistory")}
-          </summary>
-          <p>{t("historyHint")}</p>
-          {data?.runs.length === 0 && <p>{t("noRuns")}</p>}
-          {data?.runs.map((run) => (
-            <article className="ai-run" key={run.id}>
-              <div className="connected-heading">
-                <strong>{t(run.status)}</strong>
-                <small>{new Date(run.createdAt).toLocaleString()}</small>
-              </div>
-              <p className="run-route">
-                {run.route.model} · {run.route.provider}
-              </p>
-              <pre className="run-prompt">{run.prompt}</pre>
-              <GatewayRunDetails run={run} zh={zh} />
-              {run.attempt && (
-                <p>
-                  {t("attemptUsage", {
-                    input: run.attempt.inputChars,
-                    output: run.attempt.reservedOutputTokens,
-                  })}{" "}
-                  · {t("attempt" + run.attempt.outcome)}
-                  {run.attempt.usage && (
-                    <>
-                      {" "}
-                      ·{" "}
-                      {t("reportedUsage", {
-                        input: run.attempt.usage.inputTokens,
-                        output: run.attempt.usage.outputTokens,
-                      })}
-                    </>
-                  )}
+            <p>
+              {zh
+                ? "显示最近 100 次请求；用量可能未知，精确配额与预算由服务器事务校验。"
+                : "Shows the latest 100 requests; usage may be unknown. The server enforces exact limits and budgets transactionally."}
+            </p>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setRefreshVersion((value) => value + 1)}
+            >
+              {zh ? "刷新活动" : "Refresh activity"}
+            </button>
+            {data?.runs.length === 0 && <p>{t("noRuns")}</p>}
+            {data?.runs.map((run) => (
+              <article className="ai-run" key={run.id}>
+                <div className="connected-heading">
+                  <strong>{t(run.status)}</strong>
+                  <small>
+                    {new Date(run.createdAt).toLocaleString(i18n.language)}
+                  </small>
+                </div>
+                <p className="run-route">
+                  {run.route.model} · {run.route.provider}
                 </p>
-              )}
-              {run.status === "WAITING_APPROVAL" && (
-                <>
-                  <p>
-                    {t("approvalHint", { output: run.route.maxOutputTokens })}
-                  </p>
-                  <div className="connected-heading">
+                <pre className="run-prompt">{run.prompt}</pre>
+                <GatewayRunDetails run={run} zh={zh} />
+                {run.status === "WAITING_APPROVAL" && (
+                  <div className="action-row">
                     <button
                       type="button"
-                      className="button primary"
-                      disabled={
-                        busy ||
-                        !(data.routes ?? (data.route ? [data.route] : [])).some(
-                          (route) =>
-                            route.fingerprint === run.route.fingerprint,
-                        )
-                      }
+                      disabled={busy}
                       onClick={() =>
                         void act(() =>
                           runtime.decide(run.id, run.version, true),
@@ -358,7 +189,6 @@ export function AiSettingsView({
                     </button>
                     <button
                       type="button"
-                      className="button secondary"
                       disabled={busy}
                       onClick={() =>
                         void act(() =>
@@ -369,21 +199,146 @@ export function AiSettingsView({
                       {t("reject")}
                     </button>
                   </div>
+                )}
+                {run.output && <Markdown text={run.output} />}
+                <AiEdits
+                  run={run}
+                  busy={busy}
+                  onApply={(indices) =>
+                    void act(() =>
+                      runtime.applyAi(run.id, run.version, indices),
+                    )
+                  }
+                />
+                {run.error && (
+                  <p role="alert">
+                    {t("runFailed")} {run.error}
+                  </p>
+                )}
+              </article>
+            ))}
+          </>
+        )}
+      </details>
+      <details className="model-settings-section" open={testingOpen}>
+        <summary
+          onClick={(event) => {
+            event.preventDefault();
+            setTestingOpen(!testingOpen);
+          }}
+        >
+          {t("newRun")}
+        </summary>
+        {testingOpen && (
+          <>
+            <label>
+              {zh ? "本次使用的模型配置" : "Model profile for this request"}
+              <select
+                value={profileId}
+                onChange={(event) => setProfileId(event.target.value)}
+              >
+                <option value="default">
+                  {zh ? "默认配置" : "Default profile"}
+                </option>
+                {configuration?.profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="connected-notice">
+              {data?.route ? (
+                <>
+                  <strong>{data.route.model}</strong>
+                  <p>{data.route.provider}</p>
                 </>
+              ) : (
+                <p>
+                  {zh
+                    ? "请先设置默认模型或选择配置。"
+                    : "Set a default model or choose a profile first."}
+                </p>
               )}
-              {run.output && <Markdown text={run.output} />}
-              <AiEdits
-                run={run}
-                busy={busy}
-                onApply={(indices) =>
-                  void act(() => runtime.applyAi(run.id, run.version, indices))
-                }
-              />
-              {run.error && <p className="error">{t("runFailed")}</p>}
-            </article>
-          ))}
-        </details>
-      </div>
+            </div>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void act(async () => {
+                  await runtime.propose(
+                    prompt,
+                    "personal",
+                    contextOptions
+                      .filter((entry) =>
+                        sources.includes(`${entry.refKind}:${entry.id}`),
+                      )
+                      .map((entry) => ({
+                        kind: entry.refKind,
+                        id: entry.id,
+                        version: entry.version,
+                      })),
+                    profileId,
+                  );
+                  setPrompt("");
+                  setSources([]);
+                  setActivityOpen(true);
+                });
+              }}
+            >
+              <label className="field">
+                {t("prompt")}
+                <textarea
+                  aria-label={t("prompt")}
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  maxLength={data?.route?.maxInputChars ?? 32000}
+                  required
+                />
+              </label>
+              <details>
+                <summary>
+                  {zh
+                    ? "选择本次允许读取的文档"
+                    : "Choose documents for this request"}
+                </summary>
+                {contextOptions.map((entry) => (
+                  <label key={`${entry.refKind}:${entry.id}`}>
+                    <input
+                      type="checkbox"
+                      checked={sources.includes(`${entry.refKind}:${entry.id}`)}
+                      disabled={
+                        sources.length >= 20 &&
+                        !sources.includes(`${entry.refKind}:${entry.id}`)
+                      }
+                      onChange={(event) =>
+                        setSources((current) =>
+                          event.target.checked
+                            ? [...current, `${entry.refKind}:${entry.id}`]
+                            : current.filter(
+                                (id) => id !== `${entry.refKind}:${entry.id}`,
+                              ),
+                        )
+                      }
+                    />
+                    {entry.title}
+                  </label>
+                ))}
+              </details>
+              <button
+                type="submit"
+                disabled={busy || !data?.route || !prompt.trim()}
+              >
+                {t("propose")}
+              </button>
+            </form>
+          </>
+        )}
+      </details>
+      {error && (
+        <p role="alert">
+          {t("aiError")} {error}
+        </p>
+      )}
     </>
   );
 }

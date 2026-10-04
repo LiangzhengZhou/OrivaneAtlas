@@ -318,5 +318,7 @@
   "permanentDelete": "Delete permanently",
   "permanentDeleteConfirm": "Permanently delete “{{title}}”? This cannot be undone.",
   "movedToTrash": "Moved to Trash",
-  "selectedEntity": "Selected entity"
+  "selectedEntity": "Selected entity",
+  "graph": "Graph",
+  "openGraphWorkspace": "Open Graph Workspace"
 }

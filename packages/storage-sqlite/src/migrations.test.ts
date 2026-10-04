@@ -773,3 +773,32 @@ it("upgrades v2.0.1 recurrence pause and occurrence payloads with explicit defau
     db.close();
   }
 });
+
+it("upgrades 2.0.2 schema26 preserving activity reason/outbox and independently restores the original", async () => {
+  const path = harness.file(),
+    db = new DatabaseSync(path);
+  try {
+    await migrate(db, path, 100, migrations.slice(0, 26));
+    db.exec(
+      "INSERT INTO workspace VALUES ('w','W'); INSERT INTO principal VALUES ('p','USER','P'); INSERT INTO workspace_principal VALUES ('w','p'); INSERT INTO activity VALUES ('w','event','p','task','WORK_ITEM_UPDATED','2026-10-04',NULL,NULL,NULL,'RECURRENCE_WINDOW_EXPIRED'); INSERT INTO outbox VALUES ('w','out','event','WORK_CHANGED','2026-10-04')",
+    );
+    const before = db.prepare("SELECT * FROM activity").all(),
+      outbox = db.prepare("SELECT * FROM outbox").all();
+    const backup = (await migrate(db, path, 100)).backupPath!;
+    expect(db.prepare("SELECT * FROM activity").all()).toEqual(before);
+    expect(db.prepare("SELECT * FROM outbox").all()).toEqual(outbox);
+    db.exec(
+      "INSERT INTO activity(workspace_id,id,principal_id,entity_id,type,occurred_at) VALUES ('w','conversion','p','task','RECURRENCE_TASK_CONVERTED','2026-10-04')",
+    );
+    expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    const original = new DatabaseSync(backup, { readOnly: true });
+    try {
+      expect(inspectSchema(original, migrations.slice(0, 26))).toBe(26);
+      expect(original.prepare("SELECT * FROM activity").all()).toEqual(before);
+    } finally {
+      original.close();
+    }
+  } finally {
+    db.close();
+  }
+});

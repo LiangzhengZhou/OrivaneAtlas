@@ -3,10 +3,12 @@ import {
   scopedKnowledgeDocuments,
 } from "@arclattice/application";
 import type { Node } from "@xyflow/react";
-import { useState } from "react";
+import type { ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../../bootstrap";
 import { GraphViewport } from "../graph/GraphViewport";
+import { openGraph } from "../graph/graph-route";
 import { knowledgeForceLayout } from "../graph/layouts/KnowledgeForceLayout";
 import { useStructuralLayout } from "../graph/layouts/useStructuralLayout";
 import { hierarchyPath } from "../hierarchy/hierarchy";
@@ -17,34 +19,68 @@ export function KnowledgeGraph({
   documentId,
   projectId,
   currentSpaceId,
+  initialScope,
+  initialFocus,
+  initialHops = 1,
+  onStateChange,
+  onSelect,
+  inspector,
+  workspace = false,
+  selectionId,
 }: {
   snapshot: Snapshot;
   onOpen(ref: EntityRef): void;
   documentId?: string;
   projectId?: string;
   currentSpaceId?: string | undefined;
+  initialScope?: string;
+  initialFocus?: string;
+  initialHops?: number;
+  onStateChange?(state: { scope: string; focus: string; hops: number }): void;
+  onSelect?(ref: EntityRef): void;
+  inspector?: ReactNode;
+  workspace?: boolean;
+  selectionId?: string | undefined;
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
   const [scope, setScope] = useState(
-    documentId
-      ? "local"
-      : projectId
-        ? "project"
-        : currentSpaceId
-          ? "space"
-          : "workspace",
+    initialScope ??
+      (documentId
+        ? "local"
+        : projectId
+          ? "project"
+          : currentSpaceId
+            ? "space"
+            : "local"),
   );
-  const [focusId, setFocusId] = useState(documentId ?? "");
-  const [hops, setHops] = useState(1);
+  const [focusId, setFocusId] = useState(initialFocus ?? documentId ?? "");
+  const [hops, setHops] = useState(initialHops);
   const [query, setQuery] = useState("");
+  useEffect(() => {
+    if (initialFocus !== undefined) setFocusId(initialFocus);
+    if (initialScope !== undefined) setScope(initialScope);
+    setHops(initialHops);
+  }, [initialFocus, initialScope, initialHops]);
+  const update = (
+    patch: Partial<{ scope: string; focus: string; hops: number }>,
+  ) => {
+    const next = { scope, focus: focusId, hops, ...patch };
+    setScope(next.scope);
+    setFocusId(next.focus);
+    setHops(next.hops);
+    onStateChange?.(next);
+  };
+  const entriesById = useMemo(
+    () => new Map(snapshot.library.map((e) => [e.id, e])),
+    [snapshot.library],
+  );
   const documents = snapshot.library.filter(
     (entry) =>
       entry.kind === "DOCUMENT" &&
       !entry.deletedAt &&
-      snapshot.library.some(
-        (space) => space.id === entry.spaceId && !space.deletedAt,
-      ),
+      !!entriesById.get(entry.spaceId ?? "") &&
+      !entriesById.get(entry.spaceId ?? "")?.deletedAt,
   );
   const focus =
     documents.find((entry) => entry.id === focusId) ??
@@ -81,7 +117,7 @@ export function KnowledgeGraph({
   }
   const visible = documents.filter(
     (entry) =>
-      (scope !== "local" || connected.has(entry.id)) &&
+      (connected.has(entry.id) || entry.id === focus?.id) &&
       (scope === "project"
         ? projectDocuments.has(entry.id)
         : scope === "workspace" || scope === "space"
@@ -168,6 +204,36 @@ export function KnowledgeGraph({
   return (
     <section className="graph-section">
       <GraphViewport
+        workspace={workspace}
+        selectionId={selectionId}
+        inspector={inspector}
+        onSelect={(id) => {
+          if (ids.has(id)) onSelect?.({ kind: "DOCUMENT", id });
+        }}
+        onWorkspace={
+          workspace
+            ? undefined
+            : () => {
+                if (projectId)
+                  openGraph({
+                    kind: "project",
+                    id: projectId,
+                    mode: "knowledge",
+                    scope,
+                    focus: focus?.id ?? "",
+                    hops,
+                  });
+                else if (focus)
+                  openGraph({
+                    kind: "document",
+                    id: focus.id,
+                    mode: "knowledge",
+                    scope,
+                    focus: focus.id,
+                    hops,
+                  });
+              }
+        }
         toolbar={
           <>
             <div className="action-row">
@@ -183,7 +249,7 @@ export function KnowledgeGraph({
                     className="chip"
                     aria-pressed={scope === value}
                     key={value}
-                    onClick={() => setScope(value)}
+                    onClick={() => update({ scope: value })}
                   >
                     {zh
                       ? {
@@ -199,7 +265,7 @@ export function KnowledgeGraph({
               <button
                 type="button"
                 className="chip"
-                onClick={() => setHops(hops === 1 ? 2 : 1)}
+                onClick={() => update({ hops: hops === 1 ? 2 : 1 })}
               >
                 {hops} hop
               </button>
@@ -223,7 +289,7 @@ export function KnowledgeGraph({
                       className="text-button"
                       key={entry.id}
                       onClick={() => {
-                        setFocusId(entry.id);
+                        update({ focus: entry.id, scope: "local" });
                         setQuery("");
                       }}
                     >

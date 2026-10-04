@@ -1,3 +1,15 @@
+async function chooseDate(page: Page, field: Locator, iso: string) {
+  await field.click();
+  const calendar = page.locator(".calendar-popover");
+  await calendar
+    .locator('input[type="number"]')
+    .fill(String(Number(iso.slice(0, 4))));
+  await calendar
+    .locator("select")
+    .selectOption(String(Number(iso.slice(5, 7))));
+  await calendar.getByRole("button", { name: iso, exact: true }).click();
+}
+
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -63,6 +75,211 @@ const test = base.extend<{
       origin: "http://127.0.0.1:" + port,
       webRoot: resolve("apps/web/dist"),
       vault: openPersonalVault(join(directory, "vault")),
+      ...(info.title.includes("Agent Harness")
+        ? {
+            model: {
+              route: {
+                fingerprint: "harness-e2e",
+                provider: "https://test.invalid",
+                model: "Harness test",
+                maxInputChars: 32000,
+                maxOutputTokens: 100,
+                timeoutMs: 5000,
+                maxRunsPerDay: info.title.includes("safety boundaries")
+                  ? 100
+                  : 20,
+              },
+              complete: async () => "",
+              providerAdapter: {
+                capabilities: {
+                  tools: true,
+                  jsonSchema: true,
+                  streaming: false,
+                  vision: false,
+                  embedding: false,
+                },
+                complete: async () => "",
+                listModels: async () => ["Harness test"],
+                stream: async function* () {},
+                respond: async (
+                  messages: readonly import("../../packages/application/src/provider-adapter").ModelMessage[],
+                ) => {
+                  if (info.title.includes("safety boundaries")) {
+                    const mode = messages[0]!.text
+                      .split("boundary:")[1]!
+                      .split(/\s/)[0];
+                    const results = messages.filter(
+                      (message) => message.role === "tool",
+                    );
+                    if (mode === "unknown")
+                      return {
+                        text: "",
+                        toolCalls: [
+                          {
+                            id: "unknown",
+                            name: "unregistered_tool",
+                            input: {},
+                          },
+                        ],
+                      };
+                    if (mode === "invalid")
+                      return {
+                        text: "",
+                        toolCalls: [
+                          {
+                            id: "invalid",
+                            name: "create_task",
+                            input: { title: "Unsafe", approved: true },
+                          },
+                        ],
+                      };
+                    if (mode === "steps")
+                      return {
+                        text: "",
+                        toolCalls: [
+                          {
+                            id: `step-${results.length}`,
+                            name: "get_project",
+                            input: { id: "missing-project" },
+                          },
+                        ],
+                      };
+                    if (mode === "writes")
+                      return {
+                        text: "",
+                        toolCalls: results.length
+                          ? []
+                          : [1, 2, 3, 4, 5, 6].map((n) => ({
+                              id: `write-${n}`,
+                              name: "create_task",
+                              input: { title: `Bounded write ${n}` },
+                            })),
+                      };
+                    if (results.length)
+                      return { text: "Boundary handled", toolCalls: [] };
+                    if (mode === "conflict") {
+                      const id = messages[0]!.text
+                        .split("task=")[1]!
+                        .slice(0, 36);
+                      return {
+                        text: "",
+                        toolCalls: [
+                          {
+                            id: "stale-update",
+                            name: "complete_task",
+                            input: { id, version: 1 },
+                          },
+                        ],
+                      };
+                    }
+                    return {
+                      text: "",
+                      toolCalls: [
+                        {
+                          id: "review-boundary",
+                          name: "create_task",
+                          input: { title: "Must not be created" },
+                        },
+                      ],
+                    };
+                  }
+                  if (info.title.includes("batch plan")) {
+                    const published = messages.find(
+                      (message) =>
+                        message.role === "tool" &&
+                        message.toolName === "publish_plan",
+                    );
+                    if (published)
+                      return {
+                        text: "Reviewed course plan imported",
+                        toolCalls: [],
+                      };
+                    const preview = messages.find(
+                      (message) =>
+                        message.role === "tool" &&
+                        message.toolName === "preview_plan",
+                    );
+                    if (preview) {
+                      const plan = JSON.parse(preview.text);
+                      return {
+                        text: "",
+                        toolCalls: [
+                          {
+                            id: "publish-reviewed-plan",
+                            name: "publish_plan",
+                            input: { id: plan.id, version: plan.version },
+                          },
+                        ],
+                      };
+                    }
+                    const projectId = messages[0]!.text
+                      .split("project=")[1]!
+                      .slice(0, 36);
+                    return {
+                      text: "",
+                      toolCalls: [
+                        {
+                          id: "preview-course-plan",
+                          name: "preview_plan",
+                          input: {
+                            projectId,
+                            manifest: {
+                              version: 1,
+                              projects: [],
+                              tasks: [1, 2, 3].map((index) => ({
+                                tempId: `lecture-${index}`,
+                                title: `Lecture ${index}`,
+                                descriptionMd: "Course lecture",
+                                startDate: null,
+                                dueDate: null,
+                                dependsOn: [],
+                              })),
+                            },
+                          },
+                        },
+                      ],
+                    };
+                  }
+                  if (
+                    messages.some(
+                      (message) =>
+                        message.role === "tool" &&
+                        message.toolName === "create_task",
+                    )
+                  )
+                    return { text: "Reviewed task created", toolCalls: [] };
+                  if (
+                    messages.some(
+                      (message) =>
+                        message.role === "tool" &&
+                        message.toolName === "search_documents",
+                    )
+                  )
+                    return {
+                      text: "",
+                      toolCalls: [
+                        {
+                          id: "task-proposal",
+                          name: "create_task",
+                          input: { title: "Agent reviewed task" },
+                        },
+                      ],
+                    };
+                  return {
+                    text: "",
+                    toolCalls: [
+                      {
+                        id: "evidence-search",
+                        name: "search_documents",
+                        input: { query: "Atlas evidence" },
+                      },
+                    ],
+                  };
+                },
+              },
+            },
+          }
+        : {}),
       ...(info.title.includes("AI approval")
         ? {
             model: {
@@ -78,7 +295,10 @@ const test = base.extend<{
                 maxRunsPerDay: 2,
               },
               complete: async (prompt: string) =>
-                "# Reviewed result\n\n" + prompt,
+                JSON.stringify({
+                  kind: "FINAL",
+                  text: "# Reviewed result\n\n" + prompt,
+                }),
               ...(info.title.includes("streaming")
                 ? {
                     providerAdapter: {
@@ -180,6 +400,12 @@ test("hardening recurring lifecycle expiry auto-close pause resume end and calen
   await workbench.advanceRecurrenceTime(today + "T00:30:00.000Z");
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.tasks);
+  await page
+    .getByRole("button", {
+      name: zh ? "管理周期任务" : "Manage recurring tasks",
+      exact: true,
+    })
+    .click();
   const manager = page.locator(".recurrence-manager");
   await expect(
     manager.getByText(w.desk.workflows.recurrences, { exact: true }),
@@ -207,6 +433,12 @@ test("hardening recurring lifecycle expiry auto-close pause resume end and calen
     to: today,
   });
   await page.reload();
+  await page
+    .getByRole("button", {
+      name: zh ? "管理周期任务" : "Manage recurring tasks",
+      exact: true,
+    })
+    .click();
   await expect(
     manager.getByRole("heading", { name: "Expiry daily" }),
   ).toBeVisible();
@@ -231,7 +463,13 @@ test("hardening recurring lifecycle expiry auto-close pause resume end and calen
     snapshot.items.find((r: { id: string }) => r.id === open.payload.taskId)
       .status,
   ).toBe("CANCELED");
-  const board = manager.locator(".recurrence-statistics");
+  await page
+    .getByRole("button", {
+      name: zh ? "查看统计" : "View statistics",
+      exact: true,
+    })
+    .click();
+  const board = page.locator(".recurrence-statistics");
   await board.getByRole("combobox").selectOption(definition.id);
   const todayBoard = board.getByRole("article").filter({
     has: page.getByRole("heading", {
@@ -258,6 +496,16 @@ test("hardening recurring lifecycle expiry auto-close pause resume end and calen
       "0%",
     ]);
   }
+  await page
+    .locator(".recurrence-statistics-dialog")
+    .getByRole("button", { name: zh ? "关闭" : "Close", exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: zh ? "管理周期任务" : "Manage recurring tasks",
+      exact: true,
+    })
+    .click();
   const ruleRow = manager.locator(".workflow-proposal").filter({
     has: page.getByRole("heading", { name: "Expiry daily", exact: true }),
   });
@@ -919,6 +1167,12 @@ test("project workspace connects materials, children and external dependencies",
   await page
     .getByRole("tab", { name: w.desk.projectHub.tasks, exact: true })
     .click();
+  await page
+    .getByRole("button", {
+      name: info.project.name.endsWith("zh") ? "项目范围" : "Project scope",
+      exact: true,
+    })
+    .click();
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   await expect(
     page.locator(".react-flow__node").filter({ hasText: "Unrelated task" }),
@@ -1120,22 +1374,22 @@ test("named AI profiles persist independently and bind reviewed proposals", asyn
   const zh = info.project.name.endsWith("zh");
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.settings);
-  await page.locator(".personal-ai-settings > summary").click();
-  await page.locator("#ai-profile-id").fill("research");
   await page
     .getByRole("button", {
-      name: zh ? "打开 / 新建配置" : "Open / create profile",
+      name: zh ? "添加服务连接" : "Add provider connection",
       exact: true,
     })
     .click();
-  await page.locator(".personal-ai-settings > summary").click();
-  await page
-    .getByLabel(zh ? "HTTPS API 基址" : "HTTPS API base URL", { exact: true })
+  const connection = page.getByRole("form", {
+    name: zh ? "连接编辑" : "Connection editor",
+  });
+  await connection
+    .getByLabel(zh ? "连接名称" : "Connection name", { exact: true })
+    .fill("Research provider");
+  await connection
+    .getByLabel(zh ? "API 基址" : "API base URL", { exact: true })
     .fill("https://provider.example/v1");
-  await page
-    .getByLabel(zh ? "模型标识" : "Model identifier", { exact: true })
-    .fill("test-research");
-  await page
+  await connection
     .getByLabel(
       zh
         ? "API 密钥（留空保留已有密钥）"
@@ -1143,20 +1397,69 @@ test("named AI profiles persist independently and bind reviewed proposals", asyn
       { exact: true },
     )
     .fill("TEST-ONLY-PROFILE-SECRET");
-  await page
+  await connection
     .getByRole("button", {
-      name: zh ? "保存个人配置" : "Save personal configuration",
+      name: zh ? "保存连接" : "Save connection",
       exact: true,
     })
     .click();
+  await expect(connection).toHaveCount(0);
+  const modelForm = page.getByRole("form", {
+    name: zh ? "手工添加模型" : "Add model manually",
+  });
+  await modelForm
+    .getByRole("combobox", {
+      name: zh ? "所属连接" : "Provider connection",
+      exact: true,
+    })
+    .selectOption({ label: "Research provider" });
+  await modelForm
+    .getByLabel(zh ? "模型标识" : "Model identifier", { exact: true })
+    .fill("test-research");
+  await modelForm
+    .getByRole("button", { name: zh ? "添加模型" : "Add model", exact: true })
+    .click();
   await expect(
-    page.locator(".personal-ai-settings [role=status]"),
-  ).toBeVisible();
-  await expect(
-    page.locator(".personal-ai-settings input[type=password]"),
+    modelForm.getByLabel(zh ? "模型标识" : "Model identifier", { exact: true }),
   ).toHaveValue("");
+  await page
+    .getByRole("button", {
+      name: zh ? "添加模型配置" : "Add model profile",
+      exact: true,
+    })
+    .click();
+  const profile = page.getByRole("form", {
+    name: zh ? "配置编辑" : "Profile editor",
+  });
+  await profile
+    .getByLabel(zh ? "配置名称" : "Profile name", { exact: true })
+    .fill("Research");
+  await profile
+    .getByRole("combobox", {
+      name: zh ? "首选模型" : "Primary model",
+      exact: true,
+    })
+    .selectOption({ label: "Research provider / test-research" });
+  await profile
+    .locator("summary")
+    .filter({ hasText: zh ? "高级" : "Advanced" })
+    .click();
+  await profile
+    .getByLabel(zh ? "配置 ID" : "Profile ID", { exact: true })
+    .fill("research");
+  await profile
+    .getByRole("button", {
+      name: zh ? "保存模型配置" : "Save model profile",
+      exact: true,
+    })
+    .click();
+  await expect(profile).toHaveCount(0);
+  await expect(
+    page.locator(".model-settings input[type=password]"),
+  ).toHaveCount(0);
   await page.reload();
   await nav(page, w.desk.settings);
+  await page.locator("summary").filter({ hasText: w.connected.newRun }).click();
   const selector = page.getByRole("combobox", {
     name: zh ? "本次使用的模型配置" : "Model profile for this request",
     exact: true,
@@ -1189,6 +1492,275 @@ test("named AI profiles persist independently and bind reviewed proposals", asyn
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("2.1 Provider catalog routing Explicit Space Project Personal and Unlimited budget fallback survive refresh", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Routing Project",
+  });
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: { kind: "SPACE", spaceId: null, title: "Routing Space", bodyMd: "" },
+  });
+  const connections = [
+    {
+      id: "openai",
+      name: "OpenAI connection",
+      kind: "OPENAI",
+      endpoint: "https://provider.example/v1/",
+      credentialRef: "openai",
+      credentialConfigured: false,
+    },
+    {
+      id: "anthropic",
+      name: "Anthropic connection",
+      kind: "ANTHROPIC",
+      endpoint: "https://anthropic.example/v1/",
+      credentialRef: "anthropic",
+      credentialConfigured: false,
+    },
+  ];
+  const models = ["personal", "project", "space", "explicit"].map(
+    (kind, index) => ({
+      id: `model-${kind}`,
+      connectionId: index < 2 ? "openai" : "anthropic",
+      modelId: `${kind}-model`,
+      capabilities: {
+        tools: true,
+        jsonSchema: true,
+        vision: false,
+        streaming: false,
+        embedding: false,
+      },
+    }),
+  );
+  const profiles = models.map((model, index) => ({
+    id: `profile-${["personal", "project", "space", "explicit"][index]}`,
+    name: [
+      "Personal default",
+      "Project profile",
+      "Space profile",
+      "Explicit profile",
+    ][index],
+    primaryModelId: model.id,
+    fallbackModelIds: index === 0 ? ["model-space", "model-explicit"] : [],
+    requestLimit: { kind: "UNLIMITED" },
+    budget: {
+      currency: "USD",
+      dailyMicros: "UNLIMITED",
+      inputMicrosPerMillion: 0,
+      outputMicrosPerMillion: 0,
+    },
+  }));
+  await mutation(page, "/api/ai/configuration/save", {
+    version: 0,
+    input: {
+      connections,
+      models,
+      profiles,
+      bindings: [
+        { scope: "PERSONAL", entityId: null, profileId: "profile-personal" },
+        {
+          scope: "PROJECT",
+          entityId: project.id,
+          profileId: "profile-project",
+        },
+        { scope: "SPACE", entityId: space.id, profileId: "profile-space" },
+      ],
+      credentials: [
+        { connectionId: "openai", key: "test-only-openai-key" },
+        { connectionId: "anthropic", key: "test-only-anthropic-key" },
+      ],
+    },
+  });
+  await page.reload();
+  await nav(page, w.desk.settings);
+  await expect(
+    page
+      .locator(".model-settings-row")
+      .filter({ has: page.getByText("OpenAI connection", { exact: true }) }),
+  ).toHaveCount(1);
+  await expect(
+    page
+      .locator(".model-settings-row")
+      .filter({ has: page.getByText("Anthropic connection", { exact: true }) }),
+  ).toHaveCount(1);
+  const personal = page
+    .locator(".model-settings-row")
+    .filter({ has: page.getByText("Personal default", { exact: true }) });
+  await personal
+    .getByRole("button", {
+      name: zh ? "编辑配置" : "Edit profile",
+      exact: true,
+    })
+    .click();
+  let editor = page.getByRole("form", {
+    name: zh ? "配置编辑" : "Profile editor",
+  });
+  await editor
+    .getByRole("radio", {
+      name: zh ? "限制次数" : "Limited requests",
+      exact: true,
+    })
+    .check();
+  await editor
+    .getByRole("spinbutton", {
+      name: zh ? "每天次数" : "Requests per day",
+      exact: true,
+    })
+    .fill("100");
+  await editor
+    .getByRole("checkbox", {
+      name: zh ? "预算不限" : "Unlimited budget",
+      exact: true,
+    })
+    .uncheck();
+  await editor
+    .getByRole("spinbutton", {
+      name: zh ? "每日美元预算" : "Daily budget in dollars",
+      exact: true,
+    })
+    .fill("5");
+  await editor
+    .getByRole("button", {
+      name: zh ? "保存模型配置" : "Save model profile",
+      exact: true,
+    })
+    .click();
+  await expect(editor).toHaveCount(0);
+  let config = await (
+    await page.request.get(workbench.url + "/api/ai/configuration")
+  ).json();
+  expect(
+    config.profiles.find(
+      (profile: { id: string }) => profile.id === "profile-personal",
+    ),
+  ).toMatchObject({
+    requestLimit: { kind: "LIMITED", count: 100 },
+    budget: { dailyMicros: 5_000_000 },
+    fallbackModelIds: ["model-space", "model-explicit"],
+  });
+  expect(JSON.stringify(config)).not.toMatch(
+    /test-only-(?:openai|anthropic)-key/,
+  );
+  await personal
+    .getByRole("button", {
+      name: zh ? "编辑配置" : "Edit profile",
+      exact: true,
+    })
+    .click();
+  editor = page.getByRole("form", { name: zh ? "配置编辑" : "Profile editor" });
+  await editor
+    .getByRole("radio", { name: zh ? "不限" : "Unlimited", exact: true })
+    .check();
+  await editor
+    .getByRole("button", {
+      name: zh ? "保存模型配置" : "Save model profile",
+      exact: true,
+    })
+    .click();
+  await expect(editor).toHaveCount(0);
+  await page.reload();
+  config = await (
+    await page.request.get(workbench.url + "/api/ai/configuration")
+  ).json();
+  expect(
+    config.profiles.find(
+      (profile: { id: string }) => profile.id === "profile-personal",
+    ).requestLimit,
+  ).toEqual({ kind: "UNLIMITED" });
+  const defaultRoute = await (
+    await page.request.get(workbench.url + "/api/ai")
+  ).json();
+  expect(defaultRoute.route.fallbackRoutes).toHaveLength(2);
+  await nav(page, w.desk.ai);
+  const atlas = page.locator(".atlas-conversation");
+  const ask = async (kind: string) => {
+    await atlas
+      .getByRole("textbox", {
+        name: zh ? "向 Atlas 提问" : "Ask Atlas",
+        exact: true,
+      })
+      .fill(`Check ${kind} routing`);
+    await atlas
+      .getByRole("button", { name: zh ? "发送" : "Send", exact: true })
+      .click();
+    await expect(atlas.locator(".approval-card")).toBeVisible();
+    const state = await (
+      await page.request.get(workbench.url + "/api/ai")
+    ).json();
+    const run = state.runs.find((run: { prompt: string }) =>
+      run.prompt.includes(`Check ${kind} routing`),
+    );
+    expect(run.route.model).toBe(`${kind}-model`);
+    expect(run.route.profileId).toBe(`profile-${kind}`);
+    await atlas
+      .getByRole("button", { name: zh ? "拒绝" : "Reject", exact: true })
+      .click();
+    await expect(atlas.locator(".approval-card")).toHaveCount(0);
+  };
+  await ask("personal");
+  await atlas
+    .getByRole("button", {
+      name: zh ? "添加上下文" : "Add context",
+      exact: true,
+    })
+    .click();
+  await chooseProject(atlas.locator(".context-picker .hierarchy-picker"), [
+    "Routing Project",
+  ]);
+  await atlas
+    .getByRole("button", {
+      name: zh ? "添加上下文" : "Add context",
+      exact: true,
+    })
+    .click();
+  await ask("project");
+  await atlas
+    .getByRole("button", {
+      name: zh ? "添加上下文" : "Add context",
+      exact: true,
+    })
+    .click();
+  await atlas
+    .locator(".space-picker")
+    .getByRole("button", { name: "Routing Space", exact: true })
+    .click();
+  await atlas
+    .getByRole("button", {
+      name: zh ? "添加上下文" : "Add context",
+      exact: true,
+    })
+    .click();
+  await ask("space");
+  const selector = atlas.getByRole("combobox", {
+    name: zh ? "对话模型配置" : "Conversation model profile",
+    exact: true,
+  });
+  await selector.selectOption("profile-explicit");
+  await expect(selector).toHaveValue("profile-explicit");
+  await ask("explicit");
+  await page.reload();
+  await expect(selector).toHaveValue("profile-explicit");
+  await selector.selectOption("");
+  await expect(selector).toHaveValue("");
+  expect(
+    (
+      await (await page.request.get(workbench.url + "/api/ai/sessions")).json()
+    )[0].modelProfileOverride,
+  ).toBeNull();
+  await page.screenshot({
+    path: info.outputPath("model-routing-catalog.png"),
+    fullPage: true,
+  });
 });
 
 test("reviewed plan and recurrence publish real tasks without duplication", async ({
@@ -1243,24 +1815,44 @@ test("reviewed plan and recurrence publish real tasks without duplication", asyn
   expect(state.items).toHaveLength(3);
   expect(state.edges).toHaveLength(1);
   await nav(page, w.desk.tasks);
-  const recurrences = page.locator("details").filter({
-    has: page.locator("summary", { hasText: w.desk.workflows.recurrences }),
-  });
-  await recurrences
-    .getByLabel(w.desk.workflows.title, { exact: true })
+  await expect(page.locator(".recurrence-manager")).toHaveCount(0);
+  await page.locator(".topbar .compact-create").click();
+  const repeatEditor = page.getByRole("dialog").first();
+  await repeatEditor
+    .getByLabel(w.work.title, { exact: true })
     .fill("Daily review");
-  await recurrences
-    .getByLabel(w.desk.workflows.timezone, { exact: true })
+  await repeatEditor.locator(".task-advanced summary").click();
+  await repeatEditor
+    .getByLabel(info.project.name.endsWith("zh") ? "重复" : "Repeat", {
+      exact: true,
+    })
+    .selectOption("DAILY");
+  await repeatEditor
+    .getByLabel(info.project.name.endsWith("zh") ? "时区" : "Timezone", {
+      exact: true,
+    })
     .fill("UTC");
-  await recurrences
-    .getByLabel(w.desk.workflows.start, { exact: true })
-    .fill(new Date().toISOString().slice(0, 10));
-  await recurrences
-    .getByRole("button", { name: w.desk.workflows.save, exact: true })
+  await chooseDate(
+    page,
+    repeatEditor.getByRole("button", {
+      name: info.project.name.endsWith("zh") ? "首次日期" : "First date",
+      exact: true,
+    }),
+    new Date().toISOString().slice(0, 10),
+  );
+  await repeatEditor
+    .getByRole("button", { name: w.common.create, exact: true })
     .click();
-  await recurrences
-    .getByRole("button", { name: w.desk.workflows.generate, exact: true })
+  await expect(repeatEditor).not.toBeVisible();
+  await page
+    .getByRole("button", {
+      name: info.project.name.endsWith("zh")
+        ? "管理周期任务"
+        : "Manage recurring tasks",
+      exact: true,
+    })
     .click();
+  const recurrences = page.locator(".recurrence-manager");
   await expect(
     recurrences.getByText(new RegExp(w.desk.workflows.OPEN)),
   ).toBeVisible();
@@ -2869,6 +3461,166 @@ test("knowledge references and AI approval preserve private content and never au
   ).toBe(true);
 });
 
+test("Agent Harness uses real evidence, reviews a write and keeps structured activity after refresh", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const aiPolicy = {
+    classification: "PRIVATE",
+    processingBoundary: "ANY",
+    aiAccess: "ALLOW",
+  };
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "SPACE",
+      spaceId: null,
+      title: "Evidence space",
+      bodyMd: "",
+      aiPolicy,
+    },
+  });
+  await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: space.id,
+      title: "Atlas evidence",
+      bodyMd: "# Atlas evidence\nVerified source content",
+      aiPolicy,
+    },
+  });
+  await page.reload();
+  await page.keyboard.press("Control+j");
+  const assistant = page.getByRole("complementary", {
+    name: "Atlas Assistant",
+  });
+  const starters = assistant.getByRole("button", {
+    name: zh ? "今天最值得做什么" : "What should I do today?",
+    exact: true,
+  });
+  await starters.click();
+  expect(
+    await (await page.request.get(workbench.url + "/api/ai/sessions")).json(),
+  ).toHaveLength(0);
+  await assistant
+    .getByRole("textbox")
+    .fill("Atlas evidence: read, then propose one task");
+  await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
+  await assistant
+    .getByRole("button", { name: /Approve request|批准本次请求/ })
+    .click();
+  const approval = assistant.getByRole("region", {
+    name: zh ? "工具审批" : "Tool approval",
+  });
+  await expect(approval).toContainText("Agent reviewed task");
+  expect(
+    (
+      await (await page.request.get(workbench.url + "/api/snapshot")).json()
+    ).items.filter((item: { type: string }) => item.type === "TASK"),
+  ).toHaveLength(0);
+  await approval
+    .getByRole("button", { name: zh ? "批准" : "Approve", exact: true })
+    .click();
+  await expect(
+    assistant.locator('[data-message-kind="ASSISTANT"]'),
+  ).toContainText("Reviewed task created");
+  await expect(assistant.locator(".tool-activity")).toHaveCount(4);
+  const tasks = (
+    await (await page.request.get(workbench.url + "/api/snapshot")).json()
+  ).items.filter((item: { type: string }) => item.type === "TASK");
+  expect(tasks.map((task: { title: string }) => task.title)).toEqual([
+    "Agent reviewed task",
+  ]);
+  await expect(
+    assistant.getByRole("region", { name: zh ? "来源" : "Sources" }),
+  ).toContainText("Atlas evidence");
+  await assistant
+    .getByRole("button", { name: "Atlas evidence", exact: true })
+    .click();
+  await expect(page.locator(".document-workspace")).toContainText(
+    "Verified source content",
+  );
+  await page.reload();
+  await page.keyboard.press("Control+j");
+  await expect(
+    assistant.locator('[data-message-kind="ASSISTANT"]'),
+  ).toContainText("Reviewed task created");
+  await expect(assistant.locator(".tool-activity")).toHaveCount(4);
+  await page.screenshot({
+    path: info.outputPath("harness-review.png"),
+    fullPage: true,
+  });
+});
+
+test("Agent Harness batch plan waits for review, accepts task edits and publishes into the selected project", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Economics learning",
+  });
+  await page.keyboard.press("Control+j");
+  const assistant = page.getByRole("complementary", {
+    name: "Atlas Assistant",
+  });
+  await assistant
+    .getByRole("textbox")
+    .fill(
+      `Import these lectures into project=${project.id}:\nLecture 1\nLecture 2\nLecture 3`,
+    );
+  await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
+  await assistant
+    .getByRole("button", { name: /Approve request|批准本次请求/ })
+    .click();
+  const approval = assistant.getByRole("region", {
+    name: zh ? "工具审批" : "Tool approval",
+  });
+  await expect(approval).toContainText("Lecture 3");
+  expect(
+    (
+      await (await page.request.get(workbench.url + "/api/snapshot")).json()
+    ).items.filter((item: { type: string }) => item.type === "TASK"),
+  ).toHaveLength(0);
+  await approval
+    .getByRole("button", { name: zh ? "修改" : "Modify", exact: true })
+    .click();
+  await approval
+    .getByRole("textbox", { name: zh ? "任务 1" : "Task 1", exact: true })
+    .fill("Reviewed economics introduction");
+  await approval
+    .getByRole("button", { name: zh ? "批准" : "Approve", exact: true })
+    .click();
+  await expect(
+    assistant.locator('[data-message-kind="ASSISTANT"]'),
+  ).toContainText("Reviewed course plan imported");
+  const tasks = (
+    await (await page.request.get(workbench.url + "/api/snapshot")).json()
+  ).items.filter((item: { type: string }) => item.type === "TASK");
+  expect(tasks).toHaveLength(3);
+  expect(tasks.map((task: { title: string }) => task.title)).toContain(
+    "Reviewed economics introduction",
+  );
+  expect(
+    tasks.every((task: { projectIds: string[] }) =>
+      task.projectIds.includes(project.id),
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: info.outputPath("plan-review.png"),
+    fullPage: true,
+  });
+});
+
 test("AI approval streaming displays real deltas and resumes persisted conversation after reload", async ({
   page,
   workbench,
@@ -2955,15 +3707,15 @@ test("document knowledge graph preserves wiki neighbors and hides work and isola
   const documents = graph.locator(
     '.react-flow__node:not([data-id^="space-cluster:"])',
   );
-  await expect(documents).toHaveCount(3);
+  await expect(documents).toHaveCount(2);
   await expect(
     graph.getByRole("button", {
-      name: zh ? "工作区" : "workspace",
+      name: zh ? "局部" : "local",
       exact: true,
     }),
   ).toHaveAttribute("aria-pressed", "true");
   await graph.getByLabel(zh ? "图谱搜索" : "Graph search").fill("Symmetry");
-  await expect(documents).toHaveCount(3);
+  await expect(documents).toHaveCount(2);
   await graph.getByRole("option", { name: /Symmetry lecture/ }).click();
   await graph
     .getByRole("button", { name: zh ? "局部" : "local", exact: true })
@@ -2975,7 +3727,10 @@ test("document knowledge graph preserves wiki neighbors and hides work and isola
   await graph
     .getByRole("button", { name: zh ? "空间" : "space", exact: true })
     .click();
-  await expect(documents).toHaveCount(3);
+  await expect(documents).toHaveCount(2);
+  await expect(graph).not.toContainText("Isolated page");
+  // Scope topology changes preserve the existing viewport; the user can fit explicitly.
+  await graph.getByRole("button", { name: "Fit View", exact: true }).click();
   await graph
     .locator(".react-flow__node")
     .filter({ hasText: "Symmetry lecture" })
@@ -3270,6 +4025,10 @@ test("two independent sessions sync updates without replacing an open draft", as
     await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
     await expect(title).toHaveValue("My unsaved draft");
     await page.route("**/api/sync?*", (route) => route.abort("failed"));
+    // A committed external change invalidates the snapshot; idle SSE does not poll.
+    await mutation(second, "/api/work/create", {
+      title: "Trigger offline snapshot pull",
+    });
     await expect(page.locator(".topbar")).toContainText(w.connected.offline, {
       timeout: 10000,
     });
@@ -3305,8 +4064,8 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
     dialog.locator(".project-memberships .hierarchy-picker"),
     ["Autumn launch"],
   );
-  await dialog.getByLabel(w.desk.startDate).fill("2026-09-14");
-  await dialog.getByLabel(w.desk.dueDate).fill("2026-09-21");
+  await chooseDate(page, dialog.getByLabel(w.desk.startDate), "2026-09-14");
+  await chooseDate(page, dialog.getByLabel(w.desk.dueDate), "2026-09-21");
   await dialog
     .getByRole("button", { name: w.common.create, exact: true })
     .click();
@@ -4579,7 +5338,11 @@ test("inline prerequisites save atomically with availability and reject stale gr
   await dialog
     .getByLabel(w.desk.activationPolicy, { exact: true })
     .selectOption("AT_SCHEDULED_TIME");
-  await dialog.getByLabel(w.desk.startDate, { exact: true }).fill("2099-01-01");
+  await chooseDate(
+    page,
+    dialog.getByLabel(w.desk.startDate, { exact: true }),
+    "2099-01-01",
+  );
   await expect(prerequisites.locator("p")).toContainText(w.work.waiting);
   await dialog
     .getByLabel(w.desk.activationPolicy, { exact: true })
@@ -4778,6 +5541,12 @@ test("parent picker excludes descendants and dependency nodes open task inspecto
     .click();
   await expect(page.locator(".react-flow__edge")).toHaveCount(0);
   expect(snapshot.edges).toHaveLength(0);
+  await page
+    .getByRole("button", {
+      name: info.project.name.endsWith("zh") ? "项目范围" : "Project scope",
+      exact: true,
+    })
+    .click();
   await page
     .locator(".react-flow__node")
     .filter({ hasText: "Inspect task" })
@@ -5263,9 +6032,15 @@ test("current level hierarchy search is shared by Task filters and AI scope", as
   await expect(page.locator(".task-card")).toContainText("Scoped child task");
   await nav(page, w.desk.settings);
   await page
-    .getByRole("radio", { name: zh ? "项目" : "Project", exact: true })
-    .check();
-  const scope = page.locator(".hierarchy-picker");
+    .getByText(zh ? "添加项目 / 空间覆盖" : "Add project / space override", {
+      exact: true,
+    })
+    .click();
+  const scope = page
+    .getByRole("region", {
+      name: zh ? "默认与范围覆盖" : "Default and overrides",
+    })
+    .locator(".hierarchy-picker");
   await chooseProject(scope, ["Hierarchy root", "Deep target"]);
   await expect(scope.locator(".hierarchy-selected")).toContainText(
     "Deep target",
@@ -5356,6 +6131,12 @@ test("Project dependency graph shows external blockers only on explicit request"
     type: "BLOCKS",
   });
   await page.goto(workbench.url + "/#projects/" + project.id + "?tab=tasks");
+  await page
+    .getByRole("button", {
+      name: info.project.name.endsWith("zh") ? "项目范围" : "Project scope",
+      exact: true,
+    })
+    .click();
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   await page
     .getByRole("checkbox", {
@@ -5583,6 +6364,12 @@ test("hardening editors outside click retain dirty drafts settings borders and e
     projectIds: [root.id],
   });
   await page.goto(workbench.url + "/#projects/" + root.id + "?tab=tasks");
+  await page
+    .getByRole("button", {
+      name: info.project.name.endsWith("zh") ? "项目范围" : "Project scope",
+      exact: true,
+    })
+    .click();
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   await page.locator(".react-flow__node").first().click();
   const viewport = await page
@@ -5612,6 +6399,122 @@ test("hardening editors outside click retain dirty drafts settings borders and e
     viewport!,
   );
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
+});
+
+test("workspace SSE applies external mutations without idle polling and resumes after visibility and offline changes", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await page.goto(workbench.url + "/#tasks");
+  let syncRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/sync") ++syncRequests;
+  });
+  await mutation(page, "/api/work/create", { title: "SSE external task" });
+  await expect(page.locator(".task-card")).toContainText("SSE external task", {
+    timeout: 4000,
+  });
+  const settled = syncRequests;
+  await page.waitForTimeout(6200);
+  expect(syncRequests).toBe(settled);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: true,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await mutation(page, "/api/work/create", { title: "Hidden window task" });
+  await page.waitForTimeout(400);
+  expect(syncRequests).toBe(settled);
+  await page.evaluate(() => {
+    Reflect.deleteProperty(document, "hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(
+    page.locator(".task-card").filter({ hasText: "Hidden window task" }),
+  ).toBeVisible({
+    timeout: 4000,
+  });
+  await page.context().setOffline(true);
+  await mutation(page, "/api/work/create", { title: "Offline recovery task" });
+  await page.context().setOffline(false);
+  await expect(
+    page.locator(".task-card").filter({ hasText: "Offline recovery task" }),
+  ).toBeVisible({ timeout: 4000 });
+});
+
+test("Library links to the single global Trash and preserves its library filter on refresh", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "SPACE",
+      spaceId: null,
+      title: "Library trash space",
+      bodyMd: "",
+    },
+  });
+  const doc = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: space.id,
+      title: "Trashed library document",
+      bodyMd: "",
+    },
+  });
+  const task = await mutation(page, "/api/work/create", {
+    title: "Trashed unrelated task",
+  });
+  await mutation(page, "/api/library/delete", {
+    id: doc.id,
+    version: doc.version,
+    deleted: true,
+  });
+  await mutation(page, "/api/work/delete", {
+    id: task.id,
+    version: task.version,
+    deleted: true,
+  });
+  await page.goto(workbench.url + "/#library");
+  await expect(
+    page
+      .locator(".library-view")
+      .getByText("Trashed library document", { exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", {
+      name: zh ? "查看回收站 →" : "View Trash →",
+      exact: true,
+    })
+    .click();
+  await expect(page).toHaveURL(/#trash\?filter=library$/);
+  await expect(page.locator(".trash-list")).toContainText(
+    "Trashed library document",
+  );
+  await expect(page.locator(".trash-list")).not.toContainText(
+    "Trashed unrelated task",
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("combobox", { name: zh ? "类型" : "Type", exact: true }),
+  ).toHaveValue("library");
+  await page
+    .getByRole("combobox", { name: zh ? "类型" : "Type", exact: true })
+    .selectOption("all");
+  await expect(page.locator(".trash-list")).toContainText(
+    "Trashed unrelated task",
+  );
 });
 
 test("hardening Trash soft delete Undo restore and permanent purge across entity kinds", async ({
@@ -5900,11 +6803,15 @@ test("Library snapshot sync and closed AI Activity have no independent polling",
   expect(libraryRequests).toEqual([]);
   await nav(page, w.desk.settings);
   await expect(page.locator(".settings-panel:visible")).toBeVisible();
+  await page.waitForTimeout(6500);
+  expect(activityRequests).toEqual([]);
+  await page.locator(".ai-activity > summary").click();
   await expect.poll(() => activityRequests.length).toBeGreaterThan(0);
+  await page.locator(".ai-activity > summary").click();
   const before = activityRequests.length;
   expect(
-    activityRequests.every(
-      (url) => new URL(url).searchParams.get("includeRuns") === "false",
+    activityRequests.some(
+      (url) => new URL(url).searchParams.get("includeRuns") !== "false",
     ),
   ).toBe(true);
   await page.waitForTimeout(6500);
@@ -5957,6 +6864,12 @@ test("hardening completed occurrence drives Today 7 Days and Month statistics", 
   await workbench.advanceRecurrenceTime(today + "T12:00:00.000Z");
   await page.reload();
   await nav(page, w.desk.tasks);
+  await page
+    .getByRole("button", {
+      name: zh ? "查看统计" : "View statistics",
+      exact: true,
+    })
+    .click();
   const board = page.locator(".recurrence-statistics");
   await board.getByRole("combobox").selectOption(definition.id);
   for (const name of [
@@ -5979,4 +6892,576 @@ test("hardening completed occurrence drives Today 7 Days and Month statistics", 
       (record: { id: string }) => record.id === occurrence.id,
     ).payload.status,
   ).toBe("COMPLETED");
+});
+
+test("2.1 Sidebar cleanup and localized DateField keyboard clear ISO persistence", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await expect(page.locator(".workspace-switch,.workspace-avatar")).toHaveCount(
+    0,
+  );
+  await expect(page.locator(".sidebar .section-label")).not.toContainText([
+    "Atlas",
+    "ATLAS",
+  ]);
+  await nav(page, "Atlas");
+  await expect(page.locator(".atlas-conversation")).toBeVisible();
+  await nav(page, w.desk.tasks);
+  await page.locator(".topbar .compact-create").click();
+  const actualEditor = page.getByRole("dialog").first();
+  await actualEditor
+    .getByLabel(w.work.title, { exact: true })
+    .fill("Localized calendar task");
+  const field = actualEditor.getByRole("button", {
+    name: w.desk.startDate,
+    exact: true,
+  });
+  await expect(field).toContainText(zh ? "年 / 月 / 日" : "MM / DD / YYYY");
+  await chooseDate(page, field, "2026-10-03");
+  await expect(field).toContainText(zh ? "2026年10月3日" : "Oct 3, 2026");
+  await field.click();
+  const popover = page.locator(".calendar-popover");
+  await popover
+    .getByRole("button", { name: "2026-10-03", exact: true })
+    .focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(
+    popover.getByRole("button", { name: "2026-10-04", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(field).toContainText(zh ? "2026年10月4日" : "Oct 4, 2026");
+  await field.click();
+  await page.keyboard.press("Escape");
+  await expect(popover).not.toBeVisible();
+  await expect(field).toBeFocused();
+  await field.click();
+  await popover
+    .getByRole("button", { name: zh ? "清除" : "Clear", exact: true })
+    .click();
+  await expect(field).toContainText(zh ? "年 / 月 / 日" : "MM / DD / YYYY");
+  await chooseDate(page, field, "2026-10-03");
+  await actualEditor
+    .getByRole("button", { name: w.common.create, exact: true })
+    .click();
+  await expect(actualEditor).not.toBeVisible();
+  const snapshot = await page.request.get(workbench.url + "/api/snapshot");
+  expect(snapshot.ok()).toBeTruthy();
+  const data = await snapshot.json();
+  expect(
+    data.items.find(
+      (item: { title: string }) => item.title === "Localized calendar task",
+    ).startDate,
+  ).toBe("2026-10-03");
+  await page.screenshot({
+    path: info.outputPath("localized-date-sidebar.png"),
+    fullPage: true,
+  });
+});
+
+test("2.1 Repeat draft conversion and occurrence versus series editing preserve identities", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh"),
+    text = (cn: string, en: string) => (zh ? cn : en);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.tasks);
+  await expect(page.locator(".recurrence-manager")).toHaveCount(0);
+  await page.locator(".topbar .compact-create").click();
+  let editor = page.locator(".task-dialog");
+  await editor
+    .getByLabel(w.work.title, { exact: true })
+    .fill("First repeating task");
+  await editor.locator(".task-advanced summary").click();
+  const repeat = editor.getByLabel(text("重复", "Repeat"), { exact: true });
+  await expect(repeat).toHaveValue("NONE");
+  await repeat.selectOption("DAILY");
+  await editor
+    .getByLabel(text("时区", "Timezone"), { exact: true })
+    .fill("UTC");
+  await chooseDate(
+    page,
+    editor.getByRole("button", {
+      name: text("首次日期", "First date"),
+      exact: true,
+    }),
+    new Date().toISOString().slice(0, 10),
+  );
+  await editor
+    .getByRole("button", { name: w.common.create, exact: true })
+    .click();
+  await expect(editor).not.toBeVisible();
+  const load = async () =>
+    (await page.request.get(workbench.url + "/api/snapshot")).json();
+  let state = await load();
+  const task = state.items.find(
+    (r: { title: string }) => r.title === "First repeating task",
+  );
+  expect(
+    state.items.filter(
+      (r: { title: string }) => r.title === "First repeating task",
+    ),
+  ).toHaveLength(1);
+  const occurrence = state.workflows.find(
+    (r: { payload: { taskId?: string } }) => r.payload.taskId === task.id,
+  );
+  const definition = state.workflows.find(
+    (r: { id: string }) => r.id === occurrence.payload.definitionId,
+  );
+  const historicalSnapshot = occurrence.payload.ruleSnapshot;
+  await page
+    .locator(".task-card")
+    .filter({ hasText: "First repeating task" })
+    .locator(".task-title")
+    .click();
+  editor = page.locator(".task-dialog");
+  await editor.locator(".task-advanced summary").click();
+  await editor
+    .getByRole("button", {
+      name: text("编辑本次", "Edit this occurrence"),
+      exact: true,
+    })
+    .click();
+  await editor
+    .getByLabel(w.work.title, { exact: true })
+    .fill("Only this occurrence");
+  await editor
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(editor).not.toBeVisible();
+  state = await load();
+  expect(
+    state.workflows.find((r: { id: string }) => r.id === definition.id).payload
+      .title,
+  ).toBe("First repeating task");
+  await page
+    .locator(".task-card")
+    .filter({ hasText: "Only this occurrence" })
+    .locator(".task-title")
+    .click();
+  await editor.locator(".task-advanced summary").click();
+  await editor
+    .getByRole("button", {
+      name: text("编辑整个系列", "Edit entire series"),
+      exact: true,
+    })
+    .click();
+  await editor
+    .getByLabel(w.work.title, { exact: true })
+    .fill("Future series title");
+  await editor
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(editor).not.toBeVisible();
+  state = await load();
+  expect(state.items.find((r: { id: string }) => r.id === task.id).title).toBe(
+    "Only this occurrence",
+  );
+  expect(
+    state.workflows.find((r: { id: string }) => r.id === definition.id).payload
+      .title,
+  ).toBe("Future series title");
+  expect(
+    state.workflows.find((r: { id: string }) => r.id === occurrence.id).payload
+      .ruleSnapshot,
+  ).toEqual(historicalSnapshot);
+  const normal = await mutation(page, "/api/work/create", {
+    title: "Convert ordinary task",
+  });
+  await page.reload();
+  await page
+    .locator(".task-card")
+    .filter({ hasText: "Convert ordinary task" })
+    .locator(".task-title")
+    .click();
+  await editor.locator(".task-advanced summary").click();
+  await editor
+    .getByLabel(text("重复", "Repeat"), { exact: true })
+    .selectOption("WEEKLY");
+  await editor
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(editor).not.toBeVisible();
+  state = await load();
+  expect(
+    state.items.filter(
+      (r: { title: string }) => r.title === "Convert ordinary task",
+    ),
+  ).toHaveLength(1);
+  expect(
+    state.workflows.filter(
+      (r: { payload: { taskId?: string } }) => r.payload.taskId === normal.id,
+    ),
+  ).toHaveLength(1);
+  await page
+    .getByRole("button", {
+      name: text("查看统计", "View statistics"),
+      exact: true,
+    })
+    .click();
+  await expect(page.locator(".recurrence-statistics")).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("recurrence-detail.png"),
+    fullPage: true,
+  });
+});
+
+test("2.1 Graph Workspace directed depth dependency hops URL refresh Back and Inspector", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh"),
+    text = (cn: string, en: string) => (zh ? cn : en);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const root = await mutation(page, "/api/work/create", {
+    title: "Graph root",
+    type: "PROJECT",
+  });
+  const child = await mutation(page, "/api/work/create", {
+    title: "Graph child",
+    type: "PROJECT",
+    parentProjectId: root.id,
+  });
+  await mutation(page, "/api/work/create", {
+    title: "Graph grandchild",
+    type: "PROJECT",
+    parentProjectId: child.id,
+  });
+  const tasks = [];
+  for (let i = 0; i < 4; i++)
+    tasks.push(
+      await mutation(page, "/api/work/create", {
+        title: "Hop task " + i,
+        projectIds: [root.id],
+      }),
+    );
+  for (let i = 1; i < tasks.length; i++)
+    await mutation(page, "/api/edge/create", {
+      fromId: tasks[i - 1].id,
+      toId: tasks[i].id,
+    });
+  await page.goto(
+    workbench.url +
+      "/#graph/project/" +
+      root.id +
+      "?mode=structure&depth=1&back=" +
+      encodeURIComponent("#projects/" + root.id),
+  );
+  const workspace = page.locator(".graph-workspace");
+  await expect(
+    workspace.getByRole("button", { name: "Graph child", exact: true }),
+  ).toBeVisible();
+  await expect(
+    workspace.getByRole("button", { name: "Graph grandchild", exact: true }),
+  ).toHaveCount(0);
+  await workspace
+    .getByRole("button", { name: "2 " + text("层", "level"), exact: true })
+    .click();
+  await expect(
+    workspace.getByRole("button", { name: "Graph grandchild", exact: true }),
+  ).toBeVisible();
+  await workspace
+    .getByRole("button", { name: "Graph grandchild", exact: true })
+    .click();
+  await expect(
+    workspace.getByRole("complementary", {
+      name: text("检查器", "Inspector"),
+      exact: true,
+    }),
+  ).toContainText("Graph grandchild");
+  await page.reload();
+  await expect(
+    workspace.getByRole("button", { name: "Graph grandchild", exact: true }),
+  ).toBeVisible();
+  await expect(
+    workspace.getByRole("complementary", {
+      name: text("检查器", "Inspector"),
+      exact: true,
+    }),
+  ).toContainText("Graph grandchild");
+  await workspace
+    .getByRole("button", { name: text("图形", "Graph"), exact: true })
+    .click();
+  await expect(workspace.locator(".react-flow__node")).toHaveCount(3);
+  await page.reload();
+  await expect(workspace.locator(".react-flow__node")).toHaveCount(3);
+  await expect(page).toHaveURL(/view=graph/);
+  await page.goto(
+    workbench.url +
+      "/#graph/project/" +
+      root.id +
+      "?mode=dependencies&focus=" +
+      tasks[1].id +
+      "&hops=1&back=" +
+      encodeURIComponent("#projects/" + root.id),
+  );
+  await expect(workspace.locator(".react-flow__node")).toHaveCount(3);
+  await workspace
+    .getByRole("button", { name: "2 " + text("跳", "hop"), exact: true })
+    .click();
+  await expect(workspace.locator(".react-flow__node")).toHaveCount(4);
+  await expect(page).toHaveURL(/hops=2/);
+  await workspace
+    .locator(".react-flow__node")
+    .filter({ hasText: "Hop task 2" })
+    .click();
+  await expect(
+    workspace.getByRole("complementary", {
+      name: text("检查器", "Inspector"),
+      exact: true,
+    }),
+  ).toContainText("Hop task 2");
+  const viewport = await workspace
+    .locator(".react-flow__viewport")
+    .getAttribute("style");
+  await workspace
+    .locator(".react-flow__node")
+    .filter({ hasText: "Hop task 1" })
+    .click();
+  await expect(workspace.locator(".react-flow__viewport")).toHaveAttribute(
+    "style",
+    viewport!,
+  );
+  await page.reload();
+  await expect(workspace.locator(".react-flow__node")).toHaveCount(4);
+  await expect(
+    workspace.getByRole("complementary", {
+      name: text("检查器", "Inspector"),
+      exact: true,
+    }),
+  ).toContainText("Hop task 1");
+  await workspace.locator(".react-flow__controls-fitview").click();
+  await page.screenshot({
+    path: info.outputPath("graph-workspace.png"),
+    fullPage: true,
+  });
+  await workspace
+    .getByRole("button", { name: text("返回", "Back"), exact: true })
+    .click();
+  await expect(page).toHaveURL(new RegExp("#projects/" + root.id));
+});
+
+test("2.1 Knowledge Graph workspace local hops excludes isolated universe and restores URL", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh"),
+    text = (cn: string, en: string) => (zh ? cn : en);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: { kind: "SPACE", title: "Graph sources", bodyMd: "", spaceId: null },
+  });
+  const c = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      title: "Graph C",
+      bodyMd: "# C",
+      spaceId: space.id,
+    },
+  });
+  const b = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      title: "Graph B",
+      bodyMd: "[[Graph C]]",
+      spaceId: space.id,
+    },
+  });
+  const a = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      title: "Graph A",
+      bodyMd: "[[Graph B]]",
+      spaceId: space.id,
+    },
+  });
+  await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      title: "Isolated graph document",
+      bodyMd: "# Isolated",
+      spaceId: space.id,
+    },
+  });
+  await page.goto(
+    workbench.url + "/#graph/document/" + a.id + "?mode=knowledge&hops=1",
+  );
+  const workspace = page.locator(".graph-workspace");
+  const nodes = workspace.locator(
+    '.react-flow__node:not([data-id^="space-cluster:"])',
+  );
+  await expect(nodes).toHaveCount(2);
+  await expect(nodes.filter({ hasText: "Graph C" })).toHaveCount(0);
+  await workspace.getByRole("button", { name: "1 hop", exact: true }).click();
+  await expect(nodes).toHaveCount(3);
+  await expect(page).toHaveURL(/hops=2/);
+  await page.reload();
+  await expect(nodes).toHaveCount(3);
+  await workspace
+    .getByRole("button", { name: text("工作区", "workspace"), exact: true })
+    .click();
+  await expect(nodes).toHaveCount(3);
+  await expect(
+    nodes.filter({ hasText: "Isolated graph document" }),
+  ).toHaveCount(0);
+  await workspace
+    .locator('header input[type="search"]')
+    .fill("Isolated graph document");
+  await workspace
+    .getByRole("option", { name: "Isolated graph document", exact: true })
+    .click();
+  await expect(nodes).toHaveCount(1);
+  await expect(
+    workspace.getByRole("complementary", {
+      name: text("检查器", "Inspector"),
+      exact: true,
+    }),
+  ).toContainText("Isolated graph document");
+  await page.reload();
+  await expect(nodes).toHaveCount(1);
+  await expect(
+    workspace.getByRole("complementary", {
+      name: text("检查器", "Inspector"),
+      exact: true,
+    }),
+  ).toContainText("Isolated graph document");
+  expect(b.id).not.toBe(c.id);
+  await page.screenshot({
+    path: info.outputPath("knowledge-graph-workspace.png"),
+    fullPage: true,
+  });
+});
+
+test("Agent Harness safety boundaries reject unknown invalid tools, enforce steps and writes, reject review and stale task versions", async ({
+  page,
+  workbench,
+}, info) => {
+  test.setTimeout(120000);
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const task = await mutation(page, "/api/work/create", {
+    title: "Version guarded task",
+  });
+  await page.keyboard.press("Control+j");
+  const assistant = page.getByRole("complementary", {
+    name: "Atlas Assistant",
+  });
+  const approval = assistant.getByRole("region", {
+    name: zh ? "工具审批" : "Tool approval",
+  });
+  const snapshot = async () =>
+    (await page.request.get(workbench.url + "/api/snapshot")).json();
+  const latest = async () =>
+    (
+      await (await page.request.get(workbench.url + "/api/ai")).json()
+    ).runs.find((run: { parentRunId?: string }) => !run.parentRunId);
+  for (const mode of [
+    "unknown",
+    "invalid",
+    "steps",
+    "reject",
+    "conflict",
+    "writes",
+  ]) {
+    await assistant
+      .getByRole("button", {
+        name: zh ? "新对话" : "New conversation",
+        exact: true,
+      })
+      .click();
+    await assistant
+      .getByRole("textbox")
+      .fill(`boundary:${mode} task=${task.id}`);
+    await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
+    await assistant
+      .getByRole("button", { name: /Approve request|批准本次请求/ })
+      .click();
+    if (["reject", "conflict", "writes"].includes(mode)) {
+      await expect(approval).toBeVisible();
+      if (mode === "conflict")
+        await mutation(page, "/api/work/update", {
+          id: task.id,
+          version: 1,
+          input: { title: "Human changed task" },
+        });
+      const count = mode === "writes" ? 6 : 1;
+      for (let index = 0; index < count; index++) {
+        if (mode === "writes")
+          await expect(approval).toContainText(`Bounded write ${index + 1}`);
+        await approval
+          .getByRole("button", {
+            name:
+              mode === "reject"
+                ? zh
+                  ? "拒绝"
+                  : "Reject"
+                : zh
+                  ? "批准"
+                  : "Approve",
+            exact: true,
+          })
+          .click();
+      }
+    }
+    await expect
+      .poll(async () => (await latest()).status)
+      .toBe(["reject", "conflict"].includes(mode) ? "SUCCEEDED" : "FAILED");
+    const run = await latest();
+    if (["steps", "writes"].includes(mode))
+      expect(run.harness.status).toBe("LIMIT_REACHED");
+    if (mode === "steps") expect(run.harness.steps).toBe(8);
+    if (mode === "conflict") {
+      expect(
+        run.harness.messages.some(
+          (message: { text: string }) =>
+            message.text === '{"error":"VERSION_CONFLICT"}',
+        ),
+      ).toBe(true);
+      expect(
+        (await snapshot()).items.find(
+          (item: { id: string }) => item.id === task.id,
+        ).status,
+      ).not.toBe("DONE");
+    }
+    if (mode === "reject")
+      expect(
+        run.harness.messages.some(
+          (message: { text: string }) =>
+            message.text === '{"error":"HUMAN_REJECTED"}',
+        ),
+      ).toBe(true);
+    expect(
+      (await snapshot()).items.filter(
+        (item: { title: string }) =>
+          item.title === "Must not be created" || item.title === "Unsafe",
+      ),
+    ).toHaveLength(0);
+  }
+  const tasks = (await snapshot()).items.filter((item: { title: string }) =>
+    item.title.startsWith("Bounded write"),
+  );
+  expect(tasks).toHaveLength(5);
+  await page.reload();
+  await page.keyboard.press("Control+j");
+  await expect(assistant.locator('[data-message-kind="ERROR"]')).toContainText(
+    "LIMIT_REACHED",
+  );
 });

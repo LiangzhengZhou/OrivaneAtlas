@@ -1,3 +1,7 @@
+import {
+  capabilityRegistry,
+  validateCapabilityInput,
+} from "@arclattice/application";
 import { DomainError } from "@arclattice/domain";
 
 const objectSchema = (
@@ -47,58 +51,13 @@ export const mcpTools = [
       openWorldHint: false,
     },
   },
-  ...[
-    {
-      name: "search_documents",
-      properties: { query: text, projectId: text, currentSpaceId: text },
-      required: ["query"],
-      read: true,
-    },
-    {
-      name: "read_document",
-      properties: { id: text },
-      required: ["id"],
-      read: true,
-    },
-    {
-      name: "get_project",
-      properties: { id: text },
-      required: ["id"],
-      read: true,
-    },
-    {
-      name: "list_project_tasks",
-      properties: { projectId: text },
-      required: ["projectId"],
-      read: true,
-    },
-    {
-      name: "create_task",
-      properties: { title: text, projectIds: { type: "array", items: text } },
-      required: ["title"],
-      read: false,
-    },
-    {
-      name: "propose_document_edit",
-      properties: { id: text, markdown: text },
-      required: ["id", "markdown"],
-      read: false,
-    },
-    {
-      name: "link_documents",
-      properties: { fromId: text, toId: text },
-      required: ["fromId", "toId"],
-      read: false,
-    },
-  ].map((capability) => ({
+  ...capabilityRegistry.map((capability) => ({
     name: capability.name,
-    description: capability.read
-      ? "Authorized application capability. Read credential required."
-      : "Application capability requiring explicit human approval; unapproved MCP execution is rejected.",
-    inputSchema: objectSchema(capability.properties, capability.required),
+    description: capability.description,
+    inputSchema: capability.inputSchema,
     annotations: {
-      readOnlyHint: capability.read,
-      destructiveHint: false,
+      readOnlyHint: capability.risk === "READ",
+      destructiveHint: capability.risk === "DESTRUCTIVE",
       openWorldHint: false,
     },
   })),
@@ -168,11 +127,17 @@ export async function mcpDispatch(
     };
   const input = args as Record<string, unknown>;
   if (
-    Object.keys(input).some((key) => !(key in tool.inputSchema.properties)) ||
-    tool.inputSchema.required.some((key) => !(key in input))
+    Object.keys(input).some(
+      (key) => !(key in (tool.inputSchema.properties ?? {})),
+    ) ||
+    tool.inputSchema.required?.some((key) => !(key in input))
   )
     throw new DomainError("VALIDATION_ERROR");
-  const result = await invoke(name, input);
+  const capability = capabilityRegistry.find((entry) => entry.name === name);
+  if (capability) validateCapabilityInput(capability.inputSchema, input);
+  const result = capability
+    ? await capability.execute(input, invoke)
+    : await invoke(name, input);
   return respond({
     content: [{ type: "text", text: JSON.stringify(result) }],
     isError: false,

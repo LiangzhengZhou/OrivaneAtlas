@@ -51,6 +51,8 @@ import { WorkspaceRouter } from "./app/WorkspaceRouter";
 import { type Runtime, readPreference, savePreference } from "./bootstrap";
 import { type DocumentRequest, DocumentWorkspace } from "./DocumentWorkspace";
 import { AssistantPane } from "./features/ai/AssistantPane";
+import { GraphWorkspace } from "./features/graph/GraphWorkspace";
+import { parseGraphRoute } from "./features/graph/graph-route";
 import { PickerIdentityContext } from "./features/hierarchy/PickerIdentityContext";
 import { MoreSheet } from "./features/mobile/MoreSheet";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
@@ -903,6 +905,7 @@ function Workbench({
       )}
       {assistantOpen && (
         <AssistantPane
+          onSource={openEntity}
           snapshot={snapshot}
           runtime={runtime}
           projectId={
@@ -1009,6 +1012,7 @@ function Workbench({
           </button>
           {!(
             [
+              "graph",
               "settings",
               "trash",
               "ai",
@@ -1056,6 +1060,13 @@ function Workbench({
           onVisibility={() => setDocumentVisible(true)}
         />
         <WorkspaceRouter view={view} hidden={documentVisible}>
+          {view === "graph" && parseGraphRoute(location.hash) && (
+            <GraphWorkspace
+              route={parseGraphRoute(location.hash)!}
+              snapshot={snapshot}
+              onOpen={openEntity}
+            />
+          )}
           {errorMessage && !editor && !noteEditor && (
             <div className="error" role="alert">
               {errorMessage}
@@ -1129,6 +1140,9 @@ function Workbench({
             </div>
           ) : view === "library" ? (
             <LibraryView
+              onTrash={() => {
+                location.hash = "#trash?filter=library";
+              }}
               onChanged={refresh}
               runtime={runtime}
               onOpen={openDocument}
@@ -1147,6 +1161,7 @@ function Workbench({
             <AdminView runtime={runtime} />
           ) : view === "ai" ? (
             <AssistantPane
+              onSource={openEntity}
               snapshot={snapshot}
               runtime={runtime}
               context={[]}
@@ -1745,6 +1760,19 @@ function Workbench({
           createType={creation.type}
           edges={snapshot.edges}
           today={calendarDay}
+          workflows={snapshot.workflows ?? []}
+          calendarTimezone={calendarTimezone}
+          onSaveRepeat={async (input) => {
+            if (
+              await run(
+                () => runtime.saveTaskRecurrence(input),
+                editorPendingKey,
+              )
+            )
+              setEditorState((current) =>
+                current === editor ? null : current,
+              );
+          }}
           initialProjectId={creation.parentId}
           busy={busy}
           error={errorMessage}

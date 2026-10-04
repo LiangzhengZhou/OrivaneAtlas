@@ -13,7 +13,7 @@ export function WorkspaceRouter({
   const mode =
     view === "settings" || view === "account" || view === "admin"
       ? "standard"
-      : view === "calendar" || view === "library"
+      : view === "calendar" || view === "library" || view === "graph"
         ? "full"
         : "wide";
   return (

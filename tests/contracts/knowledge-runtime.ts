@@ -206,10 +206,19 @@ export async function knowledgeRuntimeScenario(
       text: "storage",
       runId: null,
     });
+    const evidenceDocument = await library.get(root.id);
     await service.append(actor, created.id, user.version, {
       kind: "ASSISTANT",
       text: "answer",
       runId: null,
+      evidence: [
+        {
+          ref: { kind: "DOCUMENT", id: root.id },
+          title: evidenceDocument.title,
+          version: evidenceDocument.version,
+          source: "retrieved",
+        },
+      ],
     });
     const restored = await service.get(actor, created.id);
     expect(restored.messages.map((message) => message.kind)).toEqual([
@@ -257,4 +266,12 @@ export async function knowledgeRuntimeRoundTrip(
     ),
   ).toEqual(["USER", "ASSISTANT"]);
   expect(await library.revisions(state.rootId)).toHaveLength(4);
+  expect((await sessions.get(state.sessionId!)).messages[1]!.evidence).toEqual([
+    {
+      ref: { kind: "DOCUMENT", id: state.rootId },
+      title: "Renamed",
+      version: 4,
+      source: "retrieved",
+    },
+  ]);
 }

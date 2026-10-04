@@ -318,5 +318,7 @@
   "permanentDelete": "永久删除",
   "permanentDeleteConfirm": "永久删除“{{title}}”？此操作无法撤销。",
   "movedToTrash": "已移至回收站",
-  "selectedEntity": "选中实体"
+  "selectedEntity": "选中实体",
+  "graph": "图谱",
+  "openGraphWorkspace": "打开图谱工作区"
 }

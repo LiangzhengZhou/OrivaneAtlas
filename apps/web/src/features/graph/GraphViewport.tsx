@@ -25,6 +25,9 @@ export function GraphViewport({
   edges,
   onSelect,
   onOpen,
+  onWorkspace,
+  workspace = false,
+  selectionId,
 }: {
   toolbar?: ReactNode;
   inspector?: ReactNode;
@@ -32,6 +35,9 @@ export function GraphViewport({
   edges: Edge[];
   onSelect?(id: string): void;
   onOpen(id: string): void;
+  onWorkspace?: (() => void) | undefined;
+  workspace?: boolean;
+  selectionId?: string | undefined;
 }) {
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(nodes);
   const structure = JSON.stringify([
@@ -49,12 +55,17 @@ export function GraphViewport({
         return {
           ...node,
           ...(!changed && old ? { position: old.position } : {}),
-          selected: old?.selected ?? false,
+          selected:
+            selectionId !== undefined
+              ? node.id === selectionId
+              : (old?.selected ?? false),
         };
       });
     });
-  }, [nodes, structure, setFlowNodes]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  }, [nodes, structure, setFlowNodes, selectionId]);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    selectionId ?? null,
+  );
   const selected = nodes.find((node) => node.id === selectedId);
   const [expanded, setExpanded] = useState(false);
   const { t } = useTranslation("desk");
@@ -76,12 +87,21 @@ export function GraphViewport({
       >
         {expanded ? <X size={18} /> : <Expand size={18} />}
       </button>
+      {onWorkspace && (
+        <button type="button" className="chip" onClick={onWorkspace}>
+          {t("openGraphWorkspace", { defaultValue: "Open Graph Workspace" })}
+        </button>
+      )}
       {toolbar}
       <div className="graph-body">
         <div
           className="graph-viewport"
           style={{
-            height: expanded ? "calc(84vh - 100px)" : 560,
+            height: workspace
+              ? "calc(100dvh - 240px)"
+              : expanded
+                ? "calc(84vh - 100px)"
+                : 560,
             width: "100%",
           }}
         >
@@ -111,9 +131,11 @@ export function GraphViewport({
           <aside className="graph-selection" aria-label={t("selectedEntity")}>
             <strong>
               {selected &&
-                (typeof selected.data.label === "string"
-                  ? selected.data.label
-                  : selected.id)}
+                (typeof selected.data.title === "string"
+                  ? selected.data.title
+                  : typeof selected.data.label === "string"
+                    ? selected.data.label
+                    : selected.id)}
             </strong>
             {selected && (
               <button type="button" onClick={() => onOpen(selected.id)}>

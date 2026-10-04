@@ -51,5 +51,5 @@
   "runFailed": "The request did not finish normally. It will not be retried automatically; the provider may still have charged for it.",
   "synced": "Online sync",
   "offline": "Sync unavailable · draft kept",
-  "syncHint": "Server-authoritative data refreshes every 5 seconds while visible. No offline write queue."
+  "syncHint": "Visible workspaces refresh after server changes and on reconnect. Native clients use a periodic fallback. No offline write queue."
 }

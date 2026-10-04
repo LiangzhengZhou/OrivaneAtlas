@@ -17,11 +17,6 @@
   object-fit: cover;
   object-position: left;
 }
-.sidebar-collapsed .workspace-switch {
-  justify-content: center;
-  padding: 8px;
-}
-.sidebar-collapsed .workspace-switch > div,
 .sidebar-collapsed .section-label,
 .sidebar-collapsed .nav-item span {
   display: none;
@@ -64,38 +59,6 @@
   color: var(--on-accent);
   letter-spacing: -0.4px;
   white-space: nowrap;
-}
-.workspace-switch {
-  display: flex;
-  gap: 11px;
-  align-items: center;
-  border: 1px solid #ffffff14;
-  border-radius: 10px;
-  padding: 12px;
-  margin: 32px 0 23px;
-  background: #ffffff04;
-}
-.workspace-avatar {
-  width: 31px;
-  height: 31px;
-  background: #3e425e;
-  border-radius: 8px;
-  text-align: center;
-  line-height: 31px;
-  color: #e5e3f9;
-  font-size: 17px;
-}
-.workspace-switch strong {
-  color: var(--text-primary);
-  font-size: 16px;
-  font-weight: 500;
-  display: block;
-}
-.workspace-switch small {
-  display: block;
-  font-size: 13px;
-  letter-spacing: 0.3px;
-  color: #8f98af;
 }
 .section-label {
   font-size: 13px;
@@ -1267,12 +1230,6 @@ svg.status-dot {
     font-size: 17px;
     gap: 7px;
   }
-  .workspace-switch {
-    padding: 10px 8px;
-  }
-  .workspace-avatar {
-    display: none;
-  }
   .nav-item {
     font-size: 15px;
     gap: 9px;
@@ -1403,7 +1360,6 @@ svg.status-dot {
   .brand {
     font-size: 19px;
   }
-  .workspace-switch,
   .section-label {
     display: none;
   }

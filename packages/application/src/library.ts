@@ -218,6 +218,57 @@ export class LibraryService {
     await this.store.save(entry, version);
     return entry;
   }
+  async moveDocument(
+    context: ActorContext,
+    id: string,
+    version: number,
+    spaceId: string,
+  ) {
+    await this.authorization.require(context, "work:update");
+    const document = await this.store.get(id);
+    const target = await this.store.get(spaceId);
+    if (
+      document.workspaceId !== context.workspaceId ||
+      target.workspaceId !== context.workspaceId ||
+      document.deletedAt ||
+      target.deletedAt ||
+      document.kind !== "DOCUMENT" ||
+      target.kind !== "SPACE"
+    )
+      throw new DomainError("NOT_FOUND");
+    if (document.version !== version) throw new DomainError("VERSION_CONFLICT");
+    if (
+      (await this.store.list()).some(
+        (entry) => entry.parentDocumentId === id && !entry.deletedAt,
+      )
+    )
+      throw new DomainError("DEPENDENCY_EXISTS");
+    const normalize = (value: string) =>
+      value.trim().normalize("NFKC").toLocaleLowerCase();
+    const names = [document.title, ...(document.aliases ?? [])].map(normalize);
+    if (
+      (await this.store.list()).some(
+        (entry) =>
+          entry.id !== id &&
+          !entry.deletedAt &&
+          entry.spaceId === spaceId &&
+          [entry.title, ...(entry.aliases ?? [])].some((name) =>
+            names.includes(normalize(name)),
+          ),
+      )
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    const moved: LibraryEntry = {
+      ...document,
+      spaceId,
+      parentDocumentId: null,
+      version: version + 1,
+      updatedAt: this.clock.now(),
+      updatedBy: context.principalId,
+    };
+    await this.store.save(moved, version);
+    return moved;
+  }
   async purge(
     context: ActorContext,
     id: string,

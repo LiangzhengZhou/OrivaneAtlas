@@ -142,6 +142,47 @@ export interface SqliteOptions {
 
 /** Node-only adapter. Construct through open(); never expose this object to UI. */
 export class SqliteUnitOfWork implements UnitOfWork {
+  private readonly workspaceRevisions = new Map<string, number>();
+  private readonly workspaceListeners = new Map<string, Set<() => void>>();
+  workspaceRevision(workspaceId: string): number {
+    return this.workspaceRevisions.get(workspaceId) ?? 0;
+  }
+  subscribeWorkspace(workspaceId: string, listener: () => void): () => void {
+    const listeners =
+      this.workspaceListeners.get(workspaceId) ?? new Set<() => void>();
+    listeners.add(listener);
+    this.workspaceListeners.set(workspaceId, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) this.workspaceListeners.delete(workspaceId);
+    };
+  }
+  private async workspaceOperation<T>(
+    workspaceId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const changes = () =>
+      Number(this.db.prepare("SELECT total_changes() AS count").get()!.count);
+    const before = changes();
+    const result = await operation();
+    if (changes() !== before) {
+      this.workspaceRevisions.set(
+        workspaceId,
+        this.workspaceRevision(workspaceId) + 1,
+      );
+      // Subscribers run after the enclosing transaction/AsyncLocalStorage scope has returned.
+      setTimeout(() => {
+        for (const listener of this.workspaceListeners.get(workspaceId) ?? []) {
+          try {
+            listener();
+          } catch {
+            console.error("Workspace invalidation subscriber failed");
+          }
+        }
+      }, 0);
+    }
+    return result;
+  }
   private tail: Promise<void> = Promise.resolve();
   private closing = false;
   private closePromise: Promise<void> | undefined;
@@ -358,7 +399,9 @@ export class SqliteUnitOfWork implements UnitOfWork {
     operation: (tx: WorkTransaction) => T | Promise<T>,
   ): Promise<T> {
     return this.enqueue(() =>
-      this.transaction(() => this.scopedOperation(workspaceId, operation)),
+      this.workspaceOperation(workspaceId, () =>
+        this.transaction(() => this.scopedOperation(workspaceId, operation)),
+      ),
     );
   }
 
@@ -662,66 +705,68 @@ export class SqliteUnitOfWork implements UnitOfWork {
     authorize?: (store: AccountStore) => void,
   ): Promise<T> {
     return this.enqueue(() =>
-      this.transaction(async () => {
-        inspectSchema(this.db);
-        if (
-          !this.db
-            .prepare(
-              "SELECT 1 FROM workspace_principal WHERE workspace_id=? AND principal_id=?",
-            )
-            .get(context.workspaceId, context.principalId)
-        )
-          throw new DomainError("FORBIDDEN");
-        let active = true;
-        const guard = () => {
-          if (!active) throw new StorageError("TRANSACTION_CLOSED");
-        };
-        try {
-          authorize?.(accountStore(this.db, guard));
-          if (receipt) {
-            const cached = this.db
+      this.workspaceOperation(context.workspaceId, () =>
+        this.transaction(async () => {
+          inspectSchema(this.db);
+          if (
+            !this.db
               .prepare(
-                "SELECT digest,result FROM request_receipt WHERE workspace_id=? AND principal_id=? AND key=?",
+                "SELECT 1 FROM workspace_principal WHERE workspace_id=? AND principal_id=?",
               )
-              .get(context.workspaceId, context.principalId, receipt.key);
-            if (cached) {
-              if (cached.digest !== receipt.digest)
-                throw new DomainError("VERSION_CONFLICT");
-              return JSON.parse(String(cached.result)) as T;
+              .get(context.workspaceId, context.principalId)
+          )
+            throw new DomainError("FORBIDDEN");
+          let active = true;
+          const guard = () => {
+            if (!active) throw new StorageError("TRANSACTION_CLOSED");
+          };
+          try {
+            authorize?.(accountStore(this.db, guard));
+            if (receipt) {
+              const cached = this.db
+                .prepare(
+                  "SELECT digest,result FROM request_receipt WHERE workspace_id=? AND principal_id=? AND key=?",
+                )
+                .get(context.workspaceId, context.principalId, receipt.key);
+              if (cached) {
+                if (cached.digest !== receipt.digest)
+                  throw new DomainError("VERSION_CONFLICT");
+                return JSON.parse(String(cached.result)) as T;
+              }
             }
-          }
-          const result = await operation(
-            {
-              run: (workspaceId, callback) => {
-                guard();
-                if (workspaceId !== context.workspaceId)
-                  throw new DomainError("FORBIDDEN");
-                return this.scopedOperation(workspaceId, callback);
+            const result = await operation(
+              {
+                run: (workspaceId, callback) => {
+                  guard();
+                  if (workspaceId !== context.workspaceId)
+                    throw new DomainError("FORBIDDEN");
+                  return this.scopedOperation(workspaceId, callback);
+                },
               },
-            },
-            notebookStore(this.db, context, guard),
-            connectedStore(this.db, context, guard),
-            libraryStore(this.db, context, guard),
-            organizationStore(this.db, context, guard),
-            projectStore(this.db, context, guard),
-            agentSessionStore(this.db, context, guard),
-          );
-          if (receipt)
-            this.db
-              .prepare("INSERT INTO request_receipt VALUES (?,?,?,?,?,?)")
-              .run(
-                context.workspaceId,
-                context.principalId,
-                receipt.key,
-                receipt.digest,
-                JSON.stringify(result ?? null),
-                new Date().toISOString(),
-              );
-          return result;
-        } finally {
-          active = false;
-        }
-      }),
+              notebookStore(this.db, context, guard),
+              connectedStore(this.db, context, guard),
+              libraryStore(this.db, context, guard),
+              organizationStore(this.db, context, guard),
+              projectStore(this.db, context, guard),
+              agentSessionStore(this.db, context, guard),
+            );
+            if (receipt)
+              this.db
+                .prepare("INSERT INTO request_receipt VALUES (?,?,?,?,?,?)")
+                .run(
+                  context.workspaceId,
+                  context.principalId,
+                  receipt.key,
+                  receipt.digest,
+                  JSON.stringify(result ?? null),
+                  new Date().toISOString(),
+                );
+            return result;
+          } finally {
+            active = false;
+          }
+        }),
+      ),
     );
   }
 

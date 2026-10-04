@@ -13,6 +13,8 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DismissibleDialog } from "./app/DismissibleDialog";
+import { DateField } from "./components/DateField";
+import { RepeatFields, type RepeatRule } from "./components/RepeatFields";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
 import { Markdown } from "./Markdown";
@@ -31,6 +33,9 @@ export function TaskEditor({
   onClose,
   onSave,
   onDelete,
+  workflows = [],
+  calendarTimezone = "UTC",
+  onSaveRepeat,
 }: WorkEditorProps) {
   const { t, i18n } = useTranslation(["common", "work"]);
   const pendingChange = useRef<(() => void) | null>(null);
@@ -104,23 +109,69 @@ export function TaskEditor({
   const [priority, setPriority] = useState<Priority>(
     item?.priority ?? "MEDIUM",
   );
+  const occurrence = workflows.find(
+    (r) =>
+      !r.deletedAt &&
+      r.payload.kind === "OCCURRENCE" &&
+      r.payload.taskId === item?.id,
+  );
+  const definition =
+    occurrence?.payload.kind === "OCCURRENCE"
+      ? workflows.find(
+          (r) =>
+            r.id ===
+              (occurrence.payload.kind === "OCCURRENCE"
+                ? occurrence.payload.definitionId
+                : "") &&
+            !r.deletedAt &&
+            r.payload.kind === "RECURRENCE",
+        )
+      : null;
+  const [seriesEditing, setSeriesEditing] = useState(false);
+  const [repeat, setRepeat] = useState<RepeatRule | null>(null);
+  const seriesRule =
+    seriesEditing && definition?.payload.kind === "RECURRENCE"
+      ? definition.payload
+      : null;
   const dirty =
+    (seriesEditing
+      ? JSON.stringify(repeat) !== JSON.stringify(definition?.payload)
+      : repeat !== null) ||
     status !== (item?.status ?? "TODO") ||
-    title !== (item?.title ?? "") ||
-    descriptionMd !== (item?.descriptionMd ?? "") ||
-    priority !== (item?.priority ?? "MEDIUM") ||
+    title !==
+      (seriesEditing && definition?.payload.kind === "RECURRENCE"
+        ? definition.payload.title
+        : (item?.title ?? "")) ||
+    descriptionMd !==
+      (seriesEditing && definition?.payload.kind === "RECURRENCE"
+        ? definition.payload.descriptionMd
+        : (item?.descriptionMd ?? "")) ||
+    priority !== (seriesRule?.priority ?? item?.priority ?? "MEDIUM") ||
     projectId !== (item ? (item.parentProjectId ?? "") : initialProjectId) ||
     JSON.stringify(extraProjects) !==
       JSON.stringify(
         item?.projectIds ?? (initialProjectId ? [initialProjectId] : []),
       ) ||
-    activationState !== (item?.activationState ?? "ACTIVE") ||
-    activationPolicy !== (item?.activationPolicy ?? "MANUAL") ||
+    activationState !==
+      (seriesRule?.activationState ?? item?.activationState ?? "ACTIVE") ||
+    activationPolicy !==
+      (seriesRule?.activationPolicy ?? item?.activationPolicy ?? "MANUAL") ||
     startDate !== (item?.startDate ?? "") ||
     dueDate !== (item?.dueDate ?? "") ||
     JSON.stringify([...prerequisiteIds].sort()) !==
       JSON.stringify(initialPrerequisites);
+  function changeEditScope(action: () => void) {
+    if (dirty) {
+      pendingChange.current = () => {
+        pendingChange.current = null;
+        setDiscard(false);
+        action();
+      };
+      setDiscard(true);
+    } else action();
+  }
   function close() {
+    pendingChange.current = null;
     if (dirty) setDiscard(true);
     else onClose();
   }
@@ -161,34 +212,75 @@ export function TaskEditor({
         onSubmit={(event) => {
           event.preventDefault();
           if (!busy)
-            void onSave({
-              title,
-              ...(item ? { status } : {}),
-              descriptionMd,
-              priority,
+            void (async () => {
+              const draft = {
+                title,
+                ...(item ? { status } : {}),
+                descriptionMd,
+                priority,
 
-              ...((item?.type ?? createType) === "TASK"
-                ? {
-                    projectIds: extraProjects,
-                  }
-                : { parentProjectId: projectId || null }),
-              startDate: startDate || null,
-              dueDate: dueDate || null,
-              ...(JSON.stringify([...prerequisiteIds].sort()) !==
-              JSON.stringify(initialPrerequisites)
-                ? {
-                    prerequisiteIds,
-                    ...(item
-                      ? { expectedPrerequisiteIds: initialPrerequisites }
-                      : {}),
-                  }
-                : {}),
-              activationState:
-                activationPolicy === "MANUAL" && activationState === "SCHEDULED"
-                  ? "INACTIVE"
-                  : activationState,
-              activationPolicy,
-            });
+                ...((item?.type ?? createType) === "TASK"
+                  ? {
+                      projectIds: extraProjects,
+                    }
+                  : { parentProjectId: projectId || null }),
+                startDate: startDate || null,
+                dueDate: dueDate || null,
+                ...(JSON.stringify([...prerequisiteIds].sort()) !==
+                JSON.stringify(initialPrerequisites)
+                  ? {
+                      prerequisiteIds,
+                      ...(item
+                        ? { expectedPrerequisiteIds: initialPrerequisites }
+                        : {}),
+                    }
+                  : {}),
+                activationState:
+                  activationPolicy === "MANUAL" &&
+                  activationState === "SCHEDULED"
+                    ? "INACTIVE"
+                    : activationState,
+                activationPolicy,
+              };
+              if ((repeat || seriesEditing) && onSaveRepeat) {
+                const rule =
+                  repeat ??
+                  (definition?.payload.kind === "RECURRENCE"
+                    ? definition.payload
+                    : null);
+                if (!rule) return;
+                await onSaveRepeat({
+                  ...(item
+                    ? { task: { id: item.id, version: item.version } }
+                    : {}),
+                  draft,
+                  recurrence: {
+                    ...(definition ? { id: definition.id } : {}),
+                    version: definition?.version ?? 0,
+                    deleted: false,
+                    rule: {
+                      state: rule.state ?? "ACTIVE",
+                      closePolicy: rule.closePolicy ?? "END_OF_DAY",
+                      closeIncomplete: rule.closeIncomplete ?? true,
+                      durationValue: rule.durationValue ?? null,
+                      durationUnit: rule.durationUnit ?? null,
+                      startDate: rule.startDate,
+                      endDate: rule.endDate ?? null,
+                      timezone: rule.timezone,
+                      frequency: rule.frequency,
+                      interval: rule.interval,
+                      assigneePrincipalId: rule.assigneePrincipalId ?? null,
+                      title,
+                      descriptionMd,
+                      projectIds: extraProjects,
+                      priority,
+                      activationState,
+                      activationPolicy,
+                    },
+                  },
+                });
+              } else await onSave(draft);
+            })();
         }}
       >
         <div className="dialog-heading">
@@ -288,6 +380,99 @@ export function TaskEditor({
         )}
         <details className="task-advanced">
           <summary>{t("desk:advanced")}</summary>
+          {(item?.type ?? createType) === "TASK" &&
+            onSaveRepeat &&
+            (occurrence ? (
+              <div className="occurrence-edit-scope">
+                <p>
+                  {i18n.language.startsWith("zh")
+                    ? "此任务属于一个周期任务"
+                    : "This task belongs to a recurring series"}
+                </p>
+                <button
+                  type="button"
+                  className={!seriesEditing ? "chip active" : "chip"}
+                  onClick={() => {
+                    if (!seriesEditing) return;
+                    changeEditScope(() => {
+                      setSeriesEditing(false);
+                      setRepeat(null);
+                      setTitle(item?.title ?? "");
+                      setDescription(item?.descriptionMd ?? "");
+                      setPriority(item?.priority ?? "MEDIUM");
+                      setExtraProjects([...(item?.projectIds ?? [])]);
+                      setActivationState(item?.activationState ?? "ACTIVE");
+                      setActivationPolicy(item?.activationPolicy ?? "MANUAL");
+                    });
+                  }}
+                >
+                  {i18n.language.startsWith("zh")
+                    ? "编辑本次"
+                    : "Edit this occurrence"}
+                </button>
+                <button
+                  type="button"
+                  className={seriesEditing ? "chip active" : "chip"}
+                  disabled={!definition}
+                  onClick={() => {
+                    if (seriesEditing) return;
+                    if (definition?.payload.kind === "RECURRENCE") {
+                      const series = definition.payload;
+                      changeEditScope(() => {
+                        setSeriesEditing(true);
+                        setRepeat(series);
+                        setTitle(series.title);
+                        setDescription(series.descriptionMd);
+                        setPriority(series.priority ?? "MEDIUM");
+                        setExtraProjects([...(series.projectIds ?? [])]);
+                        setActivationState(series.activationState ?? "ACTIVE");
+                        setActivationPolicy(
+                          series.activationPolicy ?? "MANUAL",
+                        );
+                      });
+                    }
+                  }}
+                >
+                  {i18n.language.startsWith("zh")
+                    ? "编辑整个系列"
+                    : "Edit entire series"}
+                </button>
+                {seriesEditing && (
+                  <RepeatFields
+                    rule={repeat}
+                    onChange={(next) => {
+                      if (next) setRepeat(next);
+                    }}
+                  />
+                )}
+              </div>
+            ) : (
+              <>
+                <RepeatFields
+                  rule={repeat}
+                  onChange={(next) =>
+                    setRepeat(
+                      next
+                        ? repeat
+                          ? next
+                          : {
+                              ...next,
+                              timezone: calendarTimezone,
+                              startDate: startDate || today || next.startDate,
+                            }
+                        : null,
+                    )
+                  }
+                />
+                {repeat && item && (
+                  <p>
+                    {i18n.language.startsWith("zh")
+                      ? "将此任务设为重复任务：当前任务会作为首次任务保留。"
+                      : "Convert this task to a recurring series, keeping it as the first occurrence."}
+                  </p>
+                )}
+              </>
+            ))}
           {
             <label className="field">
               <span>{t("desk:activationPolicy")}</span>
@@ -350,23 +535,23 @@ export function TaskEditor({
         <div className="schedule-fields">
           <label className="field">
             <span>{t("desk:startDate")}</span>
-            <input
-              type="date"
+            <DateField
+              aria-label={t("desk:startDate")}
               min="0001-01-01"
               required={activationPolicy === "AT_SCHEDULED_TIME"}
               max={dueDate || "9999-12-31"}
               value={startDate}
-              onChange={(event) => setStartDate(event.target.value)}
+              onChange={setStartDate}
             />
           </label>
           <label className="field">
             <span>{t("desk:dueDate")}</span>
-            <input
-              type="date"
+            <DateField
+              aria-label={t("desk:dueDate")}
               min={startDate || "0001-01-01"}
               max="9999-12-31"
               value={dueDate}
-              onChange={(event) => setDueDate(event.target.value)}
+              onChange={setDueDate}
             />
           </label>
         </div>
@@ -389,7 +574,7 @@ export function TaskEditor({
                 setPreview(true);
               }}
             >
-              {t("desk:read")}
+              {i18n.language === "zh-CN" ? "预览" : "Preview"}
             </button>
           </div>
           {preview ? (

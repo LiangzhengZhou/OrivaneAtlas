@@ -227,6 +227,17 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 27,
+    name: "task-recurrence-conversion",
+    sql: readFileSync(
+      new URL(
+        "./migrations/0027-task-recurrence-conversion.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {

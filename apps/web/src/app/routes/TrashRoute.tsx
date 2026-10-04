@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "../../bootstrap";
 
@@ -14,7 +15,20 @@ export function TrashRoute({
   busy: boolean;
   run(action: () => Promise<unknown>): Promise<boolean>;
 }) {
-  const { t } = useTranslation("desk");
+  const { t, i18n } = useTranslation("desk");
+  const zh = i18n.language.startsWith("zh");
+  const initialFilter = () => {
+    const value = new URLSearchParams(location.hash.split("?")[1]).get(
+      "filter",
+    );
+    return ["library", "work", "note"].includes(value ?? "") ? value! : "all";
+  };
+  const [filter, setFilter] = useState(initialFilter);
+  useEffect(() => {
+    const changed = () => setFilter(initialFilter());
+    window.addEventListener("hashchange", changed);
+    return () => window.removeEventListener("hashchange", changed);
+  }, []);
   const entries = [
     ...snapshot.items
       .filter((entry) => entry.deletedAt)
@@ -23,17 +37,44 @@ export function TrashRoute({
       .filter((entry) => entry.deletedAt)
       .map((entry) => ({ ...entry, kind: "NOTE" as const })),
     ...snapshot.library.filter((entry) => entry.deletedAt),
-  ].filter((entry) =>
-    (
-      entry.title +
-      " " +
-      ("bodyMd" in entry ? entry.bodyMd : entry.descriptionMd)
+  ]
+    .filter(
+      (entry) =>
+        filter === "all" ||
+        (filter === "work"
+          ? entry.kind === "WORK"
+          : filter === "note"
+            ? entry.kind === "NOTE"
+            : entry.kind === "SPACE" || entry.kind === "DOCUMENT"),
     )
-      .toLocaleLowerCase()
-      .includes(query.toLocaleLowerCase()),
-  );
+    .filter((entry) =>
+      (
+        entry.title +
+        " " +
+        ("bodyMd" in entry ? entry.bodyMd : entry.descriptionMd)
+      )
+        .toLocaleLowerCase()
+        .includes(query.toLocaleLowerCase()),
+    );
   return (
     <div className="trash-list">
+      <label>
+        {zh ? "类型" : "Type"}
+        <select
+          aria-label={zh ? "类型" : "Type"}
+          value={filter}
+          onChange={(event) => {
+            location.hash = `#trash?filter=${event.target.value}`;
+          }}
+        >
+          <option value="all">{t("common:all")}</option>
+          <option value="work">
+            {zh ? "任务与项目" : "Tasks and projects"}
+          </option>
+          <option value="note">{t("notes")}</option>
+          <option value="library">{zh ? "知识库" : "Library"}</option>
+        </select>
+      </label>
       {entries.map((entry) => (
         <div key={`${entry.kind}:${entry.id}`}>
           <span>{entry.title}</span>

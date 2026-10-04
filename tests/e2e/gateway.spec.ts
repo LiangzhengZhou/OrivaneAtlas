@@ -69,7 +69,7 @@ test("Gateway registry policy persists and approved alternatives are visible bef
       (
         await post("/api/ai/providers/save", {
           version: 0,
-          input: { ...input, profileId: "backup" },
+          input: { ...input, model: "backup-test", profileId: "backup" },
         })
       ).status(),
     ).toBe(200);
@@ -87,41 +87,58 @@ test("Gateway registry policy persists and approved alternatives are visible bef
     await page.goto(origin);
     const zh = info.project.name.endsWith("zh");
     await page.goto(origin + "/#settings");
-    await page.locator(".personal-ai-settings > summary").click();
-    await expect(
-      page.getByLabel(
-        zh ? "启用显式 Gateway 策略" : "Enable explicit Gateway policies",
-      ),
-    ).toBeChecked();
-    await expect(
-      page.getByLabel(
-        zh
-          ? "每日请求不限量（仍须审批）"
-          : "Unlimited daily requests (approval still required)",
-      ),
-    ).toBeChecked();
-    const budget = page.getByLabel(
-      zh
-        ? "每日美元预算（同范围全部模型合计）"
-        : "Daily USD budget (all models in this scope)",
-    );
-    await budget.fill("2");
-    await page
+    const defaultRow = page
+      .locator(".model-settings-row")
+      .filter({ has: page.locator("strong", { hasText: "Default profile" }) });
+    await defaultRow
       .getByRole("button", {
-        name: zh ? "保存个人配置" : "Save personal configuration",
+        name: zh ? "编辑配置" : "Edit profile",
         exact: true,
       })
       .click();
+    const editor = page.getByRole("form", {
+      name: zh ? "配置编辑" : "Profile editor",
+    });
     await expect(
-      page.locator(".personal-ai-settings [role=status]"),
-    ).toContainText("v2");
+      editor.getByRole("radio", {
+        name: zh ? "不限" : "Unlimited",
+        exact: true,
+      }),
+    ).toBeChecked();
+    const budget = editor.getByLabel(
+      zh ? "每日美元预算" : "Daily budget in dollars",
+      { exact: true },
+    );
+    await budget.fill("2");
+    await editor
+      .getByRole("button", {
+        name: zh ? "保存模型配置" : "Save model profile",
+        exact: true,
+      })
+      .click();
+    await expect(page.locator(".model-settings [role=status]")).toContainText(
+      zh ? "模型设置已保存" : "Model settings saved",
+    );
     await page.reload();
-    await page.goto(origin + "/#settings");
-    await page.locator(".personal-ai-settings > summary").click();
+    await defaultRow
+      .getByRole("button", {
+        name: zh ? "编辑配置" : "Edit profile",
+        exact: true,
+      })
+      .click();
     await expect(budget).toHaveValue("2");
     await expect(
-      page.locator(".personal-ai-settings input[type=password]"),
-    ).toHaveValue("");
+      editor.getByRole("radio", {
+        name: zh ? "不限" : "Unlimited",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await expect(
+      editor.getByLabel(zh ? "备用模型 1" : "Fallback model 1"),
+    ).not.toHaveValue("");
+    await expect(
+      page.locator(".model-settings input[type=password]"),
+    ).toHaveCount(0);
     await page.screenshot({
       path: info.outputPath("gateway-settings.png"),
       fullPage: true,
@@ -131,9 +148,11 @@ test("Gateway registry policy persists and approved alternatives are visible bef
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
-    await page.locator(".personal-ai-settings > summary").click();
     await page
-      .locator(".ai-layout textarea")
+      .getByText(zh ? "模型测试请求" : "Model test request", { exact: true })
+      .click();
+    await page
+      .getByLabel(zh ? "将要发送的内容" : "Text to send", { exact: true })
       .fill("Review without sending anything");
     await page
       .getByRole("button", {

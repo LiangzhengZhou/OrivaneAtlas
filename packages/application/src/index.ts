@@ -76,6 +76,7 @@ export interface ActivityEvent {
   readonly principalId: string;
   readonly entityId: string;
   readonly type:
+    | "RECURRENCE_TASK_CONVERTED"
     | "WORK_ITEM_CREATED"
     | "WORK_ITEM_UPDATED"
     | "WORK_ITEM_DELETED"
@@ -1098,17 +1099,21 @@ export class WorkService {
   }
 }
 export * from "./accounts";
+export * from "./agent-harness";
 export * from "./agent-session";
 export * from "./ai-capabilities";
 export * from "./ai-context";
+export * from "./capability-registry";
 export * from "./content-policy";
 export * from "./gateway-policy";
 export * from "./library";
+export * from "./model-configuration";
 export {
   executeApprovedModel,
   validateApprovedContext,
   validateContextPolicy,
 } from "./model-gateway";
+export * from "./model-route-resolver";
 export * from "./note-knowledge";
 export * from "./notifications";
 export type {
@@ -1121,6 +1126,7 @@ export * from "./project-knowledge-scope";
 export * from "./provider-adapter";
 export * from "./recurrence-lifecycle";
 export * from "./retrieval";
+export * from "./retrieval-context-resolver";
 export * from "./trusted-ai-endpoint";
 export type { AppUpdateInfo, AppUpdateProgress, AppUpdates } from "./updates";
 export * from "./workspace-changes";

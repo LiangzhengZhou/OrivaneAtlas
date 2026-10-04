@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { DatabaseSync } from "node:sqlite";
 import { setTimeout } from "node:timers/promises";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { repositoryContract } from "../../../tests/contracts/work-repository";
 import { edge, work } from "../../../tests/fixtures";
 import { context, principal, service, sqliteHarness } from "./testing";
@@ -11,6 +11,32 @@ const harness = sqliteHarness();
 repositoryContract("SQLite file", harness.create);
 
 describe("SQLite persistence and transactions", () => {
+  it("notifies workspace subscribers only after committed changes, never reads or rollbacks", async () => {
+    const db = await harness.create(),
+      changed = vi.fn(),
+      other = vi.fn();
+    const unsubscribe = db.subscribeWorkspace(context.workspaceId, changed);
+    db.subscribeWorkspace("workspace-b", other);
+    await service(db).snapshot(context);
+    await setTimeout(20);
+    expect(changed).not.toHaveBeenCalled();
+    await expect(
+      db.run(context.workspaceId, async (tx) => {
+        await tx.insert(work("rolled-back"));
+        throw new Error("rollback");
+      }),
+    ).rejects.toThrow("rollback");
+    await setTimeout(20);
+    expect(changed).not.toHaveBeenCalled();
+    await service(db).create(context, { title: "Committed" });
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+    expect(db.workspaceRevision(context.workspaceId)).toBe(1);
+    expect(other).not.toHaveBeenCalled();
+    unsubscribe();
+    await service(db).create(context, { title: "Unsubscribed" });
+    await setTimeout(20);
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
   it("reopens committed Markdown, graph, soft deletion, attribution and events", async () => {
     const db = await harness.create();
     const app = service(db);

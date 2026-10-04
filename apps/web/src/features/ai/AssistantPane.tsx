@@ -2,12 +2,16 @@ import type {
   AgentRun,
   AgentSession,
   AiContextItem,
+  EntityRef,
+  ModelProfile,
 } from "@arclattice/application";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "../../bootstrap";
 import { Markdown } from "../../Markdown";
+import { AnswerSources } from "./AnswerSources";
 import { ContextBar } from "./ContextBar";
+import { HarnessApproval, ToolActivity } from "./ToolActivity";
 
 export function AssistantPane({
   runtime,
@@ -17,6 +21,7 @@ export function AssistantPane({
   onClose,
   embedded = false,
   snapshot,
+  onSource,
 }: {
   runtime: Runtime;
   context: AiContextItem[];
@@ -25,6 +30,7 @@ export function AssistantPane({
   onClose(): void;
   embedded?: boolean;
   snapshot?: Snapshot;
+  onSource?(ref: EntityRef): void;
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
@@ -56,6 +62,30 @@ export function AssistantPane({
     new Set(),
   );
   const [session, setSession] = useState<AgentSession | null>(null);
+  const [profiles, setProfiles] = useState<ModelProfile[]>([]),
+    [explicitProfile, setExplicitProfile] = useState("");
+  useEffect(() => {
+    let active = true;
+    void runtime
+      .modelConfiguration()
+      .then((configuration) => {
+        if (active) setProfiles(configuration.profiles);
+      })
+      .catch((failure) => {
+        if (active)
+          setError(
+            failure instanceof Error
+              ? failure.message
+              : "MODEL_CONFIGURATION_UNAVAILABLE",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [runtime]);
+  useEffect(() => {
+    setExplicitProfile(session?.modelProfileOverride ?? "");
+  }, [session?.id, session?.modelProfileOverride]);
   useEffect(() => {
     let active = true;
     void runtime
@@ -71,7 +101,9 @@ export function AssistantPane({
               (entry) =>
                 entry.sessionId === latest?.id &&
                 ["WAITING_APPROVAL", "RUNNING"].includes(entry.status),
-            ) ?? null,
+            ) ??
+              state.runs.find((entry) => entry.sessionId === latest?.id) ??
+              null,
           );
         }
       })
@@ -127,6 +159,7 @@ export function AssistantPane({
     let timer: number | undefined;
     void runtime
       .streamAiEvents(run.id, controller.signal, (events) => {
+        void refresh();
         if (active)
           setStreamedText(
             events
@@ -190,10 +223,15 @@ export function AssistantPane({
       <button
         type="button"
         className="chip"
-        disabled={pending || run?.status === "RUNNING"}
+        disabled={
+          pending ||
+          run?.status === "RUNNING" ||
+          run?.status === "WAITING_APPROVAL"
+        }
         onClick={() => {
           setSession(null);
           setRun(null);
+          setExplicitProfile("");
         }}
       >
         {zh ? "新对话" : "New conversation"}
@@ -214,10 +252,24 @@ export function AssistantPane({
                 run?.status === "RUNNING" ||
                 run?.status === "WAITING_APPROVAL"
               }
-              onClick={() => {
+              onClick={async () => {
+                setPending(true);
                 setSession(entry);
                 setRun(null);
                 setStreamedText("");
+                try {
+                  const state = await runtime.ai();
+                  setRun(
+                    state.runs.find((run) => run.sessionId === entry.id) ??
+                      null,
+                  );
+                } catch (failure) {
+                  setError(
+                    failure instanceof Error ? failure.message : "UNAVAILABLE",
+                  );
+                } finally {
+                  setPending(false);
+                }
               }}
             >
               {entry.title}
@@ -271,12 +323,127 @@ export function AssistantPane({
                       : "message-content"
                 }
               >
-                <Markdown text={message.text} />
+                {message.kind.startsWith("TOOL") ||
+                message.kind === "PROPOSAL" ? (
+                  <ToolActivity text={message.text} zh={zh} />
+                ) : (
+                  <Markdown text={message.text} />
+                )}
               </div>
+              {message.kind === "ASSISTANT" && (
+                <AnswerSources
+                  evidence={message.evidence}
+                  zh={zh}
+                  onOpen={(ref) => {
+                    onSource?.(ref);
+                    if (!embedded) onClose();
+                  }}
+                />
+              )}
             </section>
           ))}
 
           {error && <p role="alert">{error}</p>}
+          {!session?.messages.length && (
+            <div
+              className="contextual-starters"
+              aria-label={zh ? "开始对话" : "Conversation starters"}
+            >
+              {(selectedContext.some((item) => item.ref.kind === "DOCUMENT")
+                ? zh
+                  ? [
+                      "总结本文",
+                      "寻找相关 Wiki",
+                      "改进文档",
+                      "根据本文创建任务",
+                    ]
+                  : [
+                      "Summarize this document",
+                      "Find related Wiki pages",
+                      "Improve this document",
+                      "Create tasks from this document",
+                    ]
+                : selectedProject
+                  ? zh
+                    ? [
+                        "总结这个项目",
+                        "找出阻塞任务",
+                        "建议下一步",
+                        "搜索相关知识",
+                      ]
+                    : [
+                        "Summarize this project",
+                        "Find blocked tasks",
+                        "Suggest next steps",
+                        "Search related knowledge",
+                      ]
+                  : zh
+                    ? ["今天最值得做什么", "找出阻塞任务", "整理未完成任务"]
+                    : [
+                        "What should I do today?",
+                        "Find blocked tasks",
+                        "Organize unfinished tasks",
+                      ]
+              ).map((starter) => (
+                <button
+                  key={starter}
+                  type="button"
+                  onClick={() => setPrompt(starter)}
+                >
+                  {starter}
+                </button>
+              ))}
+            </div>
+          )}
+          {run?.harness?.status === "WAITING_APPROVAL" && (
+            <div>
+              <HarnessApproval
+                key={run.harness.pending[0]?.id}
+                run={run}
+                runtime={runtime}
+                zh={zh}
+                busy={pending}
+                onDecision={(action) => void execute(action)}
+              />
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() =>
+                  void execute(() => runtime.stopHarness(run.id, run.version))
+                }
+              >
+                {zh ? "停止本次运行" : "Stop this run"}
+              </button>
+            </div>
+          )}
+          {!!run?.context?.length &&
+            !session?.messages.some(
+              (message) =>
+                message.runId === run.id &&
+                message.kind === "ASSISTANT" &&
+                message.evidence?.length,
+            ) && (
+              <section
+                aria-label={zh ? "来源" : "Sources"}
+                className="answer-sources"
+              >
+                <h3>
+                  {zh ? "来源" : "Sources"} {run.context.length}
+                </h3>
+                {run.context.map((source) => (
+                  <button
+                    key={source.ref.kind + source.ref.id}
+                    type="button"
+                    onClick={() => {
+                      onSource?.(source.ref);
+                      if (!embedded) onClose();
+                    }}
+                  >
+                    {source.title}
+                  </button>
+                ))}
+              </section>
+            )}
           {run?.status === "RUNNING" && streamedText && (
             <div aria-live="polite">
               <Markdown text={streamedText} />
@@ -323,6 +490,70 @@ export function AssistantPane({
         </div>
       </div>
       <div className="conversation-composer">
+        <label>
+          {zh ? "对话模型配置" : "Conversation model profile"}
+          <select
+            aria-label={zh ? "对话模型配置" : "Conversation model profile"}
+            value={explicitProfile}
+            disabled={
+              pending ||
+              run?.status === "WAITING_APPROVAL" ||
+              run?.status === "RUNNING"
+            }
+            onChange={async (event) => {
+              const selected = event.target.value;
+              if (!session) {
+                setExplicitProfile(selected);
+                return;
+              }
+              setPending(true);
+              setError("");
+              try {
+                const updated = await runtime.setAgentSessionProfile(
+                  session.id,
+                  session.version,
+                  selected || null,
+                );
+                setSession(updated);
+                setSessions((current) =>
+                  current.map((entry) =>
+                    entry.id === updated.id ? updated : entry,
+                  ),
+                );
+                setExplicitProfile(selected);
+              } catch (failure) {
+                setError(
+                  failure instanceof Error
+                    ? failure.message
+                    : "MODEL_PROFILE_SAVE_FAILED",
+                );
+              } finally {
+                setPending(false);
+              }
+            }}
+          >
+            <option value="">
+              {zh
+                ? "自动继承空间 / 项目 / 默认"
+                : "Inherit space / project / default"}
+            </option>
+            {profiles.map((profile) => (
+              <option
+                key={profile.id}
+                value={profile.id}
+                disabled={profile.enabled === false}
+              >
+                {profile.name}
+              </option>
+            ))}
+            {explicitProfile &&
+              !profiles.some((profile) => profile.id === explicitProfile) && (
+                <option value={explicitProfile}>
+                  {zh ? "配置不可用" : "Profile unavailable"}
+                </option>
+              )}
+          </select>
+        </label>
         {snapshot ? (
           <ContextBar
             snapshot={snapshot}
@@ -363,7 +594,10 @@ export function AssistantPane({
               (async () => {
                 const currentSession =
                   session ??
-                  (await runtime.createAgentSession(prompt.slice(0, 240)));
+                  (await runtime.createAgentSession(
+                    prompt.slice(0, 240),
+                    explicitProfile || null,
+                  ));
                 return runtime.propose(
                   prompt,
                   "personal",
@@ -387,6 +621,7 @@ export function AssistantPane({
                     sessionId: currentSession.id,
                     sessionVersion: currentSession.version,
                   },
+                  explicitProfile ? { explicitProfileId: explicitProfile } : {},
                 );
               })(),
             );

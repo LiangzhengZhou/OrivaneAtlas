@@ -70,3 +70,4 @@ scripts/verify-release*.mjs
 
 # Generated Kotlin compiler session files
 src-tauri/gen/android/buildSrc/.kotlin/
+src-tauri/gen/android/.kotlin/

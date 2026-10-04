@@ -44,7 +44,7 @@ export function Sidebar({
       views: ["overview", "focus", "tasks", "projects", "calendar"],
     },
     { label: t("knowledge"), views: ["notes", "journal", "library"] },
-    { label: "Atlas", views: ["ai"] },
+    { label: "", views: ["ai"] },
   ];
   return (
     <aside className="sidebar" id="workspace-sidebar">
@@ -75,16 +75,10 @@ export function Sidebar({
       >
         <PanelLeft size={20} />
       </button>
-      <div className="workspace-switch">
-        <span className="workspace-avatar">A</span>
-        <div>
-          <strong>{t("personal")}</strong>
-        </div>
-      </div>
       <nav id="workspace-navigation" aria-label={t("workspace")}>
         {groups.map((group) => (
-          <section key={group.label}>
-            <p className="section-label">{group.label}</p>
+          <section key={group.views.join("-")}>
+            {group.label && <p className="section-label">{group.label}</p>}
             {navigationOrder
               .filter((next) => group.views.includes(next))
               .map((next) => navigation.find((item) => item.view === next)!)

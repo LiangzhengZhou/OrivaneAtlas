@@ -1,6 +1,6 @@
 {
   "name": "arclattice",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.19.0",
@@ -20,6 +20,7 @@
     "test:e2e": "playwright test",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "check:server-safe": "pnpm lint && turbo run typecheck --concurrency=1 && tsc -p tsconfig.json && pnpm test:server-safe && turbo run build --concurrency=1",
+    "icons:generate": "node scripts/make-native-icons.mjs",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "desktop:doctor": "node scripts/native-doctor.mjs",

@@ -49,6 +49,7 @@ import {
 } from "@arclattice/i18n";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { imageResponseBlob } from "./imageResponse";
+import { WorkspaceEventDecoder } from "./utils/workspace-event-decoder";
 
 const localeKey = "arclattice.ui.locale";
 const serverOriginKey = "orivane.atlas.server-origin";
@@ -742,7 +743,59 @@ export async function bootstrap() {
     },
     service,
     snapshot: sync,
+    async streamWorkspaceEvents(
+      cursor: string,
+      signal: AbortSignal,
+      onCursor: (cursor: string) => void,
+      onConnected: () => void,
+    ) {
+      if (native) throw new Error("STREAM_UNAVAILABLE");
+      const generation = serverGeneration;
+      const combined = AbortSignal.any([signal, requestController.signal]);
+      const response = await fetch(
+        serverOrigin +
+          "/api/workspace/events?cursor=" +
+          encodeURIComponent(cursor),
+        { credentials: "same-origin", signal: combined },
+      );
+      if (!response.ok || !response.body) throw new Error("STREAM_UNAVAILABLE");
+      onConnected();
+      const reader = response.body.getReader(),
+        decoder = new WorkspaceEventDecoder(cursor);
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (generation !== serverGeneration)
+            throw new Error("SERVER_CHANGED");
+          if (chunk.done) throw new Error("STREAM_DISCONNECTED");
+          for (const changed of decoder.feed(chunk.value)) onCursor(changed);
+        }
+      } finally {
+        try {
+          await reader.cancel();
+        } finally {
+          reader.releaseLock();
+        }
+      }
+    },
     providers: () => request<PersonalModelSummary[]>("/api/ai/providers"),
+    modelConfiguration: () =>
+      request<import("@arclattice/application").ModelConfiguration>(
+        "/api/ai/configuration",
+      ),
+    saveModelConfiguration: (
+      version: number,
+      input: import("@arclattice/application").ModelConfigurationInput,
+    ) =>
+      request<import("@arclattice/application").ModelConfiguration>(
+        "/api/ai/configuration/save",
+        { version, input },
+      ),
+    connectionModels: (connectionId: string) =>
+      request<{
+        models: string[];
+        capabilities: import("@arclattice/application").ModelProviderCapabilities;
+      }>("/api/ai/connections/models", { connectionId }),
     saveProvider: (version: number, input: PersonalModelInput) =>
       request<PersonalModelSummary>("/api/ai/providers/save", {
         version,
@@ -775,6 +828,7 @@ export async function bootstrap() {
       profileId = "default",
       retrievalContext?: { projectId?: string; currentSpaceId?: string },
       session?: { sessionId: string; sessionVersion: number },
+      modelRouting?: { explicitProfileId?: string },
     ) =>
       request<AgentRun>("/api/ai/propose", {
         prompt,
@@ -782,6 +836,7 @@ export async function bootstrap() {
         sources,
         profileId,
         ...(retrievalContext ? { retrievalContext } : {}),
+        ...(modelRouting ? { modelRouting } : {}),
         ...(session ?? {}),
       }),
     agentSessions: () => request<AgentSession[]>("/api/ai/sessions"),
@@ -824,18 +879,53 @@ export async function bootstrap() {
         }
         throw new Error("STREAM_DISCONNECTED");
       } finally {
-        await reader.cancel().catch(() => undefined);
-        reader.releaseLock();
+        try {
+          await reader.cancel();
+        } finally {
+          reader.releaseLock();
+        }
       }
     },
     aiEvents: (id: string) =>
       request<ModelEvent[]>("/api/ai/events?id=" + encodeURIComponent(id)),
-    createAgentSession: (title: string) =>
-      request<AgentSession>("/api/ai/sessions/create", { title }),
+    createAgentSession: (
+      title: string,
+      modelProfileOverride: string | null = null,
+    ) =>
+      request<AgentSession>("/api/ai/sessions/create", {
+        title,
+        modelProfileOverride,
+      }),
+    setAgentSessionProfile: (
+      id: string,
+      version: number,
+      profileId: string | null,
+    ) =>
+      request<AgentSession>("/api/ai/sessions/profile", {
+        id,
+        version,
+        profileId,
+      }),
     applyAi: (id: string, version: number, indices: number[]) =>
       request("/api/ai/apply", { id, version, indices }),
     decide: (id: string, version: number, approve: boolean) =>
       request<AgentRun>("/api/ai/decide", { id, version, approve }),
+    decideHarness: (
+      id: string,
+      version: number,
+      callId: string,
+      approve: boolean,
+      input?: unknown,
+    ) =>
+      request<AgentRun>("/api/ai/harness/decide", {
+        id,
+        version,
+        callId,
+        approve,
+        ...(input === undefined ? {} : { input }),
+      }),
+    stopHarness: (id: string, version: number) =>
+      request<AgentRun>("/api/ai/harness/stop", { id, version }),
     link: (
       from: EntityRef,
       to: EntityRef,
@@ -868,6 +958,13 @@ export async function bootstrap() {
       request<WorkflowRecord>("/api/plans/preview", { projectId, manifest }),
     publishPlan: (id: string, version: number) =>
       request<WorkflowRecord>("/api/plans/publish", { id, version }),
+    saveTaskRecurrence: (
+      input: Parameters<WorkflowService["saveTaskRecurrence"]>[1],
+    ) =>
+      request<Awaited<ReturnType<WorkflowService["saveTaskRecurrence"]>>>(
+        "/api/recurrences/task",
+        input,
+      ),
     saveRecurrence: (input: Parameters<WorkflowService["saveRecurrence"]>[1]) =>
       request<WorkflowRecord>("/api/recurrences/save", input),
     generateRecurrence: (

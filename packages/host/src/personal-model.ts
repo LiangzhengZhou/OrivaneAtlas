@@ -41,6 +41,18 @@ import {
 } from "../../application/src/gateway-policy";
 import { decodeModelStream } from "./model-stream";
 import { providerUsage } from "./model-usage";
+import {
+  configurationEntries,
+  mergeLegacyProfile,
+  migrateLegacyConfiguration,
+  publicConfiguration,
+  type StoredModelConfiguration,
+  updateConfiguration,
+} from "./provider-catalog";
+import {
+  createProviderAdapter,
+  type ProviderHttpRequest,
+} from "./provider-protocol";
 
 const blocked = new BlockList();
 for (const [address, bits] of [
@@ -129,9 +141,12 @@ async function send(
   payload: unknown,
   signal: AbortSignal,
   trusted: () => boolean = () => false,
+  protocol?: Pick<ProviderHttpRequest, "method" | "headers">,
 ): Promise<unknown> {
   try {
-    modelEndpoint(endpoint.href, trusted());
+    const destination = new URL(endpoint);
+    destination.search = "";
+    modelEndpoint(destination.href, trusted());
   } catch {
     throw new ModelNotSentError("MODEL_DESTINATION_REJECTED");
   }
@@ -153,7 +168,9 @@ async function send(
   )
     throw new ModelNotSentError("MODEL_DESTINATION_REJECTED");
   try {
-    modelEndpoint(endpoint.href, trusted());
+    const destination = new URL(endpoint);
+    destination.search = "";
+    modelEndpoint(destination.href, trusted());
   } catch {
     throw new ModelNotSentError("MODEL_DESTINATION_REJECTED");
   }
@@ -162,14 +179,14 @@ async function send(
     const req = (endpoint.protocol === "http:" ? httpRequest : request)(
       endpoint,
       {
-        method: "POST",
+        method: protocol?.method ?? "POST",
         agent: false,
         family: address.family,
         signal,
         lookup: (_hostname, _options, callback) =>
           callback(null, address.address, address.family),
         headers: {
-          Authorization: "Bearer " + key,
+          ...(protocol ? protocol.headers : { Authorization: "Bearer " + key }),
           "Content-Type": "application/json",
         },
       },
@@ -200,7 +217,7 @@ async function send(
       },
     );
     req.on("error", reject);
-    req.end(JSON.stringify(payload));
+    req.end(protocol?.method === "GET" ? undefined : JSON.stringify(payload));
   });
 }
 async function* sendStream(
@@ -292,6 +309,11 @@ function summary(entry: Entry): PersonalModelSummary {
       ...(entry.gateway ? { gateway: structuredClone(entry.gateway) } : {}),
       ...(entry.profileId ? { profileId: entry.profileId } : {}),
       scope: entry.scope,
+      ...(entry.requestLimit ? { requestLimit: entry.requestLimit } : {}),
+      ...(entry.quotaKey ? { quotaKey: entry.quotaKey } : {}),
+      ...(entry.legacyQuotaScope
+        ? { legacyQuotaScope: entry.legacyQuotaScope }
+        : {}),
       provider: entry.endpoint,
       model: entry.model,
       maxInputChars: 32000,
@@ -299,7 +321,17 @@ function summary(entry: Entry): PersonalModelSummary {
       timeoutMs: 60000,
       maxRunsPerDay: entry.maxRunsPerDay,
       fingerprint: createHash("sha256")
-        .update(JSON.stringify([identity, entry]))
+        .update(
+          JSON.stringify([identity, entry], (_key, value) =>
+            value && typeof value === "object" && !Array.isArray(value)
+              ? Object.fromEntries(
+                  Object.entries(value).sort(([left], [right]) =>
+                    left.localeCompare(right),
+                  ),
+                )
+              : value,
+          ),
+        )
         .digest("hex"),
     },
   };
@@ -341,6 +373,7 @@ export function openPersonalVault(directory: string): PersonalModelVault {
   const master = readFileSync(masterPath);
   if (master.length !== 32) throw new Error("VAULT_MASTER_INVALID");
   let entries: Entry[] = [];
+  let configurations: StoredModelConfiguration[] = [];
   let trustedEndpoints: readonly TrustedAiEndpoint[] = [];
   if (existsSync(dataPath)) {
     privatePath(dataPath);
@@ -351,18 +384,76 @@ export function openPersonalVault(directory: string): PersonalModelVault {
       data.subarray(0, 12),
     );
     decipher.setAuthTag(data.subarray(12, 28));
-    entries = JSON.parse(
+    const decoded = JSON.parse(
       Buffer.concat([
         decipher.update(data.subarray(28)),
         decipher.final(),
       ]).toString("utf8"),
     );
+    if (Array.isArray(decoded)) entries = decoded;
+    else {
+      if (
+        decoded.format !== 2 ||
+        !Array.isArray(decoded.entries) ||
+        !Array.isArray(decoded.configurations)
+      )
+        throw new Error("VAULT_FORMAT_INVALID");
+      configurations = decoded.configurations;
+      entries = decoded.entries.map(
+        (stored: Omit<Entry, "key"> & { credentialRef: string }) => {
+          const configuration = configurations.find(
+            (row) => row.owner === stored.owner,
+          );
+          const credential = configuration?.credentials.find(
+            (row) => row.connectionId === stored.credentialRef,
+          );
+          if (!credential) throw new Error("VAULT_CREDENTIAL_MISSING");
+          const { credentialRef: _reference, ...entry } = stored;
+          return { ...entry, key: credential.key };
+        },
+      );
+    }
   }
-  function commit(next: Entry[]) {
+  function commit(next: Entry[], supplied = configurations) {
+    const nextConfigurations = supplied.filter(
+      (configuration) => configuration.version > 0,
+    );
+    for (const identity of new Set(next.map((entry) => entry.owner))) {
+      if (
+        !nextConfigurations.some(
+          (configuration) => configuration.owner === identity,
+        )
+      )
+        nextConfigurations.push(migrateLegacyConfiguration(identity, next));
+    }
+    const storedEntries = next.map((entry) => {
+      const configuration = nextConfigurations.find(
+        (row) => row.owner === entry.owner,
+      )!;
+      const connection = configuration.connections.find(
+        (connection) =>
+          connection.endpoint === entry.endpoint &&
+          configuration.credentials.some(
+            (credential) =>
+              credential.connectionId === connection.id &&
+              credential.key === entry.key,
+          ),
+      );
+      if (!connection) throw new Error("VAULT_CREDENTIAL_MISSING");
+      const { key: _key, ...safe } = entry;
+      return { ...safe, credentialRef: connection.id };
+    });
     const iv = randomBytes(12),
       cipher = createCipheriv("aes-256-gcm", master, iv);
     const body = Buffer.concat([
-      cipher.update(JSON.stringify(next), "utf8"),
+      cipher.update(
+        JSON.stringify({
+          format: 2,
+          entries: storedEntries,
+          configurations: nextConfigurations,
+        }),
+        "utf8",
+      ),
       cipher.final(),
     ]);
     const temp = join(directory, "pending-" + randomUUID() + ".enc");
@@ -378,6 +469,7 @@ export function openPersonalVault(directory: string): PersonalModelVault {
     }
     renameSync(temp, dataPath);
     entries = next;
+    configurations = nextConfigurations;
     if (process.platform !== "win32") {
       const directoryFd = openSync(directory, "r");
       try {
@@ -417,9 +509,110 @@ export function openPersonalVault(directory: string): PersonalModelVault {
     setTrustedEndpoints: (entries) => {
       trustedEndpoints = entries.map(validateTrustedAiEndpoint);
     },
+    configuration(actor) {
+      return publicConfiguration(
+        configurations.find((row) => row.owner === owner(actor)) ??
+          migrateLegacyConfiguration(owner(actor), entries),
+      );
+    },
+    saveConfiguration(actor, version, input) {
+      const previous =
+        configurations.find((row) => row.owner === owner(actor)) ??
+        migrateLegacyConfiguration(owner(actor), entries);
+      if (previous.version !== version)
+        throw new DomainError("VERSION_CONFLICT");
+      const next = updateConfiguration(previous, input);
+      for (const connection of next.connections) {
+        connection.endpoint = modelEndpoint(
+          connection.endpoint,
+          matchesTrustedAiEndpoint(
+            trustedEndpoints,
+            actor.workspaceId,
+            connection.endpoint,
+          ),
+        ).href;
+        if (
+          !connection.credentialConfigured &&
+          !["OLLAMA", "LM_STUDIO", "VLLM"].includes(connection.kind)
+        )
+          throw new DomainError("VALIDATION_ERROR");
+      }
+      commit(
+        [
+          ...entries.filter((entry) => entry.owner !== owner(actor)),
+          ...configurationEntries(next),
+        ],
+        [...configurations.filter((row) => row.owner !== owner(actor)), next],
+      );
+      return publicConfiguration(next);
+    },
+    connectionAdapter(actor, connectionId) {
+      const configuration =
+        configurations.find((row) => row.owner === owner(actor)) ??
+        migrateLegacyConfiguration(owner(actor), entries);
+      const connection = configuration.connections.find(
+        (row) => row.id === connectionId,
+      );
+      if (!connection) throw new DomainError("NOT_FOUND");
+      const key =
+        configuration.credentials.find(
+          (row) => row.connectionId === connectionId,
+        )?.key ?? "";
+      return createProviderAdapter(
+        connection.kind,
+        "connection-probe",
+        key,
+        (request, signal) =>
+          send(
+            new URL(request.path, connection.endpoint),
+            key,
+            request.body,
+            signal,
+            () =>
+              matchesTrustedAiEndpoint(
+                trustedEndpoints,
+                actor.workspaceId,
+                connection.endpoint,
+              ),
+            request,
+          ),
+        { maxOutputTokens: 128 },
+      );
+    },
     list: (actor) =>
       entries.filter((e) => e.owner === owner(actor)).map(registeredSummary),
     save(actor, version, input) {
+      if (
+        input.providerKind !== undefined &&
+        ![
+          "OPENAI",
+          "ANTHROPIC",
+          "GEMINI",
+          "DEEPSEEK",
+          "OPENROUTER",
+          "OLLAMA",
+          "LM_STUDIO",
+          "VLLM",
+          "CUSTOM_OPENAI",
+        ].includes(input.providerKind)
+      )
+        throw new DomainError("VALIDATION_ERROR");
+      if (
+        input.modelCapabilities !== undefined &&
+        (typeof input.modelCapabilities !== "object" ||
+          input.modelCapabilities === null ||
+          Object.entries(input.modelCapabilities).some(
+            ([name, value]) =>
+              ![
+                "tools",
+                "jsonSchema",
+                "vision",
+                "streaming",
+                "embedding",
+              ].includes(name) || typeof value !== "boolean",
+          ))
+      )
+        throw new DomainError("VALIDATION_ERROR");
       const endpoint = modelEndpoint(
         input.endpoint,
         matchesTrustedAiEndpoint(
@@ -490,8 +683,12 @@ export function openPersonalVault(directory: string): PersonalModelVault {
         throw new DomainError("VERSION_CONFLICT");
       if (!old && entries.filter((e) => e.owner === owner(actor)).length >= 50)
         throw new DomainError("VALIDATION_ERROR");
-      const key = input.key || old?.key;
-      if (!key) throw new DomainError("VALIDATION_ERROR");
+      const key = input.key || old?.key || "";
+      if (
+        !key &&
+        !["OLLAMA", "LM_STUDIO", "VLLM"].includes(input.providerKind ?? "")
+      )
+        throw new DomainError("VALIDATION_ERROR");
       const entry = {
         ...input,
         ...(gateway ? { gateway } : {}),
@@ -501,8 +698,29 @@ export function openPersonalVault(directory: string): PersonalModelVault {
         generation: old?.generation ?? randomUUID(),
         version: version + 1,
       };
-      commit([...entries.filter((e) => e !== old), entry]);
-      return registeredSummary(entry);
+      const nextEntries = [...entries.filter((e) => e !== old), entry];
+      const published = configurations.find(
+        (configuration) =>
+          configuration.owner === owner(actor) && configuration.version > 0,
+      );
+      if (published) {
+        const next = mergeLegacyProfile(published, entry, nextEntries);
+        commit(
+          [
+            ...entries.filter((row) => row.owner !== owner(actor)),
+            ...configurationEntries(next),
+          ],
+          [...configurations.filter((row) => row.owner !== owner(actor)), next],
+        );
+      } else commit(nextEntries);
+      return registeredSummary(
+        entries.find(
+          (row) =>
+            row.owner === entry.owner &&
+            row.scope === entry.scope &&
+            (row.profileId ?? "default") === (entry.profileId ?? "default"),
+        ) ?? entry,
+      );
     },
     remove(actor, scope, version, profileId = "default") {
       const old = entries.find(
@@ -513,7 +731,39 @@ export function openPersonalVault(directory: string): PersonalModelVault {
       );
       if (!old || old.version !== version)
         throw new DomainError("VERSION_CONFLICT");
-      commit(entries.filter((e) => e !== old));
+      const published = configurations.find(
+        (configuration) =>
+          configuration.owner === owner(actor) && configuration.version > 0,
+      );
+      if (published) {
+        const next = structuredClone(published);
+        next.version++;
+        if (profileId === "default") {
+          next.bindings = next.bindings.filter(
+            (binding) =>
+              (binding.scope === "PERSONAL"
+                ? "personal"
+                : `${binding.scope === "PROJECT" ? "WORK" : "SPACE"}:${binding.entityId}`) !==
+              scope,
+          );
+        } else {
+          if (
+            next.bindings.some((binding) => binding.profileId === profileId) ||
+            profileId.startsWith("fb_")
+          )
+            throw new DomainError("FORBIDDEN");
+          next.profiles = next.profiles.filter(
+            (profile) => profile.id !== profileId,
+          );
+        }
+        commit(
+          [
+            ...entries.filter((row) => row.owner !== owner(actor)),
+            ...configurationEntries(next),
+          ],
+          [...configurations.filter((row) => row.owner !== owner(actor)), next],
+        );
+      } else commit(entries.filter((e) => e !== old));
     },
     resolve(actor, scope, profileId = "default"): ModelPort | null {
       const entry = entries.find(
@@ -648,6 +898,38 @@ export function openPersonalVault(directory: string): PersonalModelVault {
             return text;
           },
         };
+        if (entry.providerKind) {
+          const adapter = createProviderAdapter(
+            entry.providerKind,
+            entry.model,
+            entry.key,
+            (request, signal) =>
+              send(
+                new URL(request.path, entry.endpoint),
+                entry.key,
+                request.body,
+                signal,
+                () =>
+                  matchesTrustedAiEndpoint(
+                    trustedEndpoints,
+                    actor.workspaceId,
+                    entry.endpoint,
+                  ),
+                request,
+              ),
+            {
+              maxOutputTokens: route.maxOutputTokens,
+              ...(entry.modelCapabilities
+                ? { capabilities: entry.modelCapabilities }
+                : {}),
+            },
+          );
+          return {
+            ...port,
+            complete: adapter.complete.bind(adapter),
+            providerAdapter: adapter,
+          };
+        }
         return {
           ...port,
           providerAdapter: {

@@ -26,7 +26,7 @@ it("restores a real pre-v15 PostgreSQL backup into an independent data directory
       expect((await stat(backup)).isDirectory()).toBe(true);
     }),
   );
-  expect(await h.client(name, (client) => inspectSchema(client))).toBe(19);
+  expect(await h.client(name, (client) => inspectSchema(client))).toBe(20);
   await h.cluster().withRestoredSnapshot(backup, async (restored) => {
     expect(
       (

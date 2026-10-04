@@ -2,8 +2,8 @@ import { recurrenceStats } from "@arclattice/application";
 import { localCalendarDay } from "@arclattice/domain";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { DateField } from "./components/DateField";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
-import { RecurrenceStatisticsBoard } from "./RecurrenceStatisticsBoard";
 
 import type { WorkflowManagerProps } from "./WorkflowManager";
 export function RecurrenceManager({
@@ -59,252 +59,255 @@ export function RecurrenceManager({
     <section className="recurrence-manager">
       <details className="panel" open>
         <summary>{t("workflows.recurrences")}</summary>
-        <RecurrenceStatisticsBoard
-          records={records}
-          timezone={calendarTimezone}
-        />
         <p>{t("workflows.recurrenceHelp")}</p>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (
-              await save({
-                ...(editing ? { id: editing.id } : {}),
-                version: editing?.version ?? 0,
-                deleted: false,
-                rule: {
-                  state,
-                  closePolicy,
-                  closeIncomplete,
-                  durationValue,
-                  durationUnit,
-                  title,
-                  descriptionMd,
-                  projectIds: recurrenceProjects,
-                  assigneePrincipalId: assignee || null,
-                  priority,
-                  activationState: activation,
-                  activationPolicy,
-                  endDate: endDate || null,
-                  startDate,
-                  timezone,
-                  frequency,
-                  interval,
-                },
-              })
-            ) {
-              setTitle("");
-              setEditing(null);
-              setState("ACTIVE");
-            }
-          }}
-        >
-          <label>
-            {t("workflows.title")}
-            <input
-              required
-              value={title}
-              aria-label={t("workflows.title")}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </label>
-          <label>
-            {text("说明（Markdown）", "Description (Markdown)")}
-            <textarea
-              value={descriptionMd}
-              onChange={(event) => setDescriptionMd(event.target.value)}
-            />
-          </label>
-          <label>
-            {text("结束日期（含当天）", "End date (inclusive)")}
-            <input
-              type="date"
-              min={startDate}
-              value={endDate}
-              onChange={(event) => setEndDate(event.target.value)}
-            />
-          </label>
-          <label>
-            {text("默认负责人 ID", "Default assignee ID")}
-            <input
-              maxLength={240}
-              value={assignee}
-              onChange={(event) => setAssignee(event.target.value)}
-            />
-          </label>
-          <label>
-            {text("默认优先级", "Default priority")}
-            <select
-              value={priority}
-              onChange={(event) =>
-                setPriority(event.target.value as typeof priority)
-              }
-            >
-              {(["LOW", "MEDIUM", "HIGH", "URGENT"] as const).map((value) => (
-                <option key={value} value={value}>
-                  {t(`priority.${value}`, { defaultValue: value })}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {text("默认激活状态", "Default activation state")}
-            <select
-              value={activation}
-              onChange={(event) =>
-                setActivation(event.target.value as typeof activation)
-              }
-            >
-              <option value="ACTIVE">{text("已激活", "Active")}</option>
-              <option value="INACTIVE">{text("未激活", "Inactive")}</option>
-              <option value="SCHEDULED">{text("按计划", "Scheduled")}</option>
-            </select>
-          </label>
-          <label>
-            {text("激活规则", "Activation policy")}
-            <select
-              value={activationPolicy}
-              onChange={(event) =>
-                setActivationPolicy(
-                  event.target.value as typeof activationPolicy,
-                )
-              }
-            >
-              <option value="MANUAL">{text("手动", "Manual")}</option>
-              <option value="IMMEDIATE">{text("立即", "Immediate")}</option>
-              <option value="WHEN_DEPENDENCIES_COMPLETED">
-                {text("依赖完成后", "After dependencies complete")}
-              </option>
-              <option value="AT_SCHEDULED_TIME">
-                {text("到计划日期", "At scheduled date")}
-              </option>
-            </select>
-          </label>
-          <label>
-            {t("workflows.start")}
-            <input
-              required
-              type="date"
-              aria-label={t("workflows.start")}
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </label>
-          <label>
-            {t("workflows.timezone")}
-            <input
-              required
-              value={timezone}
-              aria-label={t("workflows.timezone")}
-              onChange={(e) => setTimezone(e.target.value)}
-            />
-          </label>
-          <label>
-            {t("workflows.frequency")}
-            <select
-              aria-label={t("workflows.frequency")}
-              value={frequency}
-              onChange={(e) => setFrequency(e.target.value as typeof frequency)}
-            >
-              {(["DAILY", "WEEKLY", "MONTHLY"] as const).map((f) => (
-                <option value={f} key={f}>
-                  {t(`workflows.${f}`)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {t("workflows.interval")}
-            <input
-              required
-              type="number"
-              min={1}
-              max={366}
-              value={interval}
-              onChange={(e) => setInterval(Number(e.target.value))}
-            />
-          </label>
-          <label>
-            {t("workflows.project")}
-            <ProjectDrilldownPicker
-              mode="multiple"
-              projects={projects}
-              values={recurrenceProjects}
-              disabled={busy}
-              onChange={(values) =>
-                setRecurrenceProjects(Array.isArray(values) ? values : [])
-              }
-            />
-          </label>
-          <label>
-            {text("关闭策略", "Close policy")}
-            <select
-              value={closePolicy}
-              onChange={(e) =>
-                setClosePolicy(e.target.value as typeof closePolicy)
-              }
-            >
-              <option value="END_OF_DAY">
-                {text("当天结束", "End of day")}
-              </option>
-              <option value="NEXT_OCCURRENCE">
-                {text("下一次发生", "Next occurrence")}
-              </option>
-              <option value="DURATION">{text("自定义时长", "Duration")}</option>
-            </select>
-          </label>
-          {closePolicy === "DURATION" && (
-            <>
-              <label>
-                {text("时长", "Duration value")}
-                <input
-                  type="number"
-                  min={1}
-                  max={366}
-                  value={durationValue}
-                  onChange={(e) => setDurationValue(Number(e.target.value))}
-                />
-              </label>
-              <label>
-                {text("单位", "Unit")}
-                <select
-                  value={durationUnit}
-                  onChange={(e) =>
-                    setDurationUnit(e.target.value as typeof durationUnit)
-                  }
-                >
-                  <option value="HOUR">{text("小时", "Hours")}</option>
-                  <option value="DAY">{text("天", "Days")}</option>
-                  <option value="WEEK">{text("周", "Weeks")}</option>
-                </select>
-              </label>
-            </>
-          )}
-          <label>
-            <input
-              type="checkbox"
-              checked={closeIncomplete}
-              onChange={(e) => setCloseIncomplete(e.target.checked)}
-            />
-            {text("到期关闭未完成任务", "Close incomplete tasks at expiration")}
-          </label>
-          <button type="submit" disabled={busy}>
-            {editing
-              ? text("保存规则修改", "Save rule changes")
-              : t("workflows.save")}
-          </button>
-          {editing && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditing(null);
+        {editing && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (
+                await save({
+                  ...(editing ? { id: editing.id } : {}),
+                  version: editing?.version ?? 0,
+                  deleted: false,
+                  rule: {
+                    state,
+                    closePolicy,
+                    closeIncomplete,
+                    durationValue,
+                    durationUnit,
+                    title,
+                    descriptionMd,
+                    projectIds: recurrenceProjects,
+                    assigneePrincipalId: assignee || null,
+                    priority,
+                    activationState: activation,
+                    activationPolicy,
+                    endDate: endDate || null,
+                    startDate,
+                    timezone,
+                    frequency,
+                    interval,
+                  },
+                })
+              ) {
                 setTitle("");
-              }}
-            >
-              {text("取消编辑", "Cancel edit")}
+                setEditing(null);
+                setState("ACTIVE");
+              }
+            }}
+          >
+            <label>
+              {t("workflows.title")}
+              <input
+                required
+                value={title}
+                aria-label={t("workflows.title")}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </label>
+            <label>
+              {text("说明（Markdown）", "Description (Markdown)")}
+              <textarea
+                value={descriptionMd}
+                onChange={(event) => setDescriptionMd(event.target.value)}
+              />
+            </label>
+            <label>
+              {text("结束日期（含当天）", "End date (inclusive)")}
+              <DateField
+                min={startDate}
+                value={endDate}
+                onChange={setEndDate}
+              />
+            </label>
+            <label>
+              {text("默认负责人 ID", "Default assignee ID")}
+              <input
+                maxLength={240}
+                value={assignee}
+                onChange={(event) => setAssignee(event.target.value)}
+              />
+            </label>
+            <label>
+              {text("默认优先级", "Default priority")}
+              <select
+                value={priority}
+                onChange={(event) =>
+                  setPriority(event.target.value as typeof priority)
+                }
+              >
+                {(["LOW", "MEDIUM", "HIGH", "URGENT"] as const).map((value) => (
+                  <option key={value} value={value}>
+                    {t(`priority.${value}`, { defaultValue: value })}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {text("默认激活状态", "Default activation state")}
+              <select
+                value={activation}
+                onChange={(event) =>
+                  setActivation(event.target.value as typeof activation)
+                }
+              >
+                <option value="ACTIVE">{text("已激活", "Active")}</option>
+                <option value="INACTIVE">{text("未激活", "Inactive")}</option>
+                <option value="SCHEDULED">{text("按计划", "Scheduled")}</option>
+              </select>
+            </label>
+            <label>
+              {text("激活规则", "Activation policy")}
+              <select
+                value={activationPolicy}
+                onChange={(event) =>
+                  setActivationPolicy(
+                    event.target.value as typeof activationPolicy,
+                  )
+                }
+              >
+                <option value="MANUAL">{text("手动", "Manual")}</option>
+                <option value="IMMEDIATE">{text("立即", "Immediate")}</option>
+                <option value="WHEN_DEPENDENCIES_COMPLETED">
+                  {text("依赖完成后", "After dependencies complete")}
+                </option>
+                <option value="AT_SCHEDULED_TIME">
+                  {text("到计划日期", "At scheduled date")}
+                </option>
+              </select>
+            </label>
+            <label>
+              {t("workflows.start")}
+              <DateField
+                required
+                aria-label={t("workflows.start")}
+                value={startDate}
+                onChange={setStartDate}
+              />
+            </label>
+            <label>
+              {t("workflows.timezone")}
+              <input
+                required
+                value={timezone}
+                aria-label={t("workflows.timezone")}
+                onChange={(e) => setTimezone(e.target.value)}
+              />
+            </label>
+            <label>
+              {t("workflows.frequency")}
+              <select
+                aria-label={t("workflows.frequency")}
+                value={frequency}
+                onChange={(e) =>
+                  setFrequency(e.target.value as typeof frequency)
+                }
+              >
+                {(["DAILY", "WEEKLY", "MONTHLY"] as const).map((f) => (
+                  <option value={f} key={f}>
+                    {t(`workflows.${f}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {t("workflows.interval")}
+              <input
+                required
+                type="number"
+                min={1}
+                max={366}
+                value={interval}
+                onChange={(e) => setInterval(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              {t("workflows.project")}
+              <ProjectDrilldownPicker
+                mode="multiple"
+                projects={projects}
+                values={recurrenceProjects}
+                disabled={busy}
+                onChange={(values) =>
+                  setRecurrenceProjects(Array.isArray(values) ? values : [])
+                }
+              />
+            </label>
+            <label>
+              {text("关闭策略", "Close policy")}
+              <select
+                value={closePolicy}
+                onChange={(e) =>
+                  setClosePolicy(e.target.value as typeof closePolicy)
+                }
+              >
+                <option value="END_OF_DAY">
+                  {text("当天结束", "End of day")}
+                </option>
+                <option value="NEXT_OCCURRENCE">
+                  {text("下一次发生", "Next occurrence")}
+                </option>
+                <option value="DURATION">
+                  {text("自定义时长", "Duration")}
+                </option>
+              </select>
+            </label>
+            {closePolicy === "DURATION" && (
+              <>
+                <label>
+                  {text("时长", "Duration value")}
+                  <input
+                    type="number"
+                    min={1}
+                    max={366}
+                    value={durationValue}
+                    onChange={(e) => setDurationValue(Number(e.target.value))}
+                  />
+                </label>
+                <label>
+                  {text("单位", "Unit")}
+                  <select
+                    value={durationUnit}
+                    onChange={(e) =>
+                      setDurationUnit(e.target.value as typeof durationUnit)
+                    }
+                  >
+                    <option value="HOUR">{text("小时", "Hours")}</option>
+                    <option value="DAY">{text("天", "Days")}</option>
+                    <option value="WEEK">{text("周", "Weeks")}</option>
+                  </select>
+                </label>
+              </>
+            )}
+            <label>
+              <input
+                type="checkbox"
+                checked={closeIncomplete}
+                onChange={(e) => setCloseIncomplete(e.target.checked)}
+              />
+              {text(
+                "到期关闭未完成任务",
+                "Close incomplete tasks at expiration",
+              )}
+            </label>
+            <button type="submit" disabled={busy}>
+              {editing
+                ? text("保存规则修改", "Save rule changes")
+                : t("workflows.save")}
             </button>
-          )}
-        </form>
+            {editing && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(null);
+                  setTitle("");
+                }}
+              >
+                {text("取消编辑", "Cancel edit")}
+              </button>
+            )}
+          </form>
+        )}
         {records
           .filter((r) => r.payload.kind === "RECURRENCE" && !r.deletedAt)
           .map((r) => {

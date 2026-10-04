@@ -177,6 +177,17 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 20,
+    name: "task-recurrence-conversion",
+    sql: readFileSync(
+      new URL(
+        "./migrations/0020-task-recurrence-conversion.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")

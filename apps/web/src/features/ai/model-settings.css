@@ -1,0 +1,63 @@
+.model-settings {
+  display: grid;
+  gap: 1.5rem;
+  min-width: 0;
+}
+.model-settings-section {
+  display: grid;
+  gap: 0.75rem;
+  padding-block: 1rem;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.model-settings-section h3,
+.model-settings-section p {
+  margin: 0;
+}
+.model-settings-section label {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.model-settings-section label:has(input[type="checkbox"]),
+.model-settings-section label:has(input[type="radio"]) {
+  display: flex;
+  align-items: center;
+}
+.model-settings-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  overflow-wrap: anywhere;
+}
+.model-settings-row strong {
+  min-width: 10rem;
+}
+.model-settings-row span {
+  color: var(--muted);
+}
+.model-settings-form {
+  display: grid;
+  gap: 0.8rem;
+  max-width: 48rem;
+  padding-block: 0.75rem;
+}
+.model-settings-form input,
+.model-settings-form select {
+  width: 100%;
+  min-width: 0;
+}
+.model-settings-form input[type="checkbox"],
+.model-settings-form input[type="radio"] {
+  width: auto;
+}
+.model-settings-form fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.model-settings-section button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}

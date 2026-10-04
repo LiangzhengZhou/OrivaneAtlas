@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -33,6 +33,260 @@ async function seedOwner() {
   return host.db.accounts((store) => store.register("owner", verifier, true));
 }
 const origin = "http://127.0.0.1:4317";
+it("workspace invalidation SSE exposes only a cursor and delivers committed mutations", async () => {
+  await login();
+  expect(
+    (await call("/api/workspace/events", undefined, { Cookie: "" })).status,
+  ).toBe(401);
+  const request = httpRequest(base + "/api/workspace/events", {
+    headers: { Host: "127.0.0.1:4317", Cookie: cookie },
+  });
+  request.setTimeout(5000, () => request.destroy(new Error("SSE_TIMEOUT")));
+  const response = await new Promise<IncomingMessage>((resolve, reject) => {
+    request.once("response", resolve);
+    request.once("error", reject);
+    request.end();
+  });
+  expect(response.headers["content-type"]).toBe("text/event-stream");
+  const reader = response.iterator({ destroyOnReturn: false }),
+    decoder = new TextDecoder();
+  try {
+    const first = decoder.decode((await reader.next()).value);
+    expect(first).toMatch(/data: \{"cursor":"[a-f0-9]{32}:\d+"\}/);
+    await call("/api/work/create", { title: "Private cursor-only mutation" });
+    const changed = decoder.decode((await reader.next()).value);
+    expect(changed).not.toBe(first);
+    expect(changed).toMatch(/data: \{"cursor":"[a-f0-9]{32}:\d+"\}/);
+    expect(changed).not.toContain("Private");
+    expect(changed).not.toContain("workspaceId");
+  } finally {
+    request.destroy();
+    response.destroy();
+  }
+});
+it("model catalog mutations use private CAS, validate live bindings and never return encrypted credentials", async () => {
+  await host.close();
+  await start(
+    undefined,
+    undefined,
+    openPersonalVault(join(directory, "catalog-api-vault")),
+  );
+  await login();
+  expect((await call("/api/ai/configuration")).status).toBe(200);
+  const input = {
+    connections: [
+      {
+        id: "provider",
+        name: "Provider",
+        kind: "OPENAI",
+        endpoint: "https://provider.example/v1/",
+        credentialRef: "provider",
+        credentialConfigured: false,
+      },
+    ],
+    models: [
+      {
+        id: "model",
+        connectionId: "provider",
+        modelId: "model",
+        capabilities: {
+          tools: true,
+          jsonSchema: true,
+          vision: false,
+          streaming: false,
+          embedding: false,
+        },
+      },
+    ],
+    profiles: [
+      {
+        id: "profile",
+        name: "Default",
+        primaryModelId: "model",
+        fallbackModelIds: [],
+        requestLimit: { kind: "UNLIMITED" },
+        budget: {
+          currency: "USD",
+          dailyMicros: 5_000_000,
+          inputMicrosPerMillion: 1,
+          outputMicrosPerMillion: 1,
+        },
+      },
+    ],
+    bindings: [{ scope: "PERSONAL", entityId: null, profileId: "profile" }],
+    credentials: [
+      { connectionId: "provider", key: "test-only-configuration-secret" },
+    ],
+  };
+  const response = await call("/api/ai/configuration/save", {
+    version: 0,
+    input,
+  });
+  expect(response.status).toBe(200);
+  const saved = await response.json();
+  expect(saved.version).toBe(1);
+  expect(saved.connections[0].credentialConfigured).toBe(true);
+  expect(saved.profiles[0].requestLimit).toEqual({ kind: "UNLIMITED" });
+  expect(JSON.stringify(saved)).not.toContain("test-only-configuration-secret");
+  expect(
+    (await call("/api/ai/configuration/save", { version: 0, input })).status,
+  ).toBe(409);
+  for (const bindings of [
+    [{ scope: "PROJECT", entityId: "foreign", profileId: "profile" }],
+    [{ scope: "SPACE", entityId: "foreign", profileId: "profile" }],
+  ])
+    expect(
+      (
+        await call("/api/ai/configuration/save", {
+          version: 1,
+          input: { ...input, bindings, credentials: [] },
+        })
+      ).status,
+    ).toBe(404);
+  expect(
+    (
+      await call("/api/ai/configuration/save", {
+        version: 1,
+        input: {
+          ...input,
+          profiles: [
+            {
+              ...input.profiles[0],
+              budget: { ...input.profiles[0]!.budget, key: "untrusted" },
+            },
+          ],
+        },
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await call("/api/ai/configuration/save", {
+        version: 1,
+        input: {
+          ...input,
+          connections: [
+            {
+              ...input.connections[0],
+              endpoint: "http://127.0.0.1:11434/",
+              kind: "OLLAMA",
+            },
+          ],
+        },
+      })
+    ).status,
+  ).toBe(400);
+  const token = await (
+    await call("/api/tokens/create", {
+      name: "Catalog isolation",
+      scope: "read-write",
+    })
+  ).json();
+  expect(
+    (
+      await call("/api/ai/configuration", undefined, {
+        Cookie: "",
+        Authorization: `Bearer ${token.secret}`,
+      })
+    ).status,
+  ).toBe(403);
+  expect(
+    (await call("/api/ai/connections/models", { connectionId: "missing" }))
+      .status,
+  ).toBe(404);
+});
+it("Atlas resolves inherited model routing before building independent retrieval context", async () => {
+  await host.close();
+  const vault = openPersonalVault(join(directory, "routing-vault"));
+  await start(undefined, undefined, vault);
+  await login();
+  const account = await host.db.accounts((store) => store.find("owner"));
+  const actor = {
+    workspaceId: account!.workspaceId,
+    principalId: account!.principalId,
+  };
+  const project = await (
+    await call("/api/work/create", {
+      title: "Routing project",
+      type: "PROJECT",
+    })
+  ).json();
+  const space = await (
+    await call("/api/library/save", {
+      id: null,
+      version: 0,
+      input: {
+        kind: "SPACE",
+        spaceId: null,
+        title: "Routing space",
+        bodyMd: "",
+      },
+    })
+  ).json();
+  for (const scope of ["personal", `WORK:${project.id}`, `SPACE:${space.id}`]) {
+    vault.save(actor, 0, {
+      scope,
+      endpoint: "https://models.example/v1",
+      protocol: "chat",
+      model: scope.startsWith("WORK")
+        ? "project"
+        : scope.startsWith("SPACE")
+          ? "space"
+          : "personal",
+      key: "test-only-key",
+      maxRunsPerDay: 100,
+    });
+  }
+  vault.save(actor, 0, {
+    scope: "personal",
+    profileId: "explicit",
+    endpoint: "https://models.example/v1",
+    protocol: "chat",
+    model: "explicit",
+    key: "test-only-key",
+    maxRunsPerDay: 100,
+  });
+  for (const [retrievalContext, modelRouting, expected] of [
+    [{}, {}, "personal"],
+    [{ projectId: project.id }, {}, "project"],
+    [{ projectId: project.id, currentSpaceId: space.id }, {}, "space"],
+    [
+      { projectId: project.id, currentSpaceId: space.id },
+      { explicitProfileId: "explicit" },
+      "explicit",
+    ],
+  ] as const) {
+    const response = await call("/api/ai/propose", {
+      prompt: "Which model is selected?",
+      sources: [],
+      scope: "personal",
+      profileId: "default",
+      retrievalContext,
+      modelRouting,
+    });
+    expect(response.status).toBe(200);
+    const run = await response.json();
+    expect(run.route.model).toBe(expected);
+    expect(run.status).toBe("WAITING_APPROVAL");
+    expect(
+      (
+        await call("/api/ai/decide", {
+          id: run.id,
+          version: run.version,
+          approve: false,
+        })
+      ).status,
+    ).toBe(200);
+  }
+  expect(
+    (
+      await call("/api/ai/propose", {
+        prompt: "Missing override",
+        modelRouting: { explicitProfileId: "missing" },
+      })
+    ).status,
+  ).toBe(404);
+});
 it("workspace calendar settings require a human session, version and atomic receipt", async () => {
   await login();
   const input = { version: 0, timezone: "Asia/Shanghai" };
@@ -185,6 +439,110 @@ it("dispatches shared capabilities through authorization, human approval and app
       (entry: { title: string }) => entry.title === "Capability task",
     ),
   ).toHaveLength(1);
+});
+it("shared task update and document move capabilities enforce review, CAS and preserve Markdown", async () => {
+  await login();
+  const project = await (
+    await call("/api/work/create", {
+      type: "PROJECT",
+      title: "Capability destination",
+    })
+  ).json();
+  let task = await (
+    await call("/api/work/create", { title: "Editable capability task" })
+  ).json();
+  const changes = [
+    {
+      name: "update_task",
+      title: "Revised title",
+      descriptionMd: "# Exact Markdown\n😀",
+    },
+    { name: "reschedule_task", startDate: "2026-10-03", dueDate: "2026-10-05" },
+    { name: "set_task_priority", priority: "HIGH" },
+    { name: "move_task_to_project", projectIds: [project.id] },
+    { name: "complete_task" },
+  ];
+  for (const { name, ...change } of changes) {
+    const request = {
+      name,
+      input: { id: task.id, version: task.version, ...change },
+    };
+    expect((await call("/api/ai/capability", request)).status).toBe(403);
+    const response = await call("/api/ai/capability", {
+      ...request,
+      approved: true,
+    });
+    expect(response.status).toBe(200);
+    const previous = task;
+    task = await response.json();
+    expect(task.version).toBe(previous.version + 1);
+    expect(
+      (await call("/api/ai/capability", { ...request, approved: true })).status,
+    ).toBe(409);
+  }
+  expect(task).toMatchObject({
+    title: "Revised title",
+    descriptionMd: "# Exact Markdown\n😀",
+    priority: "HIGH",
+    status: "DONE",
+    projectIds: [project.id],
+    startDate: "2026-10-03",
+    dueDate: "2026-10-05",
+  });
+  const aiPolicy = {
+    classification: "PRIVATE",
+    processingBoundary: "ANY",
+    aiAccess: "ALLOW",
+  };
+  const spaces = [];
+  for (const title of ["Source", "Destination"])
+    spaces.push(
+      await (
+        await call("/api/library/save", {
+          id: null,
+          version: 0,
+          input: { kind: "SPACE", spaceId: null, title, bodyMd: "", aiPolicy },
+        })
+      ).json(),
+    );
+  const markdown = "# Preserve source\r\n[[Wiki]] 😀";
+  const created = await call("/api/ai/capability", {
+    name: "create_document",
+    input: { spaceId: spaces[0].id, title: "Agent document", bodyMd: markdown },
+    approved: true,
+  });
+  expect(created.status).toBe(200);
+  let document = await created.json();
+  expect(document.aiPolicy.aiAccess).toBe("DENY");
+  const policyResponse = await call("/api/library/save", {
+    id: document.id,
+    version: document.version,
+    input: {
+      kind: document.kind,
+      spaceId: document.spaceId,
+      title: document.title,
+      bodyMd: document.bodyMd,
+      aiPolicy,
+    },
+  });
+  expect(policyResponse.status).toBe(200);
+  document = await policyResponse.json();
+  const moved = await call("/api/ai/capability", {
+    name: "move_document",
+    input: {
+      id: document.id,
+      version: document.version,
+      spaceId: spaces[1].id,
+    },
+    approved: true,
+  });
+  expect(moved.status).toBe(200);
+  expect(await moved.json()).toMatchObject({
+    id: document.id,
+    bodyMd: markdown,
+    spaceId: spaces[1].id,
+    version: document.version + 1,
+  });
 });
 it("persists administrator endpoint trust and never reactivates revoked trust on receipt replay", async () => {
   await host.close();
@@ -490,6 +848,15 @@ it("MCP exposes constrained tools and writes only after normal authorization and
     "create_task",
     "propose_document_edit",
     "link_documents",
+    "update_task",
+    "complete_task",
+    "reschedule_task",
+    "set_task_priority",
+    "move_task_to_project",
+    "preview_plan",
+    "publish_plan",
+    "create_document",
+    "move_document",
   ]);
   const project = await (
     await call("/api/work/create", { title: "MCP project", type: "PROJECT" })
@@ -2141,8 +2508,8 @@ describe("private HTTP host", () => {
   };
   it("persists and resumes an Assistant session through Host restarts and approved requests", async () => {
     await host.close();
-    const complete = vi.fn(
-      async (_prompt: string, _signal: AbortSignal) => "Session answer",
+    const complete = vi.fn(async (_prompt: string, _signal: AbortSignal) =>
+      JSON.stringify({ kind: "FINAL", text: "Session answer" }),
     );
     const model = {
       route: { ...route, maxInputChars: 16000, maxRunsPerDay: 10 },
@@ -2229,6 +2596,162 @@ describe("private HTTP host", () => {
     ).json();
     expect(retry.prompt).not.toContain("Rejected private question");
     expect(retry.prompt).toContain("Session answer");
+  });
+  it("Atlas harness reads, pauses for a real human write approval, resumes once and preserves tool audit", async () => {
+    await host.close();
+    const respond = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: "",
+        toolCalls: [
+          { id: "read-project", name: "get_project", input: { id: "pending" } },
+        ],
+      })
+      .mockResolvedValueOnce({
+        text: "",
+        toolCalls: [
+          {
+            id: "write-task",
+            name: "create_task",
+            input: { title: "Proposed task" },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ text: "Created after review", toolCalls: [] });
+    const model: ModelPort = {
+      route: { ...route, maxInputChars: 32000, maxRunsPerDay: 10 },
+      complete: vi.fn(async () => ""),
+      providerAdapter: {
+        capabilities: {
+          tools: true,
+          jsonSchema: true,
+          streaming: false,
+          vision: false,
+          embedding: false,
+        },
+        respond,
+        complete: vi.fn(async () => ""),
+        stream: async function* () {},
+        listModels: async () => ["test"],
+      },
+    };
+    await start(undefined, model);
+    await login();
+    const project = await (
+      await call("/api/work/create", {
+        title: "Focus project",
+        type: "PROJECT",
+      })
+    ).json();
+    respond
+      .mockReset()
+      .mockResolvedValueOnce({
+        text: "",
+        toolCalls: [
+          {
+            id: "read-project",
+            name: "get_project",
+            input: { id: project.id },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        text: "",
+        toolCalls: [
+          {
+            id: "write-task",
+            name: "create_task",
+            input: { title: "Proposed task" },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ text: "Created after review", toolCalls: [] });
+    const session = await (
+      await call("/api/ai/sessions/create", { title: "Harness" })
+    ).json();
+    const proposal = await (
+      await call("/api/ai/propose", {
+        prompt: "Read the project then create one task",
+        sessionId: session.id,
+        sessionVersion: session.version,
+      })
+    ).json();
+    expect(
+      (
+        await call("/api/ai/decide", {
+          id: proposal.id,
+          version: proposal.version,
+          approve: true,
+        })
+      ).status,
+    ).toBe(200);
+    let waiting: { id: string; version: number; harness: { status: string } };
+    await vi.waitFor(async () => {
+      waiting = (await (await call("/api/ai")).json()).runs.find(
+        (run: { id: string }) => run.id === proposal.id,
+      );
+      expect(waiting.harness.status).toBe("WAITING_APPROVAL");
+    });
+    await host.close();
+    await start(undefined, model);
+    await login();
+    expect(respond).toHaveBeenCalledTimes(2);
+    waiting = (await (await call("/api/ai")).json()).runs.find(
+      (run: { id: string }) => run.id === proposal.id,
+    );
+    expect(waiting.harness.status).toBe("WAITING_APPROVAL");
+    expect(
+      (await (await call("/api/snapshot")).json()).items.filter(
+        (item: { type: string }) => item.type === "TASK",
+      ),
+    ).toHaveLength(0);
+    expect(
+      (
+        await call("/api/ai/harness/decide", {
+          id: proposal.id,
+          version: waiting!.version - 1,
+          callId: "write-task",
+          approve: true,
+        })
+      ).status,
+    ).toBe(409);
+    const approvedInput = {
+      id: proposal.id,
+      version: waiting!.version,
+      callId: "write-task",
+      approve: true,
+      input: { title: "Human revised task" },
+    };
+    const receipt = { "Idempotency-Key": randomUUID() };
+    expect(
+      (await call("/api/ai/harness/decide", approvedInput, receipt)).status,
+    ).toBe(200);
+    expect(
+      (await call("/api/ai/harness/decide", approvedInput, receipt)).status,
+    ).toBe(200);
+    await vi.waitFor(async () => {
+      const completed = (await (await call("/api/ai")).json()).runs.find(
+        (run: { id: string }) => run.id === proposal.id,
+      );
+      expect(completed.status).toBe("SUCCEEDED");
+    });
+    const tasks = (await (await call("/api/snapshot")).json()).items.filter(
+      (item: { type: string }) => item.type === "TASK",
+    );
+    expect(tasks.map((task: { title: string }) => task.title)).toEqual([
+      "Human revised task",
+    ]);
+    const messages = (await (await call("/api/ai/sessions")).json())[0]
+      .messages;
+    expect(messages.map((message: { kind: string }) => message.kind)).toEqual([
+      "USER",
+      "TOOL_CALL",
+      "TOOL_RESULT",
+      "TOOL_CALL",
+      "TOOL_RESULT",
+      "ASSISTANT",
+    ]);
+    expect(respond).toHaveBeenCalledTimes(3);
   });
   it("retrieves permitted project knowledge into a version-bound model approval manifest", async () => {
     await host.close();
@@ -3183,4 +3706,206 @@ it("permanent purge endpoints enforce authorization isolation version idempotenc
       (await call(path, { id: removed.id, version: removed.version })).status,
     ).toBe(404);
   }
+});
+
+it("pending Harness approval cannot survive a changed context and can be safely stopped", async () => {
+  await host.close();
+  const respond = vi.fn(async () => ({
+    text: "",
+    toolCalls: [
+      {
+        id: "review-write",
+        name: "create_task",
+        input: { title: "Forbidden stale write" },
+      },
+    ],
+  }));
+  const model: ModelPort = {
+    route: {
+      fingerprint: "context-test",
+      provider: "https://test.invalid",
+      model: "test",
+      maxInputChars: 32000,
+      maxOutputTokens: 100,
+      timeoutMs: 5000,
+      maxRunsPerDay: 10,
+    },
+    complete: async () => "",
+    providerAdapter: {
+      capabilities: {
+        tools: true,
+        jsonSchema: true,
+        streaming: false,
+        vision: false,
+        embedding: false,
+      },
+      respond,
+      complete: async () => "",
+      listModels: async () => ["test"],
+      stream: async function* () {},
+    },
+  };
+  await start(undefined, model);
+  await login();
+  const aiPolicy = {
+    classification: "PRIVATE",
+    processingBoundary: "ANY",
+    aiAccess: "ALLOW",
+  };
+  const space = await (
+    await call("/api/library/save", {
+      id: null,
+      version: 0,
+      input: {
+        kind: "SPACE",
+        spaceId: null,
+        title: "Context",
+        bodyMd: "",
+        aiPolicy,
+      },
+    })
+  ).json();
+  const input = {
+    kind: "DOCUMENT",
+    spaceId: space.id,
+    title: "Versioned source",
+    bodyMd: "Original approved content",
+    aiPolicy,
+  };
+  const document = await (
+    await call("/api/library/save", { id: null, version: 0, input })
+  ).json();
+  const session = await (
+    await call("/api/ai/sessions/create", { title: "Context review" })
+  ).json();
+  const run = await (
+    await call("/api/ai/propose", {
+      prompt: "Review one write",
+      sources: [
+        { kind: "DOCUMENT", id: document.id, version: document.version },
+      ],
+      sessionId: session.id,
+      sessionVersion: session.version,
+    })
+  ).json();
+  expect(
+    (
+      await call("/api/ai/decide", {
+        id: run.id,
+        version: run.version,
+        approve: true,
+      })
+    ).status,
+  ).toBe(200);
+  let waiting: { id: string; version: number; harness: { status: string } };
+  await vi.waitFor(async () => {
+    waiting = (await (await call("/api/ai")).json()).runs.find(
+      (entry: { id: string }) => entry.id === run.id,
+    );
+    expect(waiting.harness.status).toBe("WAITING_APPROVAL");
+  });
+  expect(
+    (
+      await call("/api/library/save", {
+        id: document.id,
+        version: document.version,
+        input: { ...input, bodyMd: "Changed after approval" },
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await call("/api/ai/harness/decide", {
+        id: run.id,
+        version: waiting!.version,
+        callId: "review-write",
+        approve: true,
+      })
+    ).status,
+  ).toBe(409);
+  expect(
+    (
+      await call("/api/ai/harness/stop", {
+        id: run.id,
+        version: waiting!.version,
+      })
+    ).status,
+  ).toBe(200);
+  const snapshot = await (await call("/api/snapshot")).json();
+  expect(
+    snapshot.items.filter((item: { type: string }) => item.type === "TASK"),
+  ).toHaveLength(0);
+  expect(
+    (await (await call("/api/ai")).json()).runs.find(
+      (entry: { id: string }) => entry.id === run.id,
+    ).status,
+  ).toBe("INTERRUPTED");
+  expect(respond).toHaveBeenCalledTimes(1);
+});
+
+it("real Harness persists failing read results and reaches its model step limit", async () => {
+  await host.close();
+  let step = 0;
+  const respond = vi.fn(async () => ({
+    text: "",
+    toolCalls: [
+      { id: `read-${step++}`, name: "get_project", input: { id: "missing" } },
+    ],
+  }));
+  await start(undefined, {
+    route: {
+      fingerprint: "step-bound",
+      provider: "https://test.invalid",
+      model: "test",
+      maxInputChars: 32000,
+      maxOutputTokens: 100,
+      timeoutMs: 5000,
+      maxRunsPerDay: 100,
+    },
+    complete: async () => "",
+    providerAdapter: {
+      capabilities: {
+        tools: true,
+        jsonSchema: true,
+        streaming: false,
+        vision: false,
+        embedding: false,
+      },
+      respond,
+      complete: async () => "",
+      listModels: async () => ["test"],
+      stream: async function* () {},
+    },
+  });
+  await login();
+  const session = await (
+    await call("/api/ai/sessions/create", { title: "Step limit" })
+  ).json();
+  const run = await (
+    await call("/api/ai/propose", {
+      prompt: "Run bounded reads",
+      sessionId: session.id,
+      sessionVersion: session.version,
+    })
+  ).json();
+  expect(
+    (
+      await call("/api/ai/decide", {
+        id: run.id,
+        version: run.version,
+        approve: true,
+      })
+    ).status,
+  ).toBe(200);
+  await vi.waitFor(async () => {
+    const current = (await (await call("/api/ai")).json()).runs.find(
+      (entry: { id: string }) => entry.id === run.id,
+    );
+    expect(current.status).toBe("FAILED");
+    expect(current.harness, JSON.stringify(current)).toMatchObject({
+      status: "LIMIT_REACHED",
+      steps: 8,
+    });
+  });
+  expect(respond).toHaveBeenCalledTimes(8);
 });

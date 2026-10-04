@@ -7,7 +7,7 @@
   "doneCount": "{{count}} completed",
   "title": "Title",
   "titlePlaceholder": "What would you like to move forward?",
-  "description": "Description · Markdown source",
+  "description": "Description",
   "descriptionPlaceholder": "Add context, an idea, or the next small step…",
   "priority": "Priority",
   "status": "Status",

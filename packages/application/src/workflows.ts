@@ -23,6 +23,7 @@ import {
   type Clock,
   type IdGenerator,
   type UnitOfWork,
+  type UpdateWorkInput,
   WorkService,
   type WorkTransaction,
 } from "./index";
@@ -848,6 +849,45 @@ export class WorkflowService {
       });
     });
   }
+  async revisePreview(
+    context: ActorContext,
+    id: string,
+    version: number,
+    manifest: unknown,
+  ) {
+    await this.auth.require(context, "work:update");
+    await this.auth.require(context, "work:create");
+    const parsed = parseProjectPlan(manifest);
+    return this.uow.run(context.workspaceId, async (tx) => {
+      const old = (await tx.workflows()).find(
+        (record) => record.id === id && !record.deletedAt,
+      );
+      if (
+        !old ||
+        old.payload.kind !== "PLAN" ||
+        old.createdBy !== context.principalId
+      )
+        throw new DomainError("NOT_FOUND");
+      if (
+        old.version !== version ||
+        old.payload.published ||
+        old.payload.baseRevision !== (await revision(tx))
+      )
+        throw new DomainError("VERSION_CONFLICT");
+      const documentRevision = await this.validatePlan(
+        tx,
+        context,
+        parsed,
+        old.payload.projectId,
+      );
+      return this.save(
+        tx,
+        context,
+        { ...old.payload, ...parsed, documentRevision },
+        old,
+      );
+    });
+  }
   async publish(
     context: ActorContext,
     id: string,
@@ -1154,6 +1194,131 @@ export class WorkflowService {
             : calendarOffset(today, -1);
       }
       return this.save(tx, context, rule, old, undefined, input.deleted);
+    });
+  }
+  /** A draft is either one normal task converted in place, or a new definition. */
+  async saveTaskRecurrence(
+    context: ActorContext,
+    input: {
+      task?: { id: string; version: number };
+      draft: UpdateWorkInput & { title: string };
+      recurrence: Parameters<WorkflowService["saveRecurrence"]>[1];
+    },
+  ) {
+    await this.auth.require(
+      context,
+      input.task ? "work:update" : "work:create",
+    );
+    return this.uow.run(context.workspaceId, async (tx) => {
+      const scoped = new WorkflowService(
+        this.scoped(tx, context),
+        this.auth,
+        this.clock,
+        this.ids,
+        this.documents,
+      );
+      const current = input.task ? await tx.get(input.task.id) : null;
+      if (current && (current.deletedAt || current.type !== "TASK"))
+        throw new DomainError("NOT_FOUND");
+      if (current && current.version !== input.task?.version)
+        throw new DomainError("VERSION_CONFLICT");
+      const existing = current
+        ? (await tx.workflows()).find(
+            (r) =>
+              !r.deletedAt &&
+              r.payload.kind === "OCCURRENCE" &&
+              r.payload.taskId === current.id,
+          )
+        : null;
+      if (
+        existing &&
+        (existing.payload.kind !== "OCCURRENCE" ||
+          existing.payload.definitionId !== input.recurrence.id)
+      )
+        throw new DomainError("VERSION_CONFLICT");
+      if (
+        input.recurrence.deleted ||
+        (input.recurrence.version > 0 && !existing)
+      )
+        throw new DomainError("VALIDATION_ERROR");
+      const definition = await scoped.saveRecurrence(context, input.recurrence);
+      if (definition.payload.kind !== "RECURRENCE")
+        throw new DomainError("VALIDATION_ERROR");
+      const rule = recurrenceDefaults(definition.payload);
+      if (existing) return { definition, task: current };
+      if (current) {
+        const task = await this.work(tx, context).update(
+          context,
+          current.id,
+          current.version,
+          input.draft,
+        );
+        const day = rule.startDate;
+        const now = this.clock.now();
+        const occurrence = await this.save(
+          tx,
+          context,
+          {
+            kind: "OCCURRENCE",
+            definitionId: definition.id,
+            definitionVersion: definition.version,
+            day,
+            status: task.status === "DONE" ? "COMPLETED" : "OPEN",
+            expiresAt: occurrenceExpiry(rule, day),
+            closedAt: task.completedAt,
+            taskId: task.id,
+            completedAt: task.completedAt,
+            recordedAt: now,
+            backfilledAt: null,
+            ruleSnapshot: { ...rule },
+          },
+          undefined,
+          `occurrence:${definition.id}:${day}`,
+        );
+        const activityId = this.ids.next();
+        await tx.appendActivity({
+          id: activityId,
+          workspaceId: context.workspaceId,
+          principalId: context.principalId,
+          entityId: task.id,
+          type: "RECURRENCE_TASK_CONVERTED",
+          occurredAt: now,
+        });
+        await tx.appendOutbox({
+          id: this.ids.next(),
+          workspaceId: context.workspaceId,
+          activityId,
+          type: "WORK_CHANGED",
+          occurredAt: now,
+        });
+        return { definition, task, occurrence };
+      }
+      const today = localCalendarDay(this.clock.now(), rule.timezone);
+      if (rule.startDate > today) return { definition, task: null };
+      const occurrences = await scoped.generate(
+        context,
+        definition.id,
+        definition.version,
+        today,
+        today,
+      );
+      const first = occurrences[0]?.payload;
+      const task =
+        first?.kind === "OCCURRENCE" && first.taskId
+          ? await tx.get(first.taskId)
+          : null;
+      if (!task) return { definition, task: null };
+      const saved = await this.work(tx, context).update(
+        context,
+        task.id,
+        task.version,
+        {
+          ...input.draft,
+          startDate: input.draft.startDate ?? task.startDate,
+          dueDate: input.draft.dueDate ?? task.dueDate,
+        },
+      );
+      return { definition, task: saved };
     });
   }
   /** Bounded, atomic and restart-safe. The host reauthorizes the creator. */

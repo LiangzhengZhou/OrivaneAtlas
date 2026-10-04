@@ -70,22 +70,6 @@
 .workspace-menu button:focus-visible {
   background: var(--surface-hover);
 }
-.workspace-switch {
-  background: var(--surface);
-  border-color: var(--border-default);
-  margin: 20px 0;
-}
-.workspace-switch strong {
-  color: var(--text-primary);
-  font-size: 14px;
-}
-.workspace-switch small {
-  color: var(--text-muted);
-}
-.workspace-avatar {
-  background: var(--surface-active);
-  color: var(--text-secondary);
-}
 .app-shell.sidebar-collapsed .sidebar {
   padding-inline: 6px;
   align-items: stretch;
@@ -93,7 +77,6 @@
 .sidebar-collapsed .sidebar .brand-logo {
   width: 36px;
 }
-.sidebar-collapsed .workspace-switch,
 .sidebar-collapsed .section-label,
 .sidebar-collapsed .nav-drag-handle,
 .sidebar-collapsed .nav-item span {
@@ -157,11 +140,6 @@
 .nav-item:hover .nav-drag-handle,
 .nav-item:focus-visible .nav-drag-handle {
   opacity: 1;
-}
-.workspace-switch {
-  padding: 8px;
-  border: 0;
-  background: transparent;
 }
 .hierarchy-browser {
   padding: 12px;

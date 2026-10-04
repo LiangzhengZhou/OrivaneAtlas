@@ -7,6 +7,41 @@ export interface ModelProviderCapabilities {
   streaming: boolean;
   embedding: boolean;
 }
+export type ProviderKind =
+  | "OPENAI"
+  | "ANTHROPIC"
+  | "GEMINI"
+  | "DEEPSEEK"
+  | "OPENROUTER"
+  | "OLLAMA"
+  | "LM_STUDIO"
+  | "VLLM"
+  | "CUSTOM_OPENAI";
+export interface ModelToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+export interface ModelToolCall {
+  id: string;
+  name: string;
+  input: unknown;
+}
+export interface ModelMessage {
+  role: "user" | "assistant" | "tool";
+  text: string;
+  toolCalls?: ModelToolCall[];
+  toolCallId?: string;
+  toolName?: string;
+  /** Adapter-owned signed reasoning blocks, never interpreted as executable input. */
+  providerData?: unknown;
+}
+export interface ModelResponse {
+  text: string;
+  toolCalls: ModelToolCall[];
+  providerData?: unknown;
+  usage?: ModelUsage | undefined;
+}
 export type ModelEvent =
   | { type: "text-delta"; text: string }
   | { type: "tool-call"; name: string; input: unknown }
@@ -16,6 +51,11 @@ export type ModelEvent =
   | { type: "error"; error: string };
 export interface ModelProviderAdapter {
   capabilities: ModelProviderCapabilities;
+  respond?(
+    messages: readonly ModelMessage[],
+    tools: readonly ModelToolDefinition[],
+    signal: AbortSignal,
+  ): Promise<ModelResponse>;
   complete(
     prompt: string,
     signal: AbortSignal,

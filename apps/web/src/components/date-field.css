@@ -1,0 +1,75 @@
+.date-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  text-align: start;
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+}
+.date-field-validity {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.calendar-popover {
+  padding: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px #0003;
+  width: 300px;
+}
+.calendar-heading,
+.calendar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+  margin: 12px 0;
+  text-align: center;
+}
+.calendar-grid span {
+  font-size: 12px;
+  padding: 4px 0;
+  color: var(--text-muted);
+}
+.calendar-grid button {
+  min-height: 32px;
+  padding: 3px;
+  border: 0;
+  border-radius: 6px;
+}
+.calendar-grid button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.calendar-month-controls {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+.calendar-month-controls label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.calendar-month-controls input {
+  width: 72px;
+}
+.calendar-month-controls select {
+  width: 110px;
+}

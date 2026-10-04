@@ -2,7 +2,11 @@
 
 Orivane Atlas is a server-backed workspace. The server stores authoritative workspace data; web, Windows, and Android clients connect to that server. Clients may keep local drafts, but this is not a complete offline replica or conflict-free sync engine.
 
-Version 2.0.0 targets SQLite schema24 and PostgreSQL knowledge schema17. The shipped account/HTTP Host uses SQLite; PostgreSQL knowledge adapter parity does not imply a PostgreSQL account server. Upgrade the server before clients, back up the database and separate provider vault, and validate restoration to a new target. Read [Migration to 2.0](MIGRATION_2.0.md) first. Native clients retain up to 20 encrypted account sessions across servers, revalidate identity when switching, and isolate drafts by server and account. Historical 0.0.7 account limitations below describe the older release. Native packages are rebuilt for 2.0.0; publishing them does not deploy or migrate your server.
+Version 2.1.0 targets SQLite schema27 and PostgreSQL knowledge schema20. The shipped account/HTTP Host uses SQLite; PostgreSQL knowledge adapter parity does not imply a PostgreSQL account server. Upgrade the server before clients, back up the database and separate provider vault, and validate restoration to a new target. Read [Migration to 2.0](MIGRATION_2.0.md) first. Native clients retain up to 20 encrypted account sessions across servers, revalidate identity when switching, and isolate drafts by server and account. Historical 0.0.7 account limitations below describe the older release. Native packages are rebuilt for 2.1.0; publishing them does not deploy or migrate your server.
+
+## Upgrading from 2.0.2
+
+Back up SQLite and the separate encrypted provider vault/master key together. The appended migration preserves existing entities, Activity and Outbox. Existing encrypted provider settings are read compatibly; new catalog writes separate connections, models, profiles and bindings while preserving defaults, overrides, fallbacks and Unlimited limits. Validate migration and restore on a new database before switching the matching Host/Web build. Older server code must not open the upgraded database. See [controlled Agent runtime](architecture/atlas-controlled-agent-runtime.md) for routing and approval boundaries.
 
 ## Requirements
 

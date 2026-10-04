@@ -1,9 +1,22 @@
 import { type ActorContext, DomainError } from "@arclattice/domain";
 import type { AgentRun, EntityRef, ModelPort, ModelRoute } from "./connected";
 import type { GatewayPolicy } from "./gateway-policy";
+import type {
+  ModelConfiguration,
+  ModelConfigurationInput,
+} from "./model-configuration";
+import type {
+  ModelProviderCapabilities,
+  ProviderKind,
+} from "./provider-adapter";
 import type { TrustedAiEndpoint } from "./trusted-ai-endpoint";
 
 export interface PersonalModelInput {
+  requestLimit?: import("./model-configuration").DailyRequestLimit;
+  quotaKey?: string;
+  legacyQuotaScope?: string;
+  providerKind?: ProviderKind;
+  modelCapabilities?: Partial<ModelProviderCapabilities>;
   supportsStreaming?: boolean;
   gateway?: GatewayPolicy;
   profileId?: string;
@@ -20,6 +33,16 @@ export interface PersonalModelSummary extends Omit<PersonalModelInput, "key"> {
 }
 /** Private host port. Keys must never enter entity storage, receipts or public responses. */
 export interface PersonalModelVault {
+  configuration?(actor: ActorContext): ModelConfiguration;
+  saveConfiguration?(
+    actor: ActorContext,
+    version: number,
+    input: ModelConfigurationInput,
+  ): ModelConfiguration;
+  connectionAdapter?(
+    actor: ActorContext,
+    connectionId: string,
+  ): import("./provider-adapter").ModelProviderAdapter;
   setTrustedEndpoints?(entries: readonly TrustedAiEndpoint[]): void;
   list(actor: ActorContext): PersonalModelSummary[];
   save(

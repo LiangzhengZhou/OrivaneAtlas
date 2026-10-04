@@ -12,11 +12,13 @@ export function LibraryView({
   onOpen,
   snapshot,
   onChanged,
+  onTrash,
 }: {
   runtime: Runtime;
   onOpen: (request: DocumentRequest) => void;
   snapshot: Snapshot;
   onChanged(): Promise<void>;
+  onTrash(): void;
 }) {
   const { t } = useTranslation("spaces");
   const { i18n } = useTranslation();
@@ -237,42 +239,9 @@ export function LibraryView({
           </div>
         </>
       )}
-      <details className="panel account-panel">
-        <summary>{t("trash")}</summary>
-        <p>{t("recoverHint")}</p>
-        {entries
-          .filter((e) => e.deletedAt)
-          .map((e) => (
-            <div className="token-row" key={e.id}>
-              <span>{e.title}</span>
-              <button
-                className="button secondary"
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void run(() => runtime.deleteLibrary(e.id, e.version, false))
-                }
-              >
-                {t("restore")}
-              </button>
-              <button
-                type="button"
-                className="button danger"
-                disabled={busy}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      t("desk:permanentDeleteConfirm", { title: e.title }),
-                    )
-                  )
-                    void run(() => runtime.purgeLibrary(e.id, e.version));
-                }}
-              >
-                {t("desk:permanentDelete")}
-              </button>
-            </div>
-          ))}
-      </details>
+      <button type="button" className="text-button" onClick={onTrash}>
+        {zh ? "查看回收站 →" : "View Trash →"}
+      </button>
     </div>
   );
 }

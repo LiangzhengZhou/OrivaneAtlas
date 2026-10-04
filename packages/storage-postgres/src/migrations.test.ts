@@ -519,3 +519,31 @@ it("upgrades v2.0.1 recurrence pause and occurrence payloads with explicit defau
   });
   expect(rows[2].deleted_at).toBeNull();
 });
+
+it("upgrades 2.0.2 schema19 preserving reason/outbox and adds explicit conversion activity", async () => {
+  const name = await h.database();
+  await run(name, migrations.slice(0, 19));
+  await h.query(
+    name,
+    "INSERT INTO arclattice.workspace VALUES ('w','W'); INSERT INTO arclattice.principal VALUES ('p','USER','P'); INSERT INTO arclattice.workspace_principal VALUES ('w','p'); INSERT INTO arclattice.activity(workspace_id,id,principal_id,entity_id,type,occurred_at,reason) VALUES ('w','event','p','task','WORK_ITEM_UPDATED','2026-10-04','RECURRENCE_WINDOW_EXPIRED'); INSERT INTO arclattice.outbox VALUES ('w','out','event','WORK_CHANGED','2026-10-04')",
+  );
+  const before = (await h.query(name, "SELECT * FROM arclattice.activity"))
+      .rows,
+    outbox = (await h.query(name, "SELECT * FROM arclattice.outbox")).rows;
+  let backupGate = false;
+  await run(name, migrations, async () => {
+    backupGate = true;
+  });
+  expect(backupGate).toBe(true);
+  expect(
+    (await h.query(name, "SELECT * FROM arclattice.activity")).rows,
+  ).toEqual(before);
+  expect((await h.query(name, "SELECT * FROM arclattice.outbox")).rows).toEqual(
+    outbox,
+  );
+  await h.query(
+    name,
+    "INSERT INTO arclattice.activity(workspace_id,id,principal_id,entity_id,type,occurred_at) VALUES ('w','conversion','p','task','RECURRENCE_TASK_CONVERTED','2026-10-04')",
+  );
+  expect(await h.client(name, (client) => inspectSchema(client))).toBe(20);
+}, 30000);

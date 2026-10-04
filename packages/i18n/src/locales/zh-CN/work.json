@@ -7,7 +7,7 @@
   "doneCount": "{{count}} 个已完成",
   "title": "标题",
   "titlePlaceholder": "接下来，你想推进什么？",
-  "description": "描述 · Markdown 源码",
+  "description": "描述",
   "descriptionPlaceholder": "写下背景、想法，或下一步行动…",
   "priority": "优先级",
   "status": "状态",

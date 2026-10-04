@@ -1,5 +1,6 @@
 import { DomainError } from "@arclattice/domain";
 import type { AgentRun, ModelRoute, ModelUsage } from "./connected";
+import { requestLimitThreshold } from "./model-configuration";
 
 export type GatewayLimit = number | "UNLIMITED";
 export type GatewayCapability = "TEXT" | "JSON" | "EMBEDDING";
@@ -98,7 +99,13 @@ export function gatewayReservation(
     (other) =>
       other.workspaceId === run.workspaceId &&
       other.createdBy === run.createdBy &&
-      (other.route.scope ?? "personal") === (run.route.scope ?? "personal") &&
+      (run.route.quotaKey
+        ? other.route.quotaKey === run.route.quotaKey ||
+          (!other.route.quotaKey &&
+            !!run.route.legacyQuotaScope &&
+            (other.route.scope ?? "personal") === run.route.legacyQuotaScope)
+        : (other.route.scope ?? "personal") ===
+          (run.route.scope ?? "personal")) &&
       other.attempt?.reservedAt.slice(0, 10) === now.slice(0, 10),
   );
   const reservedMicros = Math.max(
@@ -114,10 +121,7 @@ export function gatewayReservation(
     const policy = route.gateway;
     if (!policy || !policy.enabled) throw new DomainError("FORBIDDEN");
     validateGatewayPolicy(policy);
-    if (
-      policy.dailyRequests !== "UNLIMITED" &&
-      history.length >= policy.dailyRequests
-    )
+    if (history.length >= requestLimitThreshold(route))
       throw new DomainError("FORBIDDEN");
     if (policy.dailyBudgetMicros !== "UNLIMITED") {
       if (history.some((other) => !other.attempt?.money))

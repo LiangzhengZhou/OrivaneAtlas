@@ -1,9 +1,13 @@
 import type { ActorContext, WorkItem } from "@arclattice/domain";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "../../bootstrap";
 import { ProjectDependencyGraph } from "../../features/projects/ProjectDependencyGraph";
 import { TasksWorkspace } from "../../features/tasks/TasksWorkspace";
 import { RecurrenceManager } from "../../RecurrenceManager";
+import { RecurrenceSummary } from "../../RecurrenceSummary";
 import { Dependencies, type WorkProps } from "../../WorkViews";
+import { DismissibleDialog } from "../DismissibleDialog";
 
 interface Props {
   runtime: Runtime;
@@ -35,26 +39,49 @@ export function TasksRoute({
   run,
   onOpen,
 }: Props) {
+  const [manage, setManage] = useState(false);
+  const { i18n } = useTranslation();
+  const label = i18n.language.startsWith("zh")
+    ? "管理周期任务"
+    : "Manage recurring tasks";
   return (
     <>
-      <RecurrenceManager
-        calendarTimezone={calendarTimezone}
+      <RecurrenceSummary
         records={snapshot.workflows ?? []}
-        projects={projects}
-        items={workProps.allItems}
-        busy={false}
-        preview={(projectId, manifest) =>
-          run(() => runtime.previewPlan(projectId, manifest))
-        }
-        publish={(id, version) => run(() => runtime.publishPlan(id, version))}
-        save={(input) => run(() => runtime.saveRecurrence(input))}
-        generate={(id, version, from, to) =>
-          run(() => runtime.generateRecurrence(id, version, from, to))
-        }
-        backfill={(id, version, completedAt) =>
-          run(() => runtime.backfillOccurrence(id, version, completedAt))
-        }
+        timezone={calendarTimezone}
+        onManage={() => setManage(true)}
       />
+      {manage && (
+        <DismissibleDialog
+          className="recurring-series-dialog"
+          aria-label={label}
+          onRequestClose={() => setManage(false)}
+        >
+          <button type="button" onClick={() => setManage(false)}>
+            {i18n.language.startsWith("zh") ? "关闭" : "Close"}
+          </button>
+          <RecurrenceManager
+            calendarTimezone={calendarTimezone}
+            records={snapshot.workflows ?? []}
+            projects={projects}
+            items={workProps.allItems}
+            busy={false}
+            preview={(projectId, manifest) =>
+              run(() => runtime.previewPlan(projectId, manifest))
+            }
+            publish={(id, version) =>
+              run(() => runtime.publishPlan(id, version))
+            }
+            save={(input) => run(() => runtime.saveRecurrence(input))}
+            generate={(id, version, from, to) =>
+              run(() => runtime.generateRecurrence(id, version, from, to))
+            }
+            backfill={(id, version, completedAt) =>
+              run(() => runtime.backfillOccurrence(id, version, completedAt))
+            }
+          />
+        </DismissibleDialog>
+      )}
       {taskDependenciesOpen && (
         <>
           <ProjectDependencyGraph

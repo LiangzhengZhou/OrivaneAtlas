@@ -10,7 +10,7 @@
 
 ## What it is
 
-Orivane Atlas 2.0.2 is a self-hostable, knowledge-centric workspace with optional AI assistance. Projects organize work and bind knowledge spaces; documents retain Markdown, revisions, aliases and Wiki relationships. Web and native clients connect to the same server; the server remains the source of truth while clients may keep local drafts.
+Orivane Atlas 2.1.0 is a self-hostable, knowledge-centric workspace with optional AI assistance. Projects organize work and bind knowledge spaces; documents retain Markdown, revisions, aliases and Wiki relationships. Web and native clients connect to the same server; the server remains the source of truth while clients may keep local drafts.
 
 AI integration is optional. Orivane Atlas is not a handoff-only project: this repository is for people who want to run, use, extend, or contribute to the product.
 
@@ -22,6 +22,9 @@ AI integration is optional. Orivane Atlas is not a handoff-only project: this re
 - Wiki links, persistent aliases, backlinks, unresolved-link resolution and same-space document hierarchy
 - Separate project task dependency graphs and local / space / workspace knowledge graphs
 - Atlas Assistant with permission-filtered retrieval, version-bound context approval, streaming and persistent sessions
+- Controlled Atlas Agent tools, structured human approvals, reviewed Plan imports and real Sources
+- Provider Connections, Models, routing profiles and inheriting Project/Space overrides
+- Task-integrated recurrence, localized dates, focused Graph Workspace and browser SSE invalidation
 - Shared AI capabilities, provider adapters and explicitly trusted local/private endpoints
 - Notes, journals, tasks, calendar views, boards, import, export and recovery
 - Account and workspace isolation
@@ -31,7 +34,7 @@ AI integration is optional. Orivane Atlas is not a handoff-only project: this re
 - Windows and Android native clients
 - Optional AI provider integration with explicit context and approval boundaries
 
-See the [2.0 changelog](CHANGELOG.md), [1.x migration guide](docs/MIGRATION_2.0.md)
+See the [changelog](CHANGELOG.md), [1.x migration guide](docs/MIGRATION_2.0.md)
 and [runtime audit](docs/UNIFIED_UPGRADE.md). The shipped account/HTTP Host uses
 SQLite; PostgreSQL knowledge parity does not imply a PostgreSQL account server.
 
@@ -65,7 +68,7 @@ For local development, read [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). The docu
 
 Windows x64 and Android arm64 packages are published on [GitHub Releases](https://github.com/LiangzhengZhou/OrivaneAtlas/releases). Starting with 0.0.4, native clients include **Check for updates → Download and install**. Windows verifies signed update packages; Android uses a dedicated release key and asks the system installer for confirmation. Windows does not yet have a publicly trusted Authenticode publisher certificate and may display an unknown-publisher warning.
 
-Version 2.0.2 includes newly built Windows x64 and Android arm64 release packages.
+Version 2.1.0 includes newly built Windows x64 and Android arm64 release packages.
 Cargo check and release-profile tests passed using the existing isolated Rust
 toolchain; Windows updater signatures and the existing Android production
 certificate were verified. Installed-app upgrade and Android physical-device

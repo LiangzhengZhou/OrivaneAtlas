@@ -8,6 +8,7 @@ import {
   settleGatewayMoney,
 } from "./gateway-policy";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
+import { requestLimitThreshold } from "./model-configuration";
 import type { ModelProviderAdapter } from "./provider-adapter";
 
 export interface EntityRef {
@@ -30,6 +31,9 @@ export interface KnowledgeLink extends ConnectedEntity {
   relation: "REFERENCES" | "RELATED";
 }
 export interface ModelRoute {
+  requestLimit?: import("./model-configuration").DailyRequestLimit;
+  quotaKey?: string;
+  legacyQuotaScope?: string;
   gateway?: GatewayPolicy;
   fallbackRoutes?: ModelRoute[];
   profileId?: string;
@@ -50,6 +54,13 @@ export type RunStatus =
   | "REJECTED"
   | "INTERRUPTED";
 export interface AgentRun extends ConnectedEntity {
+  parentRunId?: string;
+  harness?: import("./agent-harness").HarnessState;
+  toolApprovals?: Record<
+    string,
+    { decision: "APPROVED" | "REJECTED"; sessionVersion: number }
+  >;
+  retrievalScope?: { projectId?: string; currentSpaceId?: string };
   sessionId?: string;
   sessionVersion?: number;
   attempt?: {
@@ -226,18 +237,36 @@ export class ConnectedService {
       if (!route || route.fingerprint !== old.route.fingerprint)
         throw new DomainError("VERSION_CONFLICT");
       const runs = await this.store.runs();
+      if (old.parentRunId) {
+        const parent = runs.find((run) => run.id === old.parentRunId);
+        if (
+          !parent ||
+          parent.workspaceId !== context.workspaceId ||
+          parent.createdBy !== context.principalId ||
+          parent.status !== "RUNNING" ||
+          parent.approvedBy !== context.principalId ||
+          !parent.approvedAt ||
+          parent.route.fingerprint !== old.route.fingerprint ||
+          parent.harness?.status !== "RUNNING"
+        )
+          throw new DomainError("FORBIDDEN");
+      }
       if (
-        runs.some((r) => r.status === "RUNNING") ||
+        runs.some((r) => r.status === "RUNNING" && r.id !== old.parentRunId) ||
         runs.filter(
           (r) =>
             r.approvedAt?.slice(0, 10) === this.clock.now().slice(0, 10) &&
-            (!route.gateway ||
-              (r.createdBy === context.principalId &&
-                (r.route.scope ?? "personal") === (route.scope ?? "personal"))),
-        ).length >=
-          (route.gateway?.dailyRequests === "UNLIMITED"
-            ? Number.POSITIVE_INFINITY
-            : (route.gateway?.dailyRequests ?? route.maxRunsPerDay))
+            (route.quotaKey
+              ? r.createdBy === context.principalId &&
+                (r.route.quotaKey === route.quotaKey ||
+                  (!r.route.quotaKey &&
+                    !!route.legacyQuotaScope &&
+                    (r.route.scope ?? "personal") === route.legacyQuotaScope))
+              : !route.gateway ||
+                (r.createdBy === context.principalId &&
+                  (r.route.scope ?? "personal") ===
+                    (route.scope ?? "personal"))),
+        ).length >= requestLimitThreshold(route)
       )
         throw new DomainError("FORBIDDEN");
     }
@@ -306,6 +335,12 @@ export class ConnectedService {
       old.status !== "RUNNING"
     )
       throw new DomainError("VERSION_CONFLICT");
+    usage ??= old.attempt?.usage;
+    if (!settlement && old.attempt?.money?.routeFingerprint)
+      settlement = {
+        routeFingerprint: old.attempt.money.routeFingerprint,
+        notSent: false,
+      };
     if (
       usage &&
       (usage.source !== "PROVIDER_REPORTED" ||

@@ -1,6 +1,7 @@
 import {
   BookOpen,
   CalendarDays,
+  Compass,
   FolderKanban,
   LayoutDashboard,
   ListTodo,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 
 export type View =
+  | "graph"
   | "library"
   | "account"
   | "admin"
@@ -28,7 +30,7 @@ export const navigation = [
   { view: "library", icon: BookOpen },
   { view: "account", icon: ShieldCheck },
   { view: "admin", icon: LayoutDashboard },
-  { view: "ai", icon: ShieldCheck },
+  { view: "ai", icon: Compass },
   { view: "overview", icon: LayoutDashboard },
   { view: "focus", icon: Target },
   { view: "tasks", icon: ListTodo },
@@ -58,6 +60,7 @@ export function currentView(): View {
     );
     return "tasks";
   }
+  if (hash === "graph") return "graph";
   return [...navigation.map((n) => n.view), "settings"].includes(hash)
     ? (hash as View)
     : "overview";

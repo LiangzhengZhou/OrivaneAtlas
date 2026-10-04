@@ -86,7 +86,7 @@ object NotificationScheduler {
         channel(context)
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
         val pending = launch?.let { PendingIntent.getActivity(context, 0, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
-        val notice = NotificationCompat.Builder(context, CHANNEL).setContentIntent(pending).setSmallIcon(R.drawable.ic_launcher_foreground).setContentTitle("Orivane Atlas").setContentText(intent.title).setAutoCancel(true).build()
+        val notice = NotificationCompat.Builder(context, CHANNEL).setContentIntent(pending).setSmallIcon(R.drawable.atlas_notification).setContentTitle("Orivane Atlas").setContentText(intent.title).setAutoCancel(true).build()
         NotificationManagerCompat.from(context).notify(NotificationPolicy.key(id), 0, notice)
         write(context, read(context).filter { it.id != id })
         return true
