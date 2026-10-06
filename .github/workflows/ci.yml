@@ -11,7 +11,9 @@ env:
   TURBO_TELEMETRY_DISABLED: 1
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    # Portable PostgreSQL ships a Windows runtime; Linux bundle requires unavailable ICU60.
+    # Keep the complete storage/parity suite on the supported runner, without skips.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
