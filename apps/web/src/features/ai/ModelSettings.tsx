@@ -74,12 +74,15 @@ export function ModelSettings({
   return (
     <div className="model-settings">
       {error && (
-        <p role="alert">
+        <div role="alert">
           {zh
             ? "模型设置操作失败，草稿保留。"
             : "Model settings operation failed; drafts are kept."}{" "}
-          {error}
-        </p>
+          <details>
+            <summary>{zh ? "技术详情" : "Technical details"}</summary>
+            <code>{error}</code>
+          </details>
+        </div>
       )}
       {saved && (
         <p role="status">{zh ? "模型设置已保存" : "Model settings saved"}</p>

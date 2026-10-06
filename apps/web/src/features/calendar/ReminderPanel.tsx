@@ -1,5 +1,5 @@
 import type { Reminder, ReminderInput, WorkItem } from "@arclattice/domain";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DateField } from "../../components/DateField";
 import { Button } from "../../components/ui/Button";
@@ -13,11 +13,15 @@ export function ReminderPanel({
   reminders,
   save,
   items = [],
+  createRequest = 0,
+  hideCreate = false,
 }: {
   day: string;
   timezone: string;
   reminders: readonly Reminder[];
   items?: readonly WorkItem[];
+  createRequest?: number;
+  hideCreate?: boolean;
   save(
     id: string | null,
     version: number,
@@ -32,6 +36,28 @@ export function ReminderPanel({
   const [editing, setEditing] = useState<Reminder | null>(null);
   const [pending, setPending] = useState(false);
   const [removed, setRemoved] = useState<Reminder | null>(null);
+  const lastCreateRequest = useRef(0);
+  const beginCreate = () => {
+    setEditing(null);
+    setDraft({
+      title: "",
+      bodyMd: "",
+      day,
+      time: null,
+      timezone,
+      notifyMode: "NONE",
+      notifyOffsetMinutes: null,
+      linkedProjectId: null,
+      linkedTaskId: null,
+      state: "ACTIVE",
+    });
+  };
+  useEffect(() => {
+    if (createRequest && createRequest !== lastCreateRequest.current) {
+      lastCreateRequest.current = createRequest;
+      beginCreate();
+    }
+  }, [createRequest, day, timezone]);
   async function submit(
     id: string | null,
     version: number,
@@ -75,8 +101,15 @@ export function ReminderPanel({
     }
   }
   return (
-    <section className="calendar-reminders">
-      <h3>{text("提醒", "Reminders")}</h3>
+    <div className="calendar-reminders">
+      {reminders.length > 0 && (
+        <h3>
+          {text("提醒", "Reminders")}{" "}
+          <span className="muted" data-count={reminders.length}>
+            {reminders.length}
+          </span>
+        </h3>
+      )}
       {reminders
         .filter((entry) => !entry.deletedAt)
         .map((entry) => (
@@ -156,25 +189,11 @@ export function ReminderPanel({
           </Button>
         </div>
       )}
-      <Button
-        onClick={() => {
-          setEditing(null);
-          setDraft({
-            title: "",
-            bodyMd: "",
-            day,
-            time: null,
-            timezone,
-            notifyMode: "NONE",
-            notifyOffsetMinutes: null,
-            linkedProjectId: null,
-            linkedTaskId: null,
-            state: "ACTIVE",
-          });
-        }}
-      >
-        {text("添加提醒", "Add reminder")}
-      </Button>
+      {!hideCreate && (
+        <Button onClick={beginCreate}>
+          {text("添加提醒", "Add reminder")}
+        </Button>
+      )}
       {draft && (
         <Dialog
           aria-label={text("提醒", "Reminder")}
@@ -218,6 +237,25 @@ export function ReminderPanel({
               onChange={(day) => setDraft({ ...draft, day })}
             />
             <label>
+              <input
+                type="checkbox"
+                checked={!draft.time}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    time: event.target.checked ? null : "09:00",
+                    notifyMode: event.target.checked
+                      ? "NONE"
+                      : draft.notifyMode,
+                    notifyOffsetMinutes: event.target.checked
+                      ? null
+                      : draft.notifyOffsetMinutes,
+                  })
+                }
+              />
+              {text("全天", "All day")}
+            </label>
+            <label>
               {text("时间", "Time")}
               <input
                 type="time"
@@ -243,8 +281,10 @@ export function ReminderPanel({
                 }
               >
                 <option value="NONE">{text("不通知", "None")}</option>
-                <option value="AT_TIME">{text("准时", "At time")}</option>
-                <option value="MINUTES_BEFORE">
+                <option value="AT_TIME" disabled={!draft.time}>
+                  {text("准时", "At time")}
+                </option>
+                <option value="MINUTES_BEFORE" disabled={!draft.time}>
                   {text("提前通知", "Minutes before")}
                 </option>
               </Select>
@@ -307,6 +347,6 @@ export function ReminderPanel({
           </form>
         </Dialog>
       )}
-    </section>
+    </div>
   );
 }

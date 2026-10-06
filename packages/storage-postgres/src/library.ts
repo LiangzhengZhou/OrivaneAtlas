@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  type BodyManifest,
   type LibraryEntry,
   type LibraryStore,
   MAX_LIBRARY_ENTRIES,
@@ -188,8 +189,66 @@ export function libraryStore(
         [context.workspaceId, eventId],
       );
     },
+    async listMetadata() {
+      guard();
+      const aliases = new Map<string, string[]>();
+      for (const row of (
+        await client.query(
+          "SELECT document_id,alias FROM arclattice.document_alias WHERE workspace_id=$1 ORDER BY normalized_alias",
+          [context.workspaceId],
+        )
+      ).rows) {
+        const id = String(row.document_id);
+        aliases.set(id, [...(aliases.get(id) ?? []), String(row.alias)]);
+      }
+      return (
+        await client.query(
+          "SELECT payload::jsonb - 'bodyMd' metadata, length(payload::jsonb->>'bodyMd') characters FROM arclattice.library_entry WHERE workspace_id=$1 ORDER BY id",
+          [context.workspaceId],
+        )
+      ).rows.map((row) => {
+        const entry = row.metadata as Omit<LibraryEntry, "bodyMd">;
+        return {
+          ...entry,
+          aliases: [
+            ...new Set([
+              ...(entry.aliases ?? []),
+              ...(aliases.get(entry.id) ?? []),
+            ]),
+          ],
+          bodyState: "UNLOADED",
+          bodyCharacterCount: Number(row.characters),
+        } satisfies BodyManifest<LibraryEntry>;
+      });
+    },
     list,
     get,
+    async ensureWikiIndex() {
+      guard();
+      const state = (
+        await client.query(
+          "SELECT index_version,dirty FROM arclattice.wiki_index_state WHERE workspace_id=$1",
+          [context.workspaceId],
+        )
+      ).rows[0];
+      if (state?.index_version === 1 && state.dirty === 0) return false;
+      if (
+        !(
+          await client.query(
+            "SELECT 1 FROM arclattice.library_entry WHERE workspace_id=$1 AND payload::jsonb->>'kind'='DOCUMENT' LIMIT 1",
+            [context.workspaceId],
+          )
+        ).rows.length
+      ) {
+        await client.query(
+          "INSERT INTO arclattice.wiki_index_state VALUES ($1,1,0) ON CONFLICT(workspace_id) DO UPDATE SET index_version=1,dirty=0",
+          [context.workspaceId],
+        );
+        return false;
+      }
+      await this.rebuildWikiIndex!();
+      return true;
+    },
     async rebuildWikiIndex() {
       guard();
       const before = await list();
@@ -252,6 +311,10 @@ export function libraryStore(
               document.updatedAt,
             ],
           );
+      await client.query(
+        "INSERT INTO arclattice.wiki_index_state VALUES ($1,1,0) ON CONFLICT(workspace_id) DO UPDATE SET index_version=1,dirty=0",
+        [context.workspaceId],
+      );
       await event("wiki-index", 1, "WIKI_INDEX_REBUILT");
     },
     async wikiLinks() {
@@ -274,6 +337,19 @@ export function libraryStore(
     },
     async save(entry, expected) {
       guard();
+      await this.ensureWikiIndex!();
+      const indexState = (
+        await client.query(
+          "SELECT index_version,dirty FROM arclattice.wiki_index_state WHERE workspace_id=$1",
+          [context.workspaceId],
+        )
+      ).rows[0];
+      const indexWasClean =
+        indexState?.index_version === 1 && indexState.dirty === 0;
+      const spaceStaysLive =
+        entry.kind === "SPACE" &&
+        !entry.deletedAt &&
+        (expected === 0 || !(await get(entry.id)).deletedAt);
       if (
         entry.workspaceId !== context.workspaceId ||
         entry.updatedBy !== context.principalId
@@ -393,6 +469,11 @@ export function libraryStore(
             [context.workspaceId, entry.id],
           );
       }
+      if (indexWasClean && (entry.kind === "DOCUMENT" || spaceStaysLive))
+        await client.query(
+          "UPDATE arclattice.wiki_index_state SET dirty=0 WHERE workspace_id=$1",
+          [context.workspaceId],
+        );
       await event(entry.id, entry.version, "LIBRARY_CHANGED");
     },
     async revisions(id) {

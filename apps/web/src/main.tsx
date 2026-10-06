@@ -7,6 +7,7 @@ import { ConfirmationHost } from "./components/ui/ConfirmationHost";
 import "./styles/tokens.css";
 import "./styles/themes.css";
 import "./styles/reset.css";
+import "./components/ui/controls.css";
 import "./styles.css";
 import "./workspace.css";
 import "./product.css";

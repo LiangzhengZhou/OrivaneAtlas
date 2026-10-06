@@ -1,6 +1,32 @@
 import { expect, test } from "vitest";
 import { work } from "../../../../../tests/fixtures";
-import { projectProgressIndex, projectTreeIndex } from "./project-tree";
+import {
+  projectProgressIndex,
+  projectTreeIndex,
+  visibleProjectBranches,
+} from "./project-tree";
+
+test("manual collapse keeps sibling expansion and never leaks another root", () => {
+  const root = { ...work("root"), type: "PROJECT" as const };
+  const a = { ...root, id: "a", parentProjectId: root.id };
+  const b = { ...a, id: "b" };
+  const children = projectTreeIndex([
+    root,
+    a,
+    b,
+    { ...a, id: "a1", parentProjectId: a.id },
+    { ...a, id: "b1", parentProjectId: b.id },
+    { ...root, id: "other" },
+  ]);
+  const expanded = new Set([a.id, b.id]);
+  expect(
+    visibleProjectBranches(children, root.id, expanded).map((p) => p.id),
+  ).toEqual(["a", "a1", "b", "b1"]);
+  expanded.delete(a.id);
+  expect(
+    visibleProjectBranches(children, root.id, expanded).map((p) => p.id),
+  ).toEqual(["a", "b", "b1"]);
+});
 
 test("tree indexes immediate children, orphans and bounded legacy cycles", () => {
   const root = { ...work("root"), type: "PROJECT" as const };

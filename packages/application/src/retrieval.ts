@@ -1,6 +1,7 @@
 import type { ActorContext } from "@arclattice/domain";
 import type { AuthorizationService } from "./index";
 import type { DocumentWikiLink, LibraryEntry, LibraryStore } from "./library";
+import type { NotebookStore } from "./notebook";
 import type { ProjectKnowledgeScope } from "./project-knowledge-scope";
 
 export interface RetrievalResult {
@@ -20,6 +21,23 @@ export class RetrievalService {
     private readonly authorization: AuthorizationService,
     private readonly semantic?: SemanticRetrievalPort,
   ) {}
+  async searchNoteIds(
+    context: ActorContext,
+    query: string,
+    notes: NotebookStore,
+  ): Promise<string[]> {
+    await this.authorization.require(context, "work:read");
+    if (notes.searchIds) return notes.searchIds(query);
+    const text = query.toLocaleLowerCase();
+    return (await notes.list())
+      .filter(
+        (note) =>
+          note.workspaceId === context.workspaceId &&
+          !note.deletedAt &&
+          (note.title + " " + note.bodyMd).toLocaleLowerCase().includes(text),
+      )
+      .map((note) => note.id);
+  }
   async search(
     context: ActorContext,
     query: string,
@@ -60,57 +78,66 @@ export class RetrievalService {
         query,
         documents.map((document) => document.id),
       )) ?? [];
+    const semanticById = new Map<string, number>();
+    for (const entry of semantic) {
+      if (!semanticById.has(entry.id)) semanticById.set(entry.id, entry.score);
+    }
+    const linkCountById = new Map<string, number>();
+    for (const link of links) {
+      const endpoints = new Set([link.sourceDocumentId, link.targetDocumentId]);
+      for (const id of endpoints) {
+        if (id) linkCountById.set(id, (linkCountById.get(id) ?? 0) + 1);
+      }
+    }
+    const spaceOrder = new Map(scope.spaceIds.map((id, index) => [id, index]));
+    const now = Date.now();
     return documents
-      .map((document) => ({
-        document,
-        score:
-          terms.reduce(
-            (score, term) =>
-              score +
-              ((document.title + " " + (document.aliases ?? []).join(" "))
-                .toLocaleLowerCase()
-                .includes(term)
-                ? 8
-                : 0) +
-              (document.bodyMd.toLocaleLowerCase().includes(term) ? 2 : 0),
-            0,
-          ) +
-          (semantic.find((entry) => entry.id === document.id)?.score ?? 0) +
-          (relatedIds.has(document.id) ? 3 : 0) +
-          links.filter(
-            (link) =>
-              link.targetDocumentId === document.id ||
-              link.sourceDocumentId === document.id,
-          ).length *
-            0.1 +
-          1 /
-            (1 +
-              Math.max(0, Date.now() - (Date.parse(document.updatedAt) || 0)) /
-                86400000) +
-          1 / (1 + scope.spaceIds.indexOf(document.spaceId ?? "")),
-      }))
-      .filter(
-        (result) =>
-          !terms.length ||
-          terms.some((term) =>
-            (
-              result.document.title +
-              result.document.bodyMd +
-              (result.document.aliases ?? []).join(" ")
-            )
-              .toLocaleLowerCase()
-              .includes(term),
-          ) ||
-          semantic.some((entry) => entry.id === result.document.id) ||
-          relatedIds.has(result.document.id),
-      )
+      .map((document) => {
+        const title = (
+          document.title +
+          " " +
+          (document.aliases ?? []).join(" ")
+        ).toLocaleLowerCase();
+        const body = document.bodyMd.toLocaleLowerCase();
+        const searchText = (
+          document.title +
+          document.bodyMd +
+          (document.aliases ?? []).join(" ")
+        ).toLocaleLowerCase();
+        return {
+          document,
+          matches:
+            !terms.length ||
+            terms.some((term) => searchText.includes(term)) ||
+            semanticById.has(document.id) ||
+            relatedIds.has(document.id),
+          score:
+            terms.reduce(
+              (score, term) =>
+                score +
+                (title.includes(term) ? 8 : 0) +
+                (body.includes(term) ? 2 : 0),
+              0,
+            ) +
+            (semanticById.get(document.id) ?? 0) +
+            (relatedIds.has(document.id) ? 3 : 0) +
+            (linkCountById.get(document.id) ?? 0) * 0.1 +
+            1 /
+              (1 +
+                Math.max(0, now - (Date.parse(document.updatedAt) || 0)) /
+                  86400000) +
+            1 / (1 + (spaceOrder.get(document.spaceId ?? "") ?? -1)),
+        };
+      })
+      .filter((result) => result.matches)
       .sort(
         (left, right) =>
-          scope.spaceIds.indexOf(left.document.spaceId ?? "") -
-            scope.spaceIds.indexOf(right.document.spaceId ?? "") ||
+          (spaceOrder.get(left.document.spaceId ?? "") ?? -1) -
+            (spaceOrder.get(right.document.spaceId ?? "") ?? -1) ||
           right.score - left.score ||
           right.document.updatedAt.localeCompare(left.document.updatedAt),
       )
-      .slice(0, Math.max(1, Math.min(limit, 50)));
+      .slice(0, Math.max(1, Math.min(limit, 50)))
+      .map(({ document, score }) => ({ document, score }));
   }
 }

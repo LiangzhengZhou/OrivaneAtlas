@@ -1,5 +1,4 @@
 @import url("./base.css");
-@import url("./components/ui/controls.css");
 .virtual-task-scroll {
   height: min(65dvh, 760px);
   min-height: 280px;
@@ -113,11 +112,11 @@ input[type="checkbox"] {
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 14px;
-  color: #61724e;
+  color: var(--text-secondary);
 }
 .task-due {
   font-size: 14px;
-  color: #787469;
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 .schedule-fields {
@@ -152,12 +151,12 @@ input[type="checkbox"] {
 .project-description {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: #70766f;
+  color: var(--text-secondary);
   max-height: 100px;
   overflow: auto;
   min-height: 40px;
 }
-.project-card .text-button {
+.project-card .ui-button-text {
   margin: 0;
 }
 .project-card-actions {
@@ -184,7 +183,7 @@ input[type="checkbox"] {
 .task-scope-heading p {
   margin: 0;
   flex: 1 1 300px;
-  color: #626b7b;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 .task-query-panel .filter-bar {
@@ -208,84 +207,12 @@ input[type="checkbox"] {
   font-size: 12px;
 }
 .activation-badge.active {
-  background: #e8f5ed;
-  color: #286648;
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
 }
 .activation-badge.inactive {
   background: var(--surface-subtle);
-  color: #596476;
-}
-.calendar-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
-  gap: 20px;
-  align-items: start;
-}
-.calendar-panel,
-.agenda-panel {
-  padding: 20px;
-  min-width: 0;
-}
-.calendar-controls,
-.agenda-tabs {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.calendar-week,
-.calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-}
-.calendar-week {
-  padding: 16px 0 12px;
-  text-align: center;
-  color: #71776e;
-  font-size: 15px;
-}
-.calendar-grid {
-  gap: 4px;
-}
-.calendar-day {
-  min-height: 90px;
-  min-width: 0;
-  padding: 8px;
-  border: 1px solid #e9ece5;
-  background: var(--surface);
-  color: inherit;
-  border-radius: 8px;
-  text-align: start;
-  cursor: pointer;
-}
-.calendar-day:hover,
-.calendar-day.selected {
-  border-color: #647c45;
-  background: #eef3e8;
-}
-.calendar-day.is-today > span:first-child {
-  color: #426027;
-  font-weight: 800;
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-.calendar-count {
-  float: right;
-  border-radius: 8px;
-  background: #e1e9d6;
-  font-size: 13px;
-  padding: 1px 4px;
-}
-.calendar-preview small {
-  display: block;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 6px;
-}
-.agenda-panel h2 {
-  margin-top: 24px;
+  color: var(--text-secondary);
 }
 .agenda-item {
   display: flex;
@@ -297,40 +224,20 @@ input[type="checkbox"] {
   color: inherit;
   padding: 16px 0;
   border: 0;
-  border-bottom: 1px solid #e9ece5;
+  border-bottom: 1px solid var(--border-default);
   cursor: pointer;
   overflow-wrap: anywhere;
 }
 .agenda-item small {
-  color: #767d70;
+  color: var(--text-secondary);
 }
 .import-field {
   padding: 14px;
-  background: #f4f6ef;
+  background: var(--surface-subtle);
   border-radius: 10px;
 }
-@media (max-width: 1050px) {
-  .calendar-layout {
-    grid-template-columns: 1fr;
-  }
-}
+
 @media (max-width: 600px) {
-  .calendar-panel {
-    padding: 12px;
-  }
-  .calendar-day {
-    min-height: 54px;
-    padding: 5px;
-  }
-  .calendar-preview {
-    display: none;
-  }
-  .calendar-count {
-    float: none;
-    display: block;
-    width: fit-content;
-    margin-top: 4px;
-  }
   .schedule-fields {
     grid-template-columns: 1fr;
   }
@@ -345,7 +252,7 @@ input[type="checkbox"] {
   min-width: 0;
   padding: 24px;
   background: var(--surface);
-  border: 1px solid #e2e7dc;
+  border: 1px solid var(--border-default);
   border-radius: 16px;
   overflow-wrap: anywhere;
 }
@@ -354,7 +261,7 @@ input[type="checkbox"] {
   margin: 0;
 }
 .connected-panel p {
-  color: #596153;
+  color: var(--text-secondary);
   font-size: 0.95rem;
   line-height: 1.65;
 }
@@ -372,7 +279,7 @@ input[type="checkbox"] {
   min-width: 0;
   padding: 11px;
   font: inherit;
-  border: 1px solid #ccd5c3;
+  border: 1px solid var(--border-default);
   border-radius: 8px;
   background: var(--surface);
 }
@@ -390,7 +297,7 @@ input[type="checkbox"] {
   width: 100%;
   text-align: start;
   border: 0;
-  border-bottom: 1px solid #e9ece5;
+  border-bottom: 1px solid var(--border-default);
   padding: 18px 12px;
   background: transparent;
   color: inherit;
@@ -398,7 +305,7 @@ input[type="checkbox"] {
 }
 .knowledge-result:hover,
 .knowledge-result.selected {
-  background: #edf3e5;
+  background: var(--surface-subtle);
   border-radius: 8px;
 }
 .knowledge-result strong {
@@ -406,11 +313,11 @@ input[type="checkbox"] {
 }
 .knowledge-result small,
 .knowledge-link small {
-  color: #627250;
+  color: var(--text-secondary);
   font-size: 0.875rem;
 }
 .knowledge-result span {
-  color: #62695c;
+  color: var(--text-secondary);
   font-size: 0.875rem;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -428,7 +335,7 @@ input[type="checkbox"] {
   gap: 12px;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #e9ece5;
+  border-bottom: 1px solid var(--border-default);
   padding: 14px 0;
 }
 .knowledge-link > button:first-child {
@@ -459,9 +366,9 @@ input[type="checkbox"] {
 }
 .connected-notice {
   padding: 16px;
-  border-left: 3px solid #668d39;
+  border-left: 3px solid var(--border-default);
   border-radius: 4px;
-  background: #f0f5e9;
+  background: var(--surface-subtle);
   margin: 20px 0;
   font-size: 0.95rem;
   line-height: 1.6;
@@ -471,7 +378,7 @@ input[type="checkbox"] {
   font-size: 0.875rem;
 }
 .ai-run {
-  border-top: 1px solid #dfe6d7;
+  border-top: 1px solid var(--border-default);
   padding: 22px 0;
 }
 .run-prompt {
@@ -481,7 +388,7 @@ input[type="checkbox"] {
   font-size: 0.95rem;
   line-height: 1.6;
   padding: 16px;
-  background: #f6f7f3;
+  background: var(--surface-subtle);
   max-height: 320px;
   overflow-y: auto;
   border-radius: 10px;
@@ -526,19 +433,19 @@ input[type="checkbox"] {
   justify-content: space-between;
   gap: 16px;
   padding: 16px 0;
-  border-bottom: 1px solid #e2e8e5;
+  border-bottom: 1px solid var(--border-default);
   overflow-wrap: anywhere;
 }
 .token-row small {
   display: block;
-  color: #65756e;
+  color: var(--text-secondary);
   margin-top: 6px;
 }
 .secret-once {
   margin: 20px 0;
   padding: 18px;
-  background: #fff7df;
-  border: 1px solid #dfc982;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-default);
   border-radius: 12px;
 }
 .secret-once textarea {
@@ -548,10 +455,6 @@ input[type="checkbox"] {
 }
 .library-toolbar {
   margin-bottom: 24px;
-}
-.space-card {
-  min-height: 220px;
-  border-top: 4px solid #648a76;
 }
 .lecture-editor {
   padding: 28px;
@@ -575,8 +478,8 @@ input[type="checkbox"] {
   margin-bottom: 14px;
 }
 .lecture-meta {
-  color: #758379;
-  border-bottom: 1px solid #e0e5df;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-default);
   padding-bottom: 22px;
 }
 .markdown img {
@@ -588,7 +491,7 @@ input[type="checkbox"] {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   padding: 18px;
-  background: #f3f5f2;
+  background: var(--surface-subtle);
   border-radius: 8px;
 }
 .markdown table {
@@ -598,7 +501,7 @@ input[type="checkbox"] {
 }
 .markdown th,
 .markdown td {
-  border: 1px solid #dce3dc;
+  border: 1px solid var(--border-default);
   padding: 8px 12px;
 }
 .markdown .katex-display {

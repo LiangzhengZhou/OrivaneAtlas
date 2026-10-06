@@ -4,13 +4,7 @@
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  min-height: 40px;
-  padding: 8px 12px;
   text-align: start;
-  background: var(--surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border-default);
-  border-radius: 8px;
 }
 .date-field-validity {
   position: absolute;
@@ -33,27 +27,34 @@
   justify-content: space-between;
   gap: 8px;
 }
-.calendar-grid {
+.calendar-popover .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 3px;
   margin: 12px 0;
   text-align: center;
 }
-.calendar-grid span {
+.calendar-popover .calendar-grid span {
   font-size: 12px;
   padding: 4px 0;
   color: var(--text-muted);
 }
-.calendar-grid button {
+.calendar-popover .calendar-grid .ui-pressable {
+  display: grid;
+  place-items: center;
   min-height: 32px;
   padding: 3px;
   border: 0;
   border-radius: 6px;
 }
-.calendar-grid button[aria-pressed="true"] {
+.calendar-popover .calendar-grid .ui-pressable[aria-pressed="true"] {
   background: var(--accent);
   color: var(--on-accent);
+}
+@media (pointer: coarse) {
+  .calendar-popover .calendar-grid .ui-pressable {
+    min-height: 44px;
+  }
 }
 
 .calendar-month-controls {

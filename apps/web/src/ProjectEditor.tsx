@@ -133,7 +133,7 @@ export function ProjectEditor({
           </h2>
           <Button
             type="button"
-            className="chip"
+            variant="toggle"
             disabled={busy}
             onClick={close}
           >
@@ -148,12 +148,12 @@ export function ProjectEditor({
         {discard && (
           <div className="error">
             {t("desk:discardHint")}
-            <Button type="button" className="button danger" onClick={onClose}>
+            <Button type="button" variant="danger" onClick={onClose}>
               {t("desk:discard")}
             </Button>
             <Button
               type="button"
-              className="button secondary"
+              variant="secondary"
               onClick={() => setDiscard(false)}
             >
               {t("cancel")}
@@ -303,7 +303,7 @@ export function ProjectEditor({
           {onDelete && (
             <Button
               type="button"
-              className="button danger"
+              variant="danger"
               disabled={busy}
               onClick={() => void onDelete()}
             >
@@ -313,7 +313,7 @@ export function ProjectEditor({
           <div className="action-spacer" />
           <Button
             type="button"
-            className="button secondary"
+            variant="secondary"
             disabled={busy}
             onClick={close}
           >
@@ -322,7 +322,6 @@ export function ProjectEditor({
           <Button
             variant="primary"
             type="submit"
-            className="button primary"
             disabled={busy || !title.trim() || invalidParent || blocked}
           >
             {item ? t("save") : t("desk:createProject")}

@@ -5,19 +5,23 @@ export function VirtualTaskCollection<T extends { id: string }>({
   items,
   render,
   board = false,
+  virtualizeAfter = board ? 50 : 100,
+  estimatedRowHeight = board ? 155 : 96,
 }: {
   items: readonly T[];
   render(item: T): ReactNode;
   board?: boolean;
+  virtualizeAfter?: number;
+  estimatedRowHeight?: number;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const threshold = board ? 50 : 100;
+  const threshold = virtualizeAfter;
   const virtual = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
     getItemKey: (index) => items[index]!.id,
-    estimateSize: () => (board ? 155 : 96),
-    overscan: 6,
+    estimateSize: () => estimatedRowHeight,
+    overscan: board ? 4 : 3,
     enabled: items.length > threshold,
   });
   if (items.length <= threshold)

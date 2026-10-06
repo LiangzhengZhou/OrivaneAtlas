@@ -114,7 +114,7 @@ export function Login({
               >
                 <Button
                   type="button"
-                  className="button secondary"
+                  variant="secondary"
                   disabled={busy}
                   onClick={async () => {
                     setServer(item.serverUrl);
@@ -140,7 +140,7 @@ export function Login({
                 <small>{item.serverUrl}</small>
                 <Button
                   type="button"
-                  className="button secondary"
+                  variant="secondary"
                   disabled={busy}
                   aria-label={forgetLabel + " " + item.displayName}
                   onClick={async () => {
@@ -210,7 +210,6 @@ export function Login({
         )}
         <Button
           variant="primary"
-          className="button primary"
           disabled={busy || !server.trim() || !username.trim() || !password}
           type="submit"
         >

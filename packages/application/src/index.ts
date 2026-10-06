@@ -1139,6 +1139,7 @@ export {
 } from "./model-gateway";
 export * from "./model-route-resolver";
 export * from "./note-knowledge";
+export * from "./note-wiki-references";
 export * from "./notifications";
 export type {
   PersonalModelInput,
@@ -1153,4 +1154,5 @@ export * from "./retrieval";
 export * from "./retrieval-context-resolver";
 export * from "./trusted-ai-endpoint";
 export type { AppUpdateInfo, AppUpdateProgress, AppUpdates } from "./updates";
+export * from "./workspace-bootstrap";
 export * from "./workspace-changes";

@@ -77,20 +77,37 @@ export function TaskEntityPicker({
   const path = scopeProjectId
     ? fullPath.slice(Math.max(0, fullPath.indexOf(scopeProjectId)))
     : fullPath;
-  const children = current
-    ? (index.childrenByProjectId.get(current) ?? [])
-    : [...index.projectsById.keys()].filter(
-        (id) =>
-          accessible.has(id) &&
-          !accessible.has(index.parentProjectById.get(id) ?? ""),
-      );
+  const queryLower = query.toLocaleLowerCase();
+  const children = useMemo(
+    () =>
+      current
+        ? (index.childrenByProjectId.get(current) ?? [])
+        : [...index.projectsById.keys()].filter(
+            (id) =>
+              accessible.has(id) &&
+              !accessible.has(index.parentProjectById.get(id) ?? ""),
+          ),
+    [accessible, current, index],
+  );
   const taskIds = current
     ? (index.tasksByProjectId.get(current) ?? [])
     : index.unassignedTaskIds;
   const matches = (id: string) =>
     accessible.has(id) &&
     !excludedIds?.has(id) &&
-    index.searchTextByWorkId.get(id)?.includes(query.toLocaleLowerCase());
+    index.searchTextByWorkId.get(id)?.includes(queryLower);
+  const visibleChildren = useMemo(
+    () => children.filter(matches),
+    [children, excludedIds, accessible, index, queryLower],
+  );
+  const visibleTasks = useMemo(
+    () => taskIds.filter(matches).map((id) => ({ id })),
+    [taskIds, excludedIds, accessible, index, queryLower],
+  );
+  const visibleRecent = useMemo(
+    () => (!query ? recent.filter((id) => taskIds.includes(id)) : []),
+    [query, recent, taskIds],
+  );
   const choose = (id: string) => {
     if (
       disabled ||
@@ -169,6 +186,7 @@ export function TaskEntityPicker({
           label={label ?? t("prerequisites")}
           placement="bottom-start"
           className="hierarchy-browser"
+          deferFocus
         >
           <nav aria-label={zh ? "任务路径" : "Task path"}>
             {!scopeProjectId && (
@@ -201,7 +219,7 @@ export function TaskEntityPicker({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          {children.filter(matches).map((id) => (
+          {visibleChildren.map((id) => (
             <Button
               key={id}
               variant="text"
@@ -214,13 +232,13 @@ export function TaskEntityPicker({
             </Button>
           ))}
           <VirtualTaskCollection
-            items={taskIds.filter(matches).map((id) => ({ id }))}
+            items={visibleTasks}
             render={(entry) => row(entry.id)}
           />
-          {!query && recent.length > 0 && (
+          {visibleRecent.length > 0 && (
             <section aria-label={zh ? "最近" : "Recent"}>
               <small>{zh ? "最近" : "Recent"}</small>
-              {recent.filter((id) => taskIds.includes(id)).map(row)}
+              {visibleRecent.map(row)}
             </section>
           )}
         </AnchoredFloatingSurface>

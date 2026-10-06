@@ -12,6 +12,7 @@
     "@arclattice/application": "workspace:*",
     "@arclattice/domain": "workspace:*",
     "@arclattice/storage-sqlite": "workspace:*",
+    "@arclattice/wiki-core": "workspace:*",
     "uuid": "14.0.2"
   },
   "devDependencies": {

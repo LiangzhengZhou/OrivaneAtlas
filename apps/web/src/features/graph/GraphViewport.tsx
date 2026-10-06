@@ -7,21 +7,27 @@ import {
   ReactFlow,
   useNodesState,
   useReactFlow,
+  type Viewport,
 } from "@xyflow/react";
 import { Expand, Maximize, Minus, Plus, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DismissibleDialog } from "../../app/DismissibleDialog";
 import { Button, IconButton } from "../../components/ui/Button";
-import { EmptyState, Tooltip } from "../../components/ui/Surfaces";
+import { MenuItem } from "../../components/ui/Content";
+import { EmptyState, Menu, Tooltip } from "../../components/ui/Surfaces";
 import "@xyflow/react/dist/style.css";
 
 function SpaceClusterNode({ data }: NodeProps<Node<{ label: string }>>) {
   return <div className="space-cluster-label">{data.label}</div>;
 }
 const nodeTypes = { spaceCluster: SpaceClusterNode };
+export interface GraphViewportStateProps {
+  initialViewport?: Viewport | undefined;
+  onViewportChange?: ((viewport: Viewport) => void) | undefined;
+}
 
-function GraphControls() {
+function GraphControls({ onViewportIntent }: { onViewportIntent(): void }) {
   const flow = useReactFlow();
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
@@ -31,7 +37,10 @@ function GraphControls() {
         <Tooltip label={zh ? "放大" : "Zoom in"}>
           <IconButton
             label={zh ? "放大" : "Zoom in"}
-            onClick={() => void flow.zoomIn()}
+            onClick={() => {
+              onViewportIntent();
+              void flow.zoomIn();
+            }}
           >
             <Plus />
           </IconButton>
@@ -39,7 +48,10 @@ function GraphControls() {
         <Tooltip label={zh ? "缩小" : "Zoom out"}>
           <IconButton
             label={zh ? "缩小" : "Zoom out"}
-            onClick={() => void flow.zoomOut()}
+            onClick={() => {
+              onViewportIntent();
+              void flow.zoomOut();
+            }}
           >
             <Minus />
           </IconButton>
@@ -47,7 +59,10 @@ function GraphControls() {
         <Tooltip label={zh ? "适应视图" : "Fit View"}>
           <IconButton
             label={zh ? "适应视图" : "Fit View"}
-            onClick={() => void flow.fitView()}
+            onClick={() => {
+              onViewportIntent();
+              void flow.fitView();
+            }}
           >
             <Maximize />
           </IconButton>
@@ -69,6 +84,8 @@ export function GraphViewport({
   workspace = false,
   selectionId,
   layoutKey,
+  initialViewport,
+  onViewportChange,
 }: {
   emptyState?: ReactNode;
   toolbar?: ReactNode;
@@ -81,7 +98,7 @@ export function GraphViewport({
   workspace?: boolean;
   selectionId?: string | undefined;
   layoutKey: string;
-}) {
+} & GraphViewportStateProps) {
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(
     selectionId === undefined
       ? nodes
@@ -120,6 +137,9 @@ export function GraphViewport({
   );
   const selected = nodes.find((node) => node.id === selectedId);
   const [expanded, setExpanded] = useState(false);
+  const menuAnchor = useRef<HTMLElement | null>(null);
+  const [menuNode, setMenuNode] = useState<Node | null>(null);
+  const viewportIntent = useRef(false);
   const { t, i18n } = useTranslation("desk");
   return (
     <DismissibleDialog
@@ -133,14 +153,15 @@ export function GraphViewport({
     >
       <Button
         type="button"
-        className="icon-button graph-expand-button"
+        variant="ghost"
+        className="ui-icon-button graph-expand-button"
         aria-label={t(expanded ? "common:close" : "expandGraph")}
         onClick={() => setExpanded(!expanded)}
       >
         {expanded ? <X size={18} /> : <Expand size={18} />}
       </Button>
       {onWorkspace && (
-        <Button type="button" className="chip" onClick={onWorkspace}>
+        <Button type="button" variant="toggle" onClick={onWorkspace}>
           {t("openGraphWorkspace", { defaultValue: "Open Graph Workspace" })}
         </Button>
       )}
@@ -148,6 +169,18 @@ export function GraphViewport({
       <div className="graph-body">
         <div
           className="graph-viewport"
+          onKeyDownCapture={(event) => {
+            if (event.key !== "Enter" || !(event.target instanceof HTMLElement))
+              return;
+            const id = event.target
+              .closest(".react-flow__node")
+              ?.getAttribute("data-id");
+            if (id) {
+              event.preventDefault();
+              event.stopPropagation();
+              onOpen(id);
+            }
+          }}
           style={{
             height: workspace
               ? "calc(100dvh - 240px)"
@@ -182,15 +215,57 @@ export function GraphViewport({
               autoPanOnNodeFocus={false}
               zoomOnDoubleClick={false}
               onNodeDoubleClick={(_, node) => onOpen(node.id)}
-              fitView
+              onNodeContextMenu={(event, node) => {
+                if (node.selectable === false) return;
+                event.preventDefault();
+                const target = event.target;
+                menuAnchor.current =
+                  target instanceof HTMLElement
+                    ? target.closest<HTMLElement>(".react-flow__node")
+                    : null;
+                if (!menuAnchor.current) return;
+                setSelectedId(node.id);
+                onSelect?.(node.id);
+                setMenuNode(node);
+              }}
+              fitView={!initialViewport}
+              {...(initialViewport ? { defaultViewport: initialViewport } : {})}
+              onMoveStart={(event) => {
+                if (event) viewportIntent.current = true;
+              }}
+              onMoveEnd={(_, viewport) => {
+                if (!viewportIntent.current) return;
+                viewportIntent.current = false;
+                onViewportChange?.(viewport);
+              }}
               minZoom={0.1}
               maxZoom={2}
             >
               <Background />
-              <GraphControls />
+              <GraphControls
+                onViewportIntent={() => {
+                  viewportIntent.current = true;
+                }}
+              />
             </ReactFlow>
           )}
         </div>
+        {menuNode && (
+          <Menu
+            anchorRef={menuAnchor}
+            label={i18n.language.startsWith("zh") ? "节点操作" : "Node actions"}
+            onDismiss={() => setMenuNode(null)}
+          >
+            <MenuItem
+              onClick={() => {
+                setMenuNode(null);
+                onOpen(menuNode.id);
+              }}
+            >
+              {i18n.language.startsWith("zh") ? "打开" : "Open"}
+            </MenuItem>
+          </Menu>
+        )}
         {inspector ?? (
           <aside className="graph-selection" aria-label={t("selectedEntity")}>
             <strong>

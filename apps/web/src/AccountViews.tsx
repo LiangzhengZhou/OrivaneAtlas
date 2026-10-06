@@ -90,7 +90,7 @@ export function AccountView({
           <div className="action-row">
             <Button
               type="button"
-              className="button secondary"
+              variant="secondary"
               disabled={busy}
               onClick={async () => {
                 if (await confirmLeave())
@@ -104,7 +104,7 @@ export function AccountView({
             </Button>
             <Button
               type="button"
-              className="button secondary"
+              variant="secondary"
               disabled={busy}
               onClick={async () => {
                 if (await confirmLeave())
@@ -119,7 +119,7 @@ export function AccountView({
             </Button>
             <Button
               type="button"
-              className="button secondary"
+              variant="secondary"
               disabled={busy}
               onClick={() =>
                 void run(async () => setSessions(await runtime.sessions()))
@@ -147,7 +147,7 @@ export function AccountView({
               </div>
               <Button
                 type="button"
-                className="button secondary"
+                variant="secondary"
                 disabled={busy}
                 onClick={async () => {
                   if (session.current && !(await confirmLeave())) return;
@@ -164,7 +164,7 @@ export function AccountView({
           ))}
           <Button
             type="button"
-            className="button secondary"
+            variant="secondary"
             disabled={busy || sessions.length === 0}
             onClick={async () => {
               if (
@@ -217,12 +217,7 @@ export function AccountView({
                 onChange={(e) => setPassword(e.target.value)}
               />
             </label>
-            <Button
-              variant="primary"
-              type="submit"
-              className="button primary"
-              disabled={busy || !!notice}
-            >
+            <Button variant="primary" type="submit" disabled={busy || !!notice}>
               {t("claim")}
             </Button>
           </form>
@@ -267,7 +262,7 @@ export function AccountView({
                 onChange={(e) => setPassword(e.target.value)}
               />
             </label>
-            <Button type="submit" className="button secondary" disabled={busy}>
+            <Button type="submit" variant="secondary" disabled={busy}>
               {t("passwordChange")}
             </Button>
           </form>
@@ -278,7 +273,7 @@ export function AccountView({
         <p>{t("tokenHint")}</p>
         <p className="muted">{t("apiExample")}</p>
         <a
-          className="button secondary"
+          className="ui-button ui-button-secondary"
           href="/api/openapi.json"
           download="arclattice-openapi.json"
         >
@@ -345,7 +340,6 @@ export function AccountView({
               <Button
                 variant="primary"
                 type="submit"
-                className="button primary"
                 disabled={busy || !!secret}
               >
                 {t("issue")}
@@ -362,7 +356,7 @@ export function AccountView({
                 />
                 <Button
                   type="button"
-                  className="button secondary"
+                  variant="secondary"
                   onClick={() => setSecret("")}
                 >
                   {t("closeSecret")}
@@ -382,7 +376,7 @@ export function AccountView({
                     </small>
                   </div>
                   <Button
-                    className="button secondary"
+                    variant="secondary"
                     type="button"
                     disabled={busy || !!item.revokedAt}
                     onClick={() =>
@@ -486,7 +480,7 @@ export function AdminView({ runtime }: { runtime: Runtime }) {
           <h2>{t("accounts")}</h2>
           <Button
             type="button"
-            className="button secondary"
+            variant="secondary"
             onClick={() => void refresh().catch(() => setError(true))}
           >
             {t("refresh")}
@@ -506,7 +500,7 @@ export function AdminView({ runtime }: { runtime: Runtime }) {
                 {(["ACTIVE", "DISABLED"] as const).map((status) => (
                   <Button
                     type="button"
-                    className="button secondary"
+                    variant="secondary"
                     key={status}
                     disabled={busy || account.status === status}
                     onClick={() => {

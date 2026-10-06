@@ -1,4 +1,8 @@
-import type { LibraryEntry, Note } from "@arclattice/application";
+import {
+  bodyLoaded,
+  type WorkspaceLibraryEntry as LibraryEntry,
+  type WorkspaceNote as Note,
+} from "@arclattice/application";
 import { parseWikiLinks, resolveWikiLinks } from "@arclattice/wiki-core";
 
 export function noteWikiReferences(
@@ -12,6 +16,7 @@ export function noteWikiReferences(
       library.some((space) => space.id === entry.spaceId && !space.deletedAt),
   );
   return notes
+    .filter(bodyLoaded)
     .filter((note) => !note.deletedAt)
     .flatMap((note) =>
       resolveWikiLinks(

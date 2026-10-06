@@ -46,15 +46,15 @@ export function NoteKnowledgeActions({
     >
       <Button
         type="button"
-        className="chip"
+        variant="toggle"
         disabled={disabled || pending}
         onClick={() => setAction("promote")}
       >
-        {zh ? "提升为 Wiki 页面" : "Promote to Wiki page"}
+        {zh ? "整理到知识库" : "Organize in Library"}
       </Button>
       <Button
         type="button"
-        className="chip"
+        variant="toggle"
         disabled={disabled || pending}
         onClick={() => setAction("link")}
       >
@@ -75,7 +75,6 @@ export function NoteKnowledgeActions({
                 <Button
                   variant="ghost"
                   type="button"
-                  className="text-button"
                   onClick={() => onOpenWiki(link.targetDocumentId!)}
                 >
                   {link.alias ?? link.targetText}
@@ -136,7 +135,6 @@ export function NoteKnowledgeActions({
           <Button
             variant="primary"
             type="button"
-            className="button primary"
             disabled={!spaceId || pending}
             onClick={async () => {
               setPending(true);
@@ -176,7 +174,6 @@ export function NoteKnowledgeActions({
           <Button
             variant="ghost"
             type="button"
-            className="text-button"
             disabled={pending}
             onClick={() => setAction(null)}
           >

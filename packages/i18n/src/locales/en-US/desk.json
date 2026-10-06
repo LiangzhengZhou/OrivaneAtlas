@@ -171,7 +171,6 @@
   "today": "Today",
   "overdue": "Overdue",
   "unscheduled": "Unscheduled",
-  "calendarDatesHint": "Tasks appear on their start and due dates. No automatic reminders.",
   "scheduleEmpty": "Nothing here. A little room to breathe.",
   "backupDatabase": "Download database backup",
   "backupHint": "Includes all tasks, notes, revisions and events, but not the access key. Store securely. One download per minute, up to 64 MiB; restoring requires an administrator and a new database file.",

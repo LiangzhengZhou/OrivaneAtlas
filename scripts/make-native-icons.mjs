@@ -14,6 +14,9 @@ import { chromium } from "@playwright/test";
 // All application icon resources derive from the repository PNG source.
 // The Sidebar wordmark and Android monochrome status glyph remain separate assets.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// Preserve the pale source artwork; one contrasting backplate also keeps the
+// smallest Windows frames legible without tinting, cropping or redrawing it.
+const applicationBackground = "#172033";
 const master = (
   await readFile(path.join(root, "branding/application-icon-source.png"))
 ).toString("base64");
@@ -33,7 +36,7 @@ async function save(relative, bytes) {
 }
 async function png(
   size,
-  { padding = 0, background = "#ffffff", round = false } = {},
+  { padding = 0, background = applicationBackground, round = false } = {},
 ) {
   await page.setViewportSize({ width: size, height: size });
   await page.setContent(
@@ -186,6 +189,12 @@ try {
       await png(48 * scale, { round: true }),
     );
   }
+  await save(
+    "src-tauri/icons/android/values/ic_launcher_background.xml",
+    Buffer.from(
+      `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n  <color name="ic_launcher_background">${applicationBackground}</color>\n</resources>\n`,
+    ),
+  );
   async function mirror(relative) {
     const from = path.join(root, "src-tauri/icons/android", relative);
     for (const entry of await readdir(from, { withFileTypes: true })) {

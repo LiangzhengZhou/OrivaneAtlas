@@ -1,19 +1,10 @@
-.button,
-.chip,
 input,
 select {
   min-height: var(--control-height);
 }
-.primary {
-  color: var(--on-accent);
-  box-shadow: none;
-}
 .panel {
   padding: var(--panel-padding);
   border-radius: var(--radius-md);
-}
-.icon-button:hover {
-  background: var(--surface-hover);
 }
 .today-panel {
   background: var(--surface-subtle);
@@ -55,6 +46,13 @@ select {
   box-shadow: 0 4px 20px #0002;
 }
 @media (max-width: 767px) {
+  body:has(.toast-host .toast) .content {
+    padding-bottom: calc(
+      112px +
+      var(--toast-stack-height, 64px) +
+      env(safe-area-inset-bottom)
+    );
+  }
   .toast-host {
     right: 12px;
     left: 12px;
@@ -123,6 +121,10 @@ select {
   width: 100%;
   min-width: 0;
 }
+.conversation-list .virtual-task-scroll {
+  height: min(52dvh, 420px);
+  min-height: 0;
+}
 .conversation-list-filters {
   display: flex;
   flex-wrap: wrap;
@@ -133,7 +135,7 @@ select {
   font-size: 12px;
   color: var(--text-muted);
 }
-.conversation-list .text-button {
+.conversation-list .conversation-entry {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -141,7 +143,13 @@ select {
   text-align: left;
   white-space: normal;
 }
-.conversation-list .text-button[aria-current="page"] {
+.conversation-entry-title {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-list .conversation-entry[aria-current="page"] {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--accent);
 }
@@ -338,4 +346,9 @@ select {
 }
 .sidebar-collapsed .sidebar .nav-item {
   justify-content: center;
+}
+
+.task-priority-signal {
+  color: var(--text-muted);
+  font-size: var(--font-size-small, 12px);
 }

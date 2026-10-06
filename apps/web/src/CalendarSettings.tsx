@@ -80,14 +80,13 @@ export function CalendarSettings({
         <Button
           variant="primary"
           type="submit"
-          className="button primary"
           disabled={busy || !dirty || conflict}
         >
           {t("common:save")}
         </Button>
         <Button
           type="button"
-          className="button secondary"
+          variant="secondary"
           disabled={busy}
           onClick={() => {
             setBase(settings);
@@ -99,7 +98,7 @@ export function CalendarSettings({
         </Button>
         <Button
           type="button"
-          className="chip"
+          variant="toggle"
           disabled={busy}
           onClick={() => setTimezone("")}
         >

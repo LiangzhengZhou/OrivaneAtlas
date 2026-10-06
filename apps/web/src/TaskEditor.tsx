@@ -15,7 +15,7 @@ import { useTranslation } from "react-i18next";
 import { DismissibleDialog } from "./app/DismissibleDialog";
 import { DateField } from "./components/DateField";
 import { RepeatFields, type RepeatRule } from "./components/RepeatFields";
-import { Button } from "./components/ui/Button";
+import { Button, SegmentedControl } from "./components/ui/Button";
 import { Select } from "./components/ui/Surfaces";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
@@ -30,6 +30,7 @@ export function TaskEditor({
   edges = [],
   today,
   initialProjectId = "",
+  initialStartDate,
   busy,
   error,
   onClose,
@@ -57,7 +58,9 @@ export function TaskEditor({
   const [activationPolicy, setActivationPolicy] = useState<ActivationPolicy>(
     item?.activationPolicy ?? "MANUAL",
   );
-  const [startDate, setStartDate] = useState(item?.startDate ?? "");
+  const [startDate, setStartDate] = useState(
+    item ? (item.startDate ?? "") : (initialStartDate ?? ""),
+  );
   const [dueDate, setDueDate] = useState(item?.dueDate ?? "");
   const [prerequisiteIds, setPrerequisiteIds] = useState<string[]>(() =>
     item
@@ -158,7 +161,7 @@ export function TaskEditor({
       (seriesRule?.activationState ?? item?.activationState ?? "ACTIVE") ||
     activationPolicy !==
       (seriesRule?.activationPolicy ?? item?.activationPolicy ?? "MANUAL") ||
-    startDate !== (item?.startDate ?? "") ||
+    startDate !== (item ? (item.startDate ?? "") : (initialStartDate ?? "")) ||
     dueDate !== (item?.dueDate ?? "") ||
     JSON.stringify([...prerequisiteIds].sort()) !==
       JSON.stringify(initialPrerequisites);
@@ -289,7 +292,8 @@ export function TaskEditor({
           <h2 id="editor-heading">{item ? t("work:detail") : t("create")}</h2>
           <Button
             type="button"
-            className="icon-button"
+            variant="ghost"
+            className="ui-icon-button"
             aria-label={t("close")}
             disabled={busy}
             onClick={close}
@@ -306,7 +310,7 @@ export function TaskEditor({
           <div className="error">
             {t("desk:discardHint")}
             <Button
-              className="button danger"
+              variant="danger"
               type="button"
               onClick={() =>
                 pendingChange.current ? pendingChange.current() : onClose()
@@ -315,7 +319,7 @@ export function TaskEditor({
               {t("desk:discard")}
             </Button>
             <Button
-              className="button secondary"
+              variant="secondary"
               type="button"
               onClick={() => setDiscard(false)}
             >
@@ -391,32 +395,41 @@ export function TaskEditor({
                     ? "此任务属于一个周期任务"
                     : "This task belongs to a recurring series"}
                 </p>
-                <Button
-                  type="button"
-                  className={!seriesEditing ? "chip active" : "chip"}
-                  onClick={() => {
-                    if (!seriesEditing) return;
-                    changeEditScope(() => {
-                      setSeriesEditing(false);
-                      setRepeat(null);
-                      setTitle(item?.title ?? "");
-                      setDescription(item?.descriptionMd ?? "");
-                      setPriority(item?.priority ?? "MEDIUM");
-                      setExtraProjects([...(item?.projectIds ?? [])]);
-                      setActivationState(item?.activationState ?? "ACTIVE");
-                      setActivationPolicy(item?.activationPolicy ?? "MANUAL");
-                    });
-                  }}
-                >
-                  {i18n.language.startsWith("zh")
-                    ? "编辑本次"
-                    : "Edit this occurrence"}
-                </Button>
-                <Button
-                  type="button"
-                  className={seriesEditing ? "chip active" : "chip"}
-                  disabled={!definition}
-                  onClick={() => {
+                <SegmentedControl
+                  label={
+                    i18n.language.startsWith("zh") ? "修改范围" : "Edit scope"
+                  }
+                  value={seriesEditing ? "series" : "occurrence"}
+                  options={[
+                    {
+                      value: "occurrence",
+                      label: i18n.language.startsWith("zh")
+                        ? "编辑本次"
+                        : "Edit this occurrence",
+                    },
+                    {
+                      value: "series",
+                      label: i18n.language.startsWith("zh")
+                        ? "编辑整个系列"
+                        : "Edit entire series",
+                      disabled: !definition,
+                    },
+                  ]}
+                  onChange={(scope) => {
+                    if (scope === "occurrence") {
+                      if (!seriesEditing) return;
+                      changeEditScope(() => {
+                        setSeriesEditing(false);
+                        setRepeat(null);
+                        setTitle(item?.title ?? "");
+                        setDescription(item?.descriptionMd ?? "");
+                        setPriority(item?.priority ?? "MEDIUM");
+                        setExtraProjects([...(item?.projectIds ?? [])]);
+                        setActivationState(item?.activationState ?? "ACTIVE");
+                        setActivationPolicy(item?.activationPolicy ?? "MANUAL");
+                      });
+                      return;
+                    }
                     if (seriesEditing) return;
                     if (definition?.payload.kind === "RECURRENCE") {
                       const series = definition.payload;
@@ -434,11 +447,7 @@ export function TaskEditor({
                       });
                     }
                   }}
-                >
-                  {i18n.language.startsWith("zh")
-                    ? "编辑整个系列"
-                    : "Edit entire series"}
-                </Button>
+                />
                 {seriesEditing && (
                   <RepeatFields
                     rule={repeat}
@@ -561,7 +570,8 @@ export function TaskEditor({
           <span>{t("work:description")}</span>
           <div className="editor-toolbar">
             <Button
-              className={!preview ? "chip active" : "chip"}
+              variant="toggle"
+              aria-pressed={!preview}
               type="button"
               onClick={() => {
                 setPreview(false);
@@ -570,7 +580,8 @@ export function TaskEditor({
               {t("desk:write")}
             </Button>
             <Button
-              className={preview ? "chip active" : "chip"}
+              variant="toggle"
+              aria-pressed={preview}
               type="button"
               onClick={() => {
                 setPreview(true);
@@ -614,7 +625,7 @@ export function TaskEditor({
           {onDelete && (
             <Button
               type="button"
-              className="button danger"
+              variant="danger"
               disabled={busy}
               onClick={() => void onDelete()}
             >
@@ -624,7 +635,7 @@ export function TaskEditor({
           <div className="action-spacer" />
           <Button
             type="button"
-            className="button secondary"
+            variant="secondary"
             disabled={busy}
             onClick={close}
           >
@@ -633,7 +644,6 @@ export function TaskEditor({
           <Button
             variant="primary"
             type="submit"
-            className="button primary"
             disabled={busy || !title.trim()}
           >
             {item ? t("save") : t("create")}

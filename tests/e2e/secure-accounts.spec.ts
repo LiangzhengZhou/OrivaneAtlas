@@ -51,7 +51,8 @@ test("native secure account selector switches without password and forgets local
       const reply = (status: number, value: unknown) => ({
         status,
         contentType: "application/json",
-        body: btoa(JSON.stringify(value)),
+        encoding: "utf8",
+        body: JSON.stringify(value),
       });
       Object.assign(window, {
         isTauri: true,
@@ -104,35 +105,55 @@ test("native secure account selector switches without password and forgets local
                     role: "MEMBER",
                   },
                 });
-              if (args.path?.startsWith("/api/sync"))
+              const note = {
+                id: "shared-note",
+                workspaceId: "workspace",
+                kind: "NOTE",
+                title: "Remote note",
+                bodyMd: "Remote body",
+                version: 1,
+                day: null,
+                createdAt: "2026-09-18T00:00:00Z",
+                updatedAt: "2026-09-18T00:00:00Z",
+                createdBy: "same-account",
+                updatedBy: "same-account",
+                deletedAt: null,
+              };
+              if (args.path === "/api/bootstrap") {
+                const { bodyMd, ...metadata } = note;
                 return reply(200, {
-                  cursor: "cursor",
-                  snapshot: {
+                  schemaVersion: 1,
+                  cursor: 0,
+                  epoch: "secure-account-fixture",
+                  library: [],
+                  workspace: {
                     items: [],
                     edges: [],
-                    notes: [
-                      {
-                        id: "shared-note",
-                        workspaceId: "workspace",
-                        kind: "NOTE",
-                        title: "Remote note",
-                        bodyMd: "Remote body",
-                        version: 1,
-                        day: null,
-                        createdAt: "2026-09-18T00:00:00Z",
-                        updatedAt: "2026-09-18T00:00:00Z",
-                        createdBy: "same-account",
-                        updatedBy: "same-account",
-                        deletedAt: null,
-                      },
-                    ],
-                    library: [],
                     links: [],
                     organization: [],
                     categories: [],
                     workflows: [],
                     projectMaterials: [],
+                    reminders: [],
+                    calendarTimezone: "UTC",
+                    calendarSettingsVersion: 1,
                   },
+                  notes: [
+                    {
+                      ...metadata,
+                      bodyState: "UNLOADED",
+                      bodyCharacterCount: bodyMd.length,
+                    },
+                  ],
+                });
+              }
+              if (args.path?.startsWith("/api/document/body"))
+                return reply(200, note);
+              if (args.path?.startsWith("/api/sync"))
+                return reply(200, {
+                  cursor: 0,
+                  epoch: "secure-account-fixture",
+                  changes: { collections: {}, values: {} },
                 });
               if (args.path === "/api/logout")
                 throw new Error("Switch must never logout");
@@ -189,15 +210,17 @@ test("native secure account selector switches without password and forgets local
     await expect(page.locator(".app-shell")).toBeVisible();
     await page.evaluate(() => {
       location.hash = "notes";
-      window.dispatchEvent(new HashChangeEvent("hashchange"));
     });
     await page.locator(".note-card").filter({ hasText: "Remote note" }).click();
+    await page
+      .locator(".note-card")
+      .filter({ hasText: "Remote note" })
+      .press("Enter");
     await expect(
       page.getByRole("tab", { name: /research private draft/ }),
     ).toBeVisible();
     await page.evaluate(() => {
       location.hash = "account";
-      window.dispatchEvent(new HashChangeEvent("hashchange"));
     });
     const switcher = page.getByRole("button", {
       name: /^(Switch account|切换账户)$/,
@@ -215,9 +238,12 @@ test("native secure account selector switches without password and forgets local
     await expect(page.locator(".app-shell")).toBeVisible();
     await page.evaluate(() => {
       location.hash = "notes";
-      window.dispatchEvent(new HashChangeEvent("hashchange"));
     });
     await page.locator(".note-card").filter({ hasText: "Remote note" }).click();
+    await page
+      .locator(".note-card")
+      .filter({ hasText: "Remote note" })
+      .press("Enter");
     await expect(
       page.getByRole("tab", { name: /personal private draft/ }),
     ).toBeVisible();
@@ -226,7 +252,6 @@ test("native secure account selector switches without password and forgets local
     ).toHaveCount(0);
     await page.evaluate(() => {
       location.hash = "account";
-      window.dispatchEvent(new HashChangeEvent("hashchange"));
     });
     await switcher.click();
     await expect(confirmation).toBeVisible();

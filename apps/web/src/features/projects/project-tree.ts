@@ -60,3 +60,22 @@ export function projectProgressIndex(items: readonly WorkItem[]) {
   }
   return result;
 }
+
+export function visibleProjectBranches(
+  children: ReadonlyMap<string | null, readonly WorkItem[]>,
+  parentId: string | null,
+  expandedIds: ReadonlySet<string>,
+) {
+  const result: WorkItem[] = [];
+  const visited = new Set(parentId ? [parentId] : []);
+  function visit(parent: string | null) {
+    for (const project of children.get(parent) ?? []) {
+      if (visited.has(project.id)) continue;
+      visited.add(project.id);
+      result.push(project);
+      if (expandedIds.has(project.id)) visit(project.id);
+    }
+  }
+  visit(parentId);
+  return result;
+}

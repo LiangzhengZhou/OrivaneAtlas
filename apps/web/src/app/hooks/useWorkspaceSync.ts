@@ -35,7 +35,7 @@ export function useWorkspaceSync(
     async (showError: boolean) => {
       const sequence = ++generation.current;
       try {
-        const value = await runtime.snapshot();
+        const value = await runtime.loadWorkspace();
         if (
           !mounted.current ||
           identityRef.current !== identity ||

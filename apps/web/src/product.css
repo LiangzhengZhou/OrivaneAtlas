@@ -2,24 +2,7 @@ body {
   background: var(--canvas);
   color: var(--text);
 }
-:root[data-theme="dark"] :is(.task-query-panel, .search, .task-scope-heading) {
-  background: var(--surface);
-  color: var(--muted);
-  border-color: var(--border);
-}
-:root[data-theme="dark"]
-  :is(.task-title, .breadcrumb strong, .project-card h3, .agenda-item strong) {
-  color: var(--text);
-}
-:root[data-theme="dark"] .search input {
-  background: transparent;
-}
-:root[data-theme="dark"] .task-scope-heading p {
-  color: var(--muted);
-}
-:root[data-theme="dark"] .task-card:hover {
-  background: var(--soft);
-}
+
 .calendar-settings {
   display: grid;
   gap: 14px;
@@ -64,13 +47,13 @@ body {
 .parent-tree-choice[aria-selected="true"] {
   background: var(--soft);
   color: var(--accent);
-  font-weight: 650;
+  font-weight: 600;
 }
 .parent-tree-choice[aria-disabled="true"] {
   opacity: 0.5;
   cursor: not-allowed;
 }
-.parent-tree-row .chip {
+.parent-tree-row .ui-button-toggle {
   min-width: 32px;
 }
 .task-dialog fieldset > label:has(input[type="checkbox"]) {
@@ -131,13 +114,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.task-list .task-meta .icon-button {
+.task-list .task-meta .ui-icon-button {
   width: 30px;
   height: 30px;
   opacity: 0.5;
 }
-.task-list .task-card:hover .icon-button,
-.task-list .task-card:focus-within .icon-button {
+.task-list .task-card:hover .ui-icon-button,
+.task-list .task-card:focus-within .ui-icon-button {
   opacity: 1;
 }
 .task-list .status-select {
@@ -192,112 +175,7 @@ body {
 .mobile-bottom-navigation {
   display: none;
 }
-:root[data-theme="dark"]
-  :is(
-    .sidebar,
-    .topbar,
-    .panel,
-    .task-dialog,
-    .document-pane,
-    .document-tabs,
-    .document-toolbar,
-    .lecture-paper,
-    .lecture-editor,
-    .board-column,
-    .task-card,
-    .project-card,
-    .filter-bar,
-    .note-card,
-    .settings-panel,
-    .graph-section,
-    .account-card,
-    .login-card,
-    .today-panel,
-    .stat-card,
-    .library-toolbar,
-    .calendar-grid,
-    .calendar-day,
-    .project-workspace-header,
-    .project-summary
-  ) {
-  background: var(--surface);
-  color: var(--text);
-  border-color: var(--border);
-}
-:root[data-theme="dark"]
-  :is(
-    input,
-    select,
-    textarea,
-    .button.secondary,
-    .chip,
-    .agenda-item,
-    .category-manager button,
-    .workflow-manager button
-  ) {
-  background: var(--soft);
-  color: var(--text);
-  border-color: var(--border);
-}
-:root[data-theme="dark"]
-  :is(
-    .nav-item.active,
-    .chip.active,
-    .document-tabs button[aria-selected="true"]
-  ) {
-  background: var(--surface-active);
-  color: var(--accent);
-}
-:root[data-theme="dark"]
-  :is(
-    .muted,
-    .metadata,
-    .task-project,
-    .breadcrumb,
-    .workspace-footer,
-    .page-heading p,
-    .nav-item,
-    .filter-bar label,
-    .settings-panel p
-  ) {
-  color: var(--muted);
-}
-:root[data-theme="dark"]
-  :is(
-    .mode-badge,
-    .column-count,
-    .view-count span,
-    .markdown pre,
-    .markdown code
-  ) {
-  background: var(--soft);
-  color: var(--muted);
-}
-:root[data-theme="dark"] :is(.button.primary, .primary) {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-:root[data-theme="dark"] .error {
-  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
-  color: var(--danger);
-  border-color: var(--danger);
-}
-:root[data-theme="dark"] :is(.readiness.ready, .activation-badge.active) {
-  color: var(--success);
-  background: color-mix(in srgb, var(--success) 10%, var(--surface));
-}
-:root[data-theme="dark"] :is(.readiness.blocked, .readiness.waiting) {
-  color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
-}
-:root[data-theme="dark"] .react-flow {
-  --xy-node-background-color-default: var(--surface-subtle);
-  --xy-node-color-default: var(--text-primary);
-  --xy-node-border-default: 1px solid var(--border-strong);
-  --xy-controls-button-background-color-default: var(--surface-subtle);
-  --xy-controls-button-color-default: var(--text-primary);
-  --xy-minimap-background-color-default: var(--surface);
-}
+
 @media (max-width: 1100px) {
   .task-list .task-card {
     grid-template-columns: minmax(0, 1fr);
@@ -409,7 +287,7 @@ body {
     padding: 12px 0;
     z-index: 2;
   }
-  .task-list .task-meta .icon-button {
+  .task-list .task-meta .ui-icon-button {
     min-width: 44px;
     min-height: 44px;
     opacity: 1;
@@ -594,7 +472,7 @@ body {
   background: transparent;
 }
 .project-workspace > .project-summary > .project-breadcrumb,
-.project-workspace > .project-summary > .organization-toolbar {
+.project-workspace > .project-summary > .ui-toolbar {
   flex-basis: 100%;
 }
 .project-workspace > .project-summary > h1,
@@ -604,9 +482,19 @@ body {
 .project-workspace > .project-summary > h1 {
   font-size: 24px;
 }
-.project-workspace > .project-summary > .project-scope {
-  width: min(100%, 240px);
-  margin: 0;
+.project-workspace .project-scope {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+}
+.project-workspace .project-scope .ui-select {
+  width: auto;
+}
+.project-blockers .ui-list-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 .project-milestones .agenda-item {
   display: flex;
@@ -627,17 +515,6 @@ body {
   }
 }
 @media print {
-  :root[data-theme="dark"] {
-    --canvas: #fff;
-    --text: #242939;
-    --text-primary: #242939;
-    --surface: #fff;
-    --soft: #f0f1f7;
-    --border: var(--border-default);
-    --muted: #52596c;
-    --accent: #6454ce;
-    color-scheme: light;
-  }
   .mobile-bottom-navigation {
     display: none !important;
   }

@@ -37,6 +37,214 @@ async function latestConversation() {
   ).session;
 }
 const ownerPassword = "Test-only-password-123";
+it("clean Wiki link identities survive an actual host restart without a full rebuild", async () => {
+  await login();
+  const space = await (
+    await call("/api/library/save", {
+      id: null,
+      version: 0,
+      input: {
+        kind: "SPACE",
+        spaceId: null,
+        title: "Warm workspace",
+        bodyMd: "",
+      },
+    })
+  ).json();
+  await call("/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: space.id,
+      title: "Warm source",
+      bodyMd: "[[Future target]]",
+    },
+  });
+  const before = new DatabaseSync(join(directory, "work.sqlite"), {
+    readOnly: true,
+  });
+  let links: Record<string, unknown>[];
+  try {
+    links = before
+      .prepare("SELECT * FROM document_wiki_link ORDER BY id")
+      .all();
+    expect(links).toHaveLength(1);
+    expect(
+      before
+        .prepare("SELECT dirty FROM wiki_index_state WHERE workspace_id=?")
+        .get(space.workspaceId)?.dirty,
+    ).toBe(0);
+  } finally {
+    before.close();
+  }
+  await host.close();
+  await start();
+  const after = new DatabaseSync(join(directory, "work.sqlite"), {
+    readOnly: true,
+  });
+  try {
+    expect(
+      after.prepare("SELECT * FROM document_wiki_link ORDER BY id").all(),
+    ).toEqual(links);
+  } finally {
+    after.close();
+  }
+});
+it("workspace bootstrap carries versioned metadata without note or document bodies", async () => {
+  await login();
+  const space = await (
+    await call("/api/library/save", {
+      id: null,
+      version: 0,
+      input: {
+        kind: "SPACE",
+        spaceId: null,
+        title: "Bootstrap space",
+        bodyMd: "Space private body",
+      },
+    })
+  ).json();
+  const document = await (
+    await call("/api/library/save", {
+      id: null,
+      version: 0,
+      input: {
+        kind: "DOCUMENT",
+        spaceId: space.id,
+        title: "Bootstrap document",
+        bodyMd: "Document body never in manifest".repeat(2000),
+      },
+    })
+  ).json();
+  const response = await call("/api/bootstrap");
+  expect(response.status).toBe(200);
+  const manifest = await response.json();
+  expect(manifest).toMatchObject({
+    schemaVersion: 1,
+    epoch: expect.any(String),
+    cursor: expect.any(Number),
+  });
+  expect(
+    manifest.library.find((entry: { id: string }) => entry.id === document.id),
+  ).toMatchObject({ version: document.version, bodyState: "UNLOADED" });
+  for (const entry of [...manifest.notes, ...manifest.library])
+    expect(entry).not.toHaveProperty("bodyMd");
+  expect(JSON.stringify(manifest)).not.toContain(
+    "Document body never in manifest",
+  );
+  expect(manifest.workspace).not.toHaveProperty("library");
+  expect(manifest.workspace).not.toHaveProperty("notes");
+  expect(manifest.workspace.items).toEqual([]);
+  const hydrated = await call(
+    "/api/document/body?kind=LIBRARY&id=" + document.id,
+  );
+  expect(hydrated.status).toBe(200);
+  expect(await hydrated.json()).toEqual(document);
+  expect(
+    (await call("/api/document/body?kind=LIBRARY&id=missing")).status,
+  ).toBe(404);
+  expect(
+    (await call("/api/document/body?kind=INVALID&id=" + document.id)).status,
+  ).toBe(400);
+  await call("/api/library/delete", {
+    id: space.id,
+    version: space.version,
+    deleted: true,
+  });
+  expect(
+    (await call("/api/document/body?kind=LIBRARY&id=" + document.id)).status,
+  ).toBe(404);
+  const snapshot = await (await call("/api/snapshot")).json();
+  expect(
+    snapshot.library.find((entry: { id: string }) => entry.id === document.id)
+      .bodyMd,
+  ).toBe(document.bodyMd);
+});
+it("knowledge search returns scoped metadata from body matches and excludes deleted documents", async () => {
+  await login();
+  const spaces = [];
+  for (const title of ["Search source", "Other source"]) {
+    spaces.push(
+      await (
+        await call("/api/library/save", {
+          id: null,
+          version: 0,
+          input: { kind: "SPACE", spaceId: null, title, bodyMd: "" },
+        })
+      ).json(),
+    );
+  }
+  const documents = [];
+  for (const [index, title] of [
+    "Visible result",
+    "Deleted result",
+    "Other result",
+  ].entries()) {
+    documents.push(
+      await (
+        await call("/api/library/save", {
+          id: null,
+          version: 0,
+          input: {
+            kind: "DOCUMENT",
+            spaceId: spaces[index === 2 ? 1 : 0].id,
+            title,
+            bodyMd: "Body-only needlephrase",
+          },
+        })
+      ).json(),
+    );
+  }
+  await call("/api/library/delete", {
+    id: documents[1].id,
+    version: documents[1].version,
+    deleted: true,
+  });
+  const path =
+    "/api/library/search?" +
+    new URLSearchParams({ q: "needlephrase", spaceId: spaces[0].id });
+  const response = await call(path);
+  expect(response.status).toBe(200);
+  const result = await response.json();
+  expect(result).toHaveLength(1);
+  expect(result[0]).toMatchObject({
+    id: documents[0].id,
+    title: "Visible result",
+    spaceId: spaces[0].id,
+  });
+  expect(Object.keys(result[0]).sort()).toEqual([
+    "id",
+    "score",
+    "spaceId",
+    "title",
+  ]);
+  const workspaceResults = await (
+    await call("/api/library/search?q=needlephrase")
+  ).json();
+  expect(
+    workspaceResults.map((entry: { id: string }) => entry.id).sort(),
+  ).toEqual([documents[0].id, documents[2].id].sort());
+  expect(
+    workspaceResults.every((entry: object) => !Object.hasOwn(entry, "bodyMd")),
+  ).toBe(true);
+  expect(
+    (await call("/api/library/search?q=needlephrase&spaceId=missing")).status,
+  ).toBe(404);
+  const tokenResponse = await call("/api/tokens/create", {
+    name: "Search write-only",
+    scope: "write",
+  });
+  expect(tokenResponse.status).toBe(201);
+  const writeOnly = await tokenResponse.json();
+  expect(
+    (
+      await call(path, undefined, {
+        Authorization: "Bearer " + writeOnly.secret,
+      })
+    ).status,
+  ).toBe(403);
+});
 async function seedOwner() {
   const existing = await host.db.accounts((store) => store.find("owner"));
   if (existing) return existing;

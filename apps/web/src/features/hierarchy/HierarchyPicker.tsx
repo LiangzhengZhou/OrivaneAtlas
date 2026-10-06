@@ -102,7 +102,7 @@ export function HierarchyPicker({
         {values.map((id) => (
           <Button
             type="button"
-            className="chip"
+            variant="toggle"
             key={id}
             disabled={disabled}
             title={hierarchyPath(entries, id)
@@ -115,7 +115,7 @@ export function HierarchyPicker({
         ))}
         <Button
           type="button"
-          className="chip"
+          variant="toggle"
           disabled={disabled}
           ref={anchor}
           aria-expanded={open}
@@ -136,7 +136,6 @@ export function HierarchyPicker({
             <Button
               variant="ghost"
               type="button"
-              className="text-button"
               onClick={() => navigate(null)}
             >
               {rootLabel}
@@ -148,7 +147,6 @@ export function HierarchyPicker({
                 <Button
                   variant="ghost"
                   type="button"
-                  className="text-button"
                   onClick={() => navigate(entry.id)}
                 >
                   {entry.title}
@@ -168,7 +166,7 @@ export function HierarchyPicker({
           {mode === "single" && (
             <Button
               type="button"
-              className="chip"
+              variant="toggle"
               disabled={disabled}
               onClick={() => {
                 onChange([]);
@@ -225,7 +223,7 @@ export function HierarchyPicker({
                   </Button>
                   <Button
                     type="button"
-                    className="chip"
+                    variant="toggle"
                     aria-pressed={values.includes(entry.id)}
                     disabled={blocked}
                     onClick={() => select(entry.id)}
@@ -241,12 +239,7 @@ export function HierarchyPicker({
               {zh ? "当前层没有匹配项" : "No matches at this level"}
             </p>
           )}
-          <Button
-            variant="ghost"
-            type="button"
-            className="text-button"
-            onClick={() => setOpen(false)}
-          >
+          <Button variant="ghost" type="button" onClick={() => setOpen(false)}>
             {zh ? "完成" : "Done"}
           </Button>
         </AnchoredFloatingSurface>

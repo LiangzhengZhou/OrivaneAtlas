@@ -1,4 +1,4 @@
-import type { Note } from "@arclattice/application";
+import type { WorkspaceNote as Note } from "@arclattice/application";
 import type { ActorContext, WorkItem } from "@arclattice/domain";
 import type { LocalePreference } from "@arclattice/i18n";
 import { Download, LogOut } from "lucide-react";
@@ -104,7 +104,6 @@ export function SettingsRoute({
                 <p>{t("backupHint")}</p>
                 <Button
                   variant="primary"
-                  className="button primary"
                   type="button"
                   disabled={busy}
                   onClick={() =>
@@ -126,7 +125,7 @@ export function SettingsRoute({
             )}
             <p>{t("exportHint")}</p>
             <Button
-              className="button secondary"
+              variant="secondary"
               type="button"
               onClick={() =>
                 downloadText(
@@ -153,7 +152,7 @@ export function SettingsRoute({
             <h2>{t("protected")}</h2>
             <p>{t("scope")}</p>
             <Button
-              className="button secondary"
+              variant="secondary"
               type="button"
               disabled={busy}
               onClick={onLogout}
@@ -169,6 +168,7 @@ export function SettingsRoute({
                 : "Advanced relations"}
             </summary>
             <KnowledgeView
+              runtime={runtime}
               snapshot={snapshot}
               busy={false}
               onLink={(from, to, relation) =>

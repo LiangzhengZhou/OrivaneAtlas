@@ -12,8 +12,11 @@ import type { Runtime, Snapshot } from "../../bootstrap";
 import { Button } from "../../components/ui/Button";
 import { Dialog, Select } from "../../components/ui/Surfaces";
 import { Markdown } from "../../Markdown";
+import { VirtualTaskCollection } from "../tasks/VirtualTaskCollection";
 import { AnswerSources } from "./AnswerSources";
 import { ContextBar } from "./ContextBar";
+import { ConversationFilters } from "./ConversationFilters";
+import { ConversationMenu } from "./ConversationMenu";
 import { HarnessApproval, ToolActivity } from "./ToolActivity";
 
 export function AssistantPane({
@@ -178,10 +181,8 @@ export function AssistantPane({
   }, [session?.id, session?.modelProfileOverride]);
   useEffect(() => {
     let active = true;
-    void runtime
-      .agentSessions()
-      .then(async (sessions) => {
-        const state = await runtime.ai();
+    void Promise.all([runtime.agentSessions(), runtime.ai()])
+      .then(async ([sessions, state]) => {
         if (active) {
           setSessions(sessions);
           const latestSummary =
@@ -382,7 +383,6 @@ export function AssistantPane({
           <Button
             variant="primary"
             type="button"
-            className="chip"
             disabled={
               pending ||
               run?.status === "RUNNING" ||
@@ -406,73 +406,69 @@ export function AssistantPane({
               value={conversationSearch}
               onChange={(event) => setConversationSearch(event.target.value)}
             />
-            <div className="conversation-list-filters">
-              <Button
-                aria-pressed={!showArchived}
-                onClick={() => setShowArchived(false)}
-              >
-                {zh ? "最近" : "Recent"}
-              </Button>
-              <Button
-                aria-pressed={showArchived}
-                onClick={() => setShowArchived(true)}
-              >
-                {zh ? "归档" : "Archived"}
-              </Button>
-              <Button
-                aria-pressed={groupByProject}
-                onClick={() => setGroupByProject((value) => !value)}
-              >
-                {zh ? "项目" : "Projects"}
-              </Button>
-            </div>
+            <ConversationFilters
+              zh={zh}
+              archived={showArchived}
+              grouped={groupByProject}
+              onArchived={setShowArchived}
+              onGrouped={setGroupByProject}
+            />
             {conversationGroups.map((group) => (
               <section key={group.id}>
                 {group.title && <h3>{group.title}</h3>}
-                {group.entries.map((entry) => (
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    className="text-button"
-                    key={entry.id}
-                    aria-current={entry.id === session?.id ? "page" : undefined}
-                    disabled={
-                      pending ||
-                      run?.status === "RUNNING" ||
-                      run?.status === "WAITING_APPROVAL"
-                    }
-                    onClick={async () => {
-                      setPending(true);
-                      try {
-                        await openSession(entry.id);
-                        setRun(null);
-                        setStreamedText("");
-                        const state = await runtime.ai();
-                        setRun(
-                          state.runs.find(
-                            (run) => run.sessionId === entry.id,
-                          ) ?? null,
-                        );
-                      } catch (failure) {
-                        setError(
-                          failure instanceof Error
-                            ? failure.message
-                            : "UNAVAILABLE",
-                        );
-                      } finally {
-                        setPending(false);
+                <VirtualTaskCollection
+                  items={group.entries}
+                  virtualizeAfter={40}
+                  estimatedRowHeight={72}
+                  render={(entry) => (
+                    <Button
+                      className="conversation-entry"
+                      variant="ghost"
+                      type="button"
+                      key={entry.id}
+                      aria-current={
+                        entry.id === session?.id ? "page" : undefined
                       }
-                    }}
-                  >
-                    {entry.title}
-                    {entry.projectId && (
-                      <small>
-                        {projectTitles.get(entry.projectId) ??
-                          (zh ? "项目" : "Project")}
-                      </small>
-                    )}
-                  </Button>
-                ))}
+                      disabled={
+                        pending ||
+                        run?.status === "RUNNING" ||
+                        run?.status === "WAITING_APPROVAL"
+                      }
+                      onClick={async () => {
+                        setPending(true);
+                        try {
+                          await openSession(entry.id);
+                          setRun(null);
+                          setStreamedText("");
+                          const state = await runtime.ai();
+                          setRun(
+                            state.runs.find(
+                              (run) => run.sessionId === entry.id,
+                            ) ?? null,
+                          );
+                        } catch (failure) {
+                          setError(
+                            failure instanceof Error
+                              ? failure.message
+                              : "UNAVAILABLE",
+                          );
+                        } finally {
+                          setPending(false);
+                        }
+                      }}
+                    >
+                      <span className="conversation-entry-title">
+                        {entry.title}
+                      </span>
+                      {entry.projectId && (
+                        <small>
+                          {projectTitles.get(entry.projectId) ??
+                            (zh ? "项目" : "Project")}
+                        </small>
+                      )}
+                    </Button>
+                  )}
+                />
               </section>
             ))}
           </nav>
@@ -482,52 +478,28 @@ export function AssistantPane({
             {session && (
               <div className="toolbar">
                 <h3 className="conversation-title">{session.title}</h3>
-                <Button
+                <ConversationMenu
+                  zh={zh}
+                  archived={!!session.archivedAt}
                   disabled={
                     pending ||
                     run?.status === "RUNNING" ||
                     run?.status === "WAITING_APPROVAL"
                   }
-                  onClick={() => setRenameTitle(session.title)}
-                >
-                  {zh ? "重命名" : "Rename"}
-                </Button>
-                <Button
-                  disabled={
-                    pending ||
-                    run?.status === "RUNNING" ||
-                    run?.status === "WAITING_APPROVAL"
-                  }
-                  onClick={() =>
+                  onRename={() => setRenameTitle(session.title)}
+                  onArchive={() =>
                     void changeConversation({
                       archivedAt: session.archivedAt
                         ? null
                         : new Date().toISOString(),
                     })
                   }
-                >
-                  {session.archivedAt
-                    ? zh
-                      ? "恢复"
-                      : "Restore"
-                    : zh
-                      ? "归档"
-                      : "Archive"}
-                </Button>
-                <Button
-                  disabled={
-                    pending ||
-                    run?.status === "RUNNING" ||
-                    run?.status === "WAITING_APPROVAL"
-                  }
-                  onClick={() =>
+                  onDelete={() =>
                     void changeConversation({
                       deletedAt: new Date().toISOString(),
                     })
                   }
-                >
-                  {zh ? "删除对话" : "Delete conversation"}
-                </Button>
+                />
               </div>
             )}
             {deletedSession && (
@@ -1013,7 +985,7 @@ export function AssistantPane({
                   <Button
                     type="button"
                     key={item.ref.id}
-                    className="chip"
+                    variant="toggle"
                     onClick={() =>
                       setExcludedContext(
                         (previous) => new Set([...previous, item.ref.id]),
@@ -1041,7 +1013,6 @@ export function AssistantPane({
               <Button
                 variant="primary"
                 type="submit"
-                className="button primary"
                 disabled={
                   pending ||
                   run?.status === "RUNNING" ||

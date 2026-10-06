@@ -1,5 +1,5 @@
 import type { ActorContext, WorkItem } from "@arclattice/domain";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "../../bootstrap";
 import { Button } from "../../components/ui/Button";
@@ -9,6 +9,7 @@ import { RecurrenceManager } from "../../RecurrenceManager";
 import { RecurrenceSummary } from "../../RecurrenceSummary";
 import { Dependencies, type WorkProps } from "../../WorkViews";
 import { DismissibleDialog } from "../DismissibleDialog";
+import type { TaskPresentationStore } from "../hooks/task-presentation-store";
 
 interface Props {
   runtime: Runtime;
@@ -24,6 +25,7 @@ interface Props {
   onToggleDependencies(): void;
   run(action: () => Promise<unknown>): Promise<boolean>;
   onOpen(item: WorkItem): void;
+  presentationStore: TaskPresentationStore;
 }
 export function TasksRoute({
   runtime,
@@ -39,7 +41,12 @@ export function TasksRoute({
   onToggleDependencies,
   run,
   onOpen,
+  presentationStore,
 }: Props) {
+  const presentation = useSyncExternalStore(
+    presentationStore.subscribe,
+    presentationStore.getSnapshot,
+  );
   const [manage, setManage] = useState(false);
   const { i18n } = useTranslation();
   const label = i18n.language.startsWith("zh")
@@ -110,7 +117,8 @@ export function TasksRoute({
       )}
       <TasksWorkspace
         onDependencies={onToggleDependencies}
-        key={location.hash}
+        presentation={presentation}
+        onPresentationChange={presentationStore.set}
         {...workProps}
         items={visible}
         includeArchived={showArchived}

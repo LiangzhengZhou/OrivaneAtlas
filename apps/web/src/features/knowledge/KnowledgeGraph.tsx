@@ -8,7 +8,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../../bootstrap";
 import { Button } from "../../components/ui/Button";
-import { GraphViewport } from "../graph/GraphViewport";
+import {
+  GraphViewport,
+  type GraphViewportStateProps,
+} from "../graph/GraphViewport";
 import { collectionRevision } from "../graph/graph-revision";
 import { openGraph } from "../graph/graph-route";
 import { knowledgeForceLayout } from "../graph/layouts/KnowledgeForceLayout";
@@ -32,6 +35,8 @@ export function KnowledgeGraph({
   inspector,
   workspace = false,
   selectionId,
+  initialViewport,
+  onViewportChange,
 }: {
   snapshot: Snapshot;
   onOpen(ref: EntityRef): void;
@@ -46,7 +51,7 @@ export function KnowledgeGraph({
   inspector?: ReactNode;
   workspace?: boolean;
   selectionId?: string | undefined;
-}) {
+} & GraphViewportStateProps) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
   const text = (cn: string, en: string) => (zh ? cn : en);
@@ -207,6 +212,8 @@ export function KnowledgeGraph({
   return (
     <section className="graph-section">
       <GraphViewport
+        initialViewport={initialViewport}
+        onViewportChange={onViewportChange}
         layoutKey={layoutKey}
         workspace={workspace}
         selectionId={selectionId}
@@ -250,7 +257,7 @@ export function KnowledgeGraph({
                 (value) => (
                   <Button
                     type="button"
-                    className="chip"
+                    variant="toggle"
                     aria-pressed={scope === value}
                     key={value}
                     onClick={() => update({ scope: value })}
@@ -262,13 +269,18 @@ export function KnowledgeGraph({
                           project: "项目",
                           workspace: "工作区",
                         }[value]
-                      : value}
+                      : {
+                          local: "Connected documents",
+                          space: "Current space",
+                          project: "Current project",
+                          workspace: "Entire workspace",
+                        }[value]}
                   </Button>
                 ),
               )}
               <Button
                 type="button"
-                className="chip"
+                variant="toggle"
                 onClick={() => update({ hops: hops === 1 ? 2 : 1 })}
               >
                 {hops === 1
@@ -281,11 +293,13 @@ export function KnowledgeGraph({
                 role="listbox"
                 aria-label={zh ? "图谱搜索结果" : "Graph search results"}
               >
-                {documents
-                  .filter((entry) =>
-                    entry.title
-                      .toLocaleLowerCase()
-                      .includes(query.toLocaleLowerCase()),
+                {candidates
+                  .filter(
+                    (entry) =>
+                      (scope !== "project" || projectDocuments.has(entry.id)) &&
+                      entry.title
+                        .toLocaleLowerCase()
+                        .includes(query.toLocaleLowerCase()),
                   )
                   .map((entry) => (
                     <Button
@@ -293,7 +307,6 @@ export function KnowledgeGraph({
                       type="button"
                       role="option"
                       aria-selected={entry.id === focusId}
-                      className="text-button"
                       key={entry.id}
                       onClick={() => {
                         update({ focus: entry.id, scope: "local" });
@@ -301,11 +314,7 @@ export function KnowledgeGraph({
                       }}
                     >
                       {entry.title} ·{" "}
-                      {
-                        snapshot.library.find(
-                          (space) => space.id === entry.spaceId,
-                        )?.title
-                      }
+                      {graphIndex.spaceById.get(entry.spaceId ?? "")?.title}
                       {" / "}
                       {graphIndex.hierarchyPathByDocumentId.get(entry.id)}
                     </Button>

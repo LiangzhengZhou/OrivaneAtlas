@@ -78,19 +78,32 @@ export function ToolDetails({ value, zh }: { value: unknown; zh: boolean }) {
   );
 }
 export function ToolActivity({ text, zh }: { text: string; zh: boolean }) {
+  const [expanded, setExpanded] = useState(false);
   let value: unknown;
   try {
     value = JSON.parse(text);
   } catch {
-    return <pre>{text}</pre>;
+    return (
+      <details className="tool-activity">
+        <summary>{zh ? "技术详情" : "Technical details"}</summary>
+        <pre>{text}</pre>
+      </details>
+    );
   }
   const row = record(value);
   const name = typeof row?.name === "string" ? row.name : "";
   return (
-    <div className="tool-activity">
-      <h4>{names[name]?.[zh ? 0 : 1] ?? (zh ? "工具结果" : "Tool result")}</h4>
-      <ToolDetails value={row?.output ?? row?.input ?? value} zh={zh} />
-    </div>
+    <details
+      className="tool-activity"
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary>
+        {names[name]?.[zh ? 0 : 1] ?? (zh ? "工具结果" : "Tool result")}
+      </summary>
+      {expanded && (
+        <ToolDetails value={row?.output ?? row?.input ?? value} zh={zh} />
+      )}
+    </details>
   );
 }
 export function HarnessApproval({

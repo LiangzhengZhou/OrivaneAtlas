@@ -1,8 +1,7 @@
 async function openCalendarJournal(page: Page, title: string) {
   const action = page
-    .locator(".agenda-panel section")
-    .filter({ has: page.getByRole("heading", { name: title, exact: true }) })
-    .getByRole("button");
+    .locator(".calendar-agenda-actions")
+    .getByRole("button", { name: title, exact: true });
   await action.evaluate((element) =>
     element.scrollIntoView({ block: "center" }),
   );
@@ -103,7 +102,13 @@ async function chooseDate(page: Page, field: Locator, iso: string) {
 }
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import {
@@ -600,7 +605,7 @@ test("v2.2 1500 tasks release virtualization and scope benchmark", async ({
   writeFileSync(
     resolve(
       ".artifacts",
-      `session107-task-benchmark-${info.project.name}.json`,
+      `${process.env.ATLAS_BENCHMARK_PREFIX ?? "session107"}-task-benchmark-${info.project.name}.json`,
     ),
     JSON.stringify(evidence, null, 2),
   );
@@ -819,7 +824,7 @@ test("hardening recurring lifecycle expiry auto-close pause resume end and calen
   await ruleRow
     .getByRole("button", { name: w.desk.workflows.pause, exact: true })
     .click();
-  await expect(ruleRow).toContainText("PAUSED");
+  await expect(ruleRow).toContainText(zh ? "已暂停" : "Paused");
   snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -830,11 +835,11 @@ test("hardening recurring lifecycle expiry auto-close pause resume end and calen
   await ruleRow
     .getByRole("button", { name: zh ? "恢复" : "Resume", exact: true })
     .click();
-  await expect(ruleRow).toContainText("ACTIVE");
+  await expect(ruleRow).toContainText(zh ? "进行中" : "Running");
   await ruleRow
     .getByRole("button", { name: zh ? "结束" : "End", exact: true })
     .click();
-  await expect(ruleRow).toContainText("ENDED");
+  await expect(ruleRow).toContainText(zh ? "已结束" : "Ended");
   await expect(
     ruleRow.getByRole("button", {
       name: w.desk.workflows.generate,
@@ -846,6 +851,442 @@ test("hardening recurring lifecycle expiry auto-close pause resume end and calen
     fullPage: true,
   });
 });
+test("v2.3 quiet shell and command palette keyboard fuzzy recent navigation", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "NOTE",
+      title: "Command Palette Sample",
+      bodyMd: "Preserve this note",
+      day: null,
+    },
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await expect(
+    page.locator(".sidebar [draggable=true],.sidebar .nav-drag-handle"),
+  ).toHaveCount(0);
+  await expect(page.locator(".topbar .mode-badge")).toHaveCount(0);
+  await expect(
+    page
+      .locator(".topbar")
+      .getByRole("button", { name: w.desk.refresh, exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator(".topbar .breadcrumb")).not.toContainText(
+    zh ? "个人空间" : "Personal",
+  );
+  await page.keyboard.press("Control+k");
+  let palette = page.locator(".command-palette");
+  await palette.getByRole("searchbox").fill("CmdPltSmpl");
+  await expect(palette.locator(".command-result")).toHaveCount(1);
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Enter");
+  await expect(
+    pane(page).getByLabel(w.desk.noteTitle, { exact: true }),
+  ).toHaveValue("Command Palette Sample");
+  await browseDocuments(page);
+  await page.keyboard.press("Control+k");
+  palette = page.locator(".command-palette");
+  await expect(palette.locator(".command-result").first()).toHaveText(
+    "Command Palette Sample",
+  );
+  await page.keyboard.press("ArrowDown");
+  await expect(palette.locator(".command-result[data-active=true]")).toHaveText(
+    zh ? "新建" : "Create",
+  );
+  await page.keyboard.press("ArrowUp");
+  await expect(palette.locator(".command-result[data-active=true]")).toHaveText(
+    "Command Palette Sample",
+  );
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/#settings$/);
+  await page.keyboard.press("Control+k");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".command-palette")).toHaveCount(0);
+});
+
+test("v2.3 task rows expose completion and defer management to the menu", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const task = await mutation(page, "/api/work/create", {
+    title: "Quiet action",
+    priority: "LOW",
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  const row = page.locator(".task-card").filter({ hasText: "Quiet action" });
+  await expect(
+    row.locator("select, .priority, .activation-badge, .readiness.ready"),
+  ).toHaveCount(0);
+  await expect(
+    row.getByRole("button", { name: w.desk.deleteItem + ": Quiet action" }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("menuitemradio")).toHaveCount(0);
+  const menu = await taskMenu(page, "Quiet action");
+  await expect(
+    menu.getByRole("menuitem", { name: w.desk.archive + ": Quiet action" }),
+  ).toBeVisible();
+  await expect(
+    menu.getByLabel(w.common.statusLabel.replace("{{title}}", "Quiet action")),
+  ).toHaveValue("TODO");
+  await page.keyboard.press("Escape");
+  await row
+    .getByRole("button", {
+      name: (zh ? "完成：" : "Complete: ") + "Quiet action",
+      exact: true,
+    })
+    .click();
+  await expect(row).toHaveCount(0);
+  await taskScope(page, w.desk.taskWorkspace.completed);
+  await page.getByLabel(w.desk.status, { exact: true }).selectOption("DONE");
+  await expect(
+    row.getByRole("button", {
+      name: (zh ? "重新打开：" : "Reopen: ") + "Quiet action",
+      exact: true,
+    }),
+  ).toHaveAttribute("aria-pressed", "true");
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.items.find((item: { id: string }) => item.id === task.id).status,
+  ).toBe("DONE");
+});
+
+test("v2.3 Project Gantt renders spans milestones unscheduled rows and restores presentation", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Gantt project",
+  });
+  for (const input of [
+    { title: "Span task", startDate: "2026-10-01", dueDate: "2026-10-09" },
+    { title: "Deadline milestone", dueDate: "2026-10-12" },
+    { title: "Unscheduled action" },
+  ])
+    await mutation(page, "/api/work/create", {
+      ...input,
+      projectIds: [project.id],
+    });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await page
+    .getByRole("button", { name: "Gantt project", exact: true })
+    .click();
+  await expect(page.locator(".context-pane")).toContainText("Gantt project");
+  await expect(page.locator(".project-workspace")).toHaveCount(0);
+  if (info.project.name.startsWith("mobile"))
+    await page
+      .locator(".context-pane")
+      .getByRole("button", { name: zh ? "打开" : "Open", exact: true })
+      .click();
+  else
+    await page
+      .getByRole("button", { name: "Gantt project", exact: true })
+      .press("Enter");
+  await expect(page.locator(".project-workspace h1")).toHaveText(
+    "Gantt project",
+  );
+  await expect(
+    page.getByLabel(w.desk.projectScope, { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(".task-gantt, .dependency-focus-graph"),
+  ).toHaveCount(0);
+  await page
+    .getByRole("tab", { name: w.desk.projectHub.tasks, exact: true })
+    .click();
+  await page
+    .locator(".project-workspace .ui-segmented")
+    .getByRole("button", { name: zh ? "甘特图" : "Gantt", exact: true })
+    .click();
+  const gantt = page.locator(".task-gantt");
+  await expect(gantt.locator(".gantt-scroll")).toHaveAttribute(
+    "data-task-count",
+    "3",
+  );
+  await expect(gantt.locator(".gantt-bar:not(.gantt-milestone)")).toHaveCount(
+    1,
+  );
+  await expect(gantt.locator(".gantt-milestone")).toHaveCount(1);
+  await expect(gantt.locator(".gantt-unscheduled")).toHaveText(
+    zh ? "未排期" : "Unscheduled",
+  );
+  const bar = gantt.locator(".gantt-bar:not(.gantt-milestone)");
+  expect(
+    await bar.evaluate((element) => element.getBoundingClientRect().width),
+  ).toBe(9 * 32);
+  await gantt
+    .getByRole("button", { name: zh ? "月" : "Month", exact: true })
+    .click();
+  expect(
+    await bar.evaluate((element) => element.getBoundingClientRect().width),
+  ).toBe(9 * 12);
+  await expect(gantt.getByLabel(zh ? "今日线" : "Today line")).toHaveCount(1);
+  await page
+    .getByRole("tab", { name: w.desk.projectHub.overview, exact: true })
+    .click();
+  await expect(gantt).toHaveCount(0);
+  await page
+    .getByRole("tab", { name: w.desk.projectHub.tasks, exact: true })
+    .click();
+  await expect(gantt).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("project-gantt.png"),
+    fullPage: true,
+  });
+});
+
+test("v2.3 project list keeps hierarchy and category management behind explicit actions", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Quiet project",
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await expect(page.locator(".category-manager")).toHaveCount(0);
+  const row = page
+    .locator(".project-card")
+    .filter({ hasText: "Quiet project" });
+  await expect(
+    row.getByRole("button", { name: w.desk.archive, exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", {
+      name: zh ? "项目列表选项" : "Project list options",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", {
+      name: zh ? "管理项目分类" : "Manage project categories",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("dialog").locator(".category-manager"),
+  ).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".category-manager")).toHaveCount(0);
+  await (await projectMenu(page, "Quiet project"))
+    .getByRole("menuitem", {
+      name: zh ? "移动 / 设置" : "Move / settings",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("dialog").getByLabel(w.work.title, { exact: true }),
+  ).toHaveValue("Quiet project");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: w.common.cancel, exact: true })
+    .click();
+  await (await projectMenu(page, "Quiet project"))
+    .getByRole("menuitem", { name: w.desk.deleteItem, exact: true })
+    .click();
+  await expect(row).toHaveCount(0);
+  await page
+    .getByRole("button", { name: zh ? "撤销" : "Undo", exact: true })
+    .click();
+  await expect(row).toHaveCount(1);
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  const restored = snapshot.items.find(
+    (item: { title: string }) => item.title === "Quiet project",
+  );
+  expect(restored.deletedAt).toBeNull();
+  await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Protected child",
+    parentProjectId: restored.id,
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await (await projectMenu(page, "Quiet project"))
+    .getByRole("menuitem", { name: w.desk.deleteItem, exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    w.errors.DEPENDENCY_EXISTS,
+  );
+  await expect(row).toHaveCount(1);
+});
+
+test("v2.3 Project Gantt virtualizes a real 1500 task workspace", async ({
+  page,
+  workbench,
+}, info) => {
+  test.setTimeout(180000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const identity = await (
+    await page.request.get(workbench.url + "/api/session")
+  ).json();
+  await workbench.seedPerformance(identity.context);
+  const project = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Gantt portfolio",
+  });
+  for (let index = 0; index < 15; index++)
+    await mutation(page, "/api/work/update", {
+      id: `perf-project-${index}`,
+      version: 1,
+      input: { parentProjectId: project.id },
+    });
+  await page.goto(
+    workbench.url + `/#projects/${project.id}?tab=tasks&scope=SUBTREE`,
+  );
+  await expect(page.locator(".project-workspace h1")).toHaveText(
+    "Gantt portfolio",
+  );
+  await taskScope(page, w.desk.taskWorkspace.all);
+  const started = performance.now();
+  await page
+    .locator(".project-workspace .ui-segmented")
+    .getByRole("button", { name: zh ? "甘特图" : "Gantt", exact: true })
+    .click();
+  const scroll = page.locator(".gantt-scroll");
+  await expect(scroll).toHaveAttribute("data-task-count", "1500");
+  const liveRows = await page.locator(".gantt-row").count();
+  expect(liveRows).toBeGreaterThan(0);
+  expect(liveRows).toBeLessThan(50);
+  const first = await page
+    .locator(".gantt-row")
+    .first()
+    .getAttribute("data-task-id");
+  await scroll.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.scrollLeft = 500;
+  });
+  await expect
+    .poll(() => page.locator(".gantt-row").first().getAttribute("data-task-id"))
+    .not.toBe(first);
+  expect(await page.locator(".gantt-row").count()).toBeLessThan(50);
+  expect(await page.locator(".gantt-axis time").count()).toBeLessThan(100);
+  expect(errors).toEqual([]);
+  await info.attach("gantt-benchmark.json", {
+    body: JSON.stringify({
+      tasks: 1500,
+      liveRows,
+      wallMs: performance.now() - started,
+      measurement:
+        "Playwright settled DOM wall; functional run with two workers",
+    }),
+    contentType: "application/json",
+  });
+});
+
+test("v2.3 feature navigation preserves task query priority scope and presentation", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await mutation(page, "/api/work/create", {
+    title: "Preserved scheduled task",
+    priority: "HIGH",
+    activationPolicy: "AT_SCHEDULED_TIME",
+    startDate: "2099-10-05",
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  const searchField = page.locator(".content .search input");
+  await searchField.fill("Preserved");
+  await page.getByLabel(w.desk.priority, { exact: true }).selectOption("HIGH");
+  await page
+    .getByRole("tab", { name: zh ? "已计划" : "Scheduled", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: zh ? "看板" : "Board", exact: true })
+    .click();
+  await expect(page.locator(".board")).toBeVisible();
+  await nav(page, w.desk.calendar);
+  await nav(page, w.desk.tasks);
+  await expect(searchField).toHaveValue("Preserved");
+  await expect(page.getByLabel(w.desk.priority, { exact: true })).toHaveValue(
+    "HIGH",
+  );
+  await expect(
+    page.getByRole("tab", { name: zh ? "已计划" : "Scheduled", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".board")).toBeVisible();
+});
+
+test("v2.3 task single selection Inspector Enter open and shared Atlas context pane", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await mutation(page, "/api/work/create", { title: "Selected task" });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  const title = page
+    .locator(".task-title")
+    .filter({ hasText: "Selected task" });
+  await title.click();
+  await expect(page.locator(".task-dialog")).toHaveCount(0);
+  const context = page.locator(".context-pane");
+  await expect(
+    context.getByRole("heading", { name: "Selected task" }),
+  ).toBeVisible();
+  await expect(page.locator(".task-card[data-selected=true]")).toHaveCount(1);
+  if (info.project.name.startsWith("mobile")) {
+    await context
+      .getByRole("button", { name: zh ? "打开" : "Open", exact: true })
+      .click();
+  } else {
+    await title.press("Enter");
+  }
+  await expect(page.locator(".task-dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".task-dialog")).toHaveCount(0);
+  await context.getByRole("button", { name: "Atlas", exact: true }).click();
+  await expect(context.locator(".assistant-pane")).toBeVisible();
+  await expect(page.locator(".context-pane")).toHaveCount(1);
+  await context
+    .getByRole("button", { name: zh ? "详情" : "Details", exact: true })
+    .click();
+  await expect(
+    context.getByRole("heading", { name: "Selected task" }),
+  ).toBeVisible();
+  await context
+    .getByRole("button", {
+      name: zh ? "关闭上下文" : "Close context",
+      exact: true,
+    })
+    .click();
+  await expect(context).toHaveCount(0);
+});
+
 test("command palette contextual create and document trash undo preserve content", async ({
   page,
   workbench,
@@ -881,7 +1322,10 @@ test("command palette contextual create and document trash undo preserve content
     .getByRole("button", { name: zh ? "撤销" : "Undo", exact: true })
     .click();
   await nav(page, w.desk.notes);
-  await page.locator(".note-card").filter({ hasText: "Palette note" }).click();
+  await page
+    .locator(".note-card, .library-document-row, .space-card")
+    .filter({ hasText: "Palette note" })
+    .press("Enter");
   await expect(
     pane(page).getByLabel(w.desk.noteBody, { exact: true }),
   ).toContainText("Keep original Markdown");
@@ -1021,7 +1465,7 @@ test("wiki save creates unresolved links and new pages re-resolve with backlinks
     .filter({
       has: page.getByRole("heading", { name: "Wiki integration", exact: true }),
     })
-    .click();
+    .press("Enter");
   await page
     .getByRole("button", { name: w.spaces.newLecture, exact: true })
     .click();
@@ -1091,7 +1535,10 @@ test("task workspace views and inspector preserve drafts while switching tasks",
     .getByRole("tab", { name: w.desk.taskWorkspace.later, exact: true })
     .click();
   await expect(workspace.getByRole("article")).toHaveCount(1);
-  await expect(workspace.locator(".view-count span")).toHaveText("1");
+  await expect(workspace.getByTestId("task-scope-count")).toHaveAttribute(
+    "data-count",
+    "1",
+  );
   await workspace
     .getByRole("tab", { name: w.desk.taskWorkspace.now, exact: true })
     .click();
@@ -1099,7 +1546,7 @@ test("task workspace views and inspector preserve drafts while switching tasks",
     .getByRole("article")
     .filter({ hasText: "Inspector A" })
     .locator(".task-title")
-    .click();
+    .press("Enter");
   const detail = page.getByRole("dialog");
   await page.screenshot({
     path: info.outputPath("task-inspector.png"),
@@ -1111,7 +1558,7 @@ test("task workspace views and inspector preserve drafts while switching tasks",
       .getByRole("article")
       .filter({ hasText: "Inspector B" })
       .locator(".task-title")
-      .click();
+      .press("Enter");
     await expect(detail.getByLabel(w.work.title, { exact: true })).toHaveValue(
       "Unsaved A",
     );
@@ -1254,7 +1701,10 @@ test("activation separates execution views from task planning", async ({
     "UNFINISHED",
   );
   await expect(cards).toHaveCount(4);
-  await expect(page.locator(".view-count span")).toHaveText("4");
+  await expect(page.getByTestId("task-scope-count")).toHaveAttribute(
+    "data-count",
+    "4",
+  );
   await expect(cards.filter({ hasText: "Active blocked" })).toBeVisible();
   await page.getByLabel(w.desk.status, { exact: true }).selectOption("ALL");
   await expect(cards).toHaveCount(9);
@@ -1263,6 +1713,13 @@ test("activation separates execution views from task planning", async ({
     .fill("Inactive unassigned");
   await expect(cards).toHaveCount(1);
   await nav(page, w.desk.board);
+  await expect(page.getByRole("textbox", { name: w.desk.search })).toHaveValue(
+    "Inactive unassigned",
+  );
+  await page.getByRole("textbox", { name: w.desk.search }).fill("");
+  await page
+    .getByLabel(w.desk.status, { exact: true })
+    .selectOption("UNFINISHED");
   await expect(cards).toHaveCount(4);
   await expect(page.locator(".board-column")).toHaveCount(4);
   for (const title of [
@@ -1275,9 +1732,7 @@ test("activation separates execution views from task planning", async ({
     path: info.outputPath("active-board.png"),
     fullPage: true,
   });
-  await page
-    .getByRole("tab", { name: w.desk.taskWorkspace.all, exact: true })
-    .click();
+  await taskScope(page, w.desk.taskWorkspace.all);
   await expect(cards).toHaveCount(9);
   await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
   await page
@@ -1288,7 +1743,7 @@ test("activation separates execution views from task planning", async ({
   await cards
     .filter({ hasText: "Inactive unassigned" })
     .locator(".task-title")
-    .click();
+    .press("Enter");
   await page.getByRole("dialog").locator(".task-advanced > summary").click();
   await page
     .getByRole("dialog")
@@ -1301,11 +1756,16 @@ test("activation separates execution views from task planning", async ({
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(cards).toHaveCount(2);
   await nav(page, w.desk.tasks);
+  await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
+  await page
+    .getByLabel(w.desk.activationState, { exact: true })
+    .selectOption("ALL");
+  await page
+    .getByRole("tab", { name: w.desk.taskWorkspace.now, exact: true })
+    .click();
   await expect(cards).toHaveCount(5);
   await expect(cards.filter({ hasText: "Inactive unassigned" })).toBeVisible();
-  await page
-    .getByRole("tab", { name: w.desk.taskWorkspace.completed, exact: true })
-    .click();
+  await taskScope(page, w.desk.taskWorkspace.completed);
   await page.getByLabel(w.desk.status, { exact: true }).selectOption("DONE");
   await expect(cards).toHaveCount(1);
   await page.reload();
@@ -1379,16 +1839,14 @@ test("project workspace connects materials, children and external dependencies",
   await nav(page, w.desk.projects);
   await page
     .getByRole("button", { name: "Research workspace", exact: true })
-    .click();
+    .press("Enter");
   await expect(page.locator(".project-workspace h1")).toHaveText(
     "Research workspace",
   );
   await expect(page.getByRole("tabpanel").locator("strong")).toHaveText(
     "original",
   );
-  await page
-    .getByRole("button", { name: w.desk.projectHub.newChild, exact: true })
-    .click();
+  await projectAction(page, w.desk.projectHub.newChild);
   const dialog = page.getByRole("dialog");
   await expect(
     dialog.getByLabel(w.desk.parentProject, { exact: true }),
@@ -1404,7 +1862,7 @@ test("project workspace connects materials, children and external dependencies",
   await page
     .getByRole("tabpanel")
     .getByRole("button", { name: /Experiment/ })
-    .click();
+    .press("Enter");
   await expect(page.locator(".project-workspace h1")).toHaveText("Experiment");
   await page.getByRole("button", { name: w.desk.newTask, exact: true }).click();
   await dialog.getByLabel(w.work.title, { exact: true }).fill("Measure sample");
@@ -1431,12 +1889,7 @@ test("project workspace connects materials, children and external dependencies",
     fromId: external.id,
     toId: task.id,
   });
-  await page
-    .getByRole("button", {
-      name: `${w.desk.parentProject} · Research workspace`,
-      exact: true,
-    })
-    .click();
+  await projectAction(page, `${w.desk.parentProject} · Research workspace`);
   await page
     .getByRole("tab", { name: w.desk.projectHub.knowledge, exact: true })
     .click();
@@ -1523,7 +1976,7 @@ test("project knowledge documents files and overview summaries persist", async (
   await nav(page, w.desk.projects);
   await page
     .getByRole("button", { name: "Owned workspace", exact: true })
-    .click();
+    .press("Enter");
   await page
     .getByRole("tab", { name: w.desk.projectHub.knowledge, exact: true })
     .click();
@@ -1589,6 +2042,11 @@ test("project knowledge documents files and overview summaries persist", async (
   ).toBe(true);
   await page
     .getByRole("tab", { name: w.desk.projectHub.overview, exact: true })
+    .click();
+  await page
+    .getByRole("tabpanel")
+    .locator("summary")
+    .filter({ hasText: /^(项目时间线|Project timeline)$/ })
     .click();
   await expect(page.getByRole("tabpanel")).toContainText("2026-09-20");
   await page.screenshot({
@@ -2233,9 +2691,9 @@ test("AI context permission defaults deny and persists explicit human edits", as
   await page.reload();
   await nav(page, w.desk.notes);
   await page
-    .locator(".note-card")
+    .locator(".note-card, .library-document-row, .space-card")
     .filter({ hasText: "Permission test" })
-    .click();
+    .press("Enter");
   await documentAction(page, zh ? "AI 权限" : "AI permissions");
   await pane(page)
     .getByText(zh ? "AI 数据许可 · DENY" : "AI data permission · DENY", {
@@ -2275,9 +2733,9 @@ test("AI context permission defaults deny and persists explicit human edits", as
   await page.reload();
   await nav(page, w.desk.notes);
   await page
-    .locator(".note-card")
+    .locator(".note-card, .library-document-row, .space-card")
     .filter({ hasText: "Permission test" })
-    .click();
+    .press("Enter");
   await documentAction(page, zh ? "AI 权限" : "AI permissions");
   await expect(pane(page).getByText(/AI.*ASK/)).toBeVisible();
 });
@@ -2305,7 +2763,15 @@ test("project category management persists, filters and restores", async ({
   });
   await page.reload();
   await nav(page, w.desk.projects);
-  await page.getByText(w.desk.categories.manage, { exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: /^(项目列表选项|Project list options)$/,
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: w.desk.categories.manage, exact: true })
+    .click();
   await page
     .getByLabel(w.desk.categories.name, { exact: true })
     .fill("Research");
@@ -2332,7 +2798,15 @@ test("project category management persists, filters and restores", async ({
     input: { categoryId: snapshot.categories[0].id },
   });
   await page.reload();
-  await page.getByText(w.desk.categories.manage, { exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: /^(项目列表选项|Project list options)$/,
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: w.desk.categories.manage, exact: true })
+    .click();
   const categoryRow = page
     .locator(".category-manager li")
     .filter({ hasText: "Research" });
@@ -2395,11 +2869,23 @@ test("project category management persists, filters and restores", async ({
     color: "#998877",
   });
   await page.reload();
-  await page.getByText(w.desk.categories.manage, { exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: /^(项目列表选项|Project list options)$/,
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: w.desk.categories.manage, exact: true })
+    .click();
   await expect(page.locator(".category-manager li").first()).toContainText(
     "First category",
   );
   await expect(page.locator(".category-manager li").nth(1)).toContainText("📚");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: w.common.close, exact: true })
+    .click();
   await nav(page, w.desk.settings);
   await page
     .getByRole("combobox", { name: densityLabel, exact: true })
@@ -2582,8 +3068,8 @@ test("work planning: activation and nested project authoring", async ({
   await expect(parentCard.locator(".project-compact-progress span")).toHaveText(
     "0 / 1",
   );
-  await parentCard
-    .getByRole("button", { name: w.desk.archive, exact: true })
+  await (await projectMenu(page, "Parent project"))
+    .getByRole("menuitem", { name: w.desk.archive, exact: true })
     .click();
   await expect(page.locator(".project-card")).toHaveCount(0);
   await page
@@ -2591,8 +3077,12 @@ test("work planning: activation and nested project authoring", async ({
     .click();
   await expect(page.locator(".project-card")).toHaveCount(2);
   await expect(
-    childCard.getByRole("button", { name: w.desk.unarchive, exact: true }),
+    (await projectMenu(page, "Child project")).getByRole("menuitem", {
+      name: w.desk.unarchive,
+      exact: true,
+    }),
   ).toBeDisabled();
+  await page.keyboard.press("Escape");
   await expect(
     childCard.getByText(
       w.desk.inheritedArchive.replace("{{title}}", "Parent project"),
@@ -2607,16 +3097,16 @@ test("work planning: activation and nested project authoring", async ({
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await parentCard
-    .getByRole("button", { name: w.desk.unarchive, exact: true })
+  await (await projectMenu(page, "Parent project"))
+    .getByRole("menuitem", { name: w.desk.unarchive, exact: true })
     .click();
   await expect(page.locator(".project-card")).toHaveCount(0);
   await page
     .getByRole("button", { name: new RegExp(w.desk.archivedProjects) })
     .click();
   await expect(page.locator(".project-card")).toHaveCount(2);
-  await parentCard
-    .getByRole("button", { name: w.desk.projectTasks, exact: true })
+  await (await projectMenu(page, "Parent project"))
+    .getByRole("menuitem", { name: w.desk.projectTasks, exact: true })
     .click();
   await expect(
     page.locator(".task-card").filter({ hasText: "Nested task" }),
@@ -3133,15 +3623,18 @@ test("organization selection archive delete scannable rows and readable typograp
     path: info.outputPath("task-rows.png"),
     fullPage: true,
   });
-  await page
-    .getByRole("button", { name: w.desk.archive + ": First task", exact: true })
+  await (await taskMenu(page, "First task"))
+    .getByRole("menuitem", {
+      name: w.desk.archive + ": First task",
+      exact: true,
+    })
     .click();
   await expect(page.locator(".task-card")).toHaveCount(2);
   await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
   await page.getByLabel(w.desk.showArchived).check();
   await expect(page.locator(".task-card")).toHaveCount(1);
-  await page
-    .getByRole("button", {
+  await (await taskMenu(page, "First task"))
+    .getByRole("menuitem", {
       name: w.desk.unarchive + ": First task",
       exact: true,
     })
@@ -3150,8 +3643,8 @@ test("organization selection archive delete scannable rows and readable typograp
   await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
   await page.getByLabel(w.desk.showArchived).uncheck();
 
-  await page
-    .getByRole("button", {
+  await (await taskMenu(page, "Second task"))
+    .getByRole("menuitem", {
       name: w.desk.deleteItem + ": Second task",
       exact: true,
     })
@@ -3167,9 +3660,13 @@ test("organization selection archive delete scannable rows and readable typograp
     "量子场论",
   );
   await page.getByLabel(w.desk.folderFilter).selectOption("folder:");
-  await expect(page.locator(".note-card")).toHaveCount(0);
+  await expect(
+    page.locator(".note-card, .library-document-row, .space-card"),
+  ).toHaveCount(0);
   await page.getByLabel(w.desk.folderFilter).selectOption("folder:量子场论");
-  await expect(page.locator(".note-card")).toHaveCount(2);
+  await expect(
+    page.locator(".note-card, .library-document-row, .space-card"),
+  ).toHaveCount(2);
   await page.getByLabel(w.desk.selectVisible).check();
   await page.screenshot({
     path: info.outputPath("bulk-notes.png"),
@@ -3179,7 +3676,9 @@ test("organization selection archive delete scannable rows and readable typograp
   await page
     .getByRole("button", { name: w.desk.deleteSelected, exact: true })
     .click();
-  await expect(page.locator(".note-card")).toHaveCount(0);
+  await expect(
+    page.locator(".note-card, .library-document-row, .space-card"),
+  ).toHaveCount(0);
   await nav(page, w.desk.trash);
   await expect(page.locator(".trash-list")).toContainText("Lecture A");
   await expect(page.locator(".trash-list")).toContainText("Second task");
@@ -3440,9 +3939,9 @@ for (const nativeImages of [false, true]) {
     await saveDocument(page, w);
     await browseDocuments(page);
     await page
-      .locator(".note-card")
+      .locator(".note-card, .library-document-row, .space-card")
       .filter({ hasText: "Quantum Field Theory" })
-      .click();
+      .press("Enter");
     await page.getByRole("button", { name: a.newLecture, exact: true }).click();
     await page
       .getByLabel(a.title, { exact: true })
@@ -3646,13 +4145,13 @@ for (const nativeImages of [false, true]) {
       await nav(page, a.library);
       await page.reload();
       await page
-        .locator(".note-card")
+        .locator(".note-card, .library-document-row, .space-card")
         .filter({ hasText: "Quantum Field Theory" })
-        .click();
+        .press("Enter");
       await page
-        .locator(".note-card")
+        .locator(".note-card, .library-document-row, .space-card")
         .filter({ hasText: "Fields and symmetry" })
-        .click();
+        .press("Enter");
       await documentMode(page, /^(Source|源码)$/);
       await documentMode(page, /^(Live preview|实时预览)$/);
       await expect(
@@ -3703,13 +4202,13 @@ for (const nativeImages of [false, true]) {
     await nav(page, a.library);
     await page.reload();
     await page
-      .locator(".note-card")
+      .locator(".note-card, .library-document-row, .space-card")
       .filter({ hasText: "Quantum Field Theory" })
-      .click();
+      .press("Enter");
     await page
-      .locator(".note-card")
+      .locator(".note-card, .library-document-row, .space-card")
       .filter({ hasText: "Fields and symmetry" })
-      .click();
+      .press("Enter");
     await documentMode(page, w.desk.read);
     await expect(pane(page).locator(".document-reading .katex")).toHaveCount(1);
   });
@@ -4052,6 +4551,7 @@ for (const transport of ["SSE", "cursor fallback"])
       ).events,
     ).toEqual([]);
     await page.reload();
+    await expect(page.locator(".app-shell")).toBeVisible();
     await page.keyboard.press("Control+j");
     await expect(assistant.locator('[data-message-kind="USER"]')).toContainText(
       "Streaming question",
@@ -4126,7 +4626,7 @@ test("document knowledge graph preserves wiki neighbors and hides work and isola
   await expect(documents).toHaveCount(2);
   await expect(
     graph.getByRole("button", {
-      name: zh ? "局部" : "local",
+      name: zh ? "局部" : "Connected documents",
       exact: true,
     }),
   ).toHaveAttribute("aria-pressed", "true");
@@ -4134,14 +4634,17 @@ test("document knowledge graph preserves wiki neighbors and hides work and isola
   await expect(documents).toHaveCount(2);
   await graph.getByRole("option", { name: /Symmetry lecture/ }).click();
   await graph
-    .getByRole("button", { name: zh ? "局部" : "local", exact: true })
+    .getByRole("button", {
+      name: zh ? "局部" : "Connected documents",
+      exact: true,
+    })
     .click();
   await expect(documents).toHaveCount(2);
   await expect(graph.locator(".react-flow__edge")).toHaveCount(2);
   await expect(graph).not.toContainText("Research task");
   await expect(graph).not.toContainText("Isolated page");
   await graph
-    .getByRole("button", { name: zh ? "空间" : "space", exact: true })
+    .getByRole("button", { name: zh ? "空间" : "Current space", exact: true })
     .click();
   await expect(documents).toHaveCount(2);
   await expect(graph).not.toContainText("Isolated page");
@@ -4279,7 +4782,10 @@ test("AI approval project scope is shared by search, Wiki autocomplete, graph an
     .click();
   const graph = workspace.locator(".graph-section");
   await expect(
-    graph.getByRole("button", { name: zh ? "项目" : "project", exact: true }),
+    graph.getByRole("button", {
+      name: zh ? "项目" : "Current project",
+      exact: true,
+    }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
     graph.locator('.react-flow__node:not([data-id^="space-cluster:"])'),
@@ -4288,7 +4794,10 @@ test("AI approval project scope is shared by search, Wiki autocomplete, graph an
     graph.locator(".react-flow__node").filter({ hasText: "Storage 4" }),
   ).toHaveCount(0);
   await graph
-    .getByRole("button", { name: zh ? "工作区" : "workspace", exact: true })
+    .getByRole("button", {
+      name: zh ? "工作区" : "Entire workspace",
+      exact: true,
+    })
     .click();
   await expect(
     graph.locator('.react-flow__node:not([data-id^="space-cluster:"])'),
@@ -4368,12 +4877,17 @@ test("persistent document hierarchy is visible and can be moved through the know
   });
   await page.reload();
   await nav(page, w.spaces.library);
-  await page.locator(".space-card").filter({ hasText: "Architecture" }).click();
-  const card = page.locator(".note-card").filter({
-    has: page.getByRole("heading", { name: "Storage", exact: true }),
-  });
-  await expect(card.locator("small")).toContainText("Backend");
-  await card.click();
+  await page
+    .locator(".space-card")
+    .filter({ hasText: "Architecture" })
+    .press("Enter");
+  const card = page
+    .locator(".note-card, .library-document-row, .space-card")
+    .filter({
+      has: page.getByRole("heading", { name: "Storage", exact: true }),
+    });
+  await expect(card.locator("small").first()).toContainText("Backend");
+  await card.press("Enter");
   const parentPicker = pane(page).locator(".hierarchy-picker");
   await parentPicker.locator(".hierarchy-selected > button").first().click();
   await expect
@@ -4416,9 +4930,9 @@ test("two independent sessions sync updates without replacing an open draft", as
     timeout: 10000,
   });
   await page
-    .getByRole("button", { name: /Shared task/ })
-    .first()
-    .click();
+    .locator(".task-card .task-title")
+    .filter({ hasText: "Shared task" })
+    .press("Enter");
   const title = page
     .getByRole("dialog")
     .getByLabel(w.work.title, { exact: true });
@@ -4525,7 +5039,9 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
       .notes,
   ).toEqual([]);
   await browseDocuments(page);
-  await expect(page.locator(".agenda-item")).toContainText("Ship planning");
+  await expect(page.locator(".calendar-event-row")).toContainText(
+    "Ship planning",
+  );
   await page.screenshot({
     path: info.outputPath("calendar.png"),
     fullPage: true,
@@ -4613,8 +5129,8 @@ test("uncertain network retry is idempotent and committed saves close after refr
   await expect(page.getByRole("alert")).toBeVisible();
   await page.unroute("**/api/sync?*");
   await page
-    .locator(".topbar")
-    .getByRole("button", { name: w.desk.refresh })
+    .locator(".sync-status")
+    .getByRole("button", { name: /^(重试|Retry)$/ })
     .click();
   await expect(page.locator("article.task-card")).toHaveCount(2);
 });
@@ -4648,6 +5164,36 @@ async function mutation(page: Page, path: string, value: unknown) {
   expect(response.ok()).toBe(true);
   return response.json();
 }
+async function taskScope(page: Page, name: string) {
+  await page
+    .getByRole("button", { name: /^(More task scopes|更多任务范围)$/ })
+    .click();
+  await page.getByRole("menuitemradio", { name, exact: true }).click();
+}
+async function projectAction(page: Page, name: string) {
+  await page
+    .getByRole("button", { name: /^(项目更多操作|More project actions)$/ })
+    .click();
+  await page.getByRole("menuitem", { name, exact: true }).click();
+}
+
+async function projectMenu(page: Page, title: string) {
+  await page
+    .locator(".project-card")
+    .filter({ has: page.getByRole("heading", { name: title, exact: true }) })
+    .getByRole("button", { name: /^(项目操作：|Project actions: )/ })
+    .click();
+  return page.getByRole("menu", { name: /^(项目操作：|Project actions: )/ });
+}
+
+async function taskMenu(page: Page, title: string) {
+  await page
+    .locator(".task-card")
+    .filter({ hasText: title })
+    .getByRole("button", { name: /^(更多操作：|More actions: )/ })
+    .click();
+  return page.getByRole("menu", { name: /^(更多操作：|More actions: )/ });
+}
 async function nav(page: Page, name: string) {
   await expect(page.locator(".app-shell")).toBeVisible();
   for (const locale of ["en-US", "zh-CN"] as const) {
@@ -4659,7 +5205,10 @@ async function nav(page: Page, name: string) {
     }
     if (name === desk.dependencies) {
       await nav(page, desk.tasks);
-      await page.getByRole("button", { name, exact: true }).click();
+      await page
+        .getByRole("button", { name: /^(More task scopes|更多任务范围)$/ })
+        .click();
+      await page.getByRole("menuitem", { name, exact: true }).click();
       return;
     }
   }
@@ -4750,7 +5299,8 @@ async function chooseProject(picker: Locator, path: string[]) {
         exact: true,
       }),
     });
-    if (index === path.length - 1) await row.locator(".chip").click();
+    if (index === path.length - 1)
+      await row.locator(".ui-button-toggle").click();
     else await row.locator(".parent-tree-choice").click();
   }
 }
@@ -4762,6 +5312,14 @@ async function documentMode(page: Page, name: string | RegExp) {
   if ((await actions.getAttribute("aria-expanded")) === "true") {
     await page.keyboard.press("Escape");
     await expect(actions).toHaveAttribute("aria-expanded", "false");
+  }
+  const presentation = pane(page).getByRole("group", {
+    name: /^(文档视图|Document view)$/,
+  });
+  const read = presentation.getByRole("button", { name, exact: true });
+  if (await read.count()) {
+    await read.click();
+    return;
   }
   const menu = pane(page).locator(".document-mode-menu");
   if (
@@ -4830,7 +5388,7 @@ test("task edits, persistence, language, trash and recovery", async ({
     .locator(".task-title")
     .filter({ hasText: "第一项 task" });
   await expect(openTask).toBeVisible();
-  await openTask.click();
+  await openTask.press("Enter");
   await expect(
     page.getByLabel(w.work.description, { exact: true }),
   ).toHaveValue("# 原文\n\n- [ ] Keep Markdown");
@@ -4845,15 +5403,18 @@ test("task edits, persistence, language, trash and recovery", async ({
     .selectOption("en-US");
   await expect(page.locator("html")).toHaveAttribute("lang", "en-US");
   await nav(page, "Tasks");
+  await taskMenu(page, "Edited 中文 task");
   await page.getByLabel("Status for Edited 中文 task").selectOption("DONE");
   await expect(page.getByLabel("Status for Edited 中文 task")).toHaveCount(0);
   await page.getByLabel("Status", { exact: true }).selectOption("DONE");
+  await taskMenu(page, "Edited 中文 task");
   await expect(page.getByLabel("Status for Edited 中文 task")).toHaveValue(
     "DONE",
   );
+  await page.keyboard.press("Escape");
   await page
     .getByRole("button", { name: "Open task: Edited 中文 task", exact: true })
-    .click();
+    .press("Enter");
   await page
     .getByRole("button", { name: "Move to trash", exact: true })
     .click();
@@ -4861,8 +5422,11 @@ test("task edits, persistence, language, trash and recovery", async ({
   await page.getByRole("button", { name: "Restore", exact: true }).click();
   await nav(page, "Tasks");
   await page.reload();
-  await expect(page.getByLabel("Status for Edited 中文 task")).toHaveCount(0);
+  await expect(
+    page.locator(".task-card").filter({ hasText: "Edited 中文 task" }),
+  ).toHaveCount(0);
   await page.getByLabel("Status", { exact: true }).selectOption("DONE");
+  await taskMenu(page, "Edited 中文 task");
   await expect(page.getByLabel("Status for Edited 中文 task")).toHaveValue(
     "DONE",
   );
@@ -4889,6 +5453,7 @@ test("dependencies, filters and board transitions", async ({
   const statusB = page.getByLabel(
     w.common.statusLabel.replace("{{title}}", "Dependent B"),
   );
+  await taskMenu(page, "Dependent B");
   await statusB.selectOption("IN_PROGRESS");
   await expect(page.getByRole("alert")).toContainText(
     w.errors.WORK_ITEM_BLOCKED,
@@ -4915,25 +5480,23 @@ test("dependencies, filters and board transitions", async ({
     w.errors.WORK_GRAPH_CYCLE_DETECTED,
   );
   await nav(page, w.desk.tasks);
+  await taskMenu(page, "Prerequisite A");
   await page
     .getByLabel(w.common.statusLabel.replace("{{title}}", "Prerequisite A"))
     .selectOption("DONE");
+  await taskMenu(page, "Dependent B");
   await statusB.selectOption("IN_PROGRESS");
   await expect(statusB).toHaveValue("IN_PROGRESS");
   await page.getByLabel(w.desk.priority, { exact: true }).selectOption("HIGH");
   await expect(page.locator("article.task-card")).toHaveCount(0);
   await page.getByLabel(w.desk.status, { exact: true }).selectOption("ALL");
-  await page
-    .getByRole("tab", { name: w.desk.taskWorkspace.all, exact: true })
-    .click();
+  await taskScope(page, w.desk.taskWorkspace.all);
   await expect(page.locator("article.task-card")).toHaveCount(1);
   await page.getByLabel(w.desk.priority, { exact: true }).selectOption("ALL");
   await page.getByRole("textbox", { name: w.desk.search }).fill("Dependent");
   await expect(page.locator("article.task-card")).toHaveCount(1);
   await nav(page, w.desk.board);
-  await page
-    .getByRole("tab", { name: w.desk.taskWorkspace.all, exact: true })
-    .click();
+  await taskScope(page, w.desk.taskWorkspace.all);
   if (!info.project.name.startsWith("mobile")) {
     await page
       .getByRole("article")
@@ -4946,10 +5509,14 @@ test("dependencies, filters and board transitions", async ({
         }),
         { sourcePosition: { x: 8, y: 8 }, targetPosition: { x: 12, y: 12 } },
       );
-  } else
+  } else {
+    await taskMenu(page, "Dependent B");
     await page
       .getByLabel(w.common.statusLabel.replace("{{title}}", "Dependent B"))
       .selectOption("DONE");
+    await page.keyboard.press("Escape");
+  }
+  await taskMenu(page, "Dependent B");
   await expect(
     page.getByLabel(w.common.statusLabel.replace("{{title}}", "Dependent B")),
   ).toHaveValue("DONE");
@@ -4996,7 +5563,9 @@ test("notes, safe reading, revision restore, journal and export", async ({
   ).toBeUndefined();
   await saveDocument(page, w);
   await page.reload();
-  await page.locator(".note-card").click();
+  await page
+    .locator(".note-card, .library-document-row, .space-card")
+    .press("Enter");
   await documentMode(page, /^(Source|源码)$/);
   await expect(
     pane(page).getByLabel(w.desk.noteBody, { exact: true }),
@@ -5051,7 +5620,138 @@ test("notes, safe reading, revision restore, journal and export", async ({
     pane(page).getByLabel(w.desk.noteBody, { exact: true }),
   ).toHaveText("Today's reflection");
   await browseDocuments(page);
-  await expect(page.locator(".note-card")).toHaveCount(1);
+  await expect(
+    page.locator(".note-card, .library-document-row, .space-card"),
+  ).toHaveCount(1);
+});
+
+test("v2.3 Library searches bodies on the host and retains hierarchy query and selection", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "SPACE",
+      spaceId: null,
+      title: "Search collection",
+      bodyMd: "",
+    },
+  });
+  for (const [title, bodyMd] of [
+    ["Opaque result", "A body-only needlephrase match"],
+    ["Other page", "Unrelated prose"],
+  ]) {
+    await mutation(page, "/api/library/save", {
+      id: null,
+      version: 0,
+      input: { kind: "DOCUMENT", spaceId: space.id, title, bodyMd },
+    });
+  }
+  await page.reload();
+  await nav(page, w.spaces.library);
+  const row = page
+    .locator(".space-card")
+    .filter({ hasText: "Search collection" });
+  await row.click();
+  await expect(row).toHaveAttribute("data-selected", "true");
+  await expect(page.locator(".library-document-row")).toHaveCount(0);
+  await row.press("Enter");
+  await expect(page.locator(".library-document-row")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  const results = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/library/search?") &&
+      response.status() === 200,
+  );
+  await page.locator(".library-view .field input").fill("needlephrase");
+  const payload = await (await results).json();
+  expect(payload).toHaveLength(1);
+  expect(payload[0]).not.toHaveProperty("bodyMd");
+  await expect(page.locator(".library-document-row")).toHaveCount(1);
+  const document = page
+    .locator(".library-document-row")
+    .filter({ hasText: "Opaque result" });
+  await document.click();
+  await expect(pane(page)).toHaveCount(0);
+  await document.press("Enter");
+  await expect(pane(page).getByLabel(w.spaces.body)).toContainText(
+    "needlephrase",
+  );
+  await browseDocuments(page);
+  await expect(page.locator(".library-view .field input")).toHaveValue(
+    "needlephrase",
+  );
+  await expect(page.locator(".library-document-row")).toHaveCount(1);
+  await page.screenshot({
+    path: info.outputPath("library-hierarchy-search.png"),
+    fullPage: true,
+  });
+});
+
+test("v2.3 closing a document flushes latest text and retains an offline draft", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.notes);
+  await page.locator(".topbar .compact-create").click();
+  await pane(page).getByLabel(w.desk.noteTitle).fill("Close flush note");
+  await pane(page)
+    .getByLabel(w.desk.noteBody)
+    .fill("Close before debounce\nSecond line");
+  await page
+    .locator(".document-tab")
+    .getByRole("button", { name: /^(Close|关闭) / })
+    .click();
+  await expect(pane(page)).toHaveCount(0);
+  const saved = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    saved.notes.find(
+      (note: { title: string }) => note.title === "Close flush note",
+    ).bodyMd,
+  ).toBe("Close before debounce\nSecond line");
+  await page
+    .locator(".note-card, .library-document-row, .space-card")
+    .filter({ hasText: "Close flush note" })
+    .press("Enter");
+  await page.route("**/api/note/save", (route) => route.abort("failed"));
+  await pane(page).getByLabel(w.desk.noteBody).fill("Offline final text");
+  await page
+    .locator(".document-tab")
+    .getByRole("button", { name: /^(Close|关闭) / })
+    .click();
+  const confirmation = page.getByRole("dialog", {
+    name: /^(确认操作|Confirm action)$/,
+  });
+  await expect(confirmation).toContainText(
+    /本地草稿已保留|local draft is retained/,
+  );
+  await confirmation.getByRole("button", { name: /^(确认|Confirm)$/ }).click();
+  await expect(pane(page)).toHaveCount(0);
+  await page
+    .locator(".note-card, .library-document-row, .space-card")
+    .filter({ hasText: "Close flush note" })
+    .press("Enter");
+  await expect(pane(page).getByLabel(w.desk.noteBody)).toHaveText(
+    "Offline final text",
+  );
+  await page.unroute("**/api/note/save");
+  await saveDocument(page, w);
+  const restored = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    restored.notes.find(
+      (note: { title: string }) => note.title === "Close flush note",
+    ).bodyMd,
+  ).toBe("Offline final text");
 });
 
 test("live blocks autosave IME tabs and calendar journal recovery", async ({
@@ -5244,7 +5944,10 @@ test("localized product layouts, unsaved draft guard and lock", async ({
     });
   }
   await nav(page, w.desk.notes);
-  await page.locator(".note-card").first().click();
+  await page
+    .locator(".note-card, .library-document-row, .space-card")
+    .first()
+    .press("Enter");
   await page.screenshot({
     path: info.outputPath("note-editor.png"),
     fullPage: true,
@@ -5300,10 +6003,8 @@ test("project settings preserve brief and task fields; canvas saves Markdown wit
   await nav(page, w.desk.projects);
   await page
     .getByRole("button", { name: "Separate project", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: w.desk.projectSettings, exact: true })
-    .click();
+    .press("Enter");
+  await projectAction(page, w.desk.projectSettings);
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel(w.work.priority, { exact: true })).toHaveCount(
     0,
@@ -5442,9 +6143,9 @@ for (const legacy of [false, true])
     await page.reload();
     await nav(page, w.desk.notes);
     await page
-      .locator(".note-card")
+      .locator(".note-card, .library-document-row, .space-card")
       .filter({ hasText: "Remote authority" })
-      .click();
+      .press("Enter");
     await expect(pane(page).getByRole("alert")).toContainText(
       "VERSION_CONFLICT",
     );
@@ -5520,14 +6221,14 @@ test("equal membership scope counts shared work and canceled outcomes", async ({
   });
   await page.reload();
   await nav(page, w.desk.projects);
-  await page.getByRole("button", { name: "Scope root", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Scope root", exact: true })
+    .press("Enter");
   await page
     .getByRole("tab", { name: w.desk.projectHub.tasks, exact: true })
     .click();
   const panel = page.getByRole("tabpanel");
-  await panel
-    .getByRole("tab", { name: w.desk.taskWorkspace.all, exact: true })
-    .click();
+  await taskScope(page, w.desk.taskWorkspace.all);
   await expect(panel).toContainText("Root owned");
   await expect(panel).toContainText("Child canceled");
   await expect(panel).toContainText("Reference only");
@@ -5538,6 +6239,7 @@ test("equal membership scope counts shared work and canceled outcomes", async ({
       .replace("{{canceled}}", "1")
       .replace("{{unfinished}}", "2"),
   );
+  await openProjectTaskFilters(page);
   await page
     .getByLabel(w.desk.projectScope, { exact: true })
     .selectOption("DIRECT");
@@ -5574,11 +6276,8 @@ test("project lifecycle completion and explicit atomic reopen are usable", async
   await nav(page, w.desk.projects);
   await page
     .getByRole("button", { name: "Lifecycle project", exact: true })
-    .click();
-  const settings = () =>
-    page
-      .getByRole("button", { name: w.desk.projectSettings, exact: true })
-      .click();
+    .press("Enter");
+  const settings = () => projectAction(page, w.desk.projectSettings);
   const dialog = page.getByRole("dialog");
   await settings();
   await dialog
@@ -5672,15 +6371,17 @@ test("project hierarchy and URL preserve scope tabs and browser history", async 
     .click();
   await page
     .getByRole("button", { name: "Navigation child", exact: true })
-    .click();
+    .press("Enter");
   await expect(page).toHaveURL(new RegExp("projects/" + child.id));
   await page
-    .getByRole("navigation", { name: w.desk.projectBreadcrumb })
+    .locator(".topbar")
+    .getByRole("navigation")
     .getByRole("button", { name: "Navigation root", exact: true })
-    .click();
+    .press("Enter");
   await page
     .getByRole("tab", { name: w.desk.projectHub.tasks, exact: true })
     .click();
+  await openProjectTaskFilters(page);
   await page
     .getByLabel(w.desk.projectScope, { exact: true })
     .selectOption("DIRECT");
@@ -5692,6 +6393,7 @@ test("project hierarchy and URL preserve scope tabs and browser history", async 
   await expect(
     page.getByRole("tab", { name: w.desk.projectHub.tasks, exact: true }),
   ).toHaveAttribute("aria-selected", "true");
+  await openProjectTaskFilters(page);
   await expect(
     page.getByLabel(w.desk.projectScope, { exact: true }),
   ).toHaveValue("DIRECT");
@@ -5795,7 +6497,7 @@ test("inline prerequisites save atomically with availability and reject stale gr
         name: w.common.openTask.replace("{{title}}", "Inline dependent"),
         exact: true,
       })
-      .click();
+      .press("Enter");
   await openTask();
   await dialog.locator(".task-advanced > summary").click();
   await expect(
@@ -5973,15 +6675,16 @@ test("parent picker excludes descendants and dependency nodes open task inspecto
   await page.goto(
     workbench.url + `/#projects/${root.id}?tab=overview&scope=SUBTREE`,
   );
-  await page
-    .getByRole("button", { name: w.desk.projectSettings, exact: true })
-    .click();
+  await projectAction(page, w.desk.projectSettings);
   const dialog = page.getByRole("dialog");
   const picker = dialog.locator(".hierarchy-picker");
   await picker.locator(".hierarchy-selected > button").last().click();
   const browser = page.locator(".hierarchy-browser");
   await expect(
-    browser.locator("li").filter({ hasText: "Tree root" }).locator(".chip"),
+    browser
+      .locator("li")
+      .filter({ hasText: "Tree root" })
+      .locator(".ui-button-toggle"),
   ).toBeDisabled();
   await browser
     .locator("li")
@@ -5989,14 +6692,17 @@ test("parent picker excludes descendants and dependency nodes open task inspecto
     .locator(".parent-tree-choice")
     .click();
   await expect(
-    browser.locator("li").filter({ hasText: "Tree child" }).locator(".chip"),
+    browser
+      .locator("li")
+      .filter({ hasText: "Tree child" })
+      .locator(".ui-button-toggle"),
   ).toBeDisabled();
   await browser.locator("nav > button").click();
   await browser.getByRole("searchbox").fill("target");
   await browser
     .locator("li")
     .filter({ hasText: "Tree target" })
-    .locator(".chip")
+    .locator(".ui-button-toggle")
     .click();
   await dialog
     .getByRole("button", { name: w.common.save, exact: true })
@@ -6241,13 +6947,7 @@ test.describe("host calendar authority", () => {
     );
     await page.locator(".calendar-day.is-today").click();
     await expect(page.locator(".document-pane:not([hidden])")).toHaveCount(0);
-    await page
-      .locator(".agenda-panel section")
-      .filter({
-        has: page.getByRole("heading", { name: w.desk.journal, exact: true }),
-      })
-      .getByRole("button")
-      .click();
+    await openCalendarJournal(page, w.desk.journal);
     const body = pane(page).getByLabel(w.desk.noteBody);
     await body.fill("Journal on the authoritative day");
     await body.press("Control+s");
@@ -6310,13 +7010,22 @@ test("AI approval follows the active document tab and excludes hidden document c
     );
   await page.reload();
   await nav(page, w.spaces.library);
-  await page.locator(".space-card").filter({ hasText: "Context wiki" }).click();
-  await page.locator(".note-card").filter({ hasText: "Page one" }).click();
+  await page
+    .locator(".space-card")
+    .filter({ hasText: "Context wiki" })
+    .press("Enter");
+  await page
+    .locator(".note-card, .library-document-row, .space-card")
+    .filter({ hasText: "Page one" })
+    .press("Enter");
   await page
     .getByRole("tablist")
     .getByRole("button", { name: zh ? "工作台" : "Workspace", exact: true })
     .click();
-  await page.locator(".note-card").filter({ hasText: "Page two" }).click();
+  await page
+    .locator(".note-card, .library-document-row, .space-card")
+    .filter({ hasText: "Page two" })
+    .press("Enter");
   await page.getByRole("tab", { name: "Page one", exact: true }).click();
   await page.keyboard.press("Control+j");
   const assistant = page.getByRole("complementary", {
@@ -6398,9 +7107,9 @@ test("capture links to Space and promotes to Wiki with Journal backlinks", async
   await page.reload();
   await nav(page, w.desk.notes);
   await page
-    .locator(".note-card")
+    .locator(".note-card, .library-document-row, .space-card")
     .filter({ hasText: "Capture source" })
-    .click();
+    .press("Enter");
   const actions = page.locator(
     ".document-pane:visible .note-knowledge-actions",
   );
@@ -6427,7 +7136,7 @@ test("capture links to Space and promotes to Wiki with Journal backlinks", async
   ).toHaveLength(1);
   await actions
     .getByRole("button", {
-      name: zh ? "提升为 Wiki 页面" : "Promote to Wiki page",
+      name: zh ? "整理到知识库" : "Organize in Library",
       exact: true,
     })
     .click();
@@ -6464,11 +7173,14 @@ test("capture links to Space and promotes to Wiki with Journal backlinks", async
     .getByRole("button", { name: zh ? "工作台" : "Workspace", exact: true })
     .click();
   await nav(page, w.spaces.library);
-  await page.locator(".space-card").filter({ hasText: "Capture Wiki" }).click();
   await page
-    .locator(".note-card")
+    .locator(".space-card")
+    .filter({ hasText: "Capture Wiki" })
+    .press("Enter");
+  await page
+    .locator(".note-card, .library-document-row, .space-card")
     .filter({ has: page.getByText("Architecture", { exact: true }) })
-    .click();
+    .press("Enter");
   await expect(pane(page).locator(".wiki-relations")).toContainText(
     "Journal source",
   );
@@ -6515,7 +7227,7 @@ test("current level hierarchy search is shared by Task filters and AI scope", as
     .click();
   await browser.getByRole("searchbox").fill("Deep target");
   await expect(browser.locator("li")).toHaveCount(1);
-  await browser.locator("li .chip").click();
+  await browser.locator("li .ui-button-toggle").click();
   await expect(page.locator(".task-card")).toHaveCount(1);
   await expect(page.locator(".task-card")).toContainText("Scoped child task");
   await nav(page, w.desk.settings);
@@ -6732,7 +7444,8 @@ test("action pending permits another Task inspector and rolls back optimistic fa
     });
   });
   const row = page.locator(".task-card").filter({ hasText: "Pending A" });
-  const status = row.getByRole("combobox");
+  const menu = await taskMenu(page, "Pending A");
+  const status = menu.getByRole("combobox");
   await status.selectOption("IN_PROGRESS");
   await expect(status).toHaveValue("IN_PROGRESS");
   await expect(status).toBeDisabled();
@@ -6740,7 +7453,7 @@ test("action pending permits another Task inspector and rolls back optimistic fa
     .locator(".task-card")
     .filter({ hasText: "Independent B" })
     .locator(".task-title")
-    .click();
+    .press("Enter");
   const inspector = page.getByRole("dialog");
   await expect(inspector.getByLabel(w.work.title, { exact: true })).toHaveValue(
     "Independent B",
@@ -6752,6 +7465,10 @@ test("action pending permits another Task inspector and rolls back optimistic fa
     .getByRole("button", { name: w.common.close, exact: true })
     .click();
   release();
+  await expect(
+    row.getByRole("button", { name: /More actions: |更多操作：/ }),
+  ).toBeEnabled();
+  await taskMenu(page, "Pending A");
   await expect(status).toHaveValue("TODO");
   await expect(status).toBeEnabled();
   await expect(page.locator(".toast")).toBeVisible();
@@ -7081,8 +7798,8 @@ test("hardening Trash soft delete Undo restore and permanent purge across entity
   };
   page.on("dialog", rejectUnexpected);
   const row = page.locator(".task-card").filter({ hasText: "Purge UI task" });
-  await row
-    .getByRole("button", {
+  await (await taskMenu(page, "Purge UI task"))
+    .getByRole("menuitem", {
       name: w.desk.deleteItem + ": Purge UI task",
       exact: true,
     })
@@ -7094,8 +7811,8 @@ test("hardening Trash soft delete Undo restore and permanent purge across entity
     .getByRole("button", { name: zh ? "撤销" : "Undo", exact: true })
     .click();
   await expect(row).toBeVisible();
-  await row
-    .getByRole("button", {
+  await (await taskMenu(page, "Purge UI task"))
+    .getByRole("menuitem", {
       name: w.desk.deleteItem + ": Purge UI task",
       exact: true,
     })
@@ -7113,8 +7830,8 @@ test("hardening Trash soft delete Undo restore and permanent purge across entity
       .getByRole("button", { name: zh ? "关闭" : "Dismiss", exact: true })
       .click();
   await nav(page, w.desk.tasks);
-  await row
-    .getByRole("button", {
+  await (await taskMenu(page, "Purge UI task"))
+    .getByRole("menuitem", {
       name: w.desk.deleteItem + ": Purge UI task",
       exact: true,
     })
@@ -7561,7 +8278,7 @@ test("2.1 Repeat draft conversion and occurrence versus series editing preserve 
     .locator(".task-card")
     .filter({ hasText: "First repeating task" })
     .locator(".task-title")
-    .click();
+    .press("Enter");
   editor = page.locator(".task-dialog");
   await editor.locator(".task-advanced summary").click();
   await editor
@@ -7586,7 +8303,7 @@ test("2.1 Repeat draft conversion and occurrence versus series editing preserve 
     .locator(".task-card")
     .filter({ hasText: "Only this occurrence" })
     .locator(".task-title")
-    .click();
+    .press("Enter");
   await editor.locator(".task-advanced summary").click();
   await editor
     .getByRole("button", {
@@ -7621,7 +8338,7 @@ test("2.1 Repeat draft conversion and occurrence versus series editing preserve 
     .locator(".task-card")
     .filter({ hasText: "Convert ordinary task" })
     .locator(".task-title")
-    .click();
+    .press("Enter");
   await editor.locator(".task-advanced summary").click();
   await editor
     .getByLabel(text("重复", "Repeat"), { exact: true })
@@ -7704,8 +8421,29 @@ test("2.1 Graph Workspace directed depth dependency hops URL refresh Back and In
     workspace.getByRole("button", { name: "Graph grandchild", exact: true }),
   ).toHaveCount(0);
   await workspace
-    .getByRole("button", { name: "2 " + text("层", "level"), exact: true })
+    .getByRole("button", {
+      name: text("展开两层", "Expand two levels"),
+      exact: true,
+    })
     .click();
+  await expect(
+    workspace.getByRole("button", { name: "Graph grandchild", exact: true }),
+  ).toBeVisible();
+  const expandChild = workspace.getByRole("button", {
+    name: text("展开子项目：", "Expand children: ") + "Graph child",
+    exact: true,
+  });
+  await expandChild.click();
+  await expect(
+    workspace.getByRole("button", { name: "Graph grandchild", exact: true }),
+  ).toHaveCount(0);
+  await expect(page).toHaveURL(/depth=2/);
+  await expect(page).toHaveURL(/manual=1/);
+  await page.reload();
+  await expect(
+    workspace.getByRole("button", { name: "Graph grandchild", exact: true }),
+  ).toHaveCount(0);
+  await expandChild.click();
   await expect(
     workspace.getByRole("button", { name: "Graph grandchild", exact: true }),
   ).toBeVisible();
@@ -7732,8 +8470,19 @@ test("2.1 Graph Workspace directed depth dependency hops URL refresh Back and In
     .getByRole("button", { name: text("图形", "Graph"), exact: true })
     .click();
   await expect(workspace.locator(".react-flow__node")).toHaveCount(3);
+  await workspace
+    .getByRole("button", { name: text("放大", "Zoom in"), exact: true })
+    .click();
+  await expect(page).toHaveURL(/viewport=/);
+  const viewportTransform = await workspace
+    .locator(".react-flow__viewport")
+    .getAttribute("style");
   await page.reload();
   await expect(workspace.locator(".react-flow__node")).toHaveCount(3);
+  await expect(workspace.locator(".react-flow__viewport")).toHaveAttribute(
+    "style",
+    viewportTransform!,
+  );
   await expect(page).toHaveURL(/view=graph/);
   await page.goto(
     workbench.url +
@@ -7776,6 +8525,55 @@ test("2.1 Graph Workspace directed depth dependency hops URL refresh Back and In
   );
   await page.reload();
   await expect(workspace.locator(".react-flow__node")).toHaveCount(4);
+  await expect(
+    workspace.getByRole("complementary", {
+      name: text("检查器", "Inspector"),
+      exact: true,
+    }),
+  ).toContainText("Hop task 1");
+  const selectedNode = workspace
+    .locator(".react-flow__node")
+    .filter({ hasText: "Hop task 1" });
+  await selectedNode.click({ button: "right" });
+  const nodeMenu = page.getByRole("menu", {
+    name: text("节点操作", "Node actions"),
+    exact: true,
+  });
+  await expect(
+    nodeMenu.getByRole("menuitem", {
+      name: text("打开", "Open"),
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(nodeMenu).toHaveCount(0);
+  await expect(
+    workspace.getByRole("complementary", {
+      name: text("检查器", "Inspector"),
+      exact: true,
+    }),
+  ).toContainText("Hop task 1");
+  await expect(page).toHaveURL(/hops=2/);
+  await workspace
+    .getByRole("complementary", {
+      name: text("检查器", "Inspector"),
+      exact: true,
+    })
+    .getByRole("button", { name: "Atlas", exact: true })
+    .click();
+  await expect(workspace.locator(".context-pane")).toHaveCount(0);
+  const atlasContext = page.getByRole("complementary", {
+    name: text("上下文", "Context"),
+    exact: true,
+  });
+  await expect(atlasContext).toBeVisible();
+  await atlasContext
+    .getByRole("button", {
+      name: text("详情", "Details"),
+      exact: true,
+    })
+    .click();
+  await expect(atlasContext).toHaveCount(0);
   await expect(
     workspace.getByRole("complementary", {
       name: text("检查器", "Inspector"),
@@ -7868,7 +8666,10 @@ test("2.1 Knowledge Graph workspace local hops excludes isolated universe and re
   await page.reload();
   await expect(nodes).toHaveCount(3);
   await workspace
-    .getByRole("button", { name: text("工作区", "workspace"), exact: true })
+    .getByRole("button", {
+      name: text("工作区", "Entire workspace"),
+      exact: true,
+    })
     .click();
   await expect(nodes).toHaveCount(3);
   await expect(
@@ -8050,6 +8851,27 @@ test("2.2 Calendar selects day independently and formal reminders create edit co
     .getByLabel(zh ? "通知" : "Notification", { exact: true })
     .selectOption("MINUTES_BEFORE");
   await dialog.getByLabel(zh ? "提前分钟" : "Minutes before").fill("30");
+  const allDay = dialog.getByLabel(zh ? "全天" : "All day", { exact: true });
+  await expect(allDay).not.toBeChecked();
+  await allDay.check();
+  await expect(
+    dialog.getByLabel(zh ? "时间" : "Time", { exact: true }),
+  ).toHaveValue("");
+  await expect(
+    dialog.getByLabel(zh ? "通知" : "Notification", { exact: true }),
+  ).toHaveValue("NONE");
+  await expect(
+    dialog.getByLabel(zh ? "提前分钟" : "Minutes before"),
+  ).toHaveCount(0);
+  await allDay.uncheck();
+  await expect(
+    dialog.getByLabel(zh ? "时间" : "Time", { exact: true }),
+  ).toHaveValue("09:00");
+  await dialog.getByLabel(zh ? "时间" : "Time", { exact: true }).fill("14:30");
+  await dialog
+    .getByLabel(zh ? "通知" : "Notification", { exact: true })
+    .selectOption("MINUTES_BEFORE");
+  await dialog.getByLabel(zh ? "提前分钟" : "Minutes before").fill("30");
   await dialog
     .getByRole("button", { name: zh ? "保存" : "Save", exact: true })
     .click();
@@ -8110,6 +8932,9 @@ test("2.2 Calendar selects day independently and formal reminders create edit co
     },
   });
   await page.reload();
+  await expect(
+    page.locator(`.calendar-day[aria-label="${entry.day}"]`),
+  ).toHaveAttribute("aria-pressed", "true");
   await panel
     .getByRole("button", { name: zh ? "忽略" : "Dismiss", exact: true })
     .click();
@@ -8136,6 +8961,511 @@ test("2.2 Calendar selects day independently and formal reminders create edit co
   expect(restoredReminder.state).toBe("DISMISSED");
   await page.screenshot({
     path: info.outputPath("calendar-reminders.png"),
+    fullPage: true,
+  });
+});
+
+for (const [width, height] of [
+  [1024, 768],
+  [1280, 800],
+  [1440, 900],
+  [1920, 1080],
+] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`v2.3 visual matrix ${width}x${height} ${theme}`, async ({
+      page,
+      workbench,
+    }, info) => {
+      test.setTimeout(180000);
+      const w = words(info.project.name),
+        zh = info.project.name.endsWith("zh");
+      await page.setViewportSize({ width, height });
+      await page.addInitScript(
+        (value) => localStorage.setItem("orivane-atlas.theme", value),
+        theme,
+      );
+      await unlock(page, workbench.url, workbench.secret, w);
+      const identity = await (
+        await page.request.get(workbench.url + "/api/session")
+      ).json();
+      await workbench.seedPerformance(identity.context);
+      await page.reload();
+      await expect(page.locator(".app-shell")).toBeVisible();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      const directory = resolve(
+        ".artifacts/v23-visual",
+        info.project.name,
+        `${width}x${height}-${theme}`,
+      );
+      mkdirSync(directory, { recursive: true });
+      const capture = async (name: string) => {
+        await page.evaluate(() => document.fonts.ready);
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth,
+          ),
+          name + " page overflow",
+        ).toBe(true);
+        await page.screenshot({ path: join(directory, name + ".png") });
+      };
+      const go = async (hash: string) => {
+        await page.evaluate((value) => {
+          location.hash = value;
+        }, hash);
+      };
+      await go("#overview");
+      await expect(page.locator(".overview-grid")).toBeVisible();
+      await capture("01-home");
+      await go("#focus");
+      await expect(page.locator(".topbar strong")).toHaveText(w.desk.focus);
+      await capture("02-focus");
+      await go("#tasks?tab=all&view=list");
+      await expect(
+        page.locator(".task-list .virtual-task-scroll"),
+      ).toHaveAttribute("data-task-count", "1500");
+      await capture("03-tasks-list");
+      await go("#tasks?tab=all&view=board");
+      await expect(page.locator(".board")).toBeVisible();
+      await capture("04-tasks-board");
+      await go("#projects");
+      await expect(page.locator(".projects-overview")).toBeVisible();
+      await capture("05-project-list");
+      await go("#projects/perf-project-1?tab=overview&scope=SUBTREE");
+      await expect(page.locator(".project-workspace")).toBeVisible();
+      await capture("06-project-overview");
+      await go("#projects/perf-project-1?tab=tasks&scope=SUBTREE");
+      const modes = page.locator(
+        ".project-workspace .tasks-workspace .ui-segmented",
+      );
+      await modes
+        .getByRole("button", { name: w.desk.taskWorkspace.board, exact: true })
+        .click();
+      await expect(page.locator(".project-workspace .board")).toBeVisible();
+      await capture("07-project-board");
+      await modes
+        .getByRole("button", { name: zh ? "甘特图" : "Gantt", exact: true })
+        .click();
+      await expect(page.locator(".task-gantt")).toBeVisible();
+      await capture("08-project-gantt");
+      await go("#calendar");
+      await expect(page.locator(".calendar-sheet")).toBeVisible();
+      await capture("09-calendar");
+      await go("#tasks?tab=all&view=list");
+      await page
+        .locator(".topbar")
+        .getByRole("button", { name: w.desk.newTask, exact: true })
+        .click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await capture("10-task-editor");
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await go("#library");
+      await page.locator(".space-card").first().press("Enter");
+      await expect(page.locator(".library-document-row").first()).toBeVisible();
+      await capture("12-library");
+      await page
+        .locator(".library-document-row")
+        .filter({
+          has: page.getByRole("heading", {
+            name: "Perf document 0002",
+            exact: true,
+          }),
+        })
+        .press("Enter");
+      await expect(page.locator(".document-pane .cm-content")).toBeVisible();
+      await page
+        .locator(".document-pane .ui-segmented")
+        .getByRole("button", { name: w.desk.read, exact: true })
+        .click();
+      await capture("11-document");
+      await page
+        .getByRole("button", { name: zh ? "工作台" : "Workspace", exact: true })
+        .click();
+      await go("#graph/document/perf-document-0?view=graph&hops=1");
+      await expect(page.locator(".react-flow__node").first()).toBeVisible();
+      await capture("13-graph");
+      await go("#ai");
+      await expect(page.locator(".conversation-list")).toBeVisible();
+      await capture("14-atlas");
+      await go("#settings");
+      await expect(page.locator(".settings-page")).toBeVisible();
+      await capture("16-settings");
+      await page.locator(".model-settings").scrollIntoViewIfNeeded();
+      await capture("15-ai-settings");
+      await go("#trash");
+      await expect(page.locator(".topbar strong")).toHaveText(w.desk.trash);
+      await capture("17-trash");
+      await info.attach("visual-matrix-directory.txt", {
+        body: directory,
+        contentType: "text/plain",
+      });
+    });
+  }
+}
+
+test("v2.3 note right click opens shared actions and trash undo preserves Markdown", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "NOTE",
+      day: null,
+      title: "Context note",
+      bodyMd: "First line\nSecond line",
+    },
+  });
+  await page.reload();
+  await nav(page, w.desk.notes);
+  const row = page.locator(".note-card").filter({
+    has: page.getByRole("heading", { name: "Context note", exact: true }),
+  });
+  await row.getByRole("heading").click({ button: "right" });
+  await expect(row).toHaveAttribute("data-selected", "true");
+  await expect(page.locator(".document-pane")).toHaveCount(0);
+  const menu = page.getByRole("menu", {
+    name: zh ? "更多操作：Context note" : "More actions: Context note",
+    exact: true,
+  });
+  await menu
+    .getByRole("menuitem", {
+      name: zh ? "移至回收站" : "Move to Trash",
+      exact: true,
+    })
+    .click();
+  await expect(row).toHaveCount(0);
+  await page.getByRole("button", { name: /^(Undo|撤销)$/ }).click();
+  await expect(row).toHaveCount(1);
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.notes.find(
+      (note: { title: string }) => note.title === "Context note",
+    ),
+  ).toMatchObject({ bodyMd: "First line\nSecond line", deletedAt: null });
+});
+
+test("v2.3 Notes search body on the server before lazy hydration", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  for (const [title, bodyMd] of [
+    ["Target capture", "Private needle-body-v23 content"],
+    ["Other capture", "Other content"],
+  ])
+    await mutation(page, "/api/note/save", {
+      id: null,
+      version: 0,
+      input: { kind: "NOTE", day: null, title, bodyMd },
+    });
+  const bodyRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/document/body?"))
+      bodyRequests.push(request.url());
+  });
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await expect(page.locator(".note-card")).toHaveCount(2);
+  expect(bodyRequests).toEqual([]);
+  await page.locator(".content .search input").fill("needle-body-v23");
+  await expect(page.locator(".note-card")).toHaveCount(1);
+  await expect(page.locator(".note-card")).toContainText("Target capture");
+  expect(bodyRequests).toEqual([]);
+  await page.locator(".note-card").click();
+  await expect(page.locator(".note-card")).toHaveAttribute(
+    "data-selected",
+    "true",
+  );
+  await expect(page.locator(".document-pane")).toHaveCount(0);
+  expect(bodyRequests).toEqual([]);
+  const loaded = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/document/body?") &&
+      response.status() === 200,
+  );
+  await page.locator(".note-card").press("Enter");
+  expect((await (await loaded).json()).bodyMd).toBe(
+    "Private needle-body-v23 content",
+  );
+  await expect(
+    pane(page).getByLabel(w.desk.noteTitle, { exact: true }),
+  ).toHaveValue("Target capture");
+  expect(bodyRequests.length).toBeGreaterThan(0);
+});
+
+test("v2.3 local shell paints while session network is blocked", async ({
+  page,
+  workbench,
+}, info) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let waiting = false;
+  let networkReleased = false;
+  await page.route("**/api/session", async (route) => {
+    waiting = true;
+    await gate;
+    await route.continue();
+  });
+  try {
+    await page.goto(workbench.url, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("startup-shell")).toBeVisible();
+    await expect.poll(() => waiting).toBe(true);
+    await expect(
+      page
+        .getByTestId("startup-shell")
+        .getByRole("img", { name: "Orivane Atlas" }),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("startup-shell").getByRole("status"),
+    ).toHaveText(
+      info.project.name.endsWith("zh")
+        ? "正在连接工作空间…"
+        : "Connecting to your workspace…",
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          performance
+            .getEntriesByType("paint")
+            .some((entry) => entry.name === "first-contentful-paint"),
+        ),
+      )
+      .toBe(true);
+    const paint = await page.evaluate(() => ({
+      firstContentfulPaintMs: performance
+        .getEntriesByType("paint")
+        .find((entry) => entry.name === "first-contentful-paint")!.startTime,
+      shellObservedMs: performance.now(),
+    }));
+    expect(networkReleased).toBe(false);
+    writeFileSync(
+      resolve(".artifacts", `session116-shell-${info.project.name}.json`),
+      JSON.stringify(
+        { ...paint, sessionRequestPending: waiting, networkReleased },
+        null,
+        2,
+      ),
+    );
+    await info.attach("cold-shell-before-network.json", {
+      body: JSON.stringify(
+        { ...paint, sessionRequestPending: waiting, networkReleased },
+        null,
+        2,
+      ),
+      contentType: "application/json",
+    });
+  } finally {
+    networkReleased = true;
+    release();
+  }
+  await expect(page.getByTestId("startup-shell")).toHaveCount(0);
+});
+
+for (const latencyMs of [200, 800]) {
+  test(`v2.3 cold metadata readiness with ${latencyMs}ms request latency`, async ({
+    page,
+    workbench,
+  }, info) => {
+    test.setTimeout(120000);
+    const w = words(info.project.name);
+    await unlock(page, workbench.url, workbench.secret, w);
+    const identity = await (
+      await page.request.get(workbench.url + "/api/session")
+    ).json();
+    await workbench.seedPerformance(identity.context);
+    const requestedPaths: string[] = [];
+    await page.route("**/api/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      requestedPaths.push(path);
+      // Delay real requests; retain actual host authentication and payloads.
+      await new Promise((resolve) => setTimeout(resolve, latencyMs));
+      await route.continue();
+    });
+    const bootstrapResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/bootstrap" && response.ok(),
+    );
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const response = await bootstrapResponse;
+    const bootstrap = await response.json();
+    expect(
+      bootstrap.library.filter(
+        (entry: { kind: string }) => entry.kind === "DOCUMENT",
+      ),
+    ).toHaveLength(2000);
+    for (const entry of [...bootstrap.library, ...bootstrap.notes]) {
+      expect(entry).not.toHaveProperty("bodyMd");
+      expect(entry.bodyState).toBe("UNLOADED");
+    }
+    await nav(page, w.desk.tasks);
+    await expect(page.locator(".tasks-workspace")).toBeVisible();
+    await expect(page.locator(".virtual-task-scroll").first()).toBeVisible();
+    const evidence = await page.evaluate(() => ({
+      firstContentfulPaintMs: performance
+        .getEntriesByType("paint")
+        .find((entry) => entry.name === "first-contentful-paint")?.startTime,
+      metadataUsableMs: performance.now(),
+    }));
+    expect(evidence.firstContentfulPaintMs).toBeGreaterThan(0);
+    expect(requestedPaths).not.toContain("/api/snapshot");
+    expect(
+      requestedPaths.filter((path) => path === "/api/bootstrap"),
+    ).toHaveLength(1);
+    expect(requestedPaths).not.toContain("/api/document/body");
+    const report = {
+      ...evidence,
+      artificialRequestLatencyMs: latencyMs,
+      documents: 2000,
+      decodedBootstrapBytes: (await response.body()).length,
+      requestedPaths,
+    };
+    writeFileSync(
+      resolve(
+        ".artifacts",
+        `session117-cold-${latencyMs}-${info.project.name}.json`,
+      ),
+      JSON.stringify(report, null, 2),
+    );
+    await info.attach("cold-metadata-readiness.json", {
+      body: JSON.stringify(report, null, 2),
+      contentType: "application/json",
+    });
+  });
+}
+
+test("v2.3 Calendar palette journal inherits the selected day", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.calendar);
+  const today = await page
+    .locator(".calendar-day.is-today")
+    .getAttribute("aria-label");
+  const selected = today!.slice(0, 8) + "15";
+  await page
+    .locator(".calendar-panel")
+    .getByRole("button", { name: selected, exact: true })
+    .click();
+  await page.keyboard.press("Control+k");
+  const palette = page.locator(".command-palette");
+  await palette
+    .getByRole("button", {
+      name: zh ? "打开所选日期日记" : "Open selected day's journal",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator(".document-pane .document-title")).toHaveValue(
+    selected,
+  );
+});
+
+test("v2.3 Calendar sheet shares day context counts and preserves its month", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh"),
+    mobile = info.project.name.startsWith("mobile");
+  if (!mobile) await page.setViewportSize({ width: 1024, height: 768 });
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.calendar);
+  await expect(page.locator(".agenda-panel h3")).toHaveCount(0);
+  const today = await page
+    .locator(".calendar-day.is-today")
+    .getAttribute("aria-label");
+  expect(today).not.toBeNull();
+  const selected = today!.slice(0, 8) + "15";
+  const cell = page
+    .locator(".calendar-panel")
+    .getByRole("button", { name: selected, exact: true });
+  await cell.click();
+  await expect(cell).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".document-pane")).toHaveCount(0);
+  await expect(cell).not.toHaveClass(/ui-button/);
+  expect(
+    await cell.evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).minHeight),
+    ),
+  ).toBeGreaterThanOrEqual(mobile ? 96 : 120);
+  expect(
+    await page
+      .locator(".calendar-grid")
+      .evaluate((element) => getComputedStyle(element).gap),
+  ).toBe("0px");
+  await page
+    .getByRole("button", { name: zh ? "+ 任务" : "+ Task", exact: true })
+    .click();
+  const taskDialog = page.getByRole("dialog");
+  await expect(taskDialog.locator(".date-field-validity").first()).toHaveValue(
+    selected,
+  );
+  await taskDialog
+    .getByLabel(w.work.title, { exact: true })
+    .fill("Selected day action");
+  await taskDialog
+    .getByRole("button", { name: w.common.create, exact: true })
+    .click();
+  await expect(taskDialog).toHaveCount(0);
+  await expect(cell).toContainText("Selected day action");
+  await expect(
+    page.locator('.calendar-agenda-section[data-kind="→"] [data-count]'),
+  ).toHaveAttribute("data-count", "1");
+  await page
+    .getByRole("button", {
+      name: zh ? "添加提醒" : "Add reminder",
+      exact: true,
+    })
+    .click();
+  const reminderDialog = page.getByRole("dialog");
+  await expect(reminderDialog.locator(".date-field-validity")).toHaveValue(
+    selected,
+  );
+  await reminderDialog
+    .getByLabel(zh ? "标题" : "Title", { exact: true })
+    .fill("Selected day reminder");
+  await reminderDialog
+    .getByRole("button", { name: zh ? "保存" : "Save", exact: true })
+    .click();
+  await expect(
+    cell.getByLabel(zh ? "提醒" : "Reminders", { exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    page.locator(".calendar-reminders [data-count]"),
+  ).toHaveAttribute("data-count", "1");
+  await page
+    .locator(".calendar-controls")
+    .getByRole("button", { name: w.desk.nextMonth, exact: true })
+    .click();
+  const nextSelected = await page
+    .locator('.calendar-day[aria-pressed="true"]')
+    .getAttribute("aria-label");
+  expect(nextSelected!.slice(0, 7)).not.toBe(selected.slice(0, 7));
+  await expect(page.locator(".agenda-panel h3")).toHaveCount(0);
+  await nav(page, w.desk.tasks);
+  await nav(page, w.desk.calendar);
+  await expect(
+    page.locator('.calendar-day[aria-pressed="true"]'),
+  ).toHaveAttribute("aria-label", nextSelected!);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: info.outputPath("calendar-sheet-context.png"),
     fullPage: true,
   });
 });
@@ -8180,8 +9510,16 @@ test("Atlas conversation summaries support rename archive restore delete undo an
     .getByRole("button", { name: "Second conversation", exact: true })
     .click();
   await assistant
-    .locator(".conversation-list")
-    .getByRole("button", { name: zh ? "项目" : "Projects", exact: true })
+    .getByRole("button", {
+      name: zh ? "对话筛选" : "Conversation filters",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitemcheckbox", {
+      name: zh ? "项目" : "Projects",
+      exact: true,
+    })
     .click();
   await expect(
     assistant
@@ -8194,8 +9532,9 @@ test("Atlas conversation summaries support rename archive restore delete undo an
       exact: true,
     }),
   ).toBeVisible();
-  await assistant
-    .getByRole("button", { name: zh ? "重命名" : "Rename", exact: true })
+  await assistant.locator(".conversation-options > button").click();
+  await page
+    .getByRole("menuitem", { name: zh ? "重命名" : "Rename", exact: true })
     .click();
   const dialog = page.getByRole("dialog", {
     name: zh ? "重命名对话" : "Rename conversation",
@@ -8210,9 +9549,9 @@ test("Atlas conversation summaries support rename archive restore delete undo an
       exact: true,
     }),
   ).toBeVisible();
-  await assistant
-    .locator(".conversation-messages")
-    .getByRole("button", { name: zh ? "归档" : "Archive", exact: true })
+  await assistant.locator(".conversation-options > button").click();
+  await page
+    .getByRole("menuitem", { name: zh ? "归档" : "Archive", exact: true })
     .click();
   await expect(
     assistant.getByRole("button", {
@@ -8221,21 +9560,28 @@ test("Atlas conversation summaries support rename archive restore delete undo an
     }),
   ).toHaveCount(0);
   await assistant
-    .locator(".conversation-list")
-    .getByRole("button", { name: zh ? "归档" : "Archived", exact: true })
+    .getByRole("button", {
+      name: zh ? "对话筛选" : "Conversation filters",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitemradio", { name: zh ? "归档" : "Archived", exact: true })
     .click();
   await assistant
     .getByRole("button", { name: "Renamed conversation", exact: true })
     .click();
-  await assistant
-    .getByRole("button", { name: zh ? "恢复" : "Restore", exact: true })
+  await assistant.locator(".conversation-options > button").click();
+  await page
+    .getByRole("menuitem", { name: zh ? "恢复" : "Restore", exact: true })
     .click();
   await assistant
     .locator(".conversation-list")
     .getByRole("button", { name: zh ? "最近" : "Recent", exact: true })
     .click();
-  await assistant
-    .getByRole("button", {
+  await assistant.locator(".conversation-options > button").click();
+  await page
+    .getByRole("menuitem", {
       name: zh ? "删除对话" : "Delete conversation",
       exact: true,
     })
@@ -8343,6 +9689,11 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
     action: () => Promise<unknown>,
     settled: () => Promise<unknown>,
   ) => {
+    const profileInteraction = process.env.ATLAS_PROFILE_INTERACTIONS === "1";
+    if (profileInteraction) {
+      await cdp.send("Profiler.enable");
+      await cdp.send("Profiler.start");
+    }
     const before = await metrics(),
       started = performance.now();
     await action();
@@ -8358,6 +9709,16 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
         ((after.get("TaskDuration") ?? 0) - (before.get("TaskDuration") ?? 0)) *
         1000,
     };
+    if (profileInteraction) {
+      const { profile } = await cdp.send("Profiler.stop");
+      writeFileSync(
+        resolve(
+          ".artifacts",
+          `${process.env.ATLAS_BENCHMARK_PREFIX ?? "session107"}-interaction-${name.replace(/[^a-zA-Z0-9]+/g, "-")}-${info.project.name}.cpuprofile`,
+        ),
+        JSON.stringify(profile),
+      );
+    }
   };
   await nav(page, w.desk.tasks);
   await measure(
@@ -8377,10 +9738,7 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
   );
   await measure(
     "Task tab switch",
-    () =>
-      page
-        .getByRole("tab", { name: w.desk.taskWorkspace.all, exact: true })
-        .click(),
+    () => taskScope(page, w.desk.taskWorkspace.all),
     () =>
       expect(page.locator(".task-list .virtual-task-scroll")).toHaveAttribute(
         "data-task-count",
@@ -8435,8 +9793,7 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
     "Calendar month switch",
     () =>
       page.getByRole("button", { name: w.desk.nextMonth, exact: true }).click(),
-    () =>
-      expect(page.locator(".calendar-panel .panel-heading h2")).toBeVisible(),
+    () => expect(page.locator(".calendar-month-header h2")).toBeVisible(),
   );
   await measure(
     "Dependency local graph",
@@ -8521,7 +9878,7 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
     writeFileSync(
       resolve(
         ".artifacts",
-        `session107-editor-${kb}KB-${info.project.name}.cpuprofile`,
+        `${process.env.ATLAS_BENCHMARK_PREFIX ?? "session107"}-editor-${kb}KB-${info.project.name}${info.repeatEachIndex ? `-repeat${info.repeatEachIndex}` : ""}.cpuprofile`,
       ),
       JSON.stringify(profile),
     );
@@ -8540,30 +9897,43 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
     await expect
       .poll(async () => {
         const current = await (
-          await page.request.get(workbench.url + "/api/snapshot")
+          await page.request.get(
+            workbench.url +
+              "/api/document/body?kind=LIBRARY&id=" +
+              encodeURIComponent(id),
+          )
         ).json();
-        return current.library.find((entry: { id: string }) => entry.id === id)
-          ?.bodyMd;
+        return current.bodyMd;
       })
       .toBe(original + "x".repeat(30));
+    await page
+      .getByRole("button", { name: zh ? "工作台" : "Workspace", exact: true })
+      .click();
+    await expect(page.locator(".react-flow__node").first()).toBeVisible();
   }
   await measure(
     "Atlas conversation list",
     () => nav(page, "Atlas"),
     () =>
       expect(
-        page
-          .locator(".conversation-list")
-          .getByRole("button", { name: /^Perf conversation/ }),
-      ).toHaveCount(100),
+        page.locator(".conversation-list").locator(".virtual-task-scroll"),
+      ).toHaveAttribute("data-task-count", "100"),
   );
+  evidence.liveSessionRows = await page.locator(".conversation-entry").count();
+  expect(Number(evidence.liveSessionRows)).toBeLessThan(40);
   await measure(
     "Atlas conversation open",
-    () =>
-      page
+    async () => {
+      await page
+        .locator(".conversation-list .virtual-task-scroll")
+        .evaluate((element) => {
+          element.scrollTop = element.scrollHeight;
+        });
+      await page
         .locator(".conversation-list")
         .getByRole("button", { name: /Perf conversation 001/ })
-        .click(),
+        .click();
+    },
     () =>
       expect(
         page.locator(".conversation-messages [data-message-kind]"),
@@ -8581,7 +9951,7 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
   writeFileSync(
     resolve(
       ".artifacts",
-      `session107-complete-benchmark-${info.project.name}.json`,
+      `${process.env.ATLAS_BENCHMARK_PREFIX ?? "session107"}-complete-benchmark-${info.project.name}${info.repeatEachIndex ? `-repeat${info.repeatEachIndex}` : ""}.json`,
     ),
     JSON.stringify(evidence, null, 2),
   );
@@ -8677,3 +10047,196 @@ test("v2.2 application icons and protected Sidebar logo are served independently
     );
   }
 });
+
+async function openProjectTaskFilters(page: Page) {
+  const button = page.getByRole("button", {
+    name: /^(任务筛选|Task filters)$/,
+  });
+  if ((await button.getAttribute("aria-expanded")) !== "true")
+    await button.click();
+}
+
+// Identical probe also runs against the isolated 389 release archive.
+for (const latencyMs of [150, 200, 800]) {
+  test(`v2.3 cold shared release comparison with ${latencyMs}ms request latency`, async ({
+    page,
+    workbench,
+  }, info) => {
+    test.setTimeout(120000);
+    const w = words(info.project.name);
+    await unlock(page, workbench.url, workbench.secret, w);
+    const identity = await (
+      await page.request.get(workbench.url + "/api/session")
+    ).json();
+    await workbench.seedPerformance(identity.context);
+    const throttled = latencyMs === 150;
+    const network = throttled ? await page.context().newCDPSession(page) : null;
+    if (network) {
+      await network.send("Network.enable", {
+        maxTotalBufferSize: 64 * 1024 * 1024,
+        maxResourceBufferSize: 16 * 1024 * 1024,
+      });
+      await network.send("Network.emulateNetworkConditions", {
+        offline: false,
+        latency: latencyMs,
+        downloadThroughput: 128 * 1024,
+        uploadThroughput: 128 * 1024,
+        connectionType: "cellular3g",
+      });
+    }
+    const requestedPaths: string[] = [];
+    if (throttled) {
+      page.on("request", (request) => {
+        const path = new URL(request.url()).pathname;
+        if (path.startsWith("/api/")) requestedPaths.push(path);
+      });
+    } else {
+      await page.route("**/api/**", async (route) => {
+        requestedPaths.push(new URL(route.request().url()).pathname);
+        await new Promise((resolve) => setTimeout(resolve, latencyMs));
+        await route.continue();
+      });
+    }
+    const initialResponse = page.waitForResponse(
+      (response) =>
+        (throttled
+          ? ["/api/bootstrap"]
+          : ["/api/bootstrap", "/api/sync", "/api/snapshot"]
+        ).includes(new URL(response.url()).pathname) && response.ok(),
+    );
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const response = await initialResponse;
+    const payload = await response.json();
+    const library = payload.library ?? payload.snapshot?.library;
+    expect(
+      library.filter((entry: { kind: string }) => entry.kind === "DOCUMENT"),
+    ).toHaveLength(2000);
+    await nav(page, w.desk.tasks);
+    await expect(page.locator(".tasks-workspace")).toBeVisible();
+    await expect(page.locator(".virtual-task-scroll").first()).toBeVisible();
+    const timing = await page.evaluate(() => ({
+      firstContentfulPaintMs: performance
+        .getEntriesByType("paint")
+        .find((entry) => entry.name === "first-contentful-paint")?.startTime,
+      metadataUsableMs: performance.now(),
+      bootstrapTransfer: performance
+        .getEntriesByType("resource")
+        .filter((entry) => entry.name.includes("/api/bootstrap"))
+        .map((entry) => {
+          const resource = entry as PerformanceResourceTiming;
+          return {
+            transferSize: resource.transferSize,
+            encodedBodySize: resource.encodedBodySize,
+            decodedBodySize: resource.decodedBodySize,
+            responseEndMs: resource.responseEnd,
+          };
+        }),
+      sessionRestoreMs: performance
+        .getEntriesByType("resource")
+        .filter((entry) => new URL(entry.name).pathname === "/api/session")
+        .map((entry) => {
+          const resource = entry as PerformanceResourceTiming;
+          return resource.responseEnd - resource.startTime;
+        }),
+    }));
+    expect(timing.firstContentfulPaintMs).toBeGreaterThan(0);
+    const evidence = {
+      ...timing,
+      artificialRequestLatencyMs: latencyMs,
+      latencyMethod: throttled
+        ? "CDP network latency"
+        : "request dispatch delay",
+      bandwidthBytesPerSecond: throttled ? 128 * 1024 : null,
+      documents: library.filter(
+        (entry: { kind: string }) => entry.kind === "DOCUMENT",
+      ).length,
+      initialPath: new URL(response.url()).pathname,
+      decodedInitialBytes: (await response.body()).length,
+      eagerBodyCount: library.filter(
+        (entry: { bodyMd?: string }) => typeof entry.bodyMd === "string",
+      ).length,
+      requestedPaths,
+    };
+    if (throttled) {
+      expect(evidence.initialPath).toBe("/api/bootstrap");
+      expect(evidence.eagerBodyCount).toBe(0);
+      expect(timing.bootstrapTransfer).toHaveLength(1);
+      const transfer = timing.bootstrapTransfer[0];
+      if (!transfer) throw new Error("Missing bootstrap resource timing");
+      expect(transfer.encodedBodySize).toBeGreaterThan(0);
+      expect(transfer.encodedBodySize).toBeLessThan(
+        evidence.decodedInitialBytes,
+      );
+    }
+    const lazyHydration = throttled
+      ? await page.evaluate(async () => {
+          const startedMs = performance.now();
+          const hydrated = await fetch(
+            "/api/document/body?kind=LIBRARY&id=perf-document-0",
+          );
+          if (!hydrated.ok) throw new Error("Document hydration failed");
+          const text = await hydrated.text();
+          const body = JSON.parse(text) as { id: string; bodyMd: string };
+          if (
+            body.id !== "perf-document-0" ||
+            !body.bodyMd.includes("First line\nSecond line")
+          )
+            throw new Error("Document hydration content mismatch");
+          return {
+            completedMs: performance.now(),
+            elapsedMs: performance.now() - startedMs,
+            decodedBytes: new TextEncoder().encode(text).length,
+          };
+        })
+      : null;
+    let projectSearchMs: number | null = null;
+    let librarySearchMs: number | null = null;
+    if (throttled) {
+      librarySearchMs = await page.evaluate(async () => {
+        const startedMs = performance.now();
+        const response = await fetch(
+          "/api/library/search?q=useful%20sentence&spaceId=perf-space",
+        );
+        if (!response.ok) throw new Error("Library retrieval failed");
+        const results = (await response.json()) as { id: string }[];
+        if (
+          !results.length ||
+          !results.some((item) => item.id === "perf-document-0")
+        )
+          throw new Error("Library retrieval content mismatch");
+        return performance.now() - startedMs;
+      });
+      await page.keyboard.press("Control+k");
+      const search = page.getByPlaceholder(
+        /搜索或输入命令|Search or type a command/,
+      );
+      await expect(search).toBeVisible();
+      const startedMs = await page.evaluate(() => performance.now());
+      await search.fill("Perf project 001");
+      await expect(
+        page
+          .locator(".command-result")
+          .filter({ hasText: /^Perf project 001$/ }),
+      ).toBeVisible();
+      projectSearchMs =
+        (await page.evaluate(() => performance.now())) - startedMs;
+      await page.keyboard.press("Escape");
+    }
+    const report = {
+      ...evidence,
+      lazyHydration,
+      projectSearchMs,
+      librarySearchMs,
+    };
+    const filename = `${process.env.ATLAS_BENCHMARK_PREFIX ?? "session119"}-shared-cold-${latencyMs}-${info.project.name}-${info.repeatEachIndex}.json`;
+    writeFileSync(
+      resolve(".artifacts", filename),
+      JSON.stringify(report, null, 2),
+    );
+    await info.attach("shared-release-cold.json", {
+      body: JSON.stringify(report, null, 2),
+      contentType: "application/json",
+    });
+    await network?.detach();
+  });
+}

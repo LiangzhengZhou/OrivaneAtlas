@@ -175,7 +175,6 @@
   "today": "今天",
   "overdue": "已逾期",
   "unscheduled": "未排期",
-  "calendarDatesHint": "任务显示在开始日和截止日；暂不提供自动提醒。",
   "scheduleEmpty": "暂无任务，给自己留一些从容。",
   "backupDatabase": "下载完整数据库备份",
   "backupHint": "包含任务、笔记、全部修订和事件，不含访问密钥。请安全保存。每分钟一次，最大 64 MiB；恢复需由管理员操作到新数据库文件。",

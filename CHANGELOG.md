@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.3.0]
+
+- Consolidated semantic controls, quiet navigation, keyboard command palette and contextual Inspector.
+- Lightweight Tasks/Focus, hierarchy navigation, virtualized Project Gantt and rebuilt Calendar agenda.
+- Stable Graph state, safe document drafts and metadata-first lazy knowledge loading.
+- Conversation and AI settings consolidation; compressed bootstrap, UTF-8 native transport and gated Wiki indexing.
+- New canonical application icon; Sidebar brand logo remains byte-identical.
+- SQLite schema33 / PostgreSQL schema27. Back up database and encrypted vault; upgrade server before clients.
+- Local acceptance:657 unit/integration tests,333 distinct browser cases,14 interaction performance gates and native signature/icon validation.
+
+
 ## [2.2.0]
 
 Unified interaction and performance upgrade.

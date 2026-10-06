@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DateField } from "./components/DateField";
 import { DateTimeField } from "./components/DateTimeField";
+import { recurrenceSummary } from "./components/recurrence-summary";
 import { Button } from "./components/ui/Button";
 import { Select } from "./components/ui/Surfaces";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
@@ -78,7 +79,10 @@ export function RecurrenceManager({
     <section className="recurrence-manager">
       <details className="panel" open>
         <summary>{t("workflows.recurrences")}</summary>
-        <p>{t("workflows.recurrenceHelp")}</p>
+        <details>
+          <summary>{text("重复规则说明", "How repeating tasks work")}</summary>
+          <p>{t("workflows.recurrenceHelp")}</p>
+        </details>
         {editing && (
           <form
             onSubmit={async (e) => {
@@ -149,7 +153,7 @@ export function RecurrenceManager({
               >
                 {(["LOW", "MEDIUM", "HIGH", "URGENT"] as const).map((value) => (
                   <option key={value} value={value}>
-                    {t(`priority.${value}`, { defaultValue: value })}
+                    {t(`work:priorities.${value}`)}
                   </option>
                 ))}
               </Select>
@@ -359,11 +363,7 @@ export function RecurrenceManager({
             return (
               <article className="workflow-proposal" key={r.id}>
                 <h3>{rule.title}</h3>
-                <p>
-                  {t(`workflows.${rule.frequency}`)} · {rule.interval} ·{" "}
-                  {rule.startDate} →{" "}
-                  {rule.endDate ?? text("无结束日期", "No end date")}
-                </p>
+                <p>{recurrenceSummary(rule, i18n.language)}</p>
                 <p>
                   {text("下次", "Next run")}: {nextDay ?? "—"}
                 </p>
@@ -467,7 +467,12 @@ export function RecurrenceManager({
                   {text("结束", "End")}
                 </Button>
                 <p>
-                  {text("状态", "State")}: {rule.state ?? "ACTIVE"}
+                  {text("状态", "State")}:{" "}
+                  {rule.state === "PAUSED"
+                    ? text("已暂停", "Paused")
+                    : rule.state === "ENDED"
+                      ? text("已结束", "Ended")
+                      : text("进行中", "Running")}
                 </p>
                 {seriesOccurrences
                   .filter(

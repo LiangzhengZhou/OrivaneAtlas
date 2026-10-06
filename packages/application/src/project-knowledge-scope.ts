@@ -4,6 +4,7 @@ import type {
   ProjectKnowledgeBinding,
   ProjectMaterial,
 } from "./project-materials";
+import type { WorkspaceLibraryEntry } from "./workspace-bootstrap";
 
 export interface ProjectKnowledgeScope {
   spaceIds: string[];
@@ -17,7 +18,7 @@ export function projectKnowledgeScope(input: {
   currentSpaceId?: string | undefined;
   items: readonly WorkItem[];
   projectMaterials: readonly ProjectMaterial[];
-  library: readonly LibraryEntry[];
+  library: readonly WorkspaceLibraryEntry[];
   workspaceFallback?: boolean;
 }): ProjectKnowledgeScope {
   const projectId = input.projectId ?? "";
@@ -65,9 +66,13 @@ export function projectKnowledgeScope(input: {
   });
 }
 
-export function scopedKnowledgeDocuments(
-  input: Parameters<typeof projectKnowledgeScope>[0],
-): LibraryEntry[] {
+export function scopedKnowledgeDocuments<
+  T extends WorkspaceLibraryEntry = LibraryEntry,
+>(
+  input: Omit<Parameters<typeof projectKnowledgeScope>[0], "library"> & {
+    library: readonly T[];
+  },
+): T[] {
   const scope = projectKnowledgeScope(input);
   const byId = new Map(input.library.map((entry) => [entry.id, entry]));
   return scope.documentIds.flatMap((id) => {
@@ -81,7 +86,7 @@ export function resolveProjectKnowledgeScope(input: {
   workspaceId?: string;
   currentSpaceId?: string;
   bindings: readonly ProjectKnowledgeBinding[];
-  library: readonly LibraryEntry[];
+  library: readonly WorkspaceLibraryEntry[];
   workspaceFallback?: boolean;
 }): ProjectKnowledgeScope {
   const live = input.library.filter(

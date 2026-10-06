@@ -3,6 +3,7 @@ import "../styles/recurrence.css";
 import type { RecurrencePayload } from "@arclattice/application";
 import { useTranslation } from "react-i18next";
 import { DateField } from "./DateField";
+import { recurrenceSummary } from "./recurrence-summary";
 export type RepeatRule = Omit<
   RecurrencePayload,
   | "kind"
@@ -58,6 +59,9 @@ export function RepeatFields({
       </label>
       {rule && (
         <>
+          <p className="muted recurrence-rule-summary">
+            {recurrenceSummary(rule, i18n.language)}
+          </p>
           <label>
             {text("间隔", "Interval")}
             <input

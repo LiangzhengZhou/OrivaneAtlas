@@ -1,13 +1,16 @@
-import type { LibraryEntry } from "@arclattice/application";
+import type { WorkspaceLibraryEntry as LibraryEntry } from "@arclattice/application";
 import { BookOpen, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useEntitySelection } from "./app/EntitySelection";
 import { showToast } from "./app/ToastHost";
 import type { Runtime, Snapshot } from "./bootstrap";
 import { Button } from "./components/ui/Button";
+import { ListRow, ListSurface } from "./components/ui/Content";
+import { EntityMenu } from "./components/ui/EntityMenu";
 import type { DocumentRequest } from "./DocumentWorkspace";
+import { SpaceBodyPreview } from "./features/documents/SpaceBodyPreview";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
-import { Markdown } from "./Markdown";
 import { useDebouncedValue } from "./utils/use-debounced-value";
 export function LibraryView({
   runtime,
@@ -15,25 +18,32 @@ export function LibraryView({
   snapshot,
   onChanged,
   onTrash,
+  viewState,
+  onViewChange,
 }: {
   runtime: Runtime;
   onOpen: (request: DocumentRequest) => void;
   snapshot: Snapshot;
   onChanged(): Promise<void>;
   onTrash(): void;
+  viewState: { spaceId: string | null; query: string };
+  onViewChange(state: { spaceId: string | null; query: string }): void;
 }) {
   const { t } = useTranslation("spaces");
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
+  const selection = useEntitySelection();
   const [graphOpen, setGraphOpen] = useState(false);
   const entries = snapshot.library;
   const entriesById = useMemo(
     () => new Map(entries.map((entry) => [entry.id, entry])),
     [entries],
   );
-  const [spaceId, setSpaceId] = useState<string | null>(null),
-    [query, setQuery] = useState(""),
-    [error, setError] = useState(false),
+  const { spaceId, query } = viewState;
+  const setSpaceId = (spaceId: string | null) =>
+    onViewChange({ ...viewState, spaceId });
+  const setQuery = (query: string) => onViewChange({ ...viewState, query });
+  const [error, setError] = useState(false),
     [busy, setBusy] = useState(false);
   async function run(action: () => Promise<unknown>) {
     if (busy) return;
@@ -51,16 +61,35 @@ export function LibraryView({
   const spaces = entries.filter((e) => e.kind === "SPACE" && !e.deletedAt),
     space = spaces.find((e) => e.id === spaceId);
   const settledQuery = useDebouncedValue(query).toLocaleLowerCase();
-  const searchIndex = useMemo(
-    () =>
-      new Map(
-        entries.map((entry) => [
-          entry.id,
-          (entry.title + " " + entry.bodyMd).toLocaleLowerCase(),
-        ]),
-      ),
-    [entries],
-  );
+  const [matches, setMatches] = useState<{
+    query: string;
+    spaceId: string;
+    ids: ReadonlySet<string>;
+  } | null>(null);
+  useEffect(() => {
+    if (!spaceId || !settledQuery) return;
+    let current = true;
+    setError(false);
+    void runtime.searchLibrary(settledQuery, spaceId).then(
+      (results) => {
+        if (current)
+          setMatches({
+            query: settledQuery,
+            spaceId,
+            ids: new Set(results.map((result) => result.id)),
+          });
+      },
+      () => {
+        if (current) {
+          setMatches(null);
+          setError(true);
+        }
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [runtime, spaceId, settledQuery, entries]);
   const documentCountBySpaceId = useMemo(() => {
     const counts = new Map<string, number>();
     for (const entry of entries)
@@ -73,7 +102,10 @@ export function LibraryView({
       e.kind === "DOCUMENT" &&
       !e.deletedAt &&
       e.spaceId === spaceId &&
-      searchIndex.get(e.id)?.includes(settledQuery),
+      (!settledQuery ||
+        (matches?.query === settledQuery &&
+          matches.spaceId === spaceId &&
+          matches.ids.has(e.id))),
   );
   const paths = useMemo(() => {
     const result = new Map<string, string[]>();
@@ -135,7 +167,7 @@ export function LibraryView({
       <div className="library-toolbar action-row">
         <Button
           type="button"
-          className="chip"
+          variant="toggle"
           aria-pressed={graphOpen}
           onClick={() => setGraphOpen(!graphOpen)}
         >
@@ -143,26 +175,13 @@ export function LibraryView({
         </Button>
 
         <Button
-          className="button secondary"
+          variant="secondary"
           type="button"
           onClick={() => setSpaceId(null)}
         >
           {t("back")}
         </Button>
-        <Button
-          className="button secondary"
-          type="button"
-          disabled={busy}
-          onClick={() => void run(async () => {})}
-        >
-          {t("refresh")}
-        </Button>
-        <Button
-          variant="primary"
-          className="button primary"
-          type="button"
-          onClick={() => open()}
-        >
+        <Button variant="primary" type="button" onClick={() => open()}>
           <Plus size={16} />
           {t(space ? "newLecture" : "newSpace")}
         </Button>
@@ -172,17 +191,17 @@ export function LibraryView({
           <section className="panel account-panel">
             <p className="eyebrow">{t("library")}</p>
             <h2>{space.title}</h2>
-            <Markdown text={space.bodyMd} />
+            <SpaceBodyPreview entry={space} runtime={runtime} />
             <div className="action-row">
               <Button
-                className="button secondary"
+                variant="secondary"
                 type="button"
                 onClick={() => open(space)}
               >
                 {t("edit")}
               </Button>
               <Button
-                className="button secondary"
+                variant="secondary"
                 type="button"
                 disabled={busy}
                 onClick={() =>
@@ -215,58 +234,84 @@ export function LibraryView({
             {t("search")}
             <input value={query} onChange={(e) => setQuery(e.target.value)} />
           </label>
-          <div className="note-grid">
+          <ListSurface className="library-list">
             {docs.map((doc) => (
-              <Button
-                className="note-card"
-                type="button"
+              <ListRow
+                className="library-document-row"
                 key={doc.id}
                 style={{ marginInlineStart: `${hierarchy(doc).length * 16}px` }}
-                onClick={() => open(doc)}
+                selected={selection?.selected?.id === doc.id}
+                onSelect={() =>
+                  selection?.select({ kind: "DOCUMENT", id: doc.id })
+                }
+                onOpen={() => open(doc)}
               >
                 <BookOpen size={20} />
                 <h3>{doc.title}</h3>
                 {hierarchy(doc).length > 0 && (
                   <small>{hierarchy(doc).join(" / ")}</small>
                 )}
-                <p>{doc.bodyMd.slice(0, 140)}</p>
-                <footer>
-                  {t(doc.provenance)} · v{doc.version}
-                </footer>
-              </Button>
+                <small>
+                  {new Intl.DateTimeFormat(i18n.language, {
+                    dateStyle: "medium",
+                  }).format(new Date(doc.updatedAt))}
+                </small>
+                <EntityMenu
+                  title={doc.title}
+                  pending={busy}
+                  onOpen={() => open(doc)}
+                  onDelete={() =>
+                    void run(async () => {
+                      const deleted = await runtime.deleteLibrary(
+                        doc.id,
+                        doc.version,
+                        true,
+                      );
+                      showToast(
+                        zh ? "已移至回收站" : "Moved to Trash",
+                        async () => {
+                          await runtime.deleteLibrary(
+                            deleted.id,
+                            deleted.version,
+                            false,
+                          );
+                          await onChanged();
+                        },
+                      );
+                    })
+                  }
+                />
+              </ListRow>
             ))}
-          </div>
+          </ListSurface>
           {!docs.length && <p>{t("empty")}</p>}{" "}
         </>
       ) : (
         <>
           <p className="subtitle">{t("spaceHint")}</p>
-          <div className="note-grid">
+          <ListSurface className="library-list">
             {spaces.map((item) => (
-              <Button
-                className="note-card space-card"
-                type="button"
+              <ListRow
+                className="space-card"
                 key={item.id}
-                onClick={() => setSpaceId(item.id)}
+                selected={selection?.selected?.id === item.id}
+                onSelect={() =>
+                  selection?.select({ kind: "DOCUMENT", id: item.id })
+                }
+                onOpen={() => setSpaceId(item.id)}
               >
-                <BookOpen size={24} />
+                <BookOpen size={20} />
                 <h2>{item.title}</h2>
-                <p>{item.bodyMd.slice(0, 160)}</p>
                 <footer>
                   {documentCountBySpaceId.get(item.id) ?? 0}{" "}
                   {t("documentCount")}
                 </footer>
-              </Button>
+              </ListRow>
             ))}
-          </div>
+          </ListSurface>
         </>
       )}
-      <Button
-        variant="ghost"
-        type="button"
-        className="text-button"
-        onClick={onTrash}
-      >
+      <Button variant="ghost" type="button" onClick={onTrash}>
         {zh ? "查看回收站 →" : "View Trash →"}
       </Button>
     </div>

@@ -31,14 +31,25 @@ export function calendarMonthInfo(month: string): {
   end.setUTCMonth(end.getUTCMonth() + 1, 0);
   return { days: end.getUTCDate(), offset: (first.getUTCDay() + 6) % 7 };
 }
+const calendarDateFormatters = new Map<string, Intl.DateTimeFormat>();
 export function formatCalendarDate(
   value: string,
   locale: string,
   options: Intl.DateTimeFormatOptions = {},
 ): string {
-  return new Intl.DateTimeFormat(locale, {
-    ...options,
-    timeZone: "UTC",
-    calendar: "gregory",
-  }).format(calendarDate(value));
+  const key = JSON.stringify([locale, options]);
+  let formatter = calendarDateFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, {
+      ...options,
+      timeZone: "UTC",
+      calendar: "gregory",
+    });
+    if (calendarDateFormatters.size >= 64)
+      calendarDateFormatters.delete(
+        calendarDateFormatters.keys().next().value!,
+      );
+    calendarDateFormatters.set(key, formatter);
+  }
+  return formatter.format(calendarDate(value));
 }

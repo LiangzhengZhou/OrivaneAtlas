@@ -1,4 +1,4 @@
-import { GripVertical, LogOut, PanelLeft, Settings2 } from "lucide-react";
+import { LogOut, PanelLeft, Settings2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/ui/Button";
@@ -17,8 +17,6 @@ export function Sidebar({
   onNavigate,
   onToggleMobile,
   onToggleCollapsed,
-  onDragNavigation,
-  onMoveNavigation,
   onLogout,
 }: {
   collapsed: boolean;
@@ -32,8 +30,6 @@ export function Sidebar({
   onNavigate(view: View): void;
   onToggleMobile(): void;
   onToggleCollapsed(): void;
-  onDragNavigation(view: NavigationView): void;
-  onMoveNavigation(view: NavigationView): void;
   onLogout(): void;
 }) {
   const { t } = useTranslation("desk");
@@ -57,7 +53,8 @@ export function Sidebar({
         />
         <Button
           type="button"
-          className="icon-button sidebar-collapse-button"
+          variant="ghost"
+          className="ui-icon-button sidebar-collapse-button"
           aria-label={t(collapsed ? "expandSidebar" : "collapseSidebar")}
           aria-expanded={!collapsed}
           aria-controls="workspace-sidebar"
@@ -68,7 +65,8 @@ export function Sidebar({
       </div>
       <Button
         type="button"
-        className="icon-button mobile-navigation-toggle"
+        variant="ghost"
+        className="ui-icon-button mobile-navigation-toggle"
         aria-label={t(mobileOpen ? "collapseSidebar" : "expandSidebar")}
         aria-expanded={mobileOpen}
         aria-controls="mobile-more-sheet"
@@ -96,17 +94,8 @@ export function Sidebar({
                   aria-current={activeView === next ? "page" : undefined}
                   aria-label={label(next)}
                   onClick={() => onNavigate(next)}
-                  draggable={!collapsed}
-                  onDragStart={() => onDragNavigation(next)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => onMoveNavigation(next)}
                   title={collapsed ? label(next) : undefined}
                 >
-                  <GripVertical
-                    className="nav-drag-handle"
-                    size={14}
-                    aria-hidden="true"
-                  />
                   <Icon size={18} />
                   <span>{label(next)}</span>
                   {next === "tasks" && (

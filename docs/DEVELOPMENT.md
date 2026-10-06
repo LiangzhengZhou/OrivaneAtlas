@@ -33,6 +33,12 @@ Browser tests follow the current product structure: Project Overview / Tasks / K
 
 Biome honors Git ignore rules and excludes generated native schemas and the preserved refactor backup; maintained source and architecture boundaries remain checked. Do not reformat backup copies or generated schemas to fix source lint. For native transport integration coverage, set `ATLAS_NATIVE_TEST_EXE` to the locally built Rust release test executable before running `pnpm check`; without that fixture, report the native integration coverage as skipped. Browser native mocks are not real-device validation.
 
+Native transport fixtures bind disposable loopback ports. If a system HTTP proxy
+intercepts local requests, set `NO_PROXY=127.0.0.1,localhost,::1` in the test
+process environment. This keeps timeout, disconnect, and strict-host assertions
+exercising the fixture directly; it does not change application proxy or trust
+policy. Run the full Rust library tests as well as the strict-host fixture.
+
 ## Contribution rules
 
 - Every business access carries a workspaceId; every mutation identifies a principalId.

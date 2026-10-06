@@ -1,4 +1,4 @@
-import type { LibraryEntry } from "@arclattice/application";
+import type { WorkspaceLibraryEntry as LibraryEntry } from "@arclattice/application";
 import { useTranslation } from "react-i18next";
 import { HierarchyPicker } from "../hierarchy/HierarchyPicker";
 import { excludedBranch } from "../hierarchy/hierarchy";

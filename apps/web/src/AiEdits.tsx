@@ -63,7 +63,6 @@ export function AiEdits({
       <Button
         variant="primary"
         type="button"
-        className="button primary"
         disabled={busy || !selected.length}
         onClick={async () => {
           if (

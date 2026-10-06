@@ -47,7 +47,7 @@ export function RecurrenceSummary({
           </span>
         );
       })}
-      <Button className="chip" type="button" onClick={() => setDetail(true)}>
+      <Button variant="toggle" type="button" onClick={() => setDetail(true)}>
         {text("查看统计", "View statistics")}
       </Button>
       <Button type="button" onClick={onManage}>

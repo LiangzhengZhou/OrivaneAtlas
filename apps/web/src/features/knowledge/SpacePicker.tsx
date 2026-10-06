@@ -1,4 +1,4 @@
-import type { LibraryEntry } from "@arclattice/application";
+import type { WorkspaceLibraryEntry as LibraryEntry } from "@arclattice/application";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/Button";
@@ -48,7 +48,7 @@ export function SpacePicker({
             .map((entry) => (
               <Button
                 type="button"
-                className="chip"
+                variant="toggle"
                 key={entry.id}
                 disabled={disabled}
                 aria-pressed={entry.id === value}
@@ -81,7 +81,7 @@ export function SpacePicker({
             .map((entry) => (
               <Button
                 type="button"
-                className="chip"
+                variant="toggle"
                 key={entry.id}
                 disabled={disabled ?? false}
                 aria-pressed={entry.id === value}

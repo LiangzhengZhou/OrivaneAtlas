@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
+import { v22PerformanceFixture } from "../../../tests/performance/v2.2-fixture";
 import { passwordHash } from "./password";
 import { createHost } from "./server";
 
@@ -27,8 +28,28 @@ test.skipIf(!process.env.ATLAS_NATIVE_TEST_EXE)(
     });
     try {
       const hash = await passwordHash(password);
-      await host.db.accounts((store) =>
+      const account = await host.db.accounts((store) =>
         store.register("native-test", hash, true),
+      );
+      const actor = {
+        workspaceId: account.workspaceId,
+        principalId: account.principalId,
+      };
+      const fixture = v22PerformanceFixture(actor, "2026-10-06");
+      await host.db.request(
+        actor,
+        null,
+        async (_work, _notes, _links, library) => {
+          await library.save(fixture.space, 0);
+          for (const document of fixture.documents.slice(0, 5))
+            await library.save(
+              {
+                ...document,
+                bodyMd: "native-body-marker".padEnd(50 * 1024, "文"),
+              },
+              0,
+            );
+        },
       );
       await new Promise<void>((done) =>
         host.server.listen(port, "127.0.0.1", done),

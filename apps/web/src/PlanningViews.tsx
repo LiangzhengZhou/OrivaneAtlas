@@ -1,24 +1,10 @@
-import type {
-  CategoryService,
-  Note,
-  ProjectCategory,
-  WorkflowRecord,
-} from "@arclattice/application";
+import type { CategoryService, ProjectCategory } from "@arclattice/application";
 import {
-  calendarMonthInfo,
   effectiveCategoryId,
-  formatCalendarDate,
   projectLifecycle,
-  shiftCalendarMonth,
   type WorkItem,
 } from "@arclattice/domain";
-import {
-  ArrowUpRight,
-  Bell,
-  ChevronLeft,
-  ChevronRight,
-  FolderKanban,
-} from "lucide-react";
+import { ArrowUpRight, FolderKanban, MoreHorizontal } from "lucide-react";
 import {
   memo,
   type ReactNode,
@@ -28,15 +14,15 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { useEntitySelection } from "./app/EntitySelection";
 import { CategoryManager } from "./CategoryManager";
-import { Button } from "./components/ui/Button";
-import { buildCalendarIndex } from "./features/calendar/calendar-index";
-import { ReminderPanel } from "./features/calendar/ReminderPanel";
+import { Button, IconButton } from "./components/ui/Button";
+import { ListRow, MenuItem } from "./components/ui/Content";
+import { Dialog, Menu } from "./components/ui/Surfaces";
 import {
   projectProgressIndex,
   projectTreeIndex,
 } from "./features/projects/project-tree";
-import { VirtualTaskCollection } from "./features/tasks/VirtualTaskCollection";
 
 const ProjectRow = memo(function ProjectRow({
   project,
@@ -50,6 +36,7 @@ const ProjectRow = memo(function ProjectRow({
   inheritedTitle,
   onToggle,
   onOpen,
+  onEdit,
   onTasks,
   onOrganize,
 }: {
@@ -64,19 +51,33 @@ const ProjectRow = memo(function ProjectRow({
   inheritedTitle: string | undefined;
   onToggle(id: string): void;
   onOpen(item: WorkItem): void;
+  onEdit(item: WorkItem): void;
   onTasks(id: string): void;
-  onOrganize(item: WorkItem, action: "archive" | "unarchive"): void;
+  onOrganize(item: WorkItem, action: "archive" | "unarchive" | "delete"): void;
 }) {
-  const { t } = useTranslation("desk");
+  const { t, i18n } = useTranslation("desk");
+  const selection = useEntitySelection();
+  const menuAnchor = useRef<HTMLButtonElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const moreLabel =
+    (i18n.language.startsWith("zh") ? "项目操作：" : "Project actions: ") +
+    project.title;
   const scoped = { completed, unfinished, canceled },
     actionableTotal = completed + unfinished;
   return (
-    <section
-      className="panel project-card project-compact-row"
+    <ListRow
+      className="project-card project-compact-row"
       key={project.id}
+      selected={
+        selection?.selected?.kind === "WORK" &&
+        selection.selected.id === project.id
+      }
+      onSelect={() => selection?.select({ kind: "WORK", id: project.id })}
+      onOpen={() => onOpen(project)}
     >
       {children ? (
         <Button
+          variant="ghost"
           type="button"
           className="project-tree-toggle"
           aria-label={t(!expanded ? "expandProject" : "collapseProject", {
@@ -92,12 +93,24 @@ const ProjectRow = memo(function ProjectRow({
       )}
       <Button
         type="button"
+        variant="text"
         className="project-title"
-        onClick={() => onOpen(project)}
+        onClick={() =>
+          selection
+            ? selection.select({ kind: "WORK", id: project.id })
+            : onOpen(project)
+        }
+        onDoubleClick={() => onOpen(project)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onOpen(project);
+          }
+        }}
       >
         <h2>{project.title}</h2>
       </Button>
-      <span className="priority">
+      <span className="muted project-lifecycle">
         {t("projectLifecycles." + projectLifecycle(project))}
       </span>
       <span
@@ -114,46 +127,82 @@ const ProjectRow = memo(function ProjectRow({
         </span>
       </span>
       <div className="project-card-actions">
-        <Button
-          variant="ghost"
-          type="button"
-          className="text-button"
-          onClick={() => onOpen(project)}
+        <IconButton
+          ref={menuAnchor}
+          label={moreLabel}
+          disabled={busy}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
         >
-          {t("openProject")}
-        </Button>
-        <Button
-          variant="ghost"
-          type="button"
-          className="text-button"
-          disabled={busy || !!inheritedTitle}
-          title={
-            inheritedTitle
-              ? t("inheritedArchive", { title: inheritedTitle })
-              : undefined
-          }
-          onClick={() =>
-            onOrganize(project, archived ? "unarchive" : "archive")
-          }
-        >
-          {t(archived ? "unarchive" : "archive")}
-        </Button>
-        <Button
-          variant="ghost"
-          type="button"
-          className="text-button"
-          onClick={() => onTasks(project.id)}
-        >
-          {t("projectTasks")}
-          <ArrowUpRight size={14} />
-        </Button>
+          <MoreHorizontal />
+        </IconButton>
+        {menuOpen && (
+          <Menu
+            anchorRef={menuAnchor}
+            label={moreLabel}
+            onDismiss={() => setMenuOpen(false)}
+          >
+            <MenuItem
+              onClick={() => {
+                setMenuOpen(false);
+                onOpen(project);
+              }}
+            >
+              {t("openProject")}
+            </MenuItem>
+            <MenuItem
+              disabled={busy || !!inheritedTitle}
+              title={
+                inheritedTitle
+                  ? t("inheritedArchive", { title: inheritedTitle })
+                  : undefined
+              }
+              onClick={() => {
+                setMenuOpen(false);
+                onOrganize(project, archived ? "unarchive" : "archive");
+              }}
+            >
+              {t(archived ? "unarchive" : "archive")}
+            </MenuItem>
+            <MenuItem
+              disabled={busy}
+              onClick={() => {
+                setMenuOpen(false);
+                onEdit(project);
+              }}
+            >
+              {i18n.language.startsWith("zh")
+                ? "移动 / 设置"
+                : "Move / settings"}
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                setMenuOpen(false);
+                onTasks(project.id);
+              }}
+            >
+              {t("projectTasks")}
+              <ArrowUpRight size={14} />
+            </MenuItem>
+            <MenuItem
+              disabled={busy}
+              onClick={() => {
+                setMenuOpen(false);
+                onOrganize(project, "delete");
+              }}
+            >
+              {t("deleteItem")}
+            </MenuItem>
+          </Menu>
+        )}
       </div>
       {inheritedTitle && (
         <small className="project-archive-explanation">
           {t("inheritedArchive", { title: inheritedTitle })}
         </small>
       )}
-    </section>
+    </ListRow>
   );
 });
 
@@ -163,6 +212,7 @@ export function ProjectView({
   projects,
   items,
   onOpen,
+  onEdit,
   onTasks,
   busy,
   isArchived,
@@ -176,14 +226,22 @@ export function ProjectView({
   projects: WorkItem[];
   items: WorkItem[];
   onOpen(item: WorkItem): void;
+  onEdit(item: WorkItem): void;
   onTasks(id: string): void;
   busy: boolean;
   isArchived(item: WorkItem): boolean;
   archiveSource(item: WorkItem): WorkItem | undefined;
-  onOrganize(item: WorkItem, action: "archive" | "unarchive"): void;
+  onOrganize(item: WorkItem, action: "archive" | "unarchive" | "delete"): void;
 }) {
   const { t } = useTranslation("desk");
   const [showArchived, setShowArchived] = useState(false);
+  const [manageCategories, setManageCategories] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuAnchor = useRef<HTMLButtonElement>(null);
+  const { i18n } = useTranslation();
+  const categoryLabel = i18n.language.startsWith("zh")
+    ? "管理项目分类"
+    : "Manage project categories";
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const visibleProjects = useMemo(
     () => projects.filter((project) => isArchived(project) === showArchived),
@@ -194,15 +252,19 @@ export function ProjectView({
     [visibleProjects],
   );
   const progressById = useMemo(() => projectProgressIndex(items), [items]);
-  const actions = useRef({ onOpen, onTasks, onOrganize });
-  actions.current = { onOpen, onTasks, onOrganize };
+  const actions = useRef({ onOpen, onEdit, onTasks, onOrganize });
+  actions.current = { onOpen, onEdit, onTasks, onOrganize };
+  const editRow = useCallback(
+    (project: WorkItem) => actions.current.onEdit(project),
+    [],
+  );
   const openRow = useCallback(
     (project: WorkItem) => actions.current.onOpen(project),
     [],
   );
   const taskRow = useCallback((id: string) => actions.current.onTasks(id), []);
   const organizeRow = useCallback(
-    (project: WorkItem, action: "archive" | "unarchive") =>
+    (project: WorkItem, action: "archive" | "unarchive" | "delete") =>
       actions.current.onOrganize(project, action),
     [],
   );
@@ -231,6 +293,7 @@ export function ProjectView({
         inheritedTitle={archiveSource(project)?.title}
         onToggle={toggleRow}
         onOpen={openRow}
+        onEdit={editRow}
         onTasks={taskRow}
         onOrganize={organizeRow}
       />
@@ -292,9 +355,38 @@ export function ProjectView({
   return (
     <div className="projects-overview">
       <div className="organization-toolbar">
+        <IconButton
+          ref={menuAnchor}
+          label={
+            i18n.language.startsWith("zh")
+              ? "项目列表选项"
+              : "Project list options"
+          }
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <MoreHorizontal />
+        </IconButton>
+        {menuOpen && (
+          <Menu
+            anchorRef={menuAnchor}
+            label={categoryLabel}
+            onDismiss={() => setMenuOpen(false)}
+          >
+            <MenuItem
+              onClick={() => {
+                setMenuOpen(false);
+                setManageCategories(true);
+              }}
+            >
+              {categoryLabel}
+            </MenuItem>
+          </Menu>
+        )}
         <Button
           type="button"
-          className="chip"
+          variant="toggle"
           aria-pressed={showArchived}
           onClick={() => setShowArchived(!showArchived)}
         >
@@ -312,286 +404,24 @@ export function ProjectView({
           </div>
         )}
       </div>
-      <CategoryManager
-        categories={categories}
-        projects={projects}
-        busy={busy}
-        onSave={onSaveCategory}
-      />
+      {manageCategories && (
+        <Dialog
+          aria-label={categoryLabel}
+          onRequestClose={() => setManageCategories(false)}
+        >
+          <Button variant="ghost" onClick={() => setManageCategories(false)}>
+            {i18n.language.startsWith("zh") ? "关闭" : "Close"}
+          </Button>
+          <CategoryManager
+            categories={categories}
+            projects={projects}
+            busy={busy}
+            onSave={onSaveCategory}
+          />
+        </Dialog>
+      )}
     </div>
   );
 }
 
-export function CalendarView({
-  pickerItems,
-  reminders = [],
-  onSaveReminder,
-  timezone = "UTC",
-  records = [],
-  items,
-  today,
-  onOpen,
-  journals = [],
-  onJournal,
-}: {
-  reminders?: import("@arclattice/domain").Reminder[];
-  onSaveReminder?: (
-    id: string | null,
-    version: number,
-    input: import("@arclattice/domain").ReminderInput,
-    deleted?: boolean,
-  ) => Promise<boolean>;
-  pickerItems?: readonly WorkItem[];
-  timezone?: string;
-  records?: WorkflowRecord[];
-  items: WorkItem[];
-  today: string;
-  journals?: Note[];
-  onJournal?: (day: string) => void;
-  onOpen(item: WorkItem): void;
-}) {
-  const { t, i18n } = useTranslation("desk");
-  const [month, setMonth] = useState(today.slice(0, 7));
-  const [selected, setSelected] = useState(today);
-  const [mode, setMode] = useState<"day" | "overdue" | "unscheduled">("day");
-  const { days, offset } = calendarMonthInfo(month);
-  const index = useMemo(
-    () =>
-      buildCalendarIndex(items, journals, records, timezone, today, reminders),
-    [items, journals, records, timezone, today, reminders],
-  );
-  const { overdue, unscheduled: undated } = index;
-  const summary = index.daySummary(selected);
-  const entries = mode === "overdue" ? overdue : undated;
-  const shift = (by: number) => {
-    const next = shiftCalendarMonth(month, by);
-    if (next) setMonth(next);
-  };
-  return (
-    <div className="calendar-layout">
-      <section className="panel calendar-panel">
-        <div className="panel-heading">
-          <h2>
-            {formatCalendarDate(month + "-01", i18n.language, {
-              year: "numeric",
-              month: "long",
-            })}
-          </h2>
-          <small className="muted" data-testid="calendar-timezone">
-            {t("calendarTimezone", { timezone })}
-          </small>
-          <div className="calendar-controls">
-            <Button
-              type="button"
-              className="icon-button"
-              aria-label={t("previousMonth")}
-              onClick={() => shift(-1)}
-            >
-              <ChevronLeft size={18} />
-            </Button>
-            <Button
-              type="button"
-              className="chip"
-              onClick={() => {
-                setMonth(today.slice(0, 7));
-                setSelected(today);
-                setMode("day");
-              }}
-            >
-              {t("today")}
-            </Button>
-            <Button
-              type="button"
-              className="icon-button"
-              aria-label={t("nextMonth")}
-              onClick={() => shift(1)}
-            >
-              <ChevronRight size={18} />
-            </Button>
-          </div>
-        </div>
-        <div className="calendar-week">
-          {Array.from({ length: 7 }, (_, i) => (
-            <span key={i}>
-              {formatCalendarDate("2026-09-" + (14 + i), i18n.language, {
-                weekday: "short",
-              })}
-            </span>
-          ))}
-        </div>
-        <div className="calendar-grid">
-          {Array.from({ length: offset }, (_, i) => (
-            <span className="calendar-blank" key={"blank" + i} />
-          ))}
-          {Array.from({ length: days }, (_, i) => {
-            const day = month + "-" + String(i + 1).padStart(2, "0");
-            const cell = index.daySummary(day);
-            const tasks = [
-              ...new Map(
-                [...cell.starts, ...cell.due].map((item) => [item.id, item]),
-              ).values(),
-            ];
-            return (
-              <Button
-                type="button"
-                key={day}
-                aria-label={day}
-                aria-pressed={mode === "day" && selected === day}
-                className={
-                  "calendar-day " +
-                  (today === day ? "is-today " : "") +
-                  (selected === day && mode === "day" ? "selected" : "")
-                }
-                onClick={() => {
-                  setSelected(day);
-                  setMode("day");
-                }}
-              >
-                <span>{i + 1}</span>
-                {cell.journals.length > 0 && (
-                  <small className="journal-marker" title={t("journal")}>
-                    ●
-                  </small>
-                )}
-                {tasks.length > 0 && (
-                  <span className="calendar-count">
-                    <span
-                      title={t("startDate")}
-                      aria-label={`${t("startDate")} ${cell.starts.length}`}
-                    >
-                      ↗ {cell.starts.length}
-                    </span>{" "}
-                    ·{" "}
-                    <span
-                      title={t("dueDate")}
-                      aria-label={`${t("dueDate")} ${cell.due.length}`}
-                    >
-                      ◷ {cell.due.length}
-                    </span>
-                  </span>
-                )}
-                {cell.completed.length > 0 && (
-                  <small
-                    title={
-                      i18n.language.startsWith("zh") ? "已完成" : "Completed"
-                    }
-                  >
-                    ✓ {cell.completed.length}
-                  </small>
-                )}
-                {cell.reminders.length > 0 && (
-                  <small
-                    title={
-                      i18n.language.startsWith("zh") ? "提醒" : "Reminders"
-                    }
-                  >
-                    <Bell size={12} aria-hidden="true" />{" "}
-                    {cell.reminders.length}
-                  </small>
-                )}
-                <div className="calendar-preview">
-                  {tasks.slice(0, 2).map((item) => (
-                    <small key={item.id}>{item.title}</small>
-                  ))}
-                </div>
-              </Button>
-            );
-          })}
-        </div>
-      </section>
-      <section className="panel agenda-panel">
-        <details className="calendar-secondary">
-          <summary>
-            {i18n.language.startsWith("zh") ? "其他任务" : "Other tasks"}
-          </summary>
-          <div className="agenda-tabs">
-            <Button
-              type="button"
-              className={"chip " + (mode === "overdue" ? "active" : "")}
-              onClick={() => setMode("overdue")}
-            >
-              {t("overdue")} · {overdue.length}
-            </Button>
-            <Button
-              type="button"
-              className={"chip " + (mode === "unscheduled" ? "active" : "")}
-              onClick={() => setMode("unscheduled")}
-            >
-              {t("unscheduled")} · {undated.length}
-            </Button>
-          </div>
-        </details>
-        <h2>{mode === "day" ? selected : t(mode)}</h2>
-        <p className="muted">{t("calendarDatesHint")}</p>
-        {mode === "day" ? (
-          <>
-            {[
-              [
-                i18n.language.startsWith("zh") ? "开始" : "Starts",
-                summary.starts,
-              ],
-              [t("dueDate"), summary.due],
-              [
-                i18n.language.startsWith("zh") ? "已完成" : "Completed",
-                summary.completed,
-              ],
-            ].map(([label, values]) => (
-              <section key={String(label)}>
-                <h3>{String(label)}</h3>
-                <VirtualTaskCollection
-                  items={values as readonly WorkItem[]}
-                  render={(item) => (
-                    <Button
-                      className="agenda-item"
-                      key={item.id}
-                      onClick={() => onOpen(item)}
-                    >
-                      {item.title}
-                    </Button>
-                  )}
-                />
-              </section>
-            ))}
-            {onSaveReminder && (
-              <ReminderPanel
-                items={pickerItems ?? items}
-                day={selected}
-                timezone={timezone}
-                reminders={summary.reminders}
-                save={onSaveReminder}
-              />
-            )}
-            <section>
-              <h3>{t("journal")}</h3>
-              <Button onClick={() => onJournal?.(selected)}>
-                {summary.journals[0]?.title ?? t("journal")}
-              </Button>
-            </section>
-          </>
-        ) : entries.length ? (
-          <VirtualTaskCollection
-            items={entries}
-            render={(item) => (
-              <Button
-                type="button"
-                className="agenda-item"
-                key={item.id}
-                onClick={() => onOpen(item)}
-              >
-                <strong>{item.title}</strong>
-                <small>
-                  {t("work:statuses." + item.status)}
-                  {item.dueDate
-                    ? " · " + t("dueDate") + " " + item.dueDate
-                    : ""}
-                </small>
-              </Button>
-            )}
-          />
-        ) : (
-          <p className="empty-small">{t("scheduleEmpty")}</p>
-        )}
-      </section>
-    </div>
-  );
-}
+export { CalendarView } from "./features/calendar/CalendarWorkspace";

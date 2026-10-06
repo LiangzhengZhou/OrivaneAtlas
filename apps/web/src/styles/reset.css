@@ -49,12 +49,12 @@ p {
 h1 {
   font-size: var(--font-title-size);
   line-height: 1.4;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.7px;
 }
 h2 {
   font-size: 18px;
-  font-weight: 650;
+  font-weight: 600;
 }
 h3 {
   font-size: 16px;

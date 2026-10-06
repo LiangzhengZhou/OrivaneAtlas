@@ -1,18 +1,23 @@
 import type { EntityRef } from "@arclattice/application";
-import { projectScope } from "@arclattice/domain";
+import type { WorkItem } from "@arclattice/domain";
 import { MarkerType } from "@xyflow/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ContextPane } from "../../app/ContextPane";
 import type { Snapshot } from "../../bootstrap";
 import { Button } from "../../components/ui/Button";
+import { Field } from "../../components/ui/Content";
 import { KnowledgeGraph } from "../knowledge/KnowledgeGraph";
 import { ProjectDependencyGraph } from "../projects/ProjectDependencyGraph";
 import { ProjectStructureTree } from "../projects/ProjectStructureTree";
+import {
+  projectTreeIndex,
+  visibleProjectBranches,
+} from "../projects/project-tree";
 import type { WorkspaceWorkIndex } from "../tasks/workspace-work-index";
 import { GraphViewport } from "./GraphViewport";
 import { collectionRevision } from "./graph-revision";
-import { type GraphRoute, graphHash } from "./graph-route";
-import { projectDepth } from "./graph-scope";
+import type { GraphRoute } from "./graph-route";
 import { dependencyDagreLayout } from "./layouts/DependencyDagreLayout";
 import { useStructuralLayout } from "./layouts/useStructuralLayout";
 export function GraphWorkspace({
@@ -20,32 +25,63 @@ export function GraphWorkspace({
   route,
   snapshot,
   onOpen,
+  onRouteChange,
+  atlasOpen = false,
+  onAtlas,
 }: {
   workIndex: WorkspaceWorkIndex;
   route: GraphRoute;
   snapshot: Snapshot;
   onOpen(ref: EntityRef): void;
+  onRouteChange(patch: Partial<GraphRoute>): void;
+  atlasOpen?: boolean;
+  onAtlas?(): void;
 }) {
-  const { i18n, t } = useTranslation();
+  const { i18n } = useTranslation();
   const text = (cn: string, en: string) =>
     i18n.language.startsWith("zh") ? cn : en;
   const tree = route.view !== "graph";
   const [query, setQuery] = useState(""),
     [copyError, setCopyError] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
   const update = (patch: Partial<GraphRoute>) => {
-    history.replaceState(null, "", graphHash({ ...route, ...patch }));
-    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    if (patch.selection) setInspectorOpen(true);
+    onRouteChange(patch);
   };
-  const project = snapshot.items.find(
-    (i) => i.id === route.id && i.type === "PROJECT" && !i.deletedAt,
+  const project =
+    route.kind === "project" ? workIndex.projectsById.get(route.id) : null;
+  const document =
+    route.kind === "document"
+      ? snapshot.library.find((i) => i.id === route.id && !i.deletedAt)
+      : null;
+  const projectChildren = useMemo(
+    () =>
+      projectTreeIndex(
+        snapshot.items.filter(
+          (item) => item.type === "PROJECT" && !item.deletedAt,
+        ),
+      ),
+    [snapshot.items],
   );
-  const document = snapshot.library.find(
-    (i) => i.id === route.id && !i.deletedAt,
+  const directChildren = projectChildren.get(route.id) ?? [];
+  const expandedIds = new Set(
+    route.expandedIds ??
+      (route.depth === 2 ? directChildren.map((item) => item.id) : []),
+  );
+  const hasSecondLevel = directChildren.some(
+    (item) => (projectChildren.get(item.id)?.length ?? 0) > 0,
   );
   const structure =
     route.mode === "structure"
-      ? projectDepth(snapshot.items, route.id, route.depth)
+      ? [
+          ...(project ? [project] : []),
+          ...visibleProjectBranches(projectChildren, route.id, expandedIds),
+        ]
       : [];
+  const structureKey =
+    route.mode === "structure"
+      ? `${collectionRevision(snapshot.items)}:${route.id}:${structure.map((item) => item.id).join(":")}`
+      : "inactive-structure";
   const structureIds = new Set(structure.map((item) => item.id));
   const edges = structure.flatMap((item) =>
     item.parentProjectId && structureIds.has(item.parentProjectId)
@@ -63,69 +99,90 @@ export function GraphWorkspace({
     structure.map((p) => p.id),
     edges,
     dependencyDagreLayout,
-    `${collectionRevision(snapshot.items)}:${route.id}:${route.depth}`,
+    structureKey,
   );
   const positionById = new Map(positions.map((p) => [p.id, p.position]));
-  const selected =
-    snapshot.items.find((i) => i.id === route.selection && !i.deletedAt) ??
-    snapshot.library.find((i) => i.id === route.selection && !i.deletedAt);
-  const inspector = (
-    <aside className="graph-selection" aria-label={text("检查器", "Inspector")}>
-      <h3>{selected?.title ?? text("选择节点", "Select a node")}</h3>
-      {selected && (
-        <>
-          <p>
-            {"status" in selected
-              ? t("work:statuses." + selected.status)
-              : text(
-                  selected.kind === "SPACE" ? "知识空间" : "文档",
-                  selected.kind === "SPACE" ? "Space" : "Document",
-                )}
-          </p>
-          <p>
-            {text("版本", "Version")} {selected.version}
-          </p>
-          {"type" in selected ? (
-            <>
-              <p>
-                {selected.type === "TASK"
-                  ? workIndex.projectTitleByTaskId.get(selected.id)
-                  : workIndex.projectPathById.get(selected.id)}
-              </p>
-              {selected.type === "TASK" && (
-                <p>{t("work:priorities." + selected.priority)}</p>
-              )}
-              <p>{selected.descriptionMd.slice(0, 400)}</p>
-            </>
-          ) : (
-            <p>{selected.bodyMd.slice(0, 400)}</p>
-          )}
-          <Button
-            type="button"
-            className="chip"
-            onClick={() =>
-              onOpen({
+  const selectedWork = route.selection
+    ? workIndex.itemsById.get(route.selection)
+    : undefined;
+  const selected = route.selection
+    ? selectedWork && !selectedWork.deletedAt
+      ? selectedWork
+      : snapshot.library.find((i) => i.id === route.selection && !i.deletedAt)
+    : null;
+  const inspector =
+    inspectorOpen && !atlasOpen ? (
+      <ContextPane
+        openLabel={text("打开详情", "Open details")}
+        className="is-inline"
+        label={text("检查器", "Inspector")}
+        selected={
+          selected
+            ? {
                 kind: "type" in selected ? "WORK" : "DOCUMENT",
                 id: selected.id,
-              })
-            }
-          >
-            {text("打开详情", "Open details")}
-          </Button>
-        </>
-      )}
-    </aside>
-  );
-  const scoped = project
-    ? projectScope(project, snapshot.items, "SUBTREE")
-    : null;
-  const scopedTaskIds = new Set(scoped?.tasks.map((task) => task.id) ?? []);
-  const scopedSnapshot = {
-    ...snapshot,
-    items: snapshot.items.filter(
-      (i) => i.type === "PROJECT" || scopedTaskIds.has(i.id),
-    ),
-  };
+              }
+            : null
+        }
+        snapshot={snapshot}
+        atlas={false}
+        onMode={(atlas) => {
+          if (atlas) onAtlas?.();
+        }}
+        onClose={() => setInspectorOpen(false)}
+        onOpen={onOpen}
+      />
+    ) : (
+      false
+    );
+  const { scoped, scopedTaskIds, scopedSnapshot } = useMemo(() => {
+    const projectIds = project
+      ? new Set([
+          project.id,
+          ...Array.from(workIndex.projectsById.values())
+            .filter((item) =>
+              workIndex.ancestorIdsByProjectId
+                .get(item.id)
+                ?.includes(project.id),
+            )
+            .map((item) => item.id),
+        ])
+      : new Set<string>();
+    const taskIds = new Set<string>();
+    for (const projectId of projectIds)
+      for (const taskId of workIndex.tasksByProjectId.get(projectId) ?? [])
+        taskIds.add(taskId);
+    const tasks = Array.from(taskIds)
+      .map((id) => workIndex.itemsById.get(id))
+      .filter(
+        (item): item is WorkItem => item?.type === "TASK" && !item.deletedAt,
+      );
+    const scopedTaskIds = new Set(tasks.map((task) => task.id));
+    const completed = tasks.filter((task) => task.status === "DONE").length;
+    const canceled = tasks.filter((task) => task.status === "CANCELED").length;
+    const scoped = project
+      ? {
+          projects: Array.from(projectIds)
+            .map((id) => workIndex.projectsById.get(id))
+            .filter((item): item is WorkItem => !!item),
+          projectIds,
+          tasks,
+          completed,
+          canceled,
+          unfinished: tasks.length - completed - canceled,
+        }
+      : null;
+    return {
+      scoped,
+      scopedTaskIds,
+      scopedSnapshot: {
+        ...snapshot,
+        items: snapshot.items.filter(
+          (item) => item.type === "PROJECT" || scopedTaskIds.has(item.id),
+        ),
+      },
+    };
+  }, [project, snapshot]);
   if (
     (route.kind === "project" && !project) ||
     (route.kind === "document" && !document)
@@ -145,10 +202,10 @@ export function GraphWorkspace({
     );
   return (
     <section className="graph-workspace">
-      <header className="action-row">
+      <header className="graph-workspace-header">
         <Button
           type="button"
-          className="chip"
+          variant="toggle"
           onClick={() => {
             location.hash = route.back;
             if (route.kind === "document")
@@ -160,17 +217,16 @@ export function GraphWorkspace({
         <h2>
           {project?.title ?? document?.title} · {text("图谱", "Graph")}
         </h2>
-        <label>
-          {text("搜索", "Search")}
+        <Field label={text("搜索", "Search")}>
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-        </label>
+        </Field>
         <Button
           type="button"
-          className="chip"
+          variant="toggle"
           onClick={async () => {
             try {
               await navigator.clipboard.writeText(location.href);
@@ -205,7 +261,17 @@ export function GraphWorkspace({
             ? snapshot.library.filter(
                 (i) => i.kind === "DOCUMENT" && !i.deletedAt,
               )
-            : snapshot.items.filter(
+            : (route.mode === "structure"
+                ? [
+                    project,
+                    ...visibleProjectBranches(
+                      projectChildren,
+                      route.id,
+                      new Set(workIndex.projectsById.keys()),
+                    ),
+                  ].filter((item): item is WorkItem => !!item)
+                : (scoped?.tasks ?? [])
+              ).filter(
                 (i) =>
                   !i.deletedAt &&
                   i.type === (route.mode === "structure" ? "PROJECT" : "TASK"),
@@ -239,7 +305,7 @@ export function GraphWorkspace({
         <div className="action-row">
           {["structure", "dependencies", "knowledge"].map((mode) => (
             <Button
-              className="chip"
+              variant="toggle"
               type="button"
               key={mode}
               aria-pressed={route.mode === mode}
@@ -256,7 +322,11 @@ export function GraphWorkspace({
                   dependencies: "任务依赖",
                   knowledge: "知识关系",
                 }[mode] ?? mode,
-                mode,
+                {
+                  structure: "Project structure",
+                  dependencies: "Task dependencies",
+                  knowledge: "Knowledge relationships",
+                }[mode] ?? mode,
               )}
             </Button>
           ))}
@@ -268,17 +338,39 @@ export function GraphWorkspace({
             {[1, 2].map((depth) => (
               <Button
                 type="button"
-                className="chip"
+                variant="toggle"
                 key={depth}
-                aria-pressed={route.depth === depth}
-                onClick={() => update({ depth })}
+                aria-pressed={
+                  depth === 1
+                    ? expandedIds.size === 0
+                    : hasSecondLevel &&
+                      directChildren.every((item) => expandedIds.has(item.id))
+                }
+                disabled={depth === 2 && !hasSecondLevel}
+                title={
+                  depth === 2 && !hasSecondLevel
+                    ? text("没有第二层子项目", "No second-level subprojects")
+                    : undefined
+                }
+                onClick={() =>
+                  update({
+                    depth,
+                    expandedIds:
+                      depth === 2 ? directChildren.map((item) => item.id) : [],
+                  })
+                }
               >
-                {depth} {text("层", "level")}
+                {depth === 1
+                  ? text("直属子项目", "Direct subprojects")
+                  : text("展开两层", "Expand two levels")}
               </Button>
             ))}
+            <Button variant="ghost" onClick={() => update({ expandedIds: [] })}>
+              {text("全部折叠", "Collapse all")}
+            </Button>
             <Button
               type="button"
-              className="chip"
+              variant="toggle"
               aria-pressed={tree}
               onClick={() => update({ view: "tree" })}
             >
@@ -286,7 +378,7 @@ export function GraphWorkspace({
             </Button>
             <Button
               type="button"
-              className="chip"
+              variant="toggle"
               aria-pressed={!tree}
               onClick={() => update({ view: "graph" })}
             >
@@ -303,19 +395,22 @@ export function GraphWorkspace({
                   {project?.title}
                 </Button>
                 <ProjectStructureTree
-                  key={route.depth}
-                  initialDepth={route.depth}
+                  expandedIds={expandedIds}
+                  onExpandedChange={(ids) => update({ expandedIds: [...ids] })}
                   showDepthControls={false}
                   projects={snapshot.items}
                   parentId={route.id}
-                  onOpen={(id) => update({ selection: id })}
+                  onSelect={(id) => update({ selection: id })}
+                  onOpen={(id) => onOpen({ kind: "WORK", id })}
                 />
               </div>
               {inspector}
             </div>
           ) : (
             <GraphViewport
-              layoutKey={`${collectionRevision(snapshot.items)}:${route.id}:${route.depth}`}
+              initialViewport={route.viewport}
+              onViewportChange={(viewport) => update({ viewport })}
+              layoutKey={structureKey}
               workspace
               selectionId={route.selection}
               inspector={inspector}
@@ -333,6 +428,8 @@ export function GraphWorkspace({
       )}
       {route.mode === "dependencies" && (
         <ProjectDependencyGraph
+          initialViewport={route.viewport}
+          onViewportChange={(viewport) => update({ viewport })}
           key={route.id + route.mode}
           scopeProjectId={route.id}
           workspace
@@ -350,6 +447,8 @@ export function GraphWorkspace({
       )}
       {route.mode === "knowledge" && (
         <KnowledgeGraph
+          initialViewport={route.viewport}
+          onViewportChange={(viewport) => update({ viewport })}
           workspace
           inspector={inspector}
           initialScope={route.scope}

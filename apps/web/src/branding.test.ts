@@ -20,9 +20,17 @@ test("Sidebar brand logo remains byte-identical and keeps its independent applic
 });
 
 test("all application platforms derive their packaged icons from the canonical repository source", () => {
+  expect(hash("branding/application-icon-source.png")).toBe(
+    "CB8711F35456A3DED810C8658FE303AAFB95DF35978B88F81046BE8DF33412DC",
+  );
+  const source = bytes("branding/application-icon-source.png");
+  expect(source.readUInt32BE(16)).toBe(1320);
+  expect(source.readUInt32BE(20)).toBe(1191);
+  expect(source[25]).toBe(6);
   const generator = bytes("scripts/make-native-icons.mjs").toString();
   expect(generator).toContain("branding/application-icon-source.png");
   expect(generator).not.toContain("E:\\DownloadTemp");
+  expect(generator).toContain("object-fit:contain");
   const config = JSON.parse(bytes("src-tauri/tauri.conf.json").toString());
   expect(config.bundle.icon).toContain("icons/icon.ico");
   expect(config.bundle.windows.nsis.installerIcon).toBe("icons/icon.ico");
@@ -48,6 +56,13 @@ test("all application platforms derive their packaged icons from the canonical r
       ).toBe(hash(`src-tauri/icons/android/mipmap-${density}/${name}.png`));
     }
   }
+  expect(
+    hash("src-tauri/icons/android/values/ic_launcher_background.xml"),
+  ).toBe(
+    hash(
+      "src-tauri/gen/android/app/src/main/res/values/ic_launcher_background.xml",
+    ),
+  );
   for (const file of [
     "src-tauri/icons/icon.png",
     "apps/web/public/favicon.png",

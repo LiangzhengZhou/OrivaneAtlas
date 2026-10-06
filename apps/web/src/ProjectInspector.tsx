@@ -126,19 +126,13 @@ export function ProjectInspector({
             ))}
         </fieldset>
       )}
-      <Button
-        variant="primary"
-        type="button"
-        className="button primary"
-        disabled={busy}
-        onClick={onEdit}
-      >
+      <Button variant="primary" type="button" disabled={busy} onClick={onEdit}>
         {item.type === "PROJECT" ? t("projectSettings") : t("work:detail")}
       </Button>
       {item.type === "PROJECT" && (
         <Button
           type="button"
-          className="button secondary"
+          variant="secondary"
           onClick={() => onProject(item.id)}
         >
           {t("openWorkspace")}
@@ -147,7 +141,7 @@ export function ProjectInspector({
       <div className="organization-toolbar">
         <Button
           type="button"
-          className="chip"
+          variant="toggle"
           disabled={busy}
           onClick={() => onOrganize(item, archived ? "unarchive" : "archive")}
         >
@@ -155,7 +149,7 @@ export function ProjectInspector({
         </Button>
         <Button
           type="button"
-          className="chip"
+          variant="toggle"
           disabled={busy}
           onClick={() => onOrganize(item, "delete")}
         >

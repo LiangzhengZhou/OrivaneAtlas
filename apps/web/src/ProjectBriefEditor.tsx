@@ -93,7 +93,7 @@ export function ProjectBriefEditor({
       {!draft ? (
         <>
           <Button
-            className="button secondary"
+            variant="secondary"
             type="button"
             disabled={busy}
             onClick={() => {
@@ -114,7 +114,7 @@ export function ProjectBriefEditor({
               <Button
                 type="button"
                 key={value}
-                className={mode === value ? "chip active" : "chip"}
+                variant="toggle"
                 aria-pressed={mode === value}
                 onClick={() => setMode(value)}
               >
@@ -169,7 +169,7 @@ export function ProjectBriefEditor({
           <div className="dialog-actions">
             <Button
               type="button"
-              className="button secondary"
+              variant="secondary"
               disabled={saving}
               onClick={cancel}
             >
@@ -178,7 +178,6 @@ export function ProjectBriefEditor({
             <Button
               variant="primary"
               type="button"
-              className="button primary"
               disabled={busy || saving || conflict || !dirty}
               onClick={() => void save()}
             >

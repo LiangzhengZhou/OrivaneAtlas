@@ -34,6 +34,7 @@ export function Button({
 export function IconButton({
   label,
   children,
+  variant = "ghost",
   ...props
 }: Omit<ComponentProps<typeof Button>, "children"> & {
   label: string;
@@ -42,6 +43,7 @@ export function IconButton({
   return (
     <Button
       {...props}
+      variant={variant}
       aria-label={label}
       title={label}
       className={`ui-icon-button ${props.className ?? ""}`}
@@ -60,7 +62,7 @@ export function SegmentedControl<T extends string>({
 }: {
   label: string;
   value: T;
-  options: readonly { value: T; label: string }[];
+  options: readonly { value: T; label: string; disabled?: boolean }[];
   onChange(value: T): void;
   disabled?: boolean;
 }) {
@@ -71,7 +73,7 @@ export function SegmentedControl<T extends string>({
           key={option.value}
           variant="toggle"
           aria-pressed={value === option.value}
-          disabled={disabled}
+          disabled={disabled || option.disabled}
           onClick={() => onChange(option.value)}
         >
           {option.label}

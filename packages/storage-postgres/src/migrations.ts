@@ -239,6 +239,14 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 27,
+    name: "wiki-index-state",
+    sql: readFileSync(
+      new URL("./migrations/0027-wiki-index-state.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")
@@ -272,13 +280,21 @@ export async function inspectSchema(
     routines.some(
       (routine) =>
         routine.nspname !== "arclattice" ||
-        routine.proname !== "record_workspace_change" ||
+        !["record_workspace_change", "mark_wiki_index_dirty"].includes(
+          routine.proname,
+        ) ||
         routine.prosecdef ||
         routine.pronargs !== 0 ||
         routine.return_type !== "trigger" ||
         routine.prosrc !==
           plan
-            .find((step) => step.name === "workspace-changes")
+            .find(
+              (step) =>
+                step.name ===
+                (routine.proname === "record_workspace_change"
+                  ? "workspace-changes"
+                  : "wiki-index-state"),
+            )
             ?.sql.split("AS $$")[1]
             ?.split("$$;")[0],
     )
@@ -392,9 +408,10 @@ export async function inspectSchema(
     ...(rows.length >= 26
       ? ["agent_session_metadata", "agent_session_message"]
       : []),
+    ...(rows.length >= 27 ? ["wiki_index_state"] : []),
   ];
   if (rows.length >= 24) {
-    if (routines.length !== 1)
+    if (routines.length !== (rows.length >= 27 ? 2 : 1))
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
     const expected =
       plan.find((step) => step.name === "workspace-changes")?.sql ?? "";
@@ -411,6 +428,29 @@ export async function inspectSchema(
               trigger.tgname === match[1] &&
               trigger.tgenabled === "O" &&
               trigger.proname === "record_workspace_change",
+          ),
+      )
+    )
+      throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
+  }
+  if (rows.length >= 27) {
+    const triggers = (
+      await client.query(
+        "SELECT t.tgname,t.tgenabled,p.proname,c.relname FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='arclattice' AND t.tgname IN ('wiki_index_dirty','wiki_alias_dirty') AND NOT t.tgisinternal",
+      )
+    ).rows;
+    if (
+      [
+        ["wiki_index_dirty", "library_entry"],
+        ["wiki_alias_dirty", "document_alias"],
+      ].some(
+        ([name, table]) =>
+          !triggers.some(
+            (trigger) =>
+              trigger.tgname === name &&
+              trigger.relname === table &&
+              trigger.tgenabled === "O" &&
+              trigger.proname === "mark_wiki_index_dirty",
           ),
       )
     )

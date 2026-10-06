@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { LibraryEntry, LibraryStore } from "@arclattice/application";
+import type {
+  BodyManifest,
+  LibraryEntry,
+  LibraryStore,
+} from "@arclattice/application";
 import {
   MAX_LIBRARY_ENTRIES,
   referencedLibraryAssetIds,
@@ -144,6 +148,40 @@ export function libraryStore(
           heading: row.heading === null ? null : String(row.heading),
         }));
     },
+    async listMetadata() {
+      guard();
+      const aliases = new Map<string, string[]>();
+      for (const row of db
+        .prepare(
+          "SELECT document_id,alias FROM document_alias WHERE workspace_id=? ORDER BY normalized_alias",
+        )
+        .all(context.workspaceId)) {
+        const id = String(row.document_id);
+        aliases.set(id, [...(aliases.get(id) ?? []), String(row.alias)]);
+      }
+      return db
+        .prepare(
+          "SELECT json_remove(payload,'$.bodyMd') metadata, length(json_extract(payload,'$.bodyMd')) characters FROM library_entry WHERE workspace_id=? ORDER BY id",
+        )
+        .all(context.workspaceId)
+        .map((row) => {
+          const entry = JSON.parse(String(row.metadata)) as Omit<
+            LibraryEntry,
+            "bodyMd"
+          >;
+          return {
+            ...entry,
+            aliases: [
+              ...new Set([
+                ...(entry.aliases ?? []),
+                ...(aliases.get(entry.id) ?? []),
+              ]),
+            ],
+            bodyState: "UNLOADED",
+            bodyCharacterCount: Number(row.characters),
+          } satisfies BodyManifest<LibraryEntry>;
+        });
+    },
     async list() {
       guard();
       return db
@@ -168,6 +206,29 @@ export function libraryStore(
             ],
           };
         });
+    },
+    async ensureWikiIndex() {
+      guard();
+      const state = db
+        .prepare(
+          "SELECT index_version,dirty FROM wiki_index_state WHERE workspace_id=?",
+        )
+        .get(context.workspaceId);
+      if (state?.index_version === 1 && state.dirty === 0) return false;
+      if (
+        !db
+          .prepare(
+            "SELECT 1 FROM library_entry WHERE workspace_id=? AND json_extract(payload,'$.kind')='DOCUMENT' LIMIT 1",
+          )
+          .get(context.workspaceId)
+      ) {
+        db.prepare(
+          "INSERT INTO wiki_index_state VALUES (?,1,0) ON CONFLICT(workspace_id) DO UPDATE SET index_version=1,dirty=0",
+        ).run(context.workspaceId);
+        return false;
+      }
+      await this.rebuildWikiIndex!();
+      return true;
     },
     async rebuildWikiIndex() {
       guard();
@@ -228,10 +289,25 @@ export function libraryStore(
             document.version,
             document.updatedAt,
           );
+      db.prepare(
+        "INSERT INTO wiki_index_state VALUES (?,1,0) ON CONFLICT(workspace_id) DO UPDATE SET index_version=1,dirty=0",
+      ).run(context.workspaceId);
       event("wiki-index", 1, "WIKI_INDEX_REBUILT");
     },
     async save(entry, expected) {
       guard();
+      await this.ensureWikiIndex!();
+      const indexState = db
+        .prepare(
+          "SELECT index_version,dirty FROM wiki_index_state WHERE workspace_id=?",
+        )
+        .get(context.workspaceId);
+      const indexWasClean =
+        indexState?.index_version === 1 && indexState.dirty === 0;
+      const spaceStaysLive =
+        entry.kind === "SPACE" &&
+        !entry.deletedAt &&
+        (expected === 0 || !(await get(entry.id)).deletedAt);
       if (
         entry.workspaceId !== context.workspaceId ||
         entry.updatedBy !== context.principalId
@@ -370,6 +446,10 @@ export function libraryStore(
             "UPDATE document_wiki_link SET target_document_id=NULL WHERE workspace_id=? AND target_document_id=?",
           ).run(context.workspaceId, entry.id);
       }
+      if (indexWasClean && (entry.kind === "DOCUMENT" || spaceStaysLive))
+        db.prepare(
+          "UPDATE wiki_index_state SET dirty=0 WHERE workspace_id=?",
+        ).run(context.workspaceId);
       event(entry.id, entry.version, "LIBRARY_CHANGED");
     },
     async revisions(id) {

@@ -21,12 +21,7 @@ export function MoreSheet({
     >
       <header>
         <h2 id="mobile-more-title">{t("moreNavigation")}</h2>
-        <Button
-          variant="ghost"
-          type="button"
-          className="text-button"
-          onClick={onClose}
-        >
+        <Button variant="ghost" type="button" onClick={onClose}>
           {t("common:close")}
         </Button>
       </header>

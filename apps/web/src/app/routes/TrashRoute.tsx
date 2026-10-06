@@ -54,7 +54,7 @@ export function TrashRoute({
       (
         entry.title +
         " " +
-        ("bodyMd" in entry ? entry.bodyMd : entry.descriptionMd)
+        (entry.kind === "WORK" ? entry.descriptionMd : (entry.bodyMd ?? ""))
       )
         .toLocaleLowerCase()
         .includes(query.toLocaleLowerCase()),
@@ -83,7 +83,7 @@ export function TrashRoute({
           <span>{entry.title}</span>
           <Button
             type="button"
-            className="button secondary"
+            variant="secondary"
             disabled={busy}
             onClick={() =>
               void run(() =>
@@ -104,7 +104,7 @@ export function TrashRoute({
           </Button>
           <Button
             type="button"
-            className="button danger"
+            variant="danger"
             disabled={busy}
             onClick={async () => {
               if (

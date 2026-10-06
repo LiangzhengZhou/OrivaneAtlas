@@ -1,4 +1,7 @@
-import type { Note, WorkflowRecord } from "@arclattice/application";
+import type {
+  WorkspaceNote as Note,
+  WorkflowRecord,
+} from "@arclattice/application";
 import {
   localCalendarDay,
   type Reminder,
@@ -13,6 +16,7 @@ export interface CalendarDaySummary {
   recurrence: readonly WorkflowRecord[];
   reminders: readonly Reminder[];
 }
+export type CalendarIndex = ReturnType<typeof buildCalendarIndex>;
 export function buildCalendarIndex(
   items: readonly WorkItem[],
   notes: readonly Note[],

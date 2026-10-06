@@ -79,6 +79,7 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/ai/providers/remove",
             "/api/ai/propose",
             "/api/ai/sessions/create",
+            "/api/ai/sessions/update",
             "/api/ai/sessions/profile",
             "/api/ai/capability",
             "/api/ai/harness/decide",
@@ -97,6 +98,8 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/recurrences/task",
             "/api/recurrences/generate",
             "/api/recurrences/backfill",
+            "/api/recurrences/skip",
+            "/api/reminders/save",
             "/api/note/save",
             "/api/note/promote",
             "/api/note/link-space",
@@ -108,6 +111,11 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/health",
             "/api/session",
             "/api/snapshot",
+            "/api/bootstrap",
+            "/api/document/body",
+            "/api/document/note-backlinks",
+            "/api/notes/search",
+            "/api/library/search",
             "/api/sync",
             "/api/admin",
             "/api/tokens",
@@ -119,6 +127,7 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/ai/configuration",
             "/api/ai",
             "/api/ai/sessions",
+            "/api/ai/sessions/messages",
             "/api/ai/events",
             "/api/ai/trusted-endpoints",
             "/api/activity",
@@ -351,6 +360,7 @@ pub struct Reply {
     status: u16,
     content_type: String,
     body: String,
+    encoding: &'static str,
 }
 
 #[tauri::command]
@@ -512,10 +522,23 @@ async fn send(
             }
         }
     }
+    let is_json = content_type.split(';').next().unwrap_or("").trim() == "application/json";
+    let (body, encoding) = if is_json {
+        (
+            String::from_utf8(bytes.to_vec()).map_err(|_| "Invalid JSON UTF-8".to_string())?,
+            "utf8",
+        )
+    } else {
+        (
+            base64::engine::general_purpose::STANDARD.encode(bytes),
+            "base64",
+        )
+    };
     Ok(Reply {
         status,
         content_type,
-        body: base64::engine::general_purpose::STANDARD.encode(bytes),
+        body,
+        encoding,
     })
 }
 
@@ -794,7 +817,12 @@ mod tests {
     fn logout_forgets_even_when_network_is_unavailable() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
-        drop(listener);
+        // Keep ownership of the ephemeral port: another parallel fixture must
+        // not turn an intended network failure into a successful HTTP reply.
+        let disconnect = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream.shutdown(std::net::Shutdown::Both).unwrap();
+        });
         let vault = MemoryVault::default();
         vault
             .save(&SavedSession {
@@ -817,6 +845,7 @@ mod tests {
             .await
             .is_err());
         });
+        disconnect.join().unwrap();
         assert!(state.0.lock().unwrap().cookie.is_empty());
         assert!(vault.load().unwrap().is_none());
     }
@@ -837,14 +866,36 @@ mod tests {
             let login = serde_json::json!({"username":"native-test","password":password}).to_string();
             let reply = call("/api/session", Some(login), "").await.unwrap();
             assert_eq!(reply.status, 200);
-            let bytes = base64::engine::general_purpose::STANDARD.decode(reply.body).unwrap();
-            let data: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(reply.encoding, "utf8"); let bytes = reply.body.as_bytes();
+            let data: serde_json::Value = serde_json::from_slice(bytes).unwrap();
             let csrf = data["csrf"].as_str().unwrap();
             assert_eq!(call("/api/session", None, "").await.unwrap().status, 200);
+            let bootstrap = call("/api/bootstrap", None, "").await.unwrap();
+            assert_eq!(bootstrap.status, 200);
+            assert_eq!(bootstrap.encoding, "utf8");
+            let manifest: serde_json::Value = serde_json::from_str(&bootstrap.body).unwrap();
+            assert_eq!(manifest["schemaVersion"], 1);
+            let library = manifest["library"].as_array().unwrap();
+            assert_eq!(library.len(), 6);
+            for entry in library {
+                assert_eq!(entry["bodyState"], "UNLOADED");
+                assert!(entry.get("bodyMd").is_none());
+            }
+            let document = library.iter().find(|entry| entry["kind"] == "DOCUMENT").unwrap();
+            let body = call(&format!("/api/document/body?kind=LIBRARY&id={}", document["id"].as_str().unwrap()), None, "").await.unwrap();
+            assert_eq!(body.status, 200);
+            assert_eq!(body.encoding, "utf8");
+            let hydrated: serde_json::Value = serde_json::from_str(&body.body).unwrap();
+            assert_eq!(hydrated["bodyMd"].as_str().unwrap().chars().count(), 50 * 1024);
+            let search = call("/api/library/search?q=native-body-marker", None, "").await.unwrap();
+            assert_eq!(search.status, 200);
+            let found: serde_json::Value = serde_json::from_str(&search.body).unwrap();
+            assert_eq!(found.as_array().unwrap().len(), 5);
+            assert_eq!(call("/api/notes/search?q=native-body-marker", None, "").await.unwrap().status, 200);
             assert_eq!(call("/api/snapshot", None, "").await.unwrap().status, 200);
             let initial = call("/api/sync?cursor=", None, "").await.unwrap();
             assert_eq!(initial.status, 200);
-            let initial: serde_json::Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(initial.body).unwrap()).unwrap();
+            let initial: serde_json::Value = serde_json::from_str(&initial.body).unwrap();
             let calendar = serde_json::json!({"version":initial["snapshot"]["calendarSettings"]["version"],"timezone":"Asia/Shanghai"}).to_string();
             let calendar = send(&state, origin.clone(), "/api/work/calendar-settings".into(), Some(calendar), csrf.into(), "e47db6fe-2b9d-48a5-aac3-1b5e7e6874d6".into()).await.unwrap();
             assert_eq!(calendar.status, 200);
@@ -854,14 +905,14 @@ mod tests {
             let navigation = send(&state, origin.clone(), "/api/work/navigation-preference".into(), Some(preference), csrf.into(), "2240e970-dbb9-4881-ac3a-b8675c7ca353".into()).await.unwrap();
             assert_eq!(navigation.status, 200);
             let refreshed = call("/api/snapshot", None, "").await.unwrap();
-            let refreshed: serde_json::Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(refreshed.body).unwrap()).unwrap();
+            let refreshed: serde_json::Value = serde_json::from_str(&refreshed.body).unwrap();
             assert_eq!(refreshed["calendarSettings"]["timezone"], "Asia/Shanghai");
             assert_eq!(refreshed["navigationPreference"]["mobile"]["pinned"], serde_json::json!(["tasks", "projects"]));
             let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lL8AAAAASUVORK5CYII=";
             let upload = serde_json::json!({"uploadId":"781a8601-a661-451c-9c66-50b880c62c78", "spaceId":null, "name":"native.png", "mime":"image/png", "base64":png, "index":0, "final":true}).to_string();
             let image = send(&state, origin.clone(), "/api/library/upload-chunk".into(), Some(upload), csrf.into(), "bee57582-4255-49bd-af20-75f616c38aa5".into()).await.unwrap();
             assert_eq!(image.status, 200);
-            let image_data: serde_json::Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(image.body).unwrap()).unwrap();
+            let image_data: serde_json::Value = serde_json::from_str(&image.body).unwrap();
             let image = call(image_data["url"].as_str().unwrap(), None, "").await.unwrap();
             assert_eq!(image.status, 200);
             assert_eq!(image.content_type, "image/png");
@@ -881,6 +932,17 @@ mod tests {
             configure(&state, "https://other.example").unwrap();
             assert!(call("/api/session", None, "").await.is_err());
         });
+    }
+    #[test]
+    fn metadata_and_conversation_paths_preserve_method_boundaries() {
+        for path in ["/api/bootstrap", "/api/document/body", "/api/document/note-backlinks", "/api/notes/search", "/api/library/search", "/api/ai/sessions/messages"] {
+            assert!(endpoint("https://example.com", path, false).is_ok());
+            assert!(endpoint("https://example.com", path, true).is_err());
+        }
+        for path in ["/api/ai/sessions/update", "/api/recurrences/skip", "/api/reminders/save"] {
+            assert!(endpoint("https://example.com", path, true).is_ok());
+            assert!(endpoint("https://example.com", path, false).is_err());
+        }
     }
     #[test]
     fn redirect_is_not_followed() {
@@ -1033,4 +1095,54 @@ mod tests {
         assert!(s.cookie.is_empty());
         assert_eq!(s.generation, 2);
     }
+    #[test]
+    fn json_transport_release_payload_parity() {
+        fn memory() -> serde_json::Value {
+            #[cfg(windows)] {
+                use windows_sys::Win32::System::{ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS}, Threading::GetCurrentProcess};
+                let mut counters = PROCESS_MEMORY_COUNTERS::default();
+                counters.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+                // Current-process handle and correctly sized writable counters.
+                assert_ne!(unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32) }, 0);
+                serde_json::json!({"workingSetBytes":counters.WorkingSetSize,"peakWorkingSetBytes":counters.PeakWorkingSetSize})
+            }
+            #[cfg(not(windows))] { serde_json::Value::Null }
+        }
+        let mut samples = Vec::new();
+        for mib in [1, 5] {
+            for iteration in 0..5 {
+                let payload = serde_json::json!({"payload":"A".repeat(mib * 1024 * 1024)});
+                let raw_bytes = payload.to_string().len();
+                let (origin, thread) = fixture(vec![(200, payload, None)]);
+                let state = Transport::default();
+                configure(&state, &origin).unwrap();
+                let before = memory();
+                let started = std::time::Instant::now();
+                let reply = tokio::runtime::Runtime::new().unwrap().block_on(send(&state, origin, "/api/library".into(), None, String::new(), String::new())).unwrap();
+                let request_ms = started.elapsed().as_secs_f64() * 1000.0;
+                assert_eq!(reply.status, 200);
+                let serialized_started = std::time::Instant::now();
+                let bridge = serde_json::to_vec(&reply).unwrap();
+                let serialization_ms = serialized_started.elapsed().as_secs_f64() * 1000.0;
+                let parse_started = std::time::Instant::now();
+                let ipc: serde_json::Value = serde_json::from_slice(&bridge).unwrap();
+                let body = ipc["body"].as_str().unwrap();
+                let json_bytes = if true {
+                    assert_eq!(ipc["encoding"], "utf8");
+                    assert!(bridge.len() < raw_bytes + 256);
+                    body.as_bytes().to_vec()
+                } else {
+                    assert!(bridge.len() > raw_bytes * 13 / 10);
+                    base64::engine::general_purpose::STANDARD.decode(body).unwrap()
+                };
+                let decoded: serde_json::Value = serde_json::from_slice(&json_bytes).unwrap();
+                assert_eq!(decoded["payload"].as_str().unwrap().len(), mib * 1024 * 1024);
+                let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+                samples.push(serde_json::json!({"payloadMiB":mib,"iteration":iteration,"rawJsonBytes":raw_bytes,"serializedBridgeBytes":bridge.len(),"requestMs":request_ms,"serializationMs":serialization_ms,"verificationParseMs":parse_ms,"memoryBefore":before,"memoryAfter":memory()}));
+                thread.join().unwrap();
+            }
+        }
+        println!("NATIVE_TRANSPORT_BENCHMARK {}", serde_json::json!({"encoding":if true {"utf8"} else {"base64"},"measurement":"real loopback HTTP + native Reply serialization; Rust verification parse; whole fixture process RSS, not a WebView IPC timing", "samples":samples}));
+    }
+
 }

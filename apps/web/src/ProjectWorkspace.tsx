@@ -11,16 +11,22 @@ import {
   type WorkItem,
   type WorkStatus,
 } from "@arclattice/domain";
+import { MoreHorizontal } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useEntitySelection } from "./app/EntitySelection";
 import type { Runtime, Snapshot } from "./bootstrap";
-import { Button } from "./components/ui/Button";
-import { Select } from "./components/ui/Surfaces";
+import { Button, IconButton, Toolbar } from "./components/ui/Button";
+import { ListRow, MenuItem } from "./components/ui/Content";
+import { Menu, Popover, Select } from "./components/ui/Surfaces";
 import { openGraph } from "./features/graph/graph-route";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
 import { ProjectDependencyGraph } from "./features/projects/ProjectDependencyGraph";
 import { ProjectStructureTree } from "./features/projects/ProjectStructureTree";
-import { TasksWorkspace } from "./features/tasks/TasksWorkspace";
+import {
+  type TaskPresentation,
+  TasksWorkspace,
+} from "./features/tasks/TasksWorkspace";
 import { type TaskWorkspaceIndex } from "./features/tasks/task-selectors";
 import type { WorkspaceWorkIndex } from "./features/tasks/workspace-work-index";
 import {
@@ -63,6 +69,8 @@ export function ProjectWorkspace({
   onOrganize,
   runtime,
   run,
+  taskPresentation,
+  onTaskPresentationChange,
 }: {
   workIndex: WorkspaceWorkIndex;
   taskIndex: TaskWorkspaceIndex;
@@ -90,8 +98,19 @@ export function ProjectWorkspace({
   onOrganize(item: WorkItem, action: "archive" | "unarchive" | "delete"): void;
   runtime: Runtime;
   run(operation: () => Promise<unknown>): Promise<boolean>;
+  taskPresentation: TaskPresentation;
+  onTaskPresentationChange(state: TaskPresentation): void;
 }) {
   const { t, i18n } = useTranslation("desk");
+  const selection = useEntitySelection();
+  const headerMenuAnchor = useRef<HTMLButtonElement>(null);
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
+  const taskFilterAnchor = useRef<HTMLButtonElement>(null);
+  const [taskFilterOpen, setTaskFilterOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const headerMenuLabel = i18n.language.startsWith("zh")
+    ? "项目更多操作"
+    : "More project actions";
   const tab = routeTab;
   const setTab = (tab: ProjectTab) => onRouteChange(tab, scope);
   const scope = routeScope;
@@ -144,6 +163,19 @@ export function ProjectWorkspace({
     );
   }, [snapshot.projectMaterials, project.id, ancestorIds]);
   const tasks = scoped.tasks;
+  const recentKnowledge = useMemo(
+    () =>
+      tab === "overview"
+        ? scopedKnowledgeDocuments({
+            ...snapshot,
+            projectId: project.id,
+            workspaceFallback: false,
+          })
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+            .slice(0, 3)
+        : [],
+    [snapshot, project.id, tab],
+  );
   const selectedTasks = taskIndex;
   const milestones = liveItems.filter(
     (item) =>
@@ -219,36 +251,7 @@ export function ProjectWorkspace({
   const parent = workIndex.projectsById.get(project.parentProjectId ?? "");
   return (
     <section className="project-workspace">
-      <div className="organization-toolbar">
-        <Button type="button" className="chip" onClick={onBack}>
-          {t("projectHub.back")}
-        </Button>
-        {parent && (
-          <Button
-            type="button"
-            className="chip"
-            onClick={() => onProject(parent.id)}
-          >
-            {t("parentProject")} · {parent.title}
-          </Button>
-        )}
-      </div>
       <div className="panel project-summary">
-        <nav aria-label={t("projectBreadcrumb")} className="project-breadcrumb">
-          {[...ancestors].reverse().map((ancestor) => (
-            <Button
-              variant="ghost"
-              type="button"
-              className="text-button"
-              key={ancestor.id}
-              aria-label={ancestor.title}
-              onClick={() => onProject(ancestor.id)}
-            >
-              {ancestor.title}
-            </Button>
-          ))}
-          <span aria-current="page">{project.title}</span>
-        </nav>
         <h1>{project.title}</h1>
         <p>{t("projectLifecycles." + projectLifecycle(project))}</p>
         <p>
@@ -260,17 +263,6 @@ export function ProjectWorkspace({
             )?.name
           }
         </p>
-        <label className="field project-scope">
-          <span>{t("projectScope")}</span>
-          <Select
-            aria-label={t("projectScope")}
-            value={scope}
-            onChange={(event) => setScope(event.target.value as ProjectScope)}
-          >
-            <option value="DIRECT">{t("scopeDirect")}</option>
-            <option value="SUBTREE">{t("scopeSubtree")}</option>
-          </Select>
-        </label>
         <p className="muted" data-testid="project-progress">
           {t("projectProgress", {
             completed: scoped.completed,
@@ -278,32 +270,78 @@ export function ProjectWorkspace({
             unfinished: scoped.unfinished,
           })}
         </p>
-        <div className="organization-toolbar">
+        <Toolbar>
           <Button
             type="button"
-            className="button secondary"
-            disabled={busy}
-            onClick={() => onOpen({ kind: "WORK", id: project.id })}
-          >
-            {t("projectSettings")}
-          </Button>
-          <Button
-            type="button"
-            className="button secondary"
-            disabled={busy}
-            onClick={() => onCreate("PROJECT", project.id)}
-          >
-            {t("projectHub.newChild")}
-          </Button>
-          <Button
-            type="button"
-            className="button secondary"
+            variant="primary"
             disabled={busy}
             onClick={() => onCreate("TASK", project.id)}
           >
             {t("newTask")}
           </Button>
-        </div>
+          <IconButton
+            ref={headerMenuAnchor}
+            label={headerMenuLabel}
+            aria-haspopup="menu"
+            aria-expanded={headerMenuOpen}
+            onClick={() => setHeaderMenuOpen((open) => !open)}
+          >
+            <MoreHorizontal />
+          </IconButton>
+          {headerMenuOpen && (
+            <Menu
+              anchorRef={headerMenuAnchor}
+              label={headerMenuLabel}
+              onDismiss={() => setHeaderMenuOpen(false)}
+            >
+              <MenuItem
+                onClick={() => {
+                  setHeaderMenuOpen(false);
+                  onBack();
+                }}
+              >
+                {t("projectHub.back")}
+              </MenuItem>
+              {parent && (
+                <MenuItem
+                  onClick={() => {
+                    setHeaderMenuOpen(false);
+                    onProject(parent.id);
+                  }}
+                >
+                  {t("parentProject")} · {parent.title}
+                </MenuItem>
+              )}
+              <MenuItem
+                disabled={busy}
+                onClick={() => {
+                  setHeaderMenuOpen(false);
+                  onOpen({ kind: "WORK", id: project.id });
+                }}
+              >
+                {t("projectSettings")}
+              </MenuItem>
+              <MenuItem
+                disabled={busy}
+                onClick={() => {
+                  setHeaderMenuOpen(false);
+                  onCreate("PROJECT", project.id);
+                }}
+              >
+                {t("projectHub.newChild")}
+              </MenuItem>
+              <MenuItem
+                disabled={busy}
+                onClick={() => {
+                  setHeaderMenuOpen(false);
+                  onCreate("MILESTONE", project.id);
+                }}
+              >
+                {t("newMilestone")}
+              </MenuItem>
+            </Menu>
+          )}
+        </Toolbar>
       </div>
       <div
         className="organization-toolbar"
@@ -318,7 +356,7 @@ export function ProjectWorkspace({
             id={`project-tab-${name}`}
             aria-controls="project-panel"
             aria-selected={tab === name}
-            className="chip"
+            variant="toggle"
             onClick={() => setTab(name)}
           >
             {t(`projectHub.${name}`)}
@@ -338,16 +376,58 @@ export function ProjectWorkspace({
                 .filter((task) => taskIds.has(task.id))
                 .slice(0, 5)
                 .map((task) => (
-                  <Button
+                  <ListRow
                     key={task.id}
-                    type="button"
                     className="agenda-item"
-                    onClick={() => onOpen({ kind: "WORK", id: task.id })}
+                    onSelect={() =>
+                      selection?.select({ kind: "WORK", id: task.id })
+                    }
+                    onOpen={() => onOpen({ kind: "WORK", id: task.id })}
                   >
                     {task.title}
-                  </Button>
+                  </ListRow>
                 ))}
             </section>
+            {tasks.some(
+              (task) =>
+                task.status === "TODO" &&
+                (selectedTasks.derived.blockersByTaskId.get(task.id)?.length ??
+                  0) > 0,
+            ) && (
+              <section className="project-blockers">
+                <h2>
+                  {i18n.language.startsWith("zh") ? "受阻任务" : "Blockers"}
+                </h2>
+                {tasks
+                  .filter(
+                    (task) =>
+                      task.status === "TODO" &&
+                      (selectedTasks.derived.blockersByTaskId.get(task.id)
+                        ?.length ?? 0) > 0,
+                  )
+                  .slice(0, 5)
+                  .map((task) => (
+                    <ListRow
+                      key={task.id}
+                      onSelect={() =>
+                        selection?.select({ kind: "WORK", id: task.id })
+                      }
+                      onOpen={() => onOpen({ kind: "WORK", id: task.id })}
+                    >
+                      {task.title}
+                      <small>
+                        {(
+                          selectedTasks.derived.blockersByTaskId.get(task.id) ??
+                          []
+                        )
+                          .map((id) => workIndex.itemsById.get(id)?.title)
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </small>
+                    </ListRow>
+                  ))}
+              </section>
+            )}
             <section className="project-milestones">
               <h2>{t("milestones")}</h2>
               {milestones.map((milestone) => (
@@ -369,7 +449,7 @@ export function ProjectWorkspace({
               ))}
               <Button
                 type="button"
-                className="chip"
+                variant="toggle"
                 disabled={busy}
                 onClick={() => onCreate("MILESTONE", project.id)}
               >
@@ -385,7 +465,7 @@ export function ProjectWorkspace({
               <h2>{t("projectHub.children")}</h2>
               <Button
                 type="button"
-                className="chip"
+                variant="toggle"
                 onClick={() =>
                   openGraph({
                     kind: "project",
@@ -410,11 +490,38 @@ export function ProjectWorkspace({
               busy={busy}
               onSave={onBriefSave}
             />
-            <ProjectTimeline
-              tasks={[...tasks, ...milestones]}
-              items={liveItems}
-              onOpen={onOpen}
-            />
+            {recentKnowledge.length > 0 && (
+              <section className="project-recent-knowledge">
+                <h2>{t("projectHub.knowledge")}</h2>
+                {recentKnowledge.map((entry) => (
+                  <ListRow
+                    key={entry.id}
+                    onSelect={() =>
+                      selection?.select({ kind: "DOCUMENT", id: entry.id })
+                    }
+                    onOpen={() => onOpen({ kind: "DOCUMENT", id: entry.id })}
+                  >
+                    {entry.title}
+                  </ListRow>
+                ))}
+              </section>
+            )}
+            <details
+              onToggle={(event) => setTimelineOpen(event.currentTarget.open)}
+            >
+              <summary>
+                {i18n.language.startsWith("zh")
+                  ? "项目时间线"
+                  : "Project timeline"}
+              </summary>
+              {timelineOpen && (
+                <ProjectTimeline
+                  tasks={[...tasks, ...milestones]}
+                  items={liveItems}
+                  onOpen={onOpen}
+                />
+              )}
+            </details>
             <ProjectHistory
               projectId={project.id}
               projectIds={[...projectIds]}
@@ -565,7 +672,6 @@ export function ProjectWorkspace({
                   <Button
                     variant="ghost"
                     type="button"
-                    className="text-button"
                     onClick={() => onOpen(entry.ref)}
                   >
                     {entry.title}
@@ -575,7 +681,7 @@ export function ProjectWorkspace({
                   </small>
                   <Button
                     type="button"
-                    className="chip"
+                    variant="toggle"
                     disabled={busy}
                     onClick={() => {
                       void onUnlink(entry.link);
@@ -590,6 +696,47 @@ export function ProjectWorkspace({
         )}
         {tab === "tasks" && (
           <TasksWorkspace
+            filterControls={
+              <>
+                <Button
+                  ref={taskFilterAnchor}
+                  variant="ghost"
+                  aria-haspopup="dialog"
+                  aria-expanded={taskFilterOpen}
+                  onClick={() => setTaskFilterOpen((open) => !open)}
+                >
+                  {i18n.language.startsWith("zh") ? "任务筛选" : "Task filters"}
+                </Button>
+                {taskFilterOpen && (
+                  <Popover
+                    anchorRef={taskFilterAnchor}
+                    label={
+                      i18n.language.startsWith("zh")
+                        ? "任务筛选"
+                        : "Task filters"
+                    }
+                    onDismiss={() => setTaskFilterOpen(false)}
+                  >
+                    <label className="project-scope">
+                      <span>{t("projectScope")}</span>
+                      <Select
+                        aria-label={t("projectScope")}
+                        value={scope}
+                        onChange={(event) =>
+                          setScope(event.target.value as ProjectScope)
+                        }
+                      >
+                        <option value="DIRECT">{t("scopeDirect")}</option>
+                        <option value="SUBTREE">{t("scopeSubtree")}</option>
+                      </Select>
+                    </label>
+                  </Popover>
+                )}
+              </>
+            }
+            presentation={taskPresentation}
+            onPresentationChange={onTaskPresentationChange}
+            timelineMode="gantt"
             taskIndex={selectedTasks}
             derived={selectedTasks.derived}
             items={tasks}
@@ -607,7 +754,7 @@ export function ProjectWorkspace({
         {tab === "tasks" && (
           <Button
             type="button"
-            className="button secondary"
+            variant="secondary"
             aria-expanded={dependencyOpen}
             onClick={() => setDependencyOpen(!dependencyOpen)}
           >

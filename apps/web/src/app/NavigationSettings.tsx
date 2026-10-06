@@ -44,7 +44,8 @@ export function NavigationSettings({
         <div className="organization-toolbar navigation-reorder-row" key={id}>
           <Button
             type="button"
-            className="icon-button navigation-drag-handle"
+            variant="ghost"
+            className="ui-icon-button navigation-drag-handle"
             draggable={!busy}
             aria-label={label(id)}
             onDragStart={() => setDragged(id)}
@@ -75,7 +76,8 @@ export function NavigationSettings({
           <span>{label(id)}</span>
           <Button
             type="button"
-            className="icon-button"
+            variant="ghost"
+            className="ui-icon-button"
             disabled={busy}
             aria-label={t("moveUp", { name: label(id) })}
             onClick={() => reorder(id, -1, false)}
@@ -84,7 +86,8 @@ export function NavigationSettings({
           </Button>
           <Button
             type="button"
-            className="icon-button"
+            variant="ghost"
+            className="ui-icon-button"
             disabled={busy}
             aria-label={t("moveDown", { name: label(id) })}
             onClick={() => reorder(id, 1, false)}
@@ -139,7 +142,8 @@ export function NavigationSettings({
         <div className="organization-toolbar navigation-reorder-row" key={id}>
           <Button
             type="button"
-            className="icon-button navigation-drag-handle"
+            variant="ghost"
+            className="ui-icon-button navigation-drag-handle"
             draggable={!busy}
             aria-label={label(id)}
             onDragStart={() => setDragged(id)}
@@ -170,7 +174,8 @@ export function NavigationSettings({
           <span>{label(id)}</span>
           <Button
             type="button"
-            className="icon-button"
+            variant="ghost"
+            className="ui-icon-button"
             disabled={busy}
             aria-label={t("moveUp", { name: label(id) })}
             onClick={() => reorder(id, -1, true)}
@@ -179,7 +184,8 @@ export function NavigationSettings({
           </Button>
           <Button
             type="button"
-            className="icon-button"
+            variant="ghost"
+            className="ui-icon-button"
             disabled={busy}
             aria-label={t("moveDown", { name: label(id) })}
             onClick={() => reorder(id, 1, true)}
@@ -217,7 +223,6 @@ export function NavigationSettings({
         <Button
           variant="primary"
           type="button"
-          className="button primary"
           disabled={busy || conflict}
           onClick={() => void onSave(draft)}
         >
@@ -225,7 +230,7 @@ export function NavigationSettings({
         </Button>
         <Button
           type="button"
-          className="button secondary"
+          variant="secondary"
           disabled={busy}
           onClick={() =>
             setDraft({

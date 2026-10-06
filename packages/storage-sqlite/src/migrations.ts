@@ -281,6 +281,14 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 33,
+    name: "wiki-index-state",
+    sql: readFileSync(
+      new URL("./migrations/0033-wiki-index-state.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {
@@ -479,6 +487,19 @@ export function inspectSchema(
       "project_material",
       "project_material_activity",
       "project_material_outbox",
+    ].some((name) => !objects.some((row) => row.name === name))
+  )
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (
+    version >= 33 &&
+    [
+      "wiki_index_state",
+      "wiki_index_dirty_insert",
+      "wiki_index_dirty_update",
+      "wiki_index_dirty_delete",
+      "wiki_alias_dirty_insert",
+      "wiki_alias_dirty_update",
+      "wiki_alias_dirty_delete",
     ].some((name) => !objects.some((row) => row.name === name))
   )
     throw new StorageError("SCHEMA_OBJECT_MISSING");

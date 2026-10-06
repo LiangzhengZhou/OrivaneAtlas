@@ -1,17 +1,27 @@
 import {
+  bodyLoaded,
   type LibraryEntry,
   type Note,
   privateContentPolicy,
   scopedKnowledgeDocuments,
+  type WorkspaceLibraryEntry,
+  type WorkspaceNote,
 } from "@arclattice/application";
 import type { EditorView } from "@codemirror/view";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { showToast } from "./app/ToastHost";
 import type { Runtime, Snapshot } from "./bootstrap";
 import { ContentPolicyEditor } from "./ContentPolicyEditor";
-import { Button } from "./components/ui/Button";
+import { Button, SegmentedControl } from "./components/ui/Button";
 import { confirmAction } from "./components/ui/ConfirmationHost";
 import { exportHtml, exportMarkdownZip, exportPdf } from "./documentExports";
 import { FilePicker } from "./FilePicker";
@@ -35,7 +45,7 @@ import { downloadText } from "./utils/download";
 export type DocumentRequest = {
   key: string;
   kind: "NOTE" | "JOURNAL" | "SPACE" | "DOCUMENT";
-  entity?: Note | LibraryEntry | undefined;
+  entity?: WorkspaceNote | WorkspaceLibraryEntry | undefined;
   day?: string | undefined;
   spaceId?: string | null | undefined;
   projectId?: string | undefined;
@@ -71,6 +81,9 @@ export function DocumentWorkspace({
   const [tabs, setTabs] = useState<Tab[]>([]),
     [active, setActive] = useState("");
   const tabsRef = useRef(tabs);
+  const closeHandlers = useRef(
+    new Map<string, () => Promise<{ saved: boolean; draftStored: boolean }>>(),
+  );
   tabsRef.current = tabs;
   useEffect(
     () =>
@@ -112,16 +125,24 @@ export function DocumentWorkspace({
   }, [tabs]);
   async function close(tab: Tab) {
     if (tab.busy) return;
+    const prepared = tab.dirty
+      ? await closeHandlers.current.get(tab.key)?.()
+      : undefined;
     if (
       tab.dirty &&
+      !prepared?.saved &&
       !(await confirmAction(
-        zh
-          ? "尚有未保存内容，关闭将丢弃此草稿。是否关闭？"
-          : "Unsaved draft will be lost. Close this tab?",
+        prepared?.draftStored
+          ? zh
+            ? "未能保存到服务器，本地草稿已保留。关闭此标签？"
+            : "Could not save to the server. Your local draft is retained. Close this tab?"
+          : zh
+            ? "尚有未保存内容，关闭将丢弃此草稿。是否关闭？"
+            : "Unsaved draft will be lost. Close this tab?",
       ))
     )
       return;
-    const next = tabs.filter((t) => t.key !== tab.key);
+    const next = tabsRef.current.filter((t) => t.key !== tab.key);
     setTabs(next);
     if (active === tab.key) setActive(next.at(-1)?.key ?? "");
     if (!next.length) onBrowse();
@@ -133,7 +154,7 @@ export function DocumentWorkspace({
         role="tablist"
         aria-label={zh ? "打开的文档" : "Open documents"}
       >
-        <Button type="button" className="chip" onClick={onBrowse}>
+        <Button type="button" variant="toggle" onClick={onBrowse}>
           {zh ? "工作台" : "Workspace"}
         </Button>
         {tabs.map((tab) => (
@@ -169,7 +190,7 @@ export function DocumentWorkspace({
       </div>
       {tabs.map((tab) => (
         <div key={tab.key} hidden={!visible || active !== tab.key}>
-          <DocumentPane
+          <HydratedDocumentPane
             active={visible && active === tab.key}
             snapshot={snapshot}
             onWikiCreated={(entity) => {
@@ -209,6 +230,10 @@ export function DocumentWorkspace({
               setActive(key);
             }}
             request={tab}
+            onRegisterClose={(handler) => {
+              if (handler) closeHandlers.current.set(tab.key, handler);
+              else closeHandlers.current.delete(tab.key);
+            }}
             runtime={runtime}
             remote={[...snapshot.notes, ...snapshot.library].find(
               (e) => e.id === tab.entity?.id,
@@ -234,6 +259,85 @@ export function DocumentWorkspace({
     </section>
   );
 }
+function HydratedDocumentPane(
+  props: Omit<ComponentProps<typeof DocumentPane>, "request" | "remote"> & {
+    request: DocumentRequest;
+    remote: WorkspaceNote | WorkspaceLibraryEntry | undefined;
+  },
+) {
+  const { i18n } = useTranslation();
+  const zh = i18n.language.startsWith("zh");
+  const source = props.remote ?? props.request.entity;
+  const [loaded, setLoaded] = useState<Note | LibraryEntry | undefined>(() =>
+    source && bodyLoaded(source) ? source : undefined,
+  );
+  // A new local draft already owns its editor. Its first saved metadata must
+  // not replace that pane with a loading screen while an upload is in flight.
+  const paneInitialized = useRef(!source || bodyLoaded(source));
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    if (!props.active || !source) return;
+    if (bodyLoaded(source)) {
+      setLoaded(source);
+      setFailed(false);
+      return;
+    }
+    let active = true;
+    setFailed(false);
+    void props.runtime.readDocumentBody(source).then(
+      (entity) => {
+        if (active) setLoaded(entity);
+      },
+      () => {
+        if (active) setFailed(true);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [props.active, props.runtime, source, retry]);
+  if (source && !loaded && !paneInitialized.current) {
+    if (!props.active) return null;
+    return (
+      <div className="document-loading" role="status">
+        {failed ? (
+          <>
+            <p>
+              {zh
+                ? "未能加载正文，草稿未改变。"
+                : "Could not load the document. Your draft is unchanged."}
+            </p>
+            <Button onClick={() => setRetry((value) => value + 1)}>
+              {zh ? "重试" : "Retry"}
+            </Button>
+          </>
+        ) : zh ? (
+          "正在加载正文…"
+        ) : (
+          "Loading document…"
+        )}
+      </div>
+    );
+  }
+  paneInitialized.current = true;
+  return (
+    <FrozenDocumentPane
+      {...props}
+      request={{ ...props.request, entity: loaded }}
+      remote={loaded}
+    />
+  );
+}
+
+// Retain local editor/draft state, but defer workspace and callback updates while
+// inactive. The next activation receives the latest props for conflict checks.
+// Local save completion still updates the pane's own state normally.
+const FrozenDocumentPane = memo(
+  DocumentPane,
+  (previous, next) => !previous.active && !next.active,
+);
+
 function DocumentPane({
   active,
   snapshot,
@@ -245,16 +349,22 @@ function DocumentPane({
   onClose,
   onStatus,
   remote,
+  onRegisterClose,
 }: {
   active: boolean;
   snapshot: Snapshot;
   onWikiCreated(entity: LibraryEntry): void;
   onWikiOpen(id: string): void;
-  request: DocumentRequest;
+  request: Omit<DocumentRequest, "entity"> & {
+    entity?: Note | LibraryEntry | undefined;
+  };
   runtime: Runtime;
   onSaved: () => void;
   onClose: () => void;
   remote: Note | LibraryEntry | undefined;
+  onRegisterClose(
+    handler: (() => Promise<{ saved: boolean; draftStored: boolean }>) | null,
+  ): void;
   onStatus: (
     dirty: boolean,
     title: string,
@@ -422,7 +532,7 @@ function DocumentPane({
       current.current.composing ||
       (!explicit && failed.current)
     )
-      return;
+      return false;
     const draft = {
         ...current.current,
         body: editorPendingRef.current
@@ -433,13 +543,13 @@ function DocumentPane({
     if (previous?.deletedAt) {
       failed.current = true;
       setError("NOT_FOUND");
-      return;
+      return false;
     }
     if (
       !draft.title.trim() ||
       (!previous && !draft.body.trim() && request.kind === "JOURNAL")
     )
-      return;
+      return false;
     if (
       previous &&
       draft.title === previous.title &&
@@ -447,7 +557,7 @@ function DocumentPane({
       JSON.stringify(draft.aiPolicy) ===
         JSON.stringify(previous.aiPolicy ?? privateContentPolicy)
     )
-      return;
+      return true;
     gate.current = true;
     setBusy(true);
     setError("");
@@ -492,9 +602,11 @@ function DocumentPane({
       await clearDraft(draftKey);
       failed.current = false;
       callbacks.current.onSaved();
+      return true;
     } catch (cause) {
       failed.current = true;
       setError((cause as { code?: string }).code ?? "UNAVAILABLE");
+      return false;
     } finally {
       gate.current = false;
       setBusy(false);
@@ -502,6 +614,30 @@ function DocumentPane({
   }
   const saver = useRef(save);
   saver.current = save;
+  useEffect(() => {
+    onRegisterClose(async () => {
+      const saved = await saver.current(true);
+      if (saved) return { saved: true, draftStored: false };
+      const draft = current.current;
+      if (
+        draft.aiPolicy.classification === "SENSITIVE" ||
+        draft.aiPolicy.classification === "SECRET"
+      ) {
+        return { saved: false, draftStored: false };
+      }
+      const draftStored = await saveDraft(draftKey, {
+        title: draft.title,
+        body: editor.current?.state.doc.toString() ?? draft.body,
+        updatedAt: Date.now(),
+        savedAt: Date.now(),
+        entityId: baseRef.current?.id ?? request.key,
+        baseVersion: baseRef.current?.version ?? 0,
+        baseUpdatedAt: baseRef.current?.updatedAt ?? null,
+      });
+      return { saved: false, draftStored };
+    });
+    return () => onRegisterClose(null);
+  }, [onRegisterClose, draftKey, request.key]);
   useEffect(() => {
     if (!dirty || composing || busy) return;
     const timer = setTimeout(() => void saver.current(), 1000);
@@ -552,7 +688,6 @@ function DocumentPane({
     void guarded(async () => {
       try {
         const asset = await runtime.uploadImage(request.spaceId ?? null, file);
-        if (editor.current !== view) return;
         const position = view.state.field(pendingImage);
         const insert = "\n![](" + asset.url + ")\n";
         if (
@@ -566,10 +701,35 @@ function DocumentPane({
           );
           return;
         }
+        const currentView = editor.current;
+        if (currentView !== view) {
+          const draftBody =
+            currentView?.state.doc.toString() ?? current.current.body;
+          if (draftBody !== view.state.doc.toString()) {
+            setImageError(
+              zh
+                ? "正文已改变，图片未插入。请重新选择图片。"
+                : "The document changed. Image not inserted; please select it again.",
+            );
+            return;
+          }
+          const insertedBody =
+            draftBody.slice(0, position) + insert + draftBody.slice(position);
+          if (currentView)
+            currentView.dispatch({ changes: { from: position, insert } });
+          current.current.body = insertedBody;
+          setBody(insertedBody);
+          return;
+        }
         view.dispatch({
           changes: { from: position, insert },
           effects: imageAnchor.of(null),
         });
+        // Upload completion can unmount an inactive editor before its debounce.
+        // Publish this asynchronous insertion before releasing the busy gate.
+        const insertedBody = view.state.doc.toString();
+        current.current.body = insertedBody;
+        setBody(insertedBody);
       } catch (cause) {
         setImageError(
           zh
@@ -587,26 +747,31 @@ function DocumentPane({
   return (
     <article className="document-pane">
       <div className="document-toolbar no-print">
-        <DocumentPopover
-          className="document-mode-menu"
-          label={<>{mode === "read" ? t("read") : zh ? "编辑" : "Edit"} ▾</>}
-        >
-          {(["live", "source", "read"] as const).map((value) => (
+        <SegmentedControl
+          label={zh ? "文档视图" : "Document view"}
+          value={mode === "read" ? "read" : "edit"}
+          options={[
+            { value: "edit", label: zh ? "编辑" : "Edit" },
+            { value: "read", label: t("read") },
+          ]}
+          onChange={(value) => setMode(value === "read" ? "read" : "live")}
+        />
+        <DocumentPopover className="document-mode-menu" label={<>Markdown ▾</>}>
+          {(["live", "source"] as const).map((value) => (
             <Button
               key={value}
               type="button"
-              className={"chip " + (mode === value ? "active" : "")}
+              variant="toggle"
+              aria-pressed={mode === value}
               onClick={() => setMode(value)}
             >
               {value === "live"
                 ? zh
                   ? "实时预览"
                   : "Live preview"
-                : value === "source"
-                  ? zh
-                    ? "源码"
-                    : "Source"
-                  : t("read")}
+                : zh
+                  ? "源码"
+                  : "Source"}
             </Button>
           ))}
         </DocumentPopover>
@@ -628,17 +793,17 @@ function DocumentPane({
             label={zh ? "导出" : "Export"}
           >
             <Button
-              className="chip"
+              variant="toggle"
               type="button"
               onClick={() => downloadText((title || "document") + ".md", body)}
             >
               {t("exportMarkdown")}
             </Button>
-            <Button className="chip" type="button" onClick={exportPdf}>
+            <Button variant="toggle" type="button" onClick={exportPdf}>
               {s("pdf")}
             </Button>
             <Button
-              className="chip"
+              variant="toggle"
               type="button"
               onClick={() =>
                 void exportHtml(title || "document", body, runtime.loadImage)
@@ -647,7 +812,7 @@ function DocumentPane({
               {zh ? "导出 HTML" : "Export HTML"}
             </Button>
             <Button
-              className="chip"
+              variant="toggle"
               type="button"
               onClick={() =>
                 void exportMarkdownZip(
@@ -662,7 +827,7 @@ function DocumentPane({
           </DocumentPopover>
           {base && (
             <Button
-              className="chip"
+              variant="toggle"
               type="button"
               disabled={busy}
               onClick={() =>
@@ -683,7 +848,7 @@ function DocumentPane({
           )}
           {base && (
             <Button
-              className="chip"
+              variant="toggle"
               type="button"
               disabled={busy}
               onClick={() => {
@@ -785,7 +950,7 @@ function DocumentPane({
                 </summary>
                 <DiffViewer before={revision.bodyMd} after={body} />
                 <Button
-                  className="chip"
+                  variant="toggle"
                   type="button"
                   onClick={() => {
                     setTitle(revision.title);
@@ -1080,6 +1245,7 @@ function DocumentPane({
       )}
       {request.kind === "DOCUMENT" && base && (
         <WikiRelations
+          runtime={runtime}
           documentId={base.id}
           snapshot={snapshot}
           onOpen={onWikiOpen}

@@ -40,8 +40,7 @@ export function CategoryManager({
     setPosition(0);
   };
   return (
-    <details className="panel category-manager">
-      <summary>{t("categories.manage")}</summary>
+    <section className="category-manager">
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -162,6 +161,6 @@ export function CategoryManager({
             </li>
           ))}
       </ul>
-    </details>
+    </section>
   );
 }

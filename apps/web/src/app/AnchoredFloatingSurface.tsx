@@ -25,6 +25,7 @@ export function AnchoredFloatingSurface({
   placement = "top-start",
   portalTarget,
   dismissBoundaryRef,
+  deferFocus = false,
 }: {
   anchorRef: RefObject<HTMLElement | null>;
   onDismiss(): void;
@@ -34,6 +35,7 @@ export function AnchoredFloatingSurface({
   placement?: "top-start" | "bottom-start";
   portalTarget?: Element | undefined;
   dismissBoundaryRef?: RefObject<HTMLElement | null>;
+  deferFocus?: boolean;
 }) {
   const parent = useContext(FloatingFamilyContext);
   const family = useMemo<FloatingFamily>(
@@ -53,9 +55,12 @@ export function AnchoredFloatingSurface({
       ancestor.descendants.add(node);
       ancestors.push(ancestor);
     }
+    const measuredSizes = new Map<Element, { width: number; height: number }>();
     const update = () => {
       const rect = anchor.getBoundingClientRect();
       const bounds = node.getBoundingClientRect();
+      measuredSizes.set(anchor, { width: rect.width, height: rect.height });
+      measuredSizes.set(node, { width: bounds.width, height: bounds.height });
       const above = rect.top - bounds.height - 8;
       const below = rect.bottom + 8;
       const preferred = placement === "top-start" ? above : below;
@@ -95,8 +100,30 @@ export function AnchoredFloatingSurface({
       }
     };
     update();
-    node.querySelector<HTMLElement>("button, input, [tabindex='0']")?.focus();
-    const observer = new ResizeObserver(update);
+    const focusFirst = () =>
+      node
+        .querySelector<HTMLElement>("button, input, [tabindex='0']")
+        ?.focus({ preventScroll: true });
+    const focusFrame = deferFocus ? requestAnimationFrame(focusFirst) : 0;
+    if (!deferFocus) focusFirst();
+    const observer = new ResizeObserver((entries) => {
+      // The first observer delivery repeats the synchronous mount measurement.
+      // Reposition only when a border box actually changes size; position-only
+      // scroll/viewport changes retain their separate listeners below.
+      if (
+        entries.some((entry) => {
+          const size = entry.borderBoxSize[0];
+          const previous = measuredSizes.get(entry.target);
+          return (
+            !size ||
+            !previous ||
+            Math.abs(size.inlineSize - previous.width) > 0.5 ||
+            Math.abs(size.blockSize - previous.height) > 0.5
+          );
+        })
+      )
+        update();
+    });
     observer.observe(anchor);
     observer.observe(node);
     window.addEventListener("resize", update);
@@ -110,7 +137,8 @@ export function AnchoredFloatingSurface({
       window.removeEventListener("scroll", update, true);
       document.removeEventListener("click", outside);
       document.removeEventListener("keydown", key);
-      if (anchor.isConnected) anchor.focus();
+      if (focusFrame) cancelAnimationFrame(focusFrame);
+      if (anchor.isConnected) anchor.focus({ preventScroll: true });
     };
   }, [anchorRef, placement, parent, family, dismissBoundaryRef]);
   return createPortal(

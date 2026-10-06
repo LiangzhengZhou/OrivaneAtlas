@@ -14,7 +14,12 @@ export function InspectorHost({
     <aside className="inspector-host" aria-label={title}>
       <header>
         <strong>{title}</strong>
-        <Button type="button" className="icon-button" onClick={onClose}>
+        <Button
+          type="button"
+          variant="ghost"
+          className="ui-icon-button"
+          onClick={onClose}
+        >
           ×
         </Button>
       </header>

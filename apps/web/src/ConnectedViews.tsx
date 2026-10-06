@@ -1,20 +1,23 @@
 import type { EntityRef, KnowledgeLink } from "@arclattice/application";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Snapshot } from "./bootstrap";
+import type { Runtime, Snapshot } from "./bootstrap";
 import { Button } from "./components/ui/Button";
 import { Select } from "./components/ui/Surfaces";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
 import { Markdown } from "./Markdown";
+import { useDebouncedValue } from "./utils/use-debounced-value";
 
 const refKey = (ref: EntityRef) => ref.kind + ":" + ref.id;
 export function KnowledgeView({
+  runtime,
   snapshot,
   busy,
   onLink,
   onUnlink,
   onOpen,
 }: {
+  runtime: Runtime;
   snapshot: Snapshot;
   busy: boolean;
   onLink: (
@@ -31,34 +34,78 @@ export function KnowledgeView({
     [target, setTarget] = useState("");
   const [relation, setRelation] =
     useState<KnowledgeLink["relation"]>("REFERENCES");
-  const entities = [
-    ...snapshot.library
-      .filter(
-        (e) =>
-          !e.deletedAt &&
-          (e.kind === "SPACE" ||
-            snapshot.library.some((p) => p.id === e.spaceId && !p.deletedAt)),
-      )
-      .map((e) => ({
-        ref: { kind: e.kind, id: e.id },
-        title: e.title,
-        body: e.bodyMd,
-      })),
-    ...snapshot.notes
-      .filter((n) => !n.deletedAt)
-      .map((n) => ({
-        ref: { kind: "NOTE" as const, id: n.id },
-        title: n.title,
-        body: n.bodyMd,
-      })),
-    ...snapshot.items
-      .filter((i) => !i.deletedAt)
-      .map((i) => ({
-        ref: { kind: "WORK" as const, id: i.id },
-        title: i.title,
-        body: i.descriptionMd,
-      })),
-  ];
+  const entities = useMemo(() => {
+    const liveSpaces = new Set(
+      snapshot.library
+        .filter((entry) => entry.kind === "SPACE" && !entry.deletedAt)
+        .map((entry) => entry.id),
+    );
+    return [
+      ...snapshot.library
+        .filter(
+          (e) =>
+            !e.deletedAt &&
+            (e.kind === "SPACE" || liveSpaces.has(e.spaceId ?? "")),
+        )
+        .map((e) => ({
+          ref: { kind: e.kind, id: e.id },
+          title: e.title,
+          body: e.bodyMd,
+        })),
+      ...snapshot.notes
+        .filter((n) => !n.deletedAt)
+        .map((n) => ({
+          ref: { kind: "NOTE" as const, id: n.id },
+          title: n.title,
+          body: n.bodyMd,
+        })),
+      ...snapshot.items
+        .filter((i) => !i.deletedAt)
+        .map((i) => ({
+          ref: { kind: "WORK" as const, id: i.id },
+          title: i.title,
+          body: i.descriptionMd,
+        })),
+    ].map((entry) => ({
+      ...entry,
+      searchText: (entry.title + "\n" + (entry.body ?? "")).toLocaleLowerCase(),
+    }));
+  }, [snapshot.library, snapshot.notes, snapshot.items]);
+  const searchQuery = useDebouncedValue(query).trim().toLocaleLowerCase();
+  const [matches, setMatches] = useState<{
+    query: string;
+    ids: ReadonlySet<string>;
+  } | null>(null);
+  const [searchFailed, setSearchFailed] = useState(false);
+  useEffect(() => {
+    if (!searchQuery) return;
+    let active = true;
+    setSearchFailed(false);
+    void Promise.all([
+      runtime.searchNotes(searchQuery),
+      runtime.searchLibrary(searchQuery, ""),
+    ]).then(
+      ([notes, documents]) => {
+        if (active)
+          setMatches({
+            query: searchQuery,
+            ids: new Set([
+              ...notes.map((id) => "NOTE:" + id),
+              ...documents.map((entry) => "DOCUMENT:" + entry.id),
+            ]),
+          });
+      },
+      () => {
+        if (active) {
+          setMatches(null);
+          setSearchFailed(true);
+        }
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [runtime, searchQuery, snapshot.notes, snapshot.library]);
   const current = entities.find((e) => refKey(e.ref) === selected);
   const links = snapshot.links.filter(
     (l) => refKey(l.from) === selected || refKey(l.to) === selected,
@@ -77,12 +124,15 @@ export function KnowledgeView({
               placeholder={t("searchHint")}
             />
           </label>
+          {searchFailed && <p role="alert">{t("desk:connectionError")}</p>}
           <div className="knowledge-list">
             {entities
-              .filter((e) =>
-                (e.title + "\n" + e.body)
-                  .toLowerCase()
-                  .includes(query.toLowerCase()),
+              .filter(
+                (e) =>
+                  !searchQuery ||
+                  e.searchText.includes(searchQuery) ||
+                  (matches?.query === searchQuery &&
+                    matches.ids.has(refKey(e.ref))),
               )
               .map((e) => (
                 <Button
@@ -99,7 +149,7 @@ export function KnowledgeView({
                 >
                   <small>{t(e.ref.kind)}</small>
                   <strong>{e.title}</strong>
-                  <span>{e.body.slice(0, 120)}</span>
+                  {e.body !== undefined && <span>{e.body.slice(0, 120)}</span>}
                 </Button>
               ))}
             {!entities.length && <p>{t("emptyKnowledge")}</p>}
@@ -112,7 +162,7 @@ export function KnowledgeView({
                 <h2>{current.title}</h2>
                 <Button
                   type="button"
-                  className="button secondary"
+                  variant="secondary"
                   onClick={() => onOpen(current.ref)}
                 >
                   {t("open")}
@@ -167,7 +217,6 @@ export function KnowledgeView({
                 <Button
                   variant="primary"
                   type="submit"
-                  className="button primary"
                   disabled={busy || !target}
                 >
                   {t("addLink")}
@@ -202,7 +251,7 @@ export function KnowledgeView({
                         <strong>{other.title}</strong>
                       </Button>
                       <Button
-                        className="button secondary"
+                        variant="secondary"
                         type="button"
                         disabled={busy}
                         onClick={() => void onUnlink(link)}
@@ -214,10 +263,12 @@ export function KnowledgeView({
                 );
               })}
               {!links.length && <p>{t("noLinks")}</p>}
-              <details className="knowledge-preview">
-                <summary>{t("content")}</summary>
-                <Markdown text={current.body} />
-              </details>
+              {current.body !== undefined && (
+                <details className="knowledge-preview">
+                  <summary>{t("content")}</summary>
+                  <Markdown text={current.body} />
+                </details>
+              )}
             </>
           ) : (
             <div className="connected-empty">

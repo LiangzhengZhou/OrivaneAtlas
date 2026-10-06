@@ -5,6 +5,7 @@ import {
 } from "@arclattice/domain";
 import { type ContentPolicy, contentPolicy } from "./content-policy";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
+import type { BodyManifest } from "./workspace-bootstrap";
 
 /** Asset ids only, never copies Markdown or image data into a purge event. */
 export function referencedLibraryAssetIds(markdown: string): Set<string> {
@@ -52,6 +53,8 @@ export interface LibraryAsset {
   chunkCount?: number;
 }
 export interface LibraryStore {
+  ensureWikiIndex?(): Promise<boolean>;
+  listMetadata?(): Promise<BodyManifest<LibraryEntry>[]>;
   rebuildWikiIndex?(): Promise<void>;
   wikiLinks?(): Promise<DocumentWikiLink[]>;
   list(): Promise<LibraryEntry[]>;
@@ -88,6 +91,24 @@ export class LibraryService {
     await this.authorization.require(context, "work:update");
     if (!this.store.rebuildWikiIndex) throw new DomainError("FORBIDDEN");
     await this.store.rebuildWikiIndex();
+  }
+  async read(context: ActorContext, id: string, includeDeleted = false) {
+    await this.authorization.require(context, "work:read");
+    const entry = await this.store.get(id);
+    if (
+      entry.workspaceId !== context.workspaceId ||
+      (entry.deletedAt && !includeDeleted)
+    )
+      throw new DomainError("NOT_FOUND");
+    if (entry.spaceId) {
+      const space = await this.store.get(entry.spaceId);
+      if (
+        space.workspaceId !== context.workspaceId ||
+        (space.deletedAt && !includeDeleted)
+      )
+        throw new DomainError("NOT_FOUND");
+    }
+    return entry;
   }
   async save(
     context: ActorContext,

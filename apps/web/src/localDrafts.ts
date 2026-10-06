@@ -41,19 +41,22 @@ export async function loadDraft(key: string): Promise<Draft | null> {
     return null;
   }
 }
-export async function saveDraft(key: string, draft: Draft) {
+export async function saveDraft(key: string, draft: Draft): Promise<boolean> {
+  let db: IDBDatabase | undefined;
   try {
-    const db = await openDb();
+    db = await openDb();
     await new Promise<void>((resolve, reject) => {
-      const request = db
-        .transaction(storeName, "readwrite")
-        .objectStore(storeName)
-        .put(draft, key);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
+      const transaction = db!.transaction(storeName, "readwrite");
+      transaction.objectStore(storeName).put(draft, key);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
+    return true;
   } catch {
-    /* best effort */
+    return false;
+  } finally {
+    db?.close();
   }
 }
 export async function clearDraft(key: string) {

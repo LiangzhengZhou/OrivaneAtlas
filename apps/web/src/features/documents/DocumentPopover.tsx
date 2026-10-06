@@ -39,7 +39,7 @@ export function DocumentPopover({
     <div className={className + " document-popover"} ref={root}>
       <Button
         type="button"
-        className="chip"
+        variant="toggle"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >

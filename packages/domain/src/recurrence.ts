@@ -24,13 +24,22 @@ export function validateCalendarRule(rule: CalendarRule): void {
     throw new DomainError("VALIDATION_ERROR");
   }
 }
+const calendarDayFormatters = new Map<string, Intl.DateTimeFormat>();
 export function localCalendarDay(instant: string, timezone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(instant));
+  let formatter = calendarDayFormatters.get(timezone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    // Only immutable formatting machinery is cached, never workspace data.
+    if (calendarDayFormatters.size >= 32)
+      calendarDayFormatters.delete(calendarDayFormatters.keys().next().value!);
+    calendarDayFormatters.set(timezone, formatter);
+  }
+  const parts = formatter.formatToParts(new Date(instant));
   const part = (type: string) => parts.find((p) => p.type === type)!.value;
   return `${part("year")}-${part("month")}-${part("day")}`;
 }

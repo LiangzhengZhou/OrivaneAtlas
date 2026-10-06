@@ -162,6 +162,9 @@ importers:
       '@arclattice/storage-sqlite':
         specifier: workspace:*
         version: link:../storage-sqlite
+      '@arclattice/wiki-core':
+        specifier: workspace:*
+        version: link:../wiki-core
       uuid:
         specifier: 14.0.2
         version: 14.0.2

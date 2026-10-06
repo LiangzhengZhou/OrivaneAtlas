@@ -1,5 +1,31 @@
 # Orivane Atlas 2.0 architecture
 
+> Current local v2.3 implementation changes are recorded below; older sections
+> describe the accepted 2.0 design and must not override current runtime contracts.
+
+## v2.3 runtime changes under acceptance
+
+The local shell mounts before session requests. Runtime initialization is shared
+and explicit. `loadWorkspace()` first reads the authorized WorkspaceBootstrap
+metadata manifest, then applies durable sequence changes in metadata body mode.
+Notes and library entries have an explicit unloaded-body state; active document
+opening reads the body through the application contract. Cache keys include server
+generation, actor, entity and version; recovery clears cached bodies. Unloaded
+metadata never becomes an empty draft or replaces Markdown content.
+
+SQLite and PostgreSQL project metadata without returning Markdown bodies to the
+host bootstrap serializer. Note/library search uses authorized RetrievalService
+storage queries. Wiki index version and dirty state persist in append-only
+migrations, with transactional write marking and clean-start rebuild gating.
+Finite HTTP JSON negotiates Brotli/gzip; SSE remains streamed. Native JSON uses
+UTF-8 while binary responses retain Base64 and existing transport guards.
+
+Tasks presentation has a retained store subscribed only by TasksRoute; GraphRoute
+owns graph URL and viewport updates. These controls no longer require a global
+Workbench rerender. Documents opened from Graph display their active pane and
+return to the preserved graph context. These changes remain under full visual,
+performance and native acceptance; see ADR0056 and the v2.3 cold-start report.
+
 Current implementation overview. The [original v0 specification](architecture/arclattice-v0-architecture.md)
 and historical ADRs record design history and future ideas; they are not claims
 that every planned component exists. [Runtime audit](UNIFIED_UPGRADE.md) records

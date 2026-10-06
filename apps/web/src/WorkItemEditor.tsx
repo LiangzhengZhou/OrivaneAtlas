@@ -21,6 +21,7 @@ export interface WorkEditorProps {
   ): Promise<void>;
   createType: "TASK" | "PROJECT" | "MILESTONE";
   initialProjectId?: string;
+  initialStartDate?: string | undefined;
   busy: boolean;
   error: string | null;
   onClose(): void;

@@ -170,13 +170,20 @@ export interface Snapshot extends WorkSnapshot {
   projectMaterials: ProjectMaterial[];
   categories?: ProjectCategory[];
   workflows?: WorkflowRecord[];
-  notes: Note[];
+  notes: import("@arclattice/application").WorkspaceNote[];
   links: KnowledgeLink[];
-  library: LibraryEntry[];
+  library: import("@arclattice/application").WorkspaceLibraryEntry[];
   organization: Organization[];
 }
 function normalizeSnapshot(snapshot: Snapshot): Snapshot {
   return { ...snapshot, projectMaterials: snapshot.projectMaterials ?? [] };
+}
+interface SyncResponse {
+  cursor: number;
+  epoch: string;
+  snapshot: Snapshot | null;
+  changes?: WorkspaceChanges;
+  hasMore: boolean;
 }
 export async function bootstrap() {
   const i18n = await createI18n(
@@ -206,6 +213,7 @@ export async function bootstrap() {
           status: number;
           contentType: string;
           body: string;
+          encoding: "utf8" | "base64";
         }>("server_request", {
           origin,
           path,
@@ -213,7 +221,10 @@ export async function bootstrap() {
           csrf,
           idempotencyKey: key,
         });
-        const bytes = Uint8Array.from(atob(reply.body), (c) => c.charCodeAt(0));
+        const bytes =
+          reply.encoding === "utf8"
+            ? reply.body
+            : Uint8Array.from(atob(reply.body), (c) => c.charCodeAt(0));
         response = new Response(bytes, {
           status: reply.status,
           headers: { "Content-Type": reply.contentType },
@@ -349,6 +360,7 @@ export async function bootstrap() {
   let cursor = "",
     syncEpoch = "";
   let current: Snapshot | null = null;
+  const documentBodies = new Map<string, Note | LibraryEntry>();
   let context: ActorContext | null = null;
   let unavailable = false;
   function resetIdentity() {
@@ -361,6 +373,7 @@ export async function bootstrap() {
     context = null;
     cursor = "";
     current = null;
+    documentBodies.clear();
   }
   async function removeCurrentCredential() {
     if (!native || !account) return;
@@ -374,22 +387,31 @@ export async function bootstrap() {
       });
     await refreshSavedAccounts();
   }
-  if (serverOrigin) {
-    try {
-      if (native) await invoke("configure_server", { origin: serverOrigin });
-      context = await session();
-    } catch (error) {
-      unavailable = !(
-        error instanceof DomainError && String(error.code) === "UNAUTHORIZED"
-      );
-    }
+  let initialization: Promise<void> | undefined;
+  let initialized = false;
+  function initialize(): Promise<void> {
+    initialization ??= initializeSession();
+    return initialization;
   }
-  if (native) {
-    try {
-      await refreshSavedAccounts();
-    } catch {
-      unavailable = true;
+  async function initializeSession() {
+    if (serverOrigin) {
+      try {
+        if (native) await invoke("configure_server", { origin: serverOrigin });
+        context = await session();
+      } catch (error) {
+        unavailable = !(
+          error instanceof DomainError && String(error.code) === "UNAUTHORIZED"
+        );
+      }
     }
+    if (native) {
+      try {
+        await refreshSavedAccounts();
+      } catch {
+        unavailable = true;
+      }
+    }
+    initialized = true;
   }
   const service: Pick<
     WorkService,
@@ -426,21 +448,34 @@ export async function bootstrap() {
     const job = syncQueue.then(async () => {
       if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
       let more = true;
+      if (!current || !cursor) {
+        const manifest =
+          await request<import("@arclattice/application").WorkspaceBootstrap>(
+            "/api/bootstrap",
+          );
+        if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
+        if (manifest.schemaVersion !== 1)
+          throw new Error("INVALID_BOOTSTRAP_VERSION");
+        current = normalizeSnapshot({
+          ...manifest.workspace,
+          notes: manifest.notes,
+          library: manifest.library,
+        });
+        cursor = String(manifest.cursor);
+        syncEpoch = manifest.epoch;
+        more = false;
+      }
       while (more) {
-        const data = await request<{
-          cursor: number;
-          epoch: string;
-          snapshot: Snapshot | null;
-          changes?: WorkspaceChanges;
-          hasMore: boolean;
-        }>(
+        const data: SyncResponse = await request<SyncResponse>(
           current && cursor
             ? "/api/sync?after=" +
                 encodeURIComponent(cursor) +
                 "&epoch=" +
-                encodeURIComponent(syncEpoch)
+                encodeURIComponent(syncEpoch) +
+                "&bodyMode=metadata"
             : "/api/sync",
         );
+        if (data.epoch !== syncEpoch || data.snapshot) documentBodies.clear();
         if (data.snapshot) current = normalizeSnapshot(data.snapshot);
         else if (data.changes && current)
           current = applyWorkspaceChanges(current, data.changes);
@@ -454,20 +489,55 @@ export async function bootstrap() {
         const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         if (timezone) {
           try {
-            await service.setCalendarSettings(context, 0, timezone);
+            const settings = await service.setCalendarSettings(
+              context,
+              0,
+              timezone,
+            );
+            if (generation !== serverGeneration)
+              throw new Error("SERVER_CHANGED");
+            current = {
+              ...current,
+              calendarSettings: settings,
+              calendarTimezone:
+                settings.timezone ?? current.calendarTimezone ?? timezone,
+            };
           } catch (cause) {
             if (
               !(cause instanceof DomainError) ||
               cause.code !== "VERSION_CONFLICT"
             )
               throw cause;
+            const correction = await request<{
+              cursor: number;
+              epoch: string;
+              snapshot: Snapshot | null;
+              changes?: WorkspaceChanges;
+              hasMore: boolean;
+            }>(
+              "/api/sync?after=" +
+                encodeURIComponent(cursor) +
+                "&epoch=" +
+                encodeURIComponent(syncEpoch) +
+                "&bodyMode=metadata",
+            );
+            if (generation !== serverGeneration)
+              throw new Error("SERVER_CHANGED");
+            if (correction.snapshot || correction.epoch !== syncEpoch)
+              documentBodies.clear();
+            if (correction.snapshot)
+              current = normalizeSnapshot(correction.snapshot);
+            else if (correction.changes && current)
+              current = applyWorkspaceChanges(current, correction.changes);
+            // Keep the cursor when a page remains, so the next refresh consumes it.
+            if (!correction.hasMore) cursor = String(correction.cursor);
+            syncEpoch = correction.epoch;
           }
           if (generation !== serverGeneration)
             throw new Error("SERVER_CHANGED");
-          current = normalizeSnapshot(await request<Snapshot>("/api/snapshot"));
-          cursor = "";
         }
       }
+      if (!current) throw new Error("Invalid sync response");
       return current;
     });
     syncQueue = job.catch(() => undefined);
@@ -512,6 +582,53 @@ export async function bootstrap() {
       }),
   };
   return {
+    async readDocumentBody(
+      entry:
+        | import("@arclattice/application").WorkspaceNote
+        | import("@arclattice/application").WorkspaceLibraryEntry,
+    ): Promise<Note | LibraryEntry> {
+      if (!context || entry.workspaceId !== context.workspaceId)
+        throw new DomainError("NOT_FOUND");
+      if (typeof entry.bodyMd === "string") return entry;
+      const generation = serverGeneration;
+      const prefix = [
+        generation,
+        context?.workspaceId,
+        context?.principalId,
+        entry.kind,
+        entry.id,
+      ].join(":");
+      const cached = documentBodies.get(prefix + ":" + entry.version);
+      if (cached) return cached;
+      const kind =
+        entry.kind === "NOTE" || entry.kind === "JOURNAL" ? "NOTE" : "LIBRARY";
+      const body = await request<Note | LibraryEntry>(
+        "/api/document/body?" +
+          new URLSearchParams({
+            kind,
+            id: entry.id,
+            ...(entry.deletedAt ? { deleted: "include" } : {}),
+          }),
+      );
+      if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
+      if (
+        body.id !== entry.id ||
+        body.workspaceId !== entry.workspaceId ||
+        body.kind !== entry.kind ||
+        !Number.isInteger(body.version) ||
+        body.version < entry.version ||
+        typeof body.bodyMd !== "string"
+      )
+        throw new Error("INVALID_DOCUMENT_BODY");
+      documentBodies.set(prefix + ":" + body.version, body);
+      return body;
+    },
+    searchNotes: (query: string) =>
+      request<string[]>("/api/notes/search?q=" + encodeURIComponent(query)),
+    noteBacklinks: (id: string) =>
+      request<
+        ReturnType<typeof import("@arclattice/application").noteWikiReferences>
+      >("/api/document/note-backlinks?id=" + encodeURIComponent(id)),
     i18n,
     native,
     notifications,
@@ -530,7 +647,13 @@ export async function bootstrap() {
     set context(value: ActorContext | null) {
       context = value;
     },
-    unavailable,
+    initialize,
+    get initialized() {
+      return initialized;
+    },
+    get unavailable() {
+      return unavailable;
+    },
     get logoutWarning() {
       return logoutWarning;
     },
@@ -711,6 +834,10 @@ export async function bootstrap() {
       ),
     saveLibrary: (id: string | null, version: number, input: LibraryInput) =>
       request<LibraryEntry>("/api/library/save", { id, version, input }),
+    searchLibrary: (query: string, spaceId: string) =>
+      request<{ id: string; title: string; spaceId: string; score: number }[]>(
+        "/api/library/search?" + new URLSearchParams({ q: query, spaceId }),
+      ),
     purgeLibrary: (id: string, version: number) =>
       request<void>("/api/library/purge", { id, version }),
     deleteLibrary: (id: string, version: number, deleted: boolean) =>
@@ -759,7 +886,7 @@ export async function bootstrap() {
       return { id: result.id, url: result.url };
     },
     service,
-    snapshot: sync,
+    loadWorkspace: sync,
     async streamWorkspaceEvents(
       cursor: string,
       signal: AbortSignal,

@@ -1,6 +1,19 @@
 import { expect, test } from "vitest";
 import { localCalendarDay, occurrenceDays } from "./recurrence";
 
+test("calendar day conversion keeps interleaved workspace timezones independent", () => {
+  const instant = "2026-03-08T04:30:00Z";
+  for (let repeat = 0; repeat < 3; repeat++) {
+    expect(localCalendarDay(instant, "America/New_York")).toBe("2026-03-07");
+    expect(localCalendarDay(instant, "Asia/Shanghai")).toBe("2026-03-08");
+    expect(localCalendarDay(instant, "UTC")).toBe("2026-03-08");
+    expect(() => localCalendarDay(instant, "Invalid/Timezone")).toThrow();
+  }
+  expect(localCalendarDay("2026-03-09T04:30:00Z", "America/New_York")).toBe(
+    "2026-03-09",
+  );
+});
+
 test("end dates are inclusive and reject invalid ranges", () => {
   const rule = {
     startDate: "2026-03-07",

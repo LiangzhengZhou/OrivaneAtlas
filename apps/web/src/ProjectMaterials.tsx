@@ -107,12 +107,7 @@ export function ProjectMaterials({
           value={spaceTitle}
           onChange={(event) => setSpaceTitle(event.target.value)}
         />
-        <Button
-          variant="primary"
-          type="submit"
-          className="button primary"
-          disabled={busy}
-        >
+        <Button variant="primary" type="submit" disabled={busy}>
           {zh ? "创建 Wiki" : "Create Wiki"}
         </Button>
       </form>
@@ -139,7 +134,6 @@ export function ProjectMaterials({
               variant="ghost"
               type="button"
               key={entry.id}
-              className="text-button"
               disabled={busy}
               onClick={() =>
                 void onLinkSpace({
@@ -169,7 +163,7 @@ export function ProjectMaterials({
             .map((space) => (
               <Button
                 type="button"
-                className="chip"
+                variant="toggle"
                 key={space.id}
                 aria-pressed={selectedSpace === space.targetId}
                 onClick={() => {
@@ -190,7 +184,7 @@ export function ProjectMaterials({
           {inheritedSpaces.map((space) => (
             <Button
               type="button"
-              className="chip"
+              variant="toggle"
               key={space.id}
               onClick={() =>
                 space.targetId && onOpen({ kind: "SPACE", id: space.targetId })
@@ -204,7 +198,6 @@ export function ProjectMaterials({
       <Button
         variant="primary"
         type="button"
-        className="button primary"
         disabled={busy || !spaces.length}
         onClick={() => {
           if (spaces.length === 1 && spaces[0]?.targetId)
@@ -219,7 +212,7 @@ export function ProjectMaterials({
           {spaces.map((space) => (
             <Button
               type="button"
-              className="chip"
+              variant="toggle"
               key={space.id}
               onClick={() => {
                 if (space.targetId) onNewPage(space.targetId);
@@ -290,7 +283,6 @@ export function ProjectMaterials({
             <Button
               variant="ghost"
               type="button"
-              className="text-button"
               disabled={!!entry.deletedAt}
               onClick={() => {
                 if (entry.kind === "FILE") void onDownload(entry.id);
@@ -318,7 +310,7 @@ export function ProjectMaterials({
             </small>
             <Button
               type="button"
-              className="chip"
+              variant="toggle"
               disabled={busy}
               onClick={() => void onDelete(entry, !entry.deletedAt)}
             >
@@ -364,6 +356,7 @@ export function ProjectHistory({
     }[]
   >([]);
   const [error, setError] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const labels: Record<string, string> = {
     MATERIAL_SAVED: zh ? "资料已保存" : "Material saved",
     MATERIAL_DELETED: zh ? "资料已删除" : "Material deleted",
@@ -419,11 +412,11 @@ export function ProjectHistory({
   }, [projectId, projectIds, tasks, edges, load, loadWork]);
   return (
     <section className="panel project-summary">
-      <h2>{zh ? "项目活动" : "Project activity"}</h2>
+      <h2>{zh ? "最近活动" : "Recent activity"}</h2>
       {error && (
         <p role="alert">{zh ? "无法加载活动。" : "Could not load activity."}</p>
       )}
-      {events.map((entry) => (
+      {(expanded ? events : events.slice(0, 5)).map((entry) => (
         <div className="project-material" key={entry.id}>
           <span>
             {labels[entry.type] ?? (zh ? "项目已更新" : "Project updated")}
@@ -440,11 +433,25 @@ export function ProjectHistory({
             )}
           </span>
           <small>
-            {entry.principalId} ·{" "}
             {new Date(entry.occurredAt).toLocaleString(i18n.language)}
           </small>
         </div>
       ))}
+      {events.length > 5 && (
+        <Button
+          variant="text"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded
+            ? zh
+              ? "收起"
+              : "Show less"
+            : zh
+              ? "更多活动"
+              : "More activity"}
+        </Button>
+      )}
     </section>
   );
 }

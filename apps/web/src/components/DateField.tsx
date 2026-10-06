@@ -2,7 +2,8 @@ import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnchoredFloatingSurface } from "../app/AnchoredFloatingSurface";
-import { Button } from "./ui/Button";
+import { Button, IconButton } from "./ui/Button";
+import { PressableSurface } from "./ui/Content";
 import { Select } from "./ui/Surfaces";
 import "./date-field.css";
 import { calendarMonth, formatDateField } from "../utils/date-format";
@@ -112,13 +113,12 @@ export function DateField({
             aria-label={label || text("选择日期", "Choose date")}
           >
             <div className="calendar-heading">
-              <Button
-                type="button"
-                aria-label={text("上个月", "Previous month")}
+              <IconButton
+                label={text("上个月", "Previous month")}
                 onClick={() => shift(-1)}
               >
                 <ChevronLeft size={16} />
-              </Button>
+              </IconButton>
               <strong>
                 {zh
                   ? year + "年" + monthNumber + "月"
@@ -128,13 +128,12 @@ export function DateField({
                       timeZone: "UTC",
                     }).format(first)}
               </strong>
-              <Button
-                type="button"
-                aria-label={text("下个月", "Next month")}
+              <IconButton
+                label={text("下个月", "Next month")}
                 onClick={() => shift(1)}
               >
                 <ChevronRight size={16} />
-              </Button>
+              </IconButton>
             </div>
             <div className="calendar-month-controls">
               <label>
@@ -221,17 +220,17 @@ export function DateField({
                 <span key={"blank" + i} />
               ))}
               {Array.from({ length: days }, (_, i) => i + 1).map((day) => (
-                <Button
-                  type="button"
+                <PressableSurface
                   key={day}
                   data-date={date(day)}
                   aria-label={date(day)}
                   aria-pressed={date(day) === value}
+                  selected={date(day) === value}
                   disabled={!allowed(date(day))}
-                  onClick={() => select(date(day))}
+                  onSelect={() => select(date(day))}
                 >
                   {day}
-                </Button>
+                </PressableSurface>
               ))}
             </div>
             <div className="calendar-actions">

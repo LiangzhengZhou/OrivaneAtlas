@@ -68,7 +68,24 @@ test("graph URL preserves scope focus selection depth and safe Back", () => {
     view: "graph" as const,
   };
   expect(parseGraphRoute(graphHash(route))).toEqual(route);
+  expect(
+    parseGraphRoute(graphHash({ ...route, expandedIds: ["a / 中文", "b?c"] })),
+  ).toEqual({ ...route, expandedIds: ["a / 中文", "b?c"] });
+  expect(
+    parseGraphRoute(graphHash({ ...route, expandedIds: [] }))?.expandedIds,
+  ).toEqual([]);
   expect(parseGraphRoute("#graph/project/%ZZ")).toBeNull();
+  expect(
+    parseGraphRoute(
+      graphHash({ ...route, viewport: { x: -120.5, y: 80, zoom: 0.75 } }),
+    )?.viewport,
+  ).toEqual({ x: -120.5, y: 80, zoom: 0.75 });
+  for (const value of ["NaN,0,1", "0,0,100", "0,0,-1", "0,0", "0,,1"]) {
+    const parsed = parseGraphRoute(
+      "#graph/project/p?viewport=" + encodeURIComponent(value),
+    );
+    expect(parsed?.viewport).toBeUndefined();
+  }
   expect(
     parseGraphRoute(
       "#graph/document/d?mode=structure&back=https://evil.invalid",

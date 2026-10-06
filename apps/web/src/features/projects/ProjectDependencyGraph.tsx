@@ -5,7 +5,10 @@ import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../../bootstrap";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/Surfaces";
-import { GraphViewport } from "../graph/GraphViewport";
+import {
+  GraphViewport,
+  type GraphViewportStateProps,
+} from "../graph/GraphViewport";
 import { collectionRevision } from "../graph/graph-revision";
 import {
   buildDependencyGraphIndex,
@@ -28,6 +31,8 @@ export function ProjectDependencyGraph({
   workspace = false,
   selectionId,
   scopeProjectId,
+  initialViewport,
+  onViewportChange,
 }: {
   snapshot: Snapshot;
   fullSnapshot?: Snapshot;
@@ -42,7 +47,7 @@ export function ProjectDependencyGraph({
   workspace?: boolean;
   selectionId?: string | undefined;
   scopeProjectId?: string;
-}) {
+} & GraphViewportStateProps) {
   const { i18n } = useTranslation();
   const text = (cn: string, en: string) =>
     i18n.language.startsWith("zh") ? cn : en;
@@ -136,7 +141,6 @@ export function ProjectDependencyGraph({
               <Button
                 variant="ghost"
                 type="button"
-                className="text-button"
                 aria-label={
                   text("展开关系", "Expand relations") + ": " + task.title
                 }
@@ -163,6 +167,8 @@ export function ProjectDependencyGraph({
   return (
     <section className="dependency-focus-graph">
       <GraphViewport
+        initialViewport={initialViewport}
+        onViewportChange={onViewportChange}
         emptyState={
           !focus ? (
             <EmptyState
@@ -195,7 +201,7 @@ export function ProjectDependencyGraph({
             {[1, 2].map((value) => (
               <Button
                 type="button"
-                className="chip"
+                variant="toggle"
                 key={value}
                 disabled={!focus}
                 aria-pressed={scope === "focus" && hops === value}
@@ -208,7 +214,7 @@ export function ProjectDependencyGraph({
             ))}
             <Button
               type="button"
-              className="chip"
+              variant="toggle"
               disabled={!focus}
               aria-pressed={scope === "project"}
               onClick={() => update({ scope: "project" })}

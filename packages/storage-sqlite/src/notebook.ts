@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { Note, NotebookStore } from "@arclattice/application";
+import type {
+  BodyManifest,
+  Note,
+  NotebookStore,
+} from "@arclattice/application";
 import { type ActorContext, DomainError } from "@arclattice/domain";
 import { purgeRelations } from "./purge";
 
@@ -14,6 +18,32 @@ export function notebookStore(
     return JSON.parse(String(row.payload)) as Note;
   };
   return {
+    async searchIds(query) {
+      guard();
+      const pattern = "%" + query.replace(/[\\%_]/g, "\\$&") + "%";
+      return db
+        .prepare(
+          "SELECT id FROM notebook WHERE workspace_id=? AND json_extract(payload,'$.deletedAt') IS NULL AND lower(json_extract(payload,'$.title') || ' ' || json_extract(payload,'$.bodyMd')) LIKE lower(?) ESCAPE '\\' ORDER BY json_extract(payload,'$.updatedAt') DESC",
+        )
+        .all(context.workspaceId, pattern)
+        .map((row) => String(row.id));
+    },
+    async listMetadata() {
+      guard();
+      return db
+        .prepare(
+          "SELECT json_remove(payload,'$.bodyMd') metadata, length(json_extract(payload,'$.bodyMd')) characters FROM notebook WHERE workspace_id=? ORDER BY json_extract(payload,'$.updatedAt') DESC",
+        )
+        .all(context.workspaceId)
+        .map(
+          (row) =>
+            ({
+              ...(JSON.parse(String(row.metadata)) as Omit<Note, "bodyMd">),
+              bodyState: "UNLOADED",
+              bodyCharacterCount: Number(row.characters),
+            }) satisfies BodyManifest<Note>,
+        );
+    },
     async list() {
       guard();
       return db

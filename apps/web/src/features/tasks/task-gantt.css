@@ -1,0 +1,115 @@
+.gantt-scroll {
+  height: min(62vh, 680px);
+  min-height: 240px;
+  overflow: auto;
+  overflow-anchor: none;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.gantt-axis {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  height: 40px;
+  display: flex;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-default);
+}
+.gantt-task-heading,
+.gantt-task-title {
+  position: sticky;
+  left: 0;
+  flex: 0 0 220px;
+  width: 220px;
+  background: var(--surface);
+  border-right: 1px solid var(--border-default);
+  padding: 12px;
+  z-index: 3;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.gantt-time-heading {
+  position: relative;
+}
+.gantt-time-heading time {
+  position: absolute;
+  top: 12px;
+  font-size: var(--font-meta-size);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.gantt-body {
+  position: relative;
+}
+.gantt-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 48px;
+  display: flex;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.gantt-task-title {
+  border-radius: 0;
+  height: 48px;
+  font-size: var(--font-body-size);
+}
+.gantt-track {
+  position: relative;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(var(--gantt-day-width) - 1px),
+    var(--border-subtle) calc(var(--gantt-day-width) - 1px),
+    var(--border-subtle) var(--gantt-day-width)
+  );
+}
+.gantt-track .gantt-bar {
+  position: absolute;
+  top: 15px;
+  height: 18px;
+  min-height: 18px;
+  min-width: 12px;
+  padding: 0;
+  background: color-mix(in srgb, var(--accent) 32%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border-default));
+  border-radius: var(--radius-sm);
+}
+.gantt-track .gantt-bar:hover {
+  background: color-mix(in srgb, var(--accent) 48%, var(--surface));
+}
+.gantt-track .gantt-milestone {
+  top: 18px;
+  height: 12px;
+  min-height: 12px;
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+.gantt-track .gantt-completed {
+  background: var(--surface-active);
+  border-color: var(--border-strong);
+}
+.gantt-today-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--accent);
+  z-index: 2;
+  pointer-events: none;
+}
+.gantt-unscheduled {
+  position: sticky;
+  left: 232px;
+  display: inline-block;
+  padding: 14px 12px;
+  font-size: var(--font-meta-size);
+  color: var(--text-muted);
+}
+.task-gantt > .ui-toolbar {
+  margin-bottom: var(--space-3);
+}

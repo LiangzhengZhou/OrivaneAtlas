@@ -5,6 +5,7 @@ import {
 } from "@arclattice/domain";
 import { type ContentPolicy, contentPolicy } from "./content-policy";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
+import { type BodyManifest, bodyManifest } from "./workspace-bootstrap";
 
 export interface Note {
   aiPolicy?: ContentPolicy;
@@ -33,6 +34,8 @@ export interface NoteInput {
   day: string | null;
 }
 export interface NotebookStore {
+  searchIds?(query: string): Promise<string[]>;
+  listMetadata?(): Promise<BodyManifest<Note>[]>;
   list(): Promise<Note[]>;
   get(id: string): Promise<Note>;
   save(note: Note, expectedVersion: number): Promise<void>;
@@ -50,6 +53,22 @@ export class NotebookService {
   async list(context: ActorContext) {
     await this.authorization.require(context, "work:read");
     return this.store.list();
+  }
+  async read(context: ActorContext, id: string, includeDeleted = false) {
+    await this.authorization.require(context, "work:read");
+    const note = await this.store.get(id);
+    if (
+      note.workspaceId !== context.workspaceId ||
+      (note.deletedAt && !includeDeleted)
+    )
+      throw new DomainError("NOT_FOUND");
+    return note;
+  }
+  async manifest(context: ActorContext) {
+    await this.authorization.require(context, "work:read");
+    return this.store.listMetadata
+      ? this.store.listMetadata()
+      : (await this.store.list()).map(bodyManifest);
   }
   async revisions(context: ActorContext, id: string) {
     await this.authorization.require(context, "work:read");

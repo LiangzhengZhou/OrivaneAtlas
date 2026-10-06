@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { Note, NotebookStore } from "@arclattice/application";
+import type {
+  BodyManifest,
+  Note,
+  NotebookStore,
+} from "@arclattice/application";
 import { type ActorContext, DomainError } from "@arclattice/domain";
 import type { PoolClient } from "pg";
 import { purgeRelations } from "./purge";
@@ -32,6 +36,32 @@ export function notebookStore(
     );
   };
   return {
+    async searchIds(query) {
+      guard();
+      const pattern = "%" + query.replace(/[\\%_]/g, "\\$&") + "%";
+      return (
+        await client.query(
+          "SELECT id FROM arclattice.notebook WHERE workspace_id=$1 AND payload::jsonb->>'deletedAt' IS NULL AND ((payload::jsonb->>'title') || ' ' || (payload::jsonb->>'bodyMd')) ILIKE $2 ESCAPE '\\' ORDER BY payload::jsonb->>'updatedAt' DESC",
+          [context.workspaceId, pattern],
+        )
+      ).rows.map((row) => String(row.id));
+    },
+    async listMetadata() {
+      guard();
+      return (
+        await client.query(
+          "SELECT payload::jsonb - 'bodyMd' metadata, length(payload::jsonb->>'bodyMd') characters FROM arclattice.notebook WHERE workspace_id=$1 ORDER BY payload::jsonb->>'updatedAt' DESC",
+          [context.workspaceId],
+        )
+      ).rows.map(
+        (row) =>
+          ({
+            ...(row.metadata as Omit<Note, "bodyMd">),
+            bodyState: "UNLOADED",
+            bodyCharacterCount: Number(row.characters),
+          }) satisfies BodyManifest<Note>,
+      );
+    },
     get,
     async list() {
       guard();

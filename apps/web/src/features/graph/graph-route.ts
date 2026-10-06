@@ -9,6 +9,8 @@ export interface GraphRoute {
   focus: string;
   selection: string;
   back: string;
+  expandedIds?: readonly string[];
+  viewport?: { x: number; y: number; zoom: number };
 }
 export function parseGraphRoute(hash: string): GraphRoute | null {
   const match = /^#\/?graph\/(project|document)\/([^?]+)(?:\?(.*))?$/.exec(
@@ -30,6 +32,17 @@ export function parseGraphRoute(hash: string): GraphRoute | null {
     const back =
       query.get("back") ??
       (kind === "project" ? "#projects/" + encodeURIComponent(id) : "#library");
+    const rawViewport = query.get("viewport")?.split(",");
+    const values = rawViewport?.every((value) => value.trim().length > 0)
+      ? rawViewport.map(Number)
+      : undefined;
+    const viewport =
+      values?.length === 3 &&
+      values.every(Number.isFinite) &&
+      values[2]! >= 0.1 &&
+      values[2]! <= 2
+        ? { x: values[0]!, y: values[1]!, zoom: values[2]! }
+        : undefined;
     return {
       ...(query.get("view") === "graph" || query.get("view") === "tree"
         ? { view: query.get("view") as "tree" | "graph" }
@@ -45,6 +58,8 @@ export function parseGraphRoute(hash: string): GraphRoute | null {
             : "project"
           : "focus"),
       depth: query.get("depth") === "2" ? 2 : 1,
+      ...(query.has("manual") ? { expandedIds: query.getAll("expanded") } : {}),
+      ...(viewport ? { viewport } : {}),
       hops: query.get("hops") === "2" ? 2 : 1,
       focus: query.get("focus") ?? (kind === "document" ? id : ""),
       selection: query.get("selection") ?? query.get("focus") ?? id,
@@ -57,6 +72,11 @@ export function parseGraphRoute(hash: string): GraphRoute | null {
   }
 }
 export function graphHash(route: GraphRoute): string {
+  const expansion = new URLSearchParams();
+  if (route.expandedIds) {
+    expansion.set("manual", "1");
+    for (const id of route.expandedIds) expansion.append("expanded", id);
+  }
   return (
     "#graph/" +
     route.kind +
@@ -65,6 +85,15 @@ export function graphHash(route: GraphRoute): string {
     "?" +
     new URLSearchParams({
       ...(route.view ? { view: route.view } : {}),
+      ...(route.viewport
+        ? {
+            viewport: [
+              route.viewport.x,
+              route.viewport.y,
+              route.viewport.zoom,
+            ].join(","),
+          }
+        : {}),
       mode: route.mode,
       scope: route.scope,
       depth: String(route.depth),
@@ -72,7 +101,8 @@ export function graphHash(route: GraphRoute): string {
       focus: route.focus,
       selection: route.selection,
       back: route.back,
-    })
+    }) +
+    (expansion.size ? "&" + expansion : "")
   );
 }
 export function openGraph(

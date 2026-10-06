@@ -76,14 +76,14 @@
 .document-title {
   display: block;
   width: 100%;
-  max-width: 920px;
+  max-width: 820px;
   margin: 32px auto 8px;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--text-primary);
   font-size: 32px;
-  font-weight: 650;
+  font-weight: 600;
   outline: none;
 }
 .document-tools {
@@ -97,8 +97,11 @@
 }
 .live-markdown,
 .document-reading {
-  max-width: 920px;
+  max-width: 820px;
   margin: 24px auto;
+}
+.document-reading {
+  max-width: 780px;
 }
 .live-markdown .cm-editor {
   min-height: 55vh;
@@ -124,7 +127,7 @@
 }
 .md-live-atxheading2 {
   font-size: 1.4em;
-  font-weight: 650;
+  font-weight: 600;
 }
 .md-live-atxheading3,
 .md-live-atxheading4,
@@ -163,7 +166,7 @@
   object-fit: contain;
 }
 .journal-marker {
-  color: #8062b1;
+  color: var(--text-secondary);
   padding: 0 3px;
 }
 .print-only {
@@ -227,9 +230,9 @@
 }
 .app-updater {
   background: var(--surface);
-  border: 1px solid #e5e1f0;
+  border: 1px solid var(--border-default);
   border-radius: 20px;
-  box-shadow: 0 8px 28px #30234d08;
+  box-shadow: none;
   line-height: 1.6;
 }
 .app-updater h2 {
@@ -243,18 +246,18 @@
   margin: 0.75rem 0.5rem 0 0;
   padding: 0.65rem 1rem;
   min-height: 44px;
-  border: 1px solid #dcd5ef;
+  border: 1px solid var(--border-default);
   border-radius: 12px;
-  background: #f5f2fc;
-  color: #584389;
+  background: var(--surface-subtle);
+  color: var(--text-secondary);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
 .app-updater button:last-child:not(:first-of-type) {
-  background: #7656c6;
+  background: var(--surface-subtle);
   color: white;
-  border-color: #7656c6;
+  border-color: var(--border-default);
 }
 .app-updater button:hover:not(:disabled) {
   filter: brightness(0.96);
@@ -269,7 +272,7 @@
 }
 .app-updater progress {
   width: 100%;
-  accent-color: #7656c6;
+  accent-color: var(--text-secondary);
 }
 
 .project-brief-editor {

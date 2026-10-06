@@ -17,6 +17,7 @@ import {
   type AiContextItem,
   type ApiCredential,
   aiCapabilities,
+  bodyManifest,
   CategoryService,
   ConnectedService,
   type CreateWorkInput,
@@ -30,6 +31,7 @@ import {
   type ModelPort,
   ModelRouteResolver,
   type ModelUsage,
+  metadataWorkspaceChanges,
   NotebookService,
   type NoteInput,
   NoteKnowledgeService,
@@ -55,6 +57,7 @@ import {
   WorkflowService,
   WorkService,
   type WorkspaceChanges,
+  workspaceManifest,
 } from "@arclattice/application";
 import {
   type ActorContext,
@@ -66,7 +69,9 @@ import { SqliteUnitOfWork } from "@arclattice/storage-sqlite";
 import { v7 } from "uuid";
 import type { GatewaySettlement } from "../../application/src/gateway-policy";
 import { runAtlasHarness } from "./agent-runtime";
+import { jsonResponse } from "./json-response";
 import { mcpDispatch, parseMcp } from "./mcp";
+import { noteBacklinks } from "./note-wiki-adapter";
 import { passwordHash, passwordMatches, username } from "./password";
 import { planDocumentPublisher } from "./plan-documents";
 import { startRecurrenceWorker } from "./recurrence-worker";
@@ -151,8 +156,7 @@ async function body(
   }
 }
 function json(res: ServerResponse, status: number, value: unknown) {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
-  res.end(JSON.stringify(value));
+  jsonResponse(res, status, value);
 }
 function digest(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -260,12 +264,7 @@ export async function createHost(options: HostOptions) {
       recoveryActor,
       null,
       async (_uow, _notes, _connected, library) => {
-        if (
-          (await library.list()).some(
-            (entry) => entry.kind === "DOCUMENT" && !entry.deletedAt,
-          )
-        )
-          await library.rebuildWikiIndex?.();
+        await library.ensureWikiIndex?.();
       },
     );
     const abandoned = await db.request(
@@ -801,9 +800,14 @@ export async function createHost(options: HostOptions) {
           };
           const readable = [
             "/api/snapshot",
+            "/api/bootstrap",
+            "/api/document/body",
+            "/api/document/note-backlinks",
+            "/api/notes/search",
             "/api/sync",
             "/api/revisions",
             "/api/library",
+            "/api/library/search",
             "/api/library/revisions",
             "/api/library/asset",
             "/api/openapi.json",
@@ -1560,6 +1564,137 @@ export async function createHost(options: HostOptions) {
           res.end(spec);
           return;
         }
+        if (path === "/api/library/search" && req.method === "GET") {
+          const query = string(url.searchParams.get("q"), 500);
+          const spaceId = url.searchParams.get("spaceId")
+            ? string(url.searchParams.get("spaceId"))
+            : "";
+          const result = await db.request(
+            context,
+            null,
+            async (_u, _n, _c, library) => {
+              await authorization.require(context);
+              const entries = await library.list();
+              const space = entries.find(
+                (entry) =>
+                  entry.id === spaceId &&
+                  entry.workspaceId === context.workspaceId &&
+                  entry.kind === "SPACE" &&
+                  !entry.deletedAt,
+              );
+              if (spaceId && !space) throw new DomainError("NOT_FOUND");
+              const liveSpaceIds = new Set(
+                entries
+                  .filter(
+                    (entry) =>
+                      entry.workspaceId === context.workspaceId &&
+                      entry.kind === "SPACE" &&
+                      !entry.deletedAt,
+                  )
+                  .map((entry) => entry.id),
+              );
+              const documentIds = entries
+                .filter(
+                  (entry) =>
+                    entry.workspaceId === context.workspaceId &&
+                    (spaceId
+                      ? entry.spaceId === spaceId
+                      : liveSpaceIds.has(entry.spaceId ?? "")) &&
+                    entry.kind === "DOCUMENT" &&
+                    !entry.deletedAt,
+                )
+                .map((entry) => entry.id);
+              const results = await new RetrievalService(
+                { list: async () => entries },
+                authorization,
+              ).search(
+                context,
+                query,
+                {
+                  spaceIds: spaceId ? [spaceId] : [...liveSpaceIds],
+                  documentIds,
+                },
+                [],
+                50,
+              );
+              return results.map(({ document, score }) => ({
+                id: document.id,
+                title: document.title,
+                spaceId: document.spaceId,
+                score,
+              }));
+            },
+          );
+          json(res, 200, result);
+          return;
+        }
+        if (path === "/api/notes/search" && req.method === "GET") {
+          const query = string(url.searchParams.get("q"), 500).trim();
+          const ids = await db.request(
+            context,
+            null,
+            (_uow, notes, _connected, library) =>
+              new RetrievalService(library, authorization).searchNoteIds(
+                context,
+                query,
+                notes,
+              ),
+          );
+          json(res, 200, ids);
+          return;
+        }
+        if (path === "/api/document/note-backlinks" && req.method === "GET") {
+          const id = string(url.searchParams.get("id"));
+          const references = await db.request(
+            context,
+            null,
+            async (_uow, notes, _connected, library) => {
+              await new LibraryService(library, authorization, clock, ids).read(
+                context,
+                id,
+              );
+              const captures = await new NotebookService(
+                notes,
+                authorization,
+                clock,
+                ids,
+              ).list(context);
+              return noteBacklinks(
+                captures,
+                library.listMetadata
+                  ? await library.listMetadata()
+                  : await library.list(),
+              ).filter((link) => link.targetDocumentId === id);
+            },
+          );
+          json(res, 200, references);
+          return;
+        }
+        if (path === "/api/document/body" && req.method === "GET") {
+          const id = string(url.searchParams.get("id"));
+          const kind = url.searchParams.get("kind");
+          const includeDeleted = url.searchParams.get("deleted") === "include";
+          if (kind !== "NOTE" && kind !== "LIBRARY")
+            fail(400, "VALIDATION_ERROR");
+          const entry = await db.request<
+            | import("@arclattice/application").Note
+            | import("@arclattice/application").LibraryEntry
+          >(context, null, (_uow, notes, _connected, library) =>
+            kind === "NOTE"
+              ? new NotebookService(notes, authorization, clock, ids).read(
+                  context,
+                  id,
+                  includeDeleted,
+                )
+              : new LibraryService(library, authorization, clock, ids).read(
+                  context,
+                  id,
+                  includeDeleted,
+                ),
+          );
+          json(res, 200, entry);
+          return;
+        }
         if (path === "/api/library" && req.method === "GET") {
           json(
             res,
@@ -1709,7 +1844,9 @@ export async function createHost(options: HostOptions) {
           return;
         }
         if (
-          (path === "/api/snapshot" || path === "/api/sync") &&
+          (path === "/api/snapshot" ||
+            path === "/api/sync" ||
+            path === "/api/bootstrap") &&
           req.method === "GET"
         ) {
           if (path === "/api/sync" && url.searchParams.has("after")) {
@@ -1878,7 +2015,14 @@ export async function createHost(options: HostOptions) {
               requireAccess,
             );
             if (!incremental.recovery) {
-              json(res, 200, { ...incremental, snapshot: null });
+              json(res, 200, {
+                ...incremental,
+                changes:
+                  url.searchParams.get("bodyMode") === "metadata"
+                    ? metadataWorkspaceChanges(incremental.changes)
+                    : incremental.changes,
+                snapshot: null,
+              });
               return;
             }
           }
@@ -1915,27 +2059,43 @@ export async function createHost(options: HostOptions) {
                 clock,
                 ids,
               ).snapshot(context, true)),
-              notes: await new NotebookService(
-                store,
-                authorization,
-                clock,
-                ids,
-              ).list(context),
+              notes:
+                path === "/api/bootstrap"
+                  ? await new NotebookService(
+                      store,
+                      authorization,
+                      clock,
+                      ids,
+                    ).manifest(context)
+                  : await new NotebookService(
+                      store,
+                      authorization,
+                      clock,
+                      ids,
+                    ).list(context),
               links: await connected.links(),
-              library: await library.list(),
+              library:
+                path === "/api/bootstrap"
+                  ? library.listMetadata
+                    ? await library.listMetadata()
+                    : (await library.list()).map(bodyManifest)
+                  : await library.list(),
               wikiLinks: (await library.wikiLinks?.()) ?? [],
             }),
           );
           const { syncState, ...data } = snapshotData;
+          const liveSpaceIds = new Set(
+            data.library
+              .filter((entry) => entry.kind === "SPACE" && !entry.deletedAt)
+              .map((entry) => entry.id),
+          );
           const live = new Set([
             ...data.library
               .filter(
                 (e) =>
                   !e.deletedAt &&
                   (e.kind === "SPACE" ||
-                    data.library.some(
-                      (p) => p.id === e.spaceId && !p.deletedAt,
-                    )),
+                    (e.spaceId !== null && liveSpaceIds.has(e.spaceId))),
               )
               .map((e) => e.kind + ":" + e.id),
             ...data.items
@@ -1951,7 +2111,18 @@ export async function createHost(options: HostOptions) {
               live.has(l.from.kind + ":" + l.from.id) &&
               live.has(l.to.kind + ":" + l.to.id),
           );
-          if (path === "/api/sync")
+          if (path === "/api/bootstrap") {
+            const { notes, library, ...workspace } = data;
+            json(res, 200, {
+              ...workspaceManifest(
+                syncState.cursor,
+                syncState.epoch,
+                notes,
+                library,
+              ),
+              workspace,
+            });
+          } else if (path === "/api/sync")
             json(res, 200, {
               cursor: syncState.cursor,
               epoch: syncState.epoch,

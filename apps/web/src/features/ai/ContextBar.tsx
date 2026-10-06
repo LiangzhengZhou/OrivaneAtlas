@@ -1,4 +1,5 @@
 import type { AiContextItem } from "@arclattice/application";
+import { bodyCharacterCount } from "@arclattice/application";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnchoredFloatingSurface } from "../../app/AnchoredFloatingSurface";
@@ -41,7 +42,7 @@ export function ContextBar({
       {projectId && (
         <Button
           type="button"
-          className="chip"
+          variant="toggle"
           disabled={disabled}
           onClick={() => onProject(null)}
         >
@@ -51,7 +52,7 @@ export function ContextBar({
       {spaceId && (
         <Button
           type="button"
-          className="chip"
+          variant="toggle"
           disabled={disabled}
           onClick={() => onSpace(null)}
         >
@@ -61,7 +62,7 @@ export function ContextBar({
       {context.map((entry) => (
         <Button
           type="button"
-          className="chip"
+          variant="toggle"
           key={entry.ref.id}
           disabled={disabled}
           onClick={() =>
@@ -74,7 +75,7 @@ export function ContextBar({
       <Button
         ref={anchorRef}
         type="button"
-        className="chip"
+        variant="toggle"
         disabled={disabled}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
@@ -131,7 +132,7 @@ export function ContextBar({
                     version: entry.version,
                     title: entry.title,
                     source: "selected",
-                    tokenEstimate: Math.ceil(entry.bodyMd.length / 4),
+                    tokenEstimate: Math.ceil(bodyCharacterCount(entry) / 4),
                     permission: entry.aiPolicy ?? {
                       classification: "PRIVATE",
                       processingBoundary: "LOCAL_ONLY",

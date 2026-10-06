@@ -1,6 +1,6 @@
 [package]
 name = "arclattice"
-version = "2.2.0"
+version = "2.3.0"
 description = "Orivane Atlas connected desktop client"
 edition = "2021"
 rust-version = "1.77.2"
@@ -34,3 +34,6 @@ windows-sys = { version = "0.61", features = ["Win32_Security_Cryptography", "Wi
 [target."cfg(windows)".dependencies.windows]
 version = "0.61.3"
 features = ["Data_Xml_Dom", "Foundation", "UI_Notifications", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_UI_Shell", "Win32_UI_Shell_PropertiesSystem"]
+
+[target."cfg(windows)".dev-dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_ProcessStatus", "Win32_System_Threading"] }

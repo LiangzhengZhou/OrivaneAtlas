@@ -10,23 +10,28 @@ import {
   Archive,
   ArchiveRestore,
   ArrowRight,
+  CheckCircle2,
   Circle,
   GitBranch,
   LockKeyhole,
+  MoreHorizontal,
   Plus,
   Trash2,
   X,
 } from "lucide-react";
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "./components/ui/Button";
-import { Select } from "./components/ui/Surfaces";
+import { useEntitySelection } from "./app/EntitySelection";
+import { Button, IconButton } from "./components/ui/Button";
+import { MenuItem } from "./components/ui/Content";
+import { Menu, Select } from "./components/ui/Surfaces";
 import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
 import type { taskDerivedIndex } from "./features/tasks/task-index";
 import type { TaskWorkspaceIndex } from "./features/tasks/task-selectors";
 import { VirtualTaskCollection } from "./features/tasks/VirtualTaskCollection";
 
 export interface WorkProps {
+  compact?: boolean;
   taskIndex: TaskWorkspaceIndex;
   derived: ReturnType<typeof taskDerivedIndex>;
   today: string;
@@ -42,6 +47,7 @@ export interface WorkProps {
   onOrganize(item: WorkItem, action: "archive" | "unarchive" | "delete"): void;
 }
 function Task({
+  compact = false,
   today,
   item,
   derived,
@@ -56,11 +62,17 @@ function Task({
   item: WorkItem;
   derived: ReturnType<typeof taskDerivedIndex>;
 }) {
-  const { t } = useTranslation(["common", "work"]);
+  const { t, i18n } = useTranslation(["common", "work"]);
   const busy = workspaceBusy || !!isPending?.(item);
+  const selection = useEntitySelection();
   const blocked = (derived.blockersByTaskId.get(item.id)?.length ?? 0) > 0;
   const activated = isExecutionActive(item, today);
   const inherited = archiveSource(item);
+  const menuAnchor = useRef<HTMLButtonElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const moreLabel =
+    (i18n.language.startsWith("zh") ? "更多操作：" : "More actions: ") +
+    item.title;
   return (
     <article
       draggable={!busy}
@@ -68,7 +80,12 @@ function Task({
         event.dataTransfer.setData("text/plain", item.id);
         event.dataTransfer.effectAllowed = "move";
       }}
-      className={`task-card ${item.status === "DONE" ? "completed" : ""}`}
+      className={`task-card ${compact ? "task-action-row" : ""} ${item.status === "DONE" ? "completed" : ""}`}
+      data-selected={
+        (selection?.selected?.kind === "WORK" &&
+          selection.selected.id === item.id) ||
+        undefined
+      }
       style={
         {
           "--task-hue":
@@ -80,17 +97,45 @@ function Task({
       }
     >
       <div className="task-main">
-        <Circle
-          className={`status-dot status-${item.status}`}
-          size={17}
-          aria-hidden="true"
-        />
+        <IconButton
+          label={
+            (i18n.language.startsWith("zh")
+              ? item.status === "DONE"
+                ? "重新打开："
+                : "完成："
+              : item.status === "DONE"
+                ? "Reopen: "
+                : "Complete: ") + item.title
+          }
+          disabled={busy}
+          aria-pressed={item.status === "DONE"}
+          onClick={() =>
+            void onStatus(item, item.status === "DONE" ? "TODO" : "DONE")
+          }
+        >
+          {item.status === "DONE" ? (
+            <CheckCircle2 className="status-dot status-DONE" />
+          ) : (
+            <Circle className={`status-dot status-${item.status}`} />
+          )}
+        </IconButton>
         <Button
           variant="ghost"
           type="button"
           className="task-title"
           aria-label={t("openTask", { title: item.title })}
-          onClick={() => onOpen(item)}
+          onClick={() =>
+            selection
+              ? selection.select({ kind: "WORK", id: item.id })
+              : onOpen(item)
+          }
+          onDoubleClick={() => onOpen(item)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onOpen(item);
+            }
+          }}
         >
           {item.title}
         </Button>
@@ -101,40 +146,6 @@ function Task({
             {t("desk:inheritedArchive", { title: inherited.title })}
           </small>
         )}
-        <Button
-          type="button"
-          className="icon-button"
-          disabled={busy || !!inherited}
-          title={
-            inherited
-              ? t("desk:inheritedArchive", { title: inherited.title })
-              : t(isArchived(item) ? "desk:unarchive" : "desk:archive")
-          }
-          aria-label={
-            t(isArchived(item) ? "desk:unarchive" : "desk:archive") +
-            ": " +
-            item.title
-          }
-          onClick={() =>
-            onOrganize(item, isArchived(item) ? "unarchive" : "archive")
-          }
-        >
-          {isArchived(item) ? (
-            <ArchiveRestore size={18} />
-          ) : (
-            <Archive size={18} />
-          )}
-        </Button>
-        <Button
-          type="button"
-          className="icon-button"
-          disabled={busy}
-          title={t("desk:deleteItem")}
-          aria-label={t("desk:deleteItem") + ": " + item.title}
-          onClick={() => onOrganize(item, "delete")}
-        >
-          <Trash2 size={18} />
-        </Button>
         {!!item.projectIds?.length && (
           <span className="task-project">
             {derived.projectTitlesByTaskId.get(item.id)}
@@ -149,19 +160,10 @@ function Task({
             {item.dueDate}
           </time>
         )}
-        <span
-          className={`activation-badge ${activated ? "active" : "inactive"}`}
-        >
-          {t(
-            activated
-              ? "desk:activationStates.ACTIVE"
-              : "desk:activationStates.INACTIVE",
-          )}
-        </span>
-        {item.status === "TODO" && activated && (
-          <span className={`readiness ${blocked ? "blocked" : "ready"}`}>
-            {blocked && <LockKeyhole size={12} aria-hidden="true" />}
-            {t(blocked ? "work:blocked" : "work:ready")}
+        {item.status === "TODO" && activated && blocked && (
+          <span className="readiness blocked">
+            <LockKeyhole size={12} aria-hidden="true" />
+            {t("work:blocked")}
           </span>
         )}
         {item.status === "TODO" && !activated && (
@@ -171,24 +173,75 @@ function Task({
             )}
           </span>
         )}
-        <span className={`priority priority-${item.priority}`}>
-          {t(`work:priorities.${item.priority}`)}
-        </span>
-        <Select
-          className="status-select"
-          aria-label={t("statusLabel", { title: item.title })}
-          value={item.status}
+        {!compact &&
+          (item.priority === "HIGH" || item.priority === "URGENT") && (
+            <span className="task-priority-signal">
+              {t(`work:priorities.${item.priority}`)}
+            </span>
+          )}
+        <IconButton
+          ref={menuAnchor}
+          label={moreLabel}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
           disabled={busy}
-          onChange={(event) =>
-            void onStatus(item, event.target.value as WorkStatus)
-          }
+          onClick={() => setMenuOpen((value) => !value)}
         >
-          {workStatuses.map((status) => (
-            <option key={status} value={status}>
-              {t(`work:statuses.${status}`)}
-            </option>
-          ))}
-        </Select>
+          <MoreHorizontal />
+        </IconButton>
+        {menuOpen && (
+          <Menu
+            anchorRef={menuAnchor}
+            label={moreLabel}
+            onDismiss={() => setMenuOpen(false)}
+          >
+            <MenuItem
+              disabled={busy || !!inherited}
+              aria-label={
+                t(isArchived(item) ? "desk:unarchive" : "desk:archive") +
+                ": " +
+                item.title
+              }
+              onClick={() => {
+                setMenuOpen(false);
+                onOrganize(item, isArchived(item) ? "unarchive" : "archive");
+              }}
+            >
+              {isArchived(item) ? (
+                <ArchiveRestore size={18} />
+              ) : (
+                <Archive size={18} />
+              )}
+              {t(isArchived(item) ? "desk:unarchive" : "desk:archive")}
+            </MenuItem>
+            <MenuItem
+              disabled={busy}
+              aria-label={t("desk:deleteItem") + ": " + item.title}
+              onClick={() => {
+                setMenuOpen(false);
+                onOrganize(item, "delete");
+              }}
+            >
+              <Trash2 size={18} />
+              {t("desk:deleteItem")}
+            </MenuItem>
+            <Select
+              className="status-select"
+              aria-label={t("statusLabel", { title: item.title })}
+              value={item.status}
+              disabled={busy}
+              onChange={(event) =>
+                void onStatus(item, event.target.value as WorkStatus)
+              }
+            >
+              {workStatuses.map((status) => (
+                <option key={status} value={status}>
+                  {t(`work:statuses.${status}`)}
+                </option>
+              ))}
+            </Select>
+          </Menu>
+        )}
       </div>
     </article>
   );
@@ -319,7 +372,6 @@ export function Dependencies({
         <Button
           variant="primary"
           type="submit"
-          className="button primary"
           disabled={
             busy ||
             !from ||
@@ -356,7 +408,8 @@ export function Dependencies({
                 </strong>
                 <Button
                   type="button"
-                  className="icon-button"
+                  variant="ghost"
+                  className="ui-icon-button"
                   aria-label={t("remove")}
                   disabled={busy}
                   onClick={() => void onRemove(edge.id)}

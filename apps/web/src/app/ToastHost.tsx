@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/ui/Button";
 
@@ -18,6 +18,22 @@ export function ToastHost() {
   const { i18n } = useTranslation();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pending, setPending] = useState<string | null>(null);
+  const hostRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const observer = new ResizeObserver(() => {
+      document.documentElement.style.setProperty(
+        "--toast-stack-height",
+        `${host.getBoundingClientRect().height}px`,
+      );
+    });
+    observer.observe(host);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--toast-stack-height");
+    };
+  }, []);
   useEffect(() => {
     const listener = (event: Event) =>
       setToasts((old) => [
@@ -28,7 +44,7 @@ export function ToastHost() {
     return () => window.removeEventListener("atlas:toast", listener);
   }, []);
   return (
-    <aside className="toast-host" aria-live="polite">
+    <aside ref={hostRef} className="toast-host" aria-live="polite">
       {toasts.map((toast) => (
         <div className="toast" key={toast.id}>
           <span>{toast.message}</span>
