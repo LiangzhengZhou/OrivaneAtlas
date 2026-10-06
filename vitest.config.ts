@@ -6,6 +6,6 @@ export default defineConfig({
     environment: "node",
     // SQLite backup/restore and portable PostgreSQL share the local disk.
     // Bound parallel fixtures instead of weakening their timeout assertions.
-    maxWorkers: 4,
+    maxWorkers: process.env.CI ? 2 : 4,
   },
 });
