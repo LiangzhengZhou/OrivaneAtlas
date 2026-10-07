@@ -613,8 +613,9 @@ function Workbench({
   );
   const done = taskSelection.completedTasks;
   const displayedTasks = showArchived ? taskSelection.archived : taskSelection;
-  const executionActiveIds = new Set(
-    displayedTasks.activeTasks.map((item) => item.id),
+  const executionActiveIds = useMemo(
+    () => new Set(displayedTasks.activeIds),
+    [displayedTasks.activeIds],
   );
   const searchTextById = useMemo(
     () =>
@@ -672,32 +673,52 @@ function Workbench({
     }
     return ids;
   }, [projectFilter, workIndex]);
-  const visible = displayedTasks.tasks
-    .filter(
-      (item) =>
-        item.type === "TASK" &&
-        (activationFilter === "ALL" ||
-          executionActiveIds.has(item.id) ===
-            (activationFilter === "ACTIVE")) &&
-        matches(item.id) &&
-        ((view === "tasks" && (status === "ALL" || status === "UNFINISHED")) ||
-          status === "ALL" ||
-          (status === "UNFINISHED"
-            ? ["TODO", "IN_PROGRESS"].includes(item.status)
-            : item.status === status)) &&
-        (priority === "ALL" || item.priority === priority) &&
-        (projectFilter === "ALL" ||
-          (projectFilter === "NONE"
-            ? !item.projectIds?.length
-            : projectMemberIds.has(item.id))),
-    )
-    .sort((a, b) =>
-      sort === "priority"
-        ? priorities.indexOf(b.priority) - priorities.indexOf(a.priority)
-        : sort === "title"
-          ? a.title.localeCompare(b.title, i18n.language)
-          : b.updatedAt.localeCompare(a.updatedAt),
-    );
+  const visible = useMemo(
+    () =>
+      displayedTasks.tasks
+        .filter(
+          (item) =>
+            item.type === "TASK" &&
+            (activationFilter === "ALL" ||
+              executionActiveIds.has(item.id) ===
+                (activationFilter === "ACTIVE")) &&
+            (!normalizedQuery ||
+              (searchTextById.get(item.id)?.includes(normalizedQuery) ??
+                false)) &&
+            ((view === "tasks" &&
+              (status === "ALL" || status === "UNFINISHED")) ||
+              status === "ALL" ||
+              (status === "UNFINISHED"
+                ? ["TODO", "IN_PROGRESS"].includes(item.status)
+                : item.status === status)) &&
+            (priority === "ALL" || item.priority === priority) &&
+            (projectFilter === "ALL" ||
+              (projectFilter === "NONE"
+                ? !item.projectIds?.length
+                : projectMemberIds.has(item.id))),
+        )
+        .sort((a, b) =>
+          sort === "priority"
+            ? priorities.indexOf(b.priority) - priorities.indexOf(a.priority)
+            : sort === "title"
+              ? a.title.localeCompare(b.title, i18n.language)
+              : b.updatedAt.localeCompare(a.updatedAt),
+        ),
+    [
+      displayedTasks.tasks,
+      activationFilter,
+      executionActiveIds,
+      normalizedQuery,
+      searchTextById,
+      view,
+      status,
+      priority,
+      projectFilter,
+      projectMemberIds,
+      sort,
+      i18n.language,
+    ],
+  );
   const focus = taskSelection.focusTasks;
   const day = calendarDay;
   const count = (n: number) => new Intl.NumberFormat(i18n.language).format(n);
@@ -1350,7 +1371,9 @@ function Workbench({
                 ] as string[]
               ).includes(view) && (
                 <Button
-                  variant="primary"
+                  variant={
+                    view === "projects" && activeProjectId ? "ghost" : "primary"
+                  }
                   className="compact-create"
                   type="button"
                   disabled={busy || loading}

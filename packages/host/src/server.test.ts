@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import {
   type ModelPort,
   type PersonalModelVault,
+  providerFailure,
   WorkflowService,
 } from "@arclattice/application";
 import {
@@ -413,6 +414,75 @@ it("model catalog mutations use private CAS, validate live bindings and never re
     (await call("/api/ai/connections/models", { connectionId: "missing" }))
       .status,
   ).toBe(404);
+});
+it("connection test and discovery expose safe structured diagnostics with host authorization", async () => {
+  await host.close();
+  const vault = openPersonalVault(join(directory, "probe-vault"));
+  const adapter = {
+    provider: "test",
+    model: "test",
+    capabilities: {
+      tools: false,
+      jsonSchema: false,
+      vision: false,
+      streaming: false,
+      embedding: false,
+    },
+    complete: async () => "OK",
+    async *stream() {
+      yield { type: "completed" as const };
+    },
+    respond: async () => ({ text: "OK", toolCalls: [] }),
+    listModels: async () => {
+      throw providerFailure("ENDPOINT_NOT_FOUND", 404, "CUSTOM_OPENAI");
+    },
+  };
+  vault.connectionAdapter = () => adapter;
+  vault.testConnection = async () => ({
+    connected: true,
+    discovery: "UNSUPPORTED",
+  });
+  await start(undefined, undefined, vault);
+  await login();
+  const tested = await call("/api/ai/connections/test", {
+    connectionId: "test",
+  });
+  expect(tested.status).toBe(200);
+  expect(await tested.json()).toEqual({
+    connected: true,
+    discovery: "UNSUPPORTED",
+  });
+  const discovered = await call("/api/ai/connections/models", {
+    connectionId: "test",
+  });
+  expect(discovered.status).toBe(502);
+  expect(await discovered.json()).toMatchObject({
+    error: "PROVIDER_REQUEST_FAILED",
+    providerError: {
+      category: "UNSUPPORTED_DISCOVERY",
+      provider: "CUSTOM_OPENAI",
+      status: 404,
+      retryable: false,
+    },
+  });
+  for (const [status, category] of [
+    [401, "AUTH_INVALID"],
+    [403, "PERMISSION_DENIED"],
+    [405, "METHOD_NOT_ALLOWED"],
+    [429, "RATE_LIMITED"],
+    [503, "UPSTREAM_UNAVAILABLE"],
+  ] as const) {
+    vault.testConnection = async () => {
+      throw providerFailure(category, status, "CUSTOM_OPENAI");
+    };
+    const result = await call("/api/ai/connections/test", {
+      connectionId: "test",
+    });
+    expect(result.status).toBe(502);
+    const body = await result.json();
+    expect(body.providerError).toMatchObject({ category, status });
+    expect(JSON.stringify(body)).not.toContain("Authorization");
+  }
 });
 it("Atlas resolves inherited model routing before building independent retrieval context", async () => {
   await host.close();

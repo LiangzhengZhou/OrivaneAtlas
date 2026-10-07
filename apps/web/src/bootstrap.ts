@@ -35,6 +35,8 @@ import type {
 } from "@arclattice/application";
 import {
   applyWorkspaceChanges,
+  type ProviderFailure,
+  ProviderRequestError,
   type WorkspaceChanges,
 } from "@arclattice/application";
 import {
@@ -287,7 +289,7 @@ export async function bootstrap() {
       pending.set(signature, key);
     if (!serverOrigin) throw new DomainError("VALIDATION_ERROR");
     const response = await transport(path, payload, key);
-    let data: { error?: string };
+    let data: { error?: string; providerError?: ProviderFailure };
     try {
       data = await response.json();
     } catch (error) {
@@ -301,6 +303,8 @@ export async function bootstrap() {
     if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
     if (!data || typeof data !== "object") throw new Error("INVALID_RESPONSE");
     if (response.status < 500) pending.delete(signature);
+    if (!response.ok && data.providerError)
+      throw new ProviderRequestError(data.providerError);
     if (!response.ok)
       throw new DomainError(
         ((
@@ -940,6 +944,11 @@ export async function bootstrap() {
         models: string[];
         capabilities: import("@arclattice/application").ModelProviderCapabilities;
       }>("/api/ai/connections/models", { connectionId }),
+    testConnection: (connectionId: string) =>
+      request<{ connected: true; discovery: "AVAILABLE" | "UNSUPPORTED" }>(
+        "/api/ai/connections/test",
+        { connectionId },
+      ),
     saveProvider: (version: number, input: PersonalModelInput) =>
       request<PersonalModelSummary>("/api/ai/providers/save", {
         version,

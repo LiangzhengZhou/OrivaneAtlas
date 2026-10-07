@@ -31,6 +31,9 @@ import type {
 } from "@arclattice/application";
 import {
   matchesTrustedAiEndpoint,
+  ProviderNotSentError,
+  ProviderRequestError,
+  providerFailure,
   type TrustedAiEndpoint,
   validateTrustedAiEndpoint,
 } from "@arclattice/application";
@@ -49,6 +52,7 @@ import {
   type StoredModelConfiguration,
   updateConfiguration,
 } from "./provider-catalog";
+import { providerHttpError, providerNetworkError } from "./provider-error";
 import {
   createProviderAdapter,
   type ProviderHttpRequest,
@@ -102,6 +106,12 @@ function trustedPrivateAddress(address: string) {
     ? allowed.check(address, "ipv4")
     : family === 6 && allowed.check(address, "ipv6");
 }
+function canonicalProviderDestination(value: URL) {
+  const url = new URL(value);
+  if (url.hostname === "api.deepseek.com")
+    url.pathname = url.pathname.replace(/^\/(?:v1\/)+/, "/");
+  return url;
+}
 export function modelEndpoint(value: string, trusted = false) {
   let url: URL;
   try {
@@ -133,6 +143,9 @@ export function modelEndpoint(value: string, trusted = false) {
     url.pathname
       .replace(/\/(chat\/completions|responses|models|embeddings)\/?$/, "")
       .replace(/\/$/, "") + "/";
+  // DeepSeek's optional /v1 alias resolves to its canonical API root.
+  if (url.hostname === "api.deepseek.com" && /^\/(?:v1\/)+$/.test(url.pathname))
+    url.pathname = "/";
   return url;
 }
 async function send(
@@ -143,6 +156,7 @@ async function send(
   trusted: () => boolean = () => false,
   protocol?: Pick<ProviderHttpRequest, "method" | "headers">,
 ): Promise<unknown> {
+  endpoint = canonicalProviderDestination(endpoint);
   try {
     const destination = new URL(endpoint);
     destination.search = "";
@@ -153,8 +167,10 @@ async function send(
   const host = endpoint.hostname.replace(/^\[|\]$/g, "");
   // Validate every answer, then pin one. TLS still verifies the original hostname.
   const answers = await lookup(host, { all: true, verbatim: true }).catch(
-    () => {
-      throw new ModelNotSentError();
+    (error: unknown) => {
+      throw new ProviderNotSentError(
+        providerNetworkError(error, signal).failure,
+      );
     },
   );
   if (
@@ -186,14 +202,14 @@ async function send(
         lookup: (_hostname, _options, callback) =>
           callback(null, address.address, address.family),
         headers: {
-          ...(protocol ? protocol.headers : { Authorization: "Bearer " + key }),
           "Content-Type": "application/json",
+          ...(protocol ? protocol.headers : { Authorization: "Bearer " + key }),
         },
       },
       (res) => {
         if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
           res.destroy();
-          reject(new Error("MODEL_REQUEST_FAILED"));
+          reject(providerHttpError(res.statusCode));
           return;
         }
         let size = 0;
@@ -206,17 +222,17 @@ async function send(
           }
           chunks.push(part);
         });
-        res.on("error", reject);
+        res.on("error", (error) => reject(providerNetworkError(error, signal)));
         res.on("end", () => {
           try {
             resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
           } catch {
-            reject(new Error("MODEL_RESPONSE_INVALID"));
+            reject(providerFailure("PROTOCOL_ERROR"));
           }
         });
       },
     );
-    req.on("error", reject);
+    req.on("error", (error) => reject(providerNetworkError(error, signal)));
     req.end(protocol?.method === "GET" ? undefined : JSON.stringify(payload));
   });
 }
@@ -227,6 +243,7 @@ async function* sendStream(
   signal: AbortSignal,
   trusted: () => boolean = () => false,
 ): AsyncIterable<ModelEvent> {
+  endpoint = canonicalProviderDestination(endpoint);
   try {
     modelEndpoint(endpoint.href, trusted());
   } catch {
@@ -235,8 +252,8 @@ async function* sendStream(
   const answers = await lookup(endpoint.hostname.replace(/^\[|\]$/g, ""), {
     all: true,
     verbatim: true,
-  }).catch(() => {
-    throw new ModelNotSentError();
+  }).catch((error: unknown) => {
+    throw new ProviderNotSentError(providerNetworkError(error, signal).failure);
   });
   if (
     !answers.length ||
@@ -278,13 +295,13 @@ async function* sendStream(
           !response.headers["content-type"]?.startsWith("text/event-stream")
         ) {
           response.destroy();
-          reject(new Error("MODEL_REQUEST_FAILED"));
+          reject(providerHttpError(response.statusCode));
           return;
         }
         resolve(response);
       },
     );
-    req.on("error", reject);
+    req.on("error", (error) => reject(providerNetworkError(error, signal)));
     req.end(JSON.stringify(payload));
   });
   try {
@@ -505,7 +522,7 @@ export function openPersonalVault(directory: string): PersonalModelVault {
       .digest("hex");
     return result;
   }
-  return {
+  const vault: PersonalModelVault = {
     setTrustedEndpoints: (entries) => {
       trustedEndpoints = entries.map(validateTrustedAiEndpoint);
     },
@@ -560,24 +577,63 @@ export function openPersonalVault(directory: string): PersonalModelVault {
         )?.key ?? "";
       return createProviderAdapter(
         connection.kind,
-        "connection-probe",
+        configuration.models.find(
+          (model) => model.connectionId === connectionId,
+        )?.modelId ?? "connection-probe",
         key,
-        (request, signal) =>
-          send(
-            new URL(request.path, connection.endpoint),
-            key,
-            request.body,
-            signal,
-            () =>
-              matchesTrustedAiEndpoint(
-                trustedEndpoints,
-                actor.workspaceId,
-                connection.endpoint,
-              ),
-            request,
-          ),
+        async (request, signal) => {
+          try {
+            return await send(
+              new URL(request.path, connection.endpoint),
+              key,
+              request.body,
+              signal,
+              () =>
+                matchesTrustedAiEndpoint(
+                  trustedEndpoints,
+                  actor.workspaceId,
+                  connection.endpoint,
+                ),
+              request,
+            );
+          } catch (error) {
+            if (error instanceof ProviderRequestError)
+              throw new ProviderRequestError({
+                ...error.failure,
+                provider: connection.kind,
+              });
+            if (error instanceof ProviderNotSentError)
+              throw new ProviderNotSentError({
+                ...error.failure,
+                provider: connection.kind,
+              });
+            throw error;
+          }
+        },
         { maxOutputTokens: 128 },
       );
+    },
+    async testConnection(actor, connectionId, signal) {
+      const adapter = vault.connectionAdapter!(actor, connectionId);
+      try {
+        await adapter.listModels(signal);
+        return { connected: true, discovery: "AVAILABLE" };
+      } catch (error) {
+        if (
+          !(error instanceof ProviderRequestError) ||
+          ![404, 405].includes(error.failure.status ?? 0)
+        )
+          throw error;
+        const configuration = vault.configuration!(actor);
+        if (
+          !configuration.models.some(
+            (model) => model.connectionId === connectionId,
+          )
+        )
+          throw providerFailure("UNSUPPORTED_DISCOVERY", error.failure.status);
+        await adapter.complete("Reply OK.", signal);
+        return { connected: true, discovery: "UNSUPPORTED" };
+      }
     },
     list: (actor) =>
       entries.filter((e) => e.owner === owner(actor)).map(registeredSummary),
@@ -1014,4 +1070,5 @@ export function openPersonalVault(directory: string): PersonalModelVault {
       };
     },
   };
+  return vault;
 }

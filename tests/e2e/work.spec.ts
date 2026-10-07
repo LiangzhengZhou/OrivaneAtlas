@@ -37,16 +37,10 @@ async function openProjectDependencyScope(
     .click();
   const graph = page.locator(".project-workspace .dependency-focus-graph");
   const scope = graph.getByRole("button", {
-    name: zh ? "整个项目" : "Entire project",
+    name: zh ? "范围内全部任务" : "All tasks in scope",
     exact: true,
   });
   await expect(scope).toBeDisabled();
-  await graph
-    .getByRole("button", {
-      name: zh ? "选择焦点任务" : "Choose focus task",
-      exact: true,
-    })
-    .click();
   const snapshot: {
     items: {
       id: string;
@@ -61,6 +55,21 @@ async function openProjectDependencyScope(
   });
   const task = snapshot.items.find((item) => item.title === taskTitle);
   expect(task).toBeDefined();
+  const projectId = await graph.getAttribute("data-project-id");
+  if (!task?.projectIds?.includes(projectId ?? "")) {
+    await graph
+      .getByRole("button", {
+        name: zh ? "包含子项目" : "Include subprojects",
+        exact: true,
+      })
+      .click();
+  }
+  await graph
+    .getByRole("button", {
+      name: zh ? "选择焦点任务" : "Choose focus task",
+      exact: true,
+    })
+    .click();
   const path: string[] = [];
   let project = snapshot.items.find(
     (item) => item.id === task?.projectIds?.[0],
@@ -927,6 +936,7 @@ test("v2.3 task rows expose completion and defer management to the menu", async 
   await page.reload();
   await nav(page, w.desk.tasks);
   const row = page.locator(".task-card").filter({ hasText: "Quiet action" });
+  await expect(page.locator(".recurrence-summary")).toHaveCount(0);
   await expect(
     row.locator("select, .priority, .activation-badge, .readiness.ready"),
   ).toHaveCount(0);
@@ -1004,6 +1014,9 @@ test("v2.3 Project Gantt renders spans milestones unscheduled rows and restores 
   await expect(page.locator(".project-workspace h1")).toHaveText(
     "Gantt project",
   );
+  await expect(
+    page.locator(".workspace-main .ui-button-primary:visible"),
+  ).toHaveCount(1);
   await expect(
     page.getByLabel(w.desk.projectScope, { exact: true }),
   ).toHaveCount(0);
@@ -1252,7 +1265,9 @@ test("v2.3 task single selection Inspector Enter open and shared Atlas context p
   const title = page
     .locator(".task-title")
     .filter({ hasText: "Selected task" });
-  await title.click();
+  const row = page.locator(".task-card").filter({ has: title });
+  await row.click({ position: { x: 8, y: 8 } });
+  await expect(row).toHaveAttribute("tabindex", "0");
   await expect(page.locator(".task-dialog")).toHaveCount(0);
   const context = page.locator(".context-pane");
   await expect(
@@ -1264,7 +1279,7 @@ test("v2.3 task single selection Inspector Enter open and shared Atlas context p
       .getByRole("button", { name: zh ? "打开" : "Open", exact: true })
       .click();
   } else {
-    await title.press("Enter");
+    await row.press("Enter");
   }
   await expect(page.locator(".task-dialog")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -2136,6 +2151,108 @@ test("navigation collapses independently on desktop and mobile", async ({
     "aria-expanded",
     "true",
   );
+});
+
+test("v2.4 provider connection test and discovery have separate friendly diagnostics", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.settings);
+  await page
+    .getByRole("button", {
+      name: zh ? "添加服务连接" : "Add provider connection",
+      exact: true,
+    })
+    .click();
+  const form = page.getByRole("form", {
+    name: zh ? "连接编辑" : "Connection editor",
+  });
+  await form.getByRole("combobox").selectOption("DEEPSEEK");
+  await form.locator("summary").click();
+  await expect(
+    form.getByLabel(zh ? "API 基址" : "API base URL", { exact: true }),
+  ).toHaveValue("https://api.deepseek.com/");
+  await form.locator('input[type="password"]').fill("TEST-ONLY-PROVIDER-KEY");
+  await form
+    .getByRole("button", {
+      name: zh ? "保存连接" : "Save connection",
+      exact: true,
+    })
+    .click();
+  await expect(form).toHaveCount(0);
+  const testButton = page.getByRole("button", {
+    name: zh ? "测试连接" : "Test connection",
+    exact: true,
+  });
+  const discover = page.getByRole("button", {
+    name: zh ? "发现模型" : "Discover models",
+    exact: true,
+  });
+  await expect(testButton).toBeVisible();
+  await expect(discover).toBeVisible();
+  await page.route("**/api/ai/connections/test", (route) =>
+    route.fulfill({
+      status: 502,
+      json: {
+        error: "PROVIDER_REQUEST_FAILED",
+        providerError: {
+          category: "AUTH_INVALID",
+          provider: "DEEPSEEK",
+          status: 401,
+          retryable: false,
+          messageKey: "provider.error.AUTH_INVALID",
+        },
+      },
+    }),
+  );
+  await testButton.click();
+  await expect(page.getByRole("alert")).toContainText(
+    zh ? "密钥无效或已过期" : "The key is invalid or expired",
+  );
+  await expect(page.getByRole("alert").locator("pre")).toBeHidden();
+  await page.getByRole("alert").locator("summary").click();
+  await expect(page.getByRole("alert").locator("pre")).toContainText("401");
+  await expect(page.getByRole("alert")).not.toContainText(
+    "TEST-ONLY-PROVIDER-KEY",
+  );
+  await page.unroute("**/api/ai/connections/test");
+  await page.route("**/api/ai/connections/test", (route) =>
+    route.fulfill({ json: { connected: true, discovery: "UNSUPPORTED" } }),
+  );
+  await testButton.click();
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: zh ? "连接成功" : "Connection successful" }),
+  ).toBeVisible();
+  await page.route("**/api/ai/connections/models", (route) =>
+    route.fulfill({
+      status: 502,
+      json: {
+        error: "PROVIDER_REQUEST_FAILED",
+        providerError: {
+          category: "UNSUPPORTED_DISCOVERY",
+          provider: "DEEPSEEK",
+          status: 404,
+          retryable: false,
+          messageKey: "provider.error.UNSUPPORTED_DISCOVERY",
+        },
+      },
+    }),
+  );
+  await discover.click();
+  await expect(page.getByRole("alert")).toContainText(
+    zh ? "手动添加模型" : "Add a model manually",
+  );
+  await expect(
+    page.getByRole("button", {
+      name: zh ? "添加模型" : "Add model",
+      exact: true,
+    }),
+  ).toBeEnabled();
 });
 
 test("named AI profiles persist independently and bind reviewed proposals", async ({
@@ -7266,6 +7383,7 @@ test("Atlas main workspace is conversation with explicit context and no provider
   await nav(page, w.desk.ai);
   const atlas = page.locator(".atlas-conversation");
   await expect(atlas).toBeVisible();
+  await expect(atlas.locator(".ui-button-primary:visible")).toHaveCount(1);
   await expect(atlas.locator(".personal-ai-settings, .ai-run")).toHaveCount(0);
   const sidebar = await atlas.locator(".conversation-sidebar").boundingBox();
   const messages = await atlas.locator(".conversation-messages").boundingBox();
@@ -7329,6 +7447,127 @@ test("Atlas main workspace is conversation with explicit context and no provider
   });
 });
 
+test("v2.4 dependency Direct and Tree scope bound picker membership and restore URL", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  const text = (cn: string, en: string) => (zh ? cn : en);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const root = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Scope root",
+  });
+  const child = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Scope child",
+    parentProjectId: root.id,
+  });
+  const grandchild = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Scope grandchild",
+    parentProjectId: child.id,
+  });
+  const direct = await mutation(page, "/api/work/create", {
+    title: "Scope direct task",
+    projectIds: [root.id],
+  });
+  const nested = await mutation(page, "/api/work/create", {
+    title: "Scope nested task",
+    projectIds: [grandchild.id],
+  });
+  const outside = await mutation(page, "/api/work/create", {
+    title: "Scope outside blocker",
+  });
+  await mutation(page, "/api/edge/create", {
+    fromId: outside.id,
+    toId: direct.id,
+    type: "BLOCKS",
+  });
+  await page.goto(
+    workbench.url + "/#graph/project/" + root.id + "?mode=dependencies",
+  );
+  const graph = page.locator(".dependency-focus-graph");
+  const directScope = graph.getByRole("button", {
+    name: text("本项目", "This project"),
+    exact: true,
+  });
+  const treeScope = graph.getByRole("button", {
+    name: text("包含子项目", "Include subprojects"),
+    exact: true,
+  });
+  await expect(directScope).toHaveAttribute("aria-pressed", "true");
+  await graph
+    .getByRole("button", {
+      name: text("选择焦点任务", "Choose focus task"),
+      exact: true,
+    })
+    .click();
+  const picker = page.locator(".hierarchy-browser");
+  await expect(
+    picker.getByRole("button", { name: "Scope child ›", exact: true }),
+  ).toHaveCount(0);
+  await expect(picker).not.toContainText("Scope outside blocker");
+  await picker
+    .getByRole("button", { name: /^Scope direct task/ })
+    .first()
+    .click();
+  await expect(graph.locator(".react-flow__node")).toHaveCount(1);
+  await treeScope.click();
+  await graph
+    .getByRole("button", {
+      name: text("选择焦点任务", "Choose focus task"),
+      exact: true,
+    })
+    .click();
+  await picker
+    .getByRole("button", { name: "Scope child ›", exact: true })
+    .click();
+  await picker
+    .getByRole("button", { name: "Scope grandchild ›", exact: true })
+    .click();
+  await picker.getByRole("button", { name: /^Scope nested task/ }).click();
+  await expect(page).toHaveURL(new RegExp("focus=" + nested.id));
+  await expect(page).toHaveURL(/taskScope=PROJECT_TREE/);
+  await page.reload();
+  await expect(treeScope).toHaveAttribute("aria-pressed", "true");
+  await expect(graph.locator(".react-flow__node")).toHaveCount(1);
+  await directScope.click();
+  await expect(graph.locator(".react-flow__node")).toHaveCount(0);
+  await expect(graph.getByRole("status")).toContainText(
+    text("当前焦点不在此范围内", "The focus task is outside this scope"),
+  );
+  await graph
+    .getByRole("button", {
+      name: text("选择焦点任务", "Choose focus task"),
+      exact: true,
+    })
+    .click();
+  await picker
+    .getByRole("button", { name: /^Scope direct task/ })
+    .first()
+    .click();
+  await graph
+    .getByRole("checkbox", {
+      name: text("显示项目外阻塞", "Show external blockers"),
+      exact: true,
+    })
+    .check();
+  await expect(graph.locator(".react-flow__node")).toHaveCount(2);
+  await expect(page).toHaveURL(/external=1/);
+  await page.reload();
+  await expect(graph.locator(".react-flow__node")).toHaveCount(2);
+  await graph
+    .getByRole("button", {
+      name: text("选择焦点任务", "Choose focus task"),
+      exact: true,
+    })
+    .click();
+  await expect(picker).not.toContainText("Scope outside blocker");
+  await page.keyboard.press("Escape");
+});
+
 test("Project dependency graph shows external blockers only on explicit request", async ({
   page,
   workbench,
@@ -7369,7 +7608,7 @@ test("Project dependency graph shows external blockers only on explicit request"
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   await page
     .getByRole("checkbox", {
-      name: zh ? "包含项目外阻塞" : "Include external blockers",
+      name: zh ? "显示项目外阻塞" : "Show external blockers",
       exact: true,
     })
     .check();
@@ -8993,7 +9232,7 @@ for (const [width, height] of [
       await expect(page.locator(".app-shell")).toBeVisible();
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       const directory = resolve(
-        ".artifacts/v23-visual",
+        ".artifacts/v24-visual",
         info.project.name,
         `${width}x${height}-${theme}`,
       );
@@ -9420,6 +9659,17 @@ test("v2.3 Calendar sheet shares day context counts and preserves its month", as
     .click();
   await expect(taskDialog).toHaveCount(0);
   await expect(cell).toContainText("Selected day action");
+  if (mobile) {
+    await expect(cell.locator(".calendar-preview")).toBeHidden();
+    await expect(cell.locator(".calendar-mobile-count")).toBeVisible();
+    await expect(cell.locator(".calendar-mobile-count")).toHaveAttribute(
+      "aria-label",
+      "1 项任务",
+    );
+    await expect(page.locator(".agenda-panel")).toContainText(
+      "Selected day action",
+    );
+  }
   await expect(
     page.locator('.calendar-agenda-section[data-kind="→"] [data-count]'),
   ).toHaveAttribute("data-count", "1");
@@ -9464,6 +9714,20 @@ test("v2.3 Calendar sheet shares day context counts and preserves its month", as
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const header = document
+          .querySelector(".topbar")
+          ?.getBoundingClientRect();
+        const grid = document
+          .querySelector(".calendar-grid")
+          ?.getBoundingClientRect();
+        return !!header && !!grid && grid.top >= header.bottom;
+      }),
+    )
+    .toBe(true);
   await page.screenshot({
     path: info.outputPath("calendar-sheet-context.png"),
     fullPage: true,
@@ -9800,7 +10064,7 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
     () =>
       page.evaluate(() => {
         location.hash =
-          "#graph/project/perf-project-1?mode=dependencies&view=graph&focus=perf-task-1&scope=focus&hops=1";
+          "#graph/project/perf-project-1?mode=dependencies&view=graph&focus=perf-task-1&scope=focus&hops=1&taskScope=PROJECT_TREE";
       }),
     () => expect(page.locator(".react-flow__node").first()).toBeVisible(),
   );
@@ -9836,13 +10100,17 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
       ),
   );
   await page.keyboard.press("Escape");
+  await expect(page.locator(".hierarchy-browser")).toHaveCount(0);
   await measure(
     "Knowledge local graph",
     () =>
       page.evaluate(() => {
         location.hash = "#graph/document/perf-document-0?view=graph&hops=1";
       }),
-    () => expect(page.locator(".react-flow__node").first()).toBeVisible(),
+    () =>
+      expect(
+        page.locator('.react-flow__node[data-id="perf-document-0"]'),
+      ).toBeVisible(),
   );
   for (const [id, kb] of [
     ["perf-document-0", 50],

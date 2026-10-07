@@ -381,7 +381,7 @@ export function AssistantPane({
       <div className="conversation-body">
         <div className="conversation-sidebar">
           <Button
-            variant="primary"
+            variant="secondary"
             type="button"
             disabled={
               pending ||

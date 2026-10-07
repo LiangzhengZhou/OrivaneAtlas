@@ -7,6 +7,36 @@ import {
   validateApprovedContext,
   validateContextPolicy,
 } from "./model-gateway";
+import { providerFailure } from "./provider-error";
+
+test("approved provider failures retain safe classification and status in events and persisted results", async () => {
+  const f = fixture();
+  f.model.complete = vi.fn(async () => {
+    throw providerFailure("AUTH_INVALID", 401, "DEEPSEEK");
+  });
+  const onEvent = vi.fn();
+  const result = await executeApprovedModel(
+    actor,
+    f.run,
+    f.authorize,
+    f.resolve,
+    f.controller.signal,
+    onEvent,
+  );
+  expect(result.output).toBeNull();
+  expect(result.error).toMatch(/^PROVIDER_REQUEST_FAILED:/);
+  expect(
+    JSON.parse(result.error!.slice("PROVIDER_REQUEST_FAILED:".length)),
+  ).toEqual({
+    category: "AUTH_INVALID",
+    status: 401,
+    provider: "DEEPSEEK",
+    retryable: false,
+    messageKey: "provider.error.AUTH_INVALID",
+  });
+  expect(onEvent).toHaveBeenCalledWith({ type: "error", error: result.error });
+  expect(f.model.complete).toHaveBeenCalledOnce();
+});
 
 test("approved context is rechecked for revision, parent, workspace and route scope", async () => {
   const f = fixture();

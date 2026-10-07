@@ -40,10 +40,14 @@ import {
   type PersonalModelInput,
   type PersonalModelVault,
   ProjectService,
+  ProviderNotSentError,
+  ProviderRequestError,
   parseAiCapabilityCall,
   parseAiTextEdits,
   privateContentPolicy,
   projectKnowledgeScope,
+  providerDiagnostic,
+  providerFailure,
   type RecurrencePayload,
   ReminderService,
   RetrievalService,
@@ -561,7 +565,7 @@ export async function createHost(options: HostOptions) {
             ? failure.code
             : failure instanceof Error && failure.message === "CONTEXT_CHANGED"
               ? "CONTEXT_CHANGED"
-              : "MODEL_REQUEST_FAILED";
+              : (providerDiagnostic(failure) ?? "MODEL_REQUEST_FAILED");
       } finally {
         controllers.delete(controller);
       }
@@ -1188,7 +1192,8 @@ export async function createHost(options: HostOptions) {
         }
         if (
           (path === "/api/ai/configuration/save" ||
-            path === "/api/ai/connections/models") &&
+            path === "/api/ai/connections/models" ||
+            path === "/api/ai/connections/test") &&
           mutation
         ) {
           if (
@@ -1200,16 +1205,47 @@ export async function createHost(options: HostOptions) {
             fail(403, "FORBIDDEN");
           requestId(req);
           const { value } = await body(req);
-          if (path.endsWith("/models")) {
+          if (path.endsWith("/models") || path.endsWith("/test")) {
             keys(value, ["connectionId"]);
-            const adapter = await db.accounts((store) => {
-              requireAccess(store);
-              return options.vault!.connectionAdapter!(
-                context,
-                string(value.connectionId, 64),
+            if (path.endsWith("/test")) {
+              const connectionId = string(value.connectionId, 64);
+              await db.accounts((store) => {
+                requireAccess(store);
+              });
+              if (!options.vault!.testConnection) fail(503, "UNAVAILABLE");
+              json(
+                res,
+                200,
+                await options.vault!.testConnection!(
+                  context,
+                  connectionId,
+                  AbortSignal.timeout(15000),
+                ),
               );
+              return;
+            }
+            await db.accounts((store) => {
+              requireAccess(store);
             });
-            const models = await adapter.listModels(AbortSignal.timeout(15000));
+            const adapter = options.vault!.connectionAdapter!(
+              context,
+              string(value.connectionId, 64),
+            );
+            let models: string[];
+            try {
+              models = await adapter.listModels(AbortSignal.timeout(15000));
+            } catch (error) {
+              if (
+                error instanceof ProviderRequestError &&
+                [404, 405].includes(error.failure.status ?? 0)
+              )
+                throw providerFailure(
+                  "UNSUPPORTED_DISCOVERY",
+                  error.failure.status,
+                  error.failure.provider,
+                );
+              throw error;
+            }
             json(res, 200, { models, capabilities: adapter.capabilities });
             return;
           }
@@ -4203,6 +4239,18 @@ export async function createHost(options: HostOptions) {
       res.writeHead(200, { "Content-Type": mime[extname(filename)] });
       res.end(req.method === "HEAD" ? undefined : content);
     } catch (error) {
+      if (
+        error instanceof ProviderRequestError ||
+        error instanceof ProviderNotSentError
+      ) {
+        if (!res.headersSent)
+          json(res, 502, {
+            error: "PROVIDER_REQUEST_FAILED",
+            providerError: error.failure,
+          });
+        else res.end();
+        return;
+      }
       const status =
         error instanceof HttpError
           ? error.status

@@ -4,19 +4,25 @@ export function buildKnowledgeGraphIndex(
   library: Snapshot["library"],
   links: NonNullable<Snapshot["wikiLinks"]>,
 ) {
-  const entriesById = new Map(library.map((entry) => [entry.id, entry]));
-  const spaceById = new Map(
-    library
-      .filter((entry) => entry.kind === "SPACE" && !entry.deletedAt)
-      .map((entry) => [entry.id, entry]),
-  );
-  const documents = library.filter(
-    (entry) =>
-      entry.kind === "DOCUMENT" &&
-      !entry.deletedAt &&
-      spaceById.has(entry.spaceId ?? ""),
-  );
-  const documentsById = new Map(documents.map((entry) => [entry.id, entry]));
+  const entriesById = new Map<string, Snapshot["library"][number]>();
+  const spaceById = new Map<string, Snapshot["library"][number]>();
+  for (const entry of library) {
+    entriesById.set(entry.id, entry);
+    if (entry.kind === "SPACE" && !entry.deletedAt)
+      spaceById.set(entry.id, entry);
+  }
+  const documents: Snapshot["library"] = [];
+  const documentsById = new Map<string, Snapshot["library"][number]>();
+  for (const entry of library) {
+    if (
+      entry.kind !== "DOCUMENT" ||
+      entry.deletedAt ||
+      !spaceById.has(entry.spaceId ?? "")
+    )
+      continue;
+    documents.push(entry);
+    documentsById.set(entry.id, entry);
+  }
   const documentsBySpaceId = new Map<string, typeof documents>();
   const outgoingByDocumentId = new Map<string, typeof links>();
   const incomingByDocumentId = new Map<string, typeof links>();
@@ -26,9 +32,13 @@ export function buildKnowledgeGraphIndex(
     const entries = documentsBySpaceId.get(document.spaceId ?? "") ?? [];
     entries.push(document);
     documentsBySpaceId.set(document.spaceId ?? "", entries);
+    if (!document.parentDocumentId) {
+      hierarchyPathByDocumentId.set(document.id, document.title);
+      continue;
+    }
     const path = [document.title],
       seen = new Set([document.id]);
-    let parentId = document.parentDocumentId;
+    let parentId: string | null | undefined = document.parentDocumentId;
     while (parentId && !seen.has(parentId)) {
       const parent = documentsById.get(parentId);
       if (!parent || parent.spaceId !== document.spaceId) break;

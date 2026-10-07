@@ -58,5 +58,21 @@ test("hierarchy paths stop at foreign-space parents and cycles", () => {
     [],
   );
   expect(index.hierarchyPathByDocumentId.get(child.id)).toBe("root / child");
+  expect(index.hierarchyPathByDocumentId.get(root.id)).toBe("root");
+  const cyclic = buildKnowledgeGraphIndex(
+    [entry("space", "SPACE"), { ...root, parentDocumentId: child.id }, child],
+    [],
+  );
+  expect(cyclic.hierarchyPathByDocumentId.get(root.id)).toBe("child / root");
+  const foreign = buildKnowledgeGraphIndex(
+    [
+      entry("space", "SPACE"),
+      entry("other", "SPACE"),
+      { ...root, spaceId: "other" },
+      child,
+    ],
+    [],
+  );
+  expect(foreign.hierarchyPathByDocumentId.get(child.id)).toBe("child");
   expect(knowledgeNeighborhood(index, "", 2).size).toBe(0);
 });

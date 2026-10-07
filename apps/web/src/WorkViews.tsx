@@ -23,7 +23,7 @@ import { type CSSProperties, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useEntitySelection } from "./app/EntitySelection";
 import { Button, IconButton } from "./components/ui/Button";
-import { MenuItem } from "./components/ui/Content";
+import { ListRow, MenuItem } from "./components/ui/Content";
 import { Menu, Select } from "./components/ui/Surfaces";
 import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
 import type { taskDerivedIndex } from "./features/tasks/task-index";
@@ -74,17 +74,21 @@ function Task({
     (i18n.language.startsWith("zh") ? "更多操作：" : "More actions: ") +
     item.title;
   return (
-    <article
+    <ListRow
+      as="article"
+      role="article"
+      onSelect={() => selection?.select({ kind: "WORK", id: item.id })}
+      onOpen={() => onOpen(item)}
       draggable={!busy}
       onDragStart={(event) => {
         event.dataTransfer.setData("text/plain", item.id);
         event.dataTransfer.effectAllowed = "move";
       }}
       className={`task-card ${compact ? "task-action-row" : ""} ${item.status === "DONE" ? "completed" : ""}`}
-      data-selected={
+      selected={
         (selection?.selected?.kind === "WORK" &&
           selection.selected.id === item.id) ||
-        undefined
+        false
       }
       style={
         {
@@ -109,9 +113,10 @@ function Task({
           }
           disabled={busy}
           aria-pressed={item.status === "DONE"}
-          onClick={() =>
-            void onStatus(item, item.status === "DONE" ? "TODO" : "DONE")
-          }
+          onClick={(event) => {
+            event.stopPropagation();
+            void onStatus(item, item.status === "DONE" ? "TODO" : "DONE");
+          }}
         >
           {item.status === "DONE" ? (
             <CheckCircle2 className="status-dot status-DONE" />
@@ -124,12 +129,16 @@ function Task({
           type="button"
           className="task-title"
           aria-label={t("openTask", { title: item.title })}
-          onClick={() =>
+          onClick={(event) => {
+            event.stopPropagation();
             selection
               ? selection.select({ kind: "WORK", id: item.id })
-              : onOpen(item)
-          }
-          onDoubleClick={() => onOpen(item)}
+              : onOpen(item);
+          }}
+          onDoubleClick={(event) => {
+            event.stopPropagation();
+            onOpen(item);
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
@@ -185,7 +194,10 @@ function Task({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           disabled={busy}
-          onClick={() => setMenuOpen((value) => !value)}
+          onClick={(event) => {
+            event.stopPropagation();
+            setMenuOpen((value) => !value);
+          }}
         >
           <MoreHorizontal />
         </IconButton>
@@ -243,7 +255,7 @@ function Task({
           </Menu>
         )}
       </div>
-    </article>
+    </ListRow>
   );
 }
 export function TaskList({ items, ...props }: WorkProps) {

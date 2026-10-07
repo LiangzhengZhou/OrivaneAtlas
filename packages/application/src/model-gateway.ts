@@ -13,6 +13,7 @@ import {
 import type { LibraryStore } from "./library";
 import type { NotebookStore } from "./notebook";
 import { adaptModelProvider, type ModelEvent } from "./provider-adapter";
+import { type ProviderDiagnostic, providerDiagnostic } from "./provider-error";
 
 /** All currently supported remote adapters are conservatively cloud routes. */
 export function validateContextPolicy(
@@ -108,7 +109,11 @@ export interface ModelExecutionResult {
   settlement?: GatewaySettlement;
   usage?: ModelUsage;
   output: string | null;
-  error: "MODEL_INTERRUPTED" | "MODEL_REQUEST_FAILED" | null;
+  error:
+    | "MODEL_INTERRUPTED"
+    | "MODEL_REQUEST_FAILED"
+    | ProviderDiagnostic
+    | null;
   interrupted: boolean;
 }
 
@@ -278,19 +283,19 @@ export async function executeApprovedModel(
           }
         : {}),
     };
-  } catch {
+  } catch (failure) {
     onEvent?.({
       type: "error",
       error: controller.signal.aborted
         ? "MODEL_INTERRUPTED"
-        : "MODEL_REQUEST_FAILED",
+        : (providerDiagnostic(failure) ?? "MODEL_REQUEST_FAILED"),
     });
     return {
       output: null,
       ...(usage ? { usage } : {}),
       error: controller.signal.aborted
         ? "MODEL_INTERRUPTED"
-        : "MODEL_REQUEST_FAILED",
+        : (providerDiagnostic(failure) ?? "MODEL_REQUEST_FAILED"),
       interrupted: controller.signal.aborted,
       ...(run.route.gateway
         ? {

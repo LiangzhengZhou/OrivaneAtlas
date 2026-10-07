@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.4.0]
+
+- Fix AI connection runtime, preserve provider HTTP contracts and normalize DeepSeek endpoints.
+- Separate connection testing/model discovery with safe bilingual provider diagnostics and manual model fallback.
+- Explicit direct-project/tree dependency scope, scoped focus picker and external boundary nodes.
+- Transparent canonical application icons across Windows/Web/Android; rebuild cached Windows icon resources.
+- Whole-row Task selection, quieter primary actions and compact mobile Calendar.
+- Preserve compressed metadata bootstrap, lazy bodies, UTF-8 native transport and durable cursor sync.
+- Local acceptance:703 unit/integration tests,339 full browser cases,14 isolated interaction benchmarks within10%, native builds and packaged icon/signature checks. SQLite33/PostgreSQL27 unchanged.
+
 ## [2.3.0]
 
 - Consolidated semantic controls, quiet navigation, keyboard command palette and contextual Inspector.

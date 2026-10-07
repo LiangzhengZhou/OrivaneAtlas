@@ -3,7 +3,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
-import type { PersonalModelInput } from "@arclattice/application";
+import {
+  type PersonalModelInput,
+  ProviderRequestError,
+} from "@arclattice/application";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GatewayPolicy } from "../../application/src/gateway-policy";
 
@@ -39,6 +42,18 @@ afterEach(() => {
   rmSync(directory, { recursive: true });
 });
 describe("personal model vault and public-only egress", () => {
+  it.each([
+    "https://api.deepseek.com",
+    "https://api.deepseek.com/",
+    "https://api.deepseek.com/v1",
+    "https://api.deepseek.com/v1/v1/",
+    "https://api.deepseek.com/v1/chat/completions",
+  ])(
+    "normalizes DeepSeek API base %s without duplicate version segments",
+    (endpoint) => {
+      expect(modelEndpoint(endpoint).href).toBe("https://api.deepseek.com/");
+    },
+  );
   const gateway: GatewayPolicy = {
     providerId: "test",
     enabled: true,
@@ -305,7 +320,7 @@ describe("personal model vault and public-only egress", () => {
       const req = new EventEmitter() as EventEmitter & {
         end: (payload: string) => void;
       };
-      req.end = () =>
+      req.end = vi.fn(() =>
         queueMicrotask(() => {
           const res = new EventEmitter() as EventEmitter & {
             statusCode: number;
@@ -318,7 +333,8 @@ describe("personal model vault and public-only egress", () => {
             res.emit("data", Buffer.from(JSON.stringify(data)));
             res.emit("end");
           }
-        });
+        }),
+      );
       const pinned = vi.fn();
       options.lookup("provider.example", {}, pinned);
       expect(pinned).toHaveBeenCalledWith(null, address, 4);
@@ -326,6 +342,144 @@ describe("personal model vault and public-only egress", () => {
       return req;
     });
   }
+  it.each([
+    [
+      "OPENAI",
+      "https://api.openai.com/v1/",
+      "https://api.openai.com/v1/models",
+    ],
+    [
+      "DEEPSEEK",
+      "https://api.deepseek.com/v1",
+      "https://api.deepseek.com/models",
+    ],
+    [
+      "OPENROUTER",
+      "https://openrouter.ai/api/v1/",
+      "https://openrouter.ai/api/v1/models",
+    ],
+    [
+      "CUSTOM_OPENAI",
+      "https://provider.example/v1",
+      "https://provider.example/v1/models",
+    ],
+    [
+      "LM_STUDIO",
+      "https://provider.example/v1",
+      "https://provider.example/v1/models",
+    ],
+    [
+      "VLLM",
+      "https://provider.example/v1",
+      "https://provider.example/v1/models",
+    ],
+  ] as const)(
+    "preserves %s discovery and chat protocol through the encrypted vault",
+    async (providerKind, endpoint, modelsUrl) => {
+      const vault = openPersonalVault(directory);
+      vault.save(actor, 0, { ...input, providerKind, endpoint });
+      const connection = vault.configuration!(actor).connections[0]!;
+      const adapter = vault.connectionAdapter!(actor, connection.id);
+      response({ data: [{ id: "model-1" }] });
+      expect(await adapter.listModels(new AbortController().signal)).toEqual([
+        "model-1",
+      ]);
+      expect(network.request.mock.calls[0]![0].href).toBe(modelsUrl);
+      expect(network.request.mock.calls[0]![1].method).toBe("GET");
+      expect(network.request.mock.calls[0]![1].headers.Authorization).toBe(
+        `Bearer ${input.key}`,
+      );
+      expect(network.request.mock.results[0]!.value.end).toHaveBeenCalledWith(
+        undefined,
+      );
+      response({ choices: [{ message: { content: "OK" } }] });
+      expect(
+        await adapter.complete("Probe", new AbortController().signal),
+      ).toBe("OK");
+      expect(network.request.mock.calls[1]![0].href).toBe(
+        modelsUrl.replace(/models$/, "chat/completions"),
+      );
+      expect(network.request.mock.calls[1]![1].method).toBe("POST");
+      expect(
+        JSON.parse(network.request.mock.results[1]!.value.end.mock.calls[0][0])
+          .messages[0].content,
+      ).toBe("Probe");
+    },
+  );
+
+  it.each([401, 403, 404, 405, 429, 503])(
+    "retains safe HTTP %s diagnostics through the real vault transport",
+    async (status) => {
+      const vault = openPersonalVault(directory);
+      vault.save(actor, 0, input);
+      response({ secret: input.key }, status);
+      const failure = await vault
+        .resolve(actor, "personal")!
+        .complete("private", new AbortController().signal)
+        .catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(ProviderRequestError);
+      expect((failure as ProviderRequestError).failure.status).toBe(status);
+      expect(JSON.stringify(failure)).not.toContain(input.key);
+    },
+  );
+  it("validates a usable connection when model discovery is unsupported", async () => {
+    const vault = openPersonalVault(directory);
+    vault.save(actor, 0, { ...input, providerKind: "CUSTOM_OPENAI" });
+    const connection = vault.configuration!(actor).connections[0]!;
+    response({}, 404);
+    network.request.mockImplementationOnce(
+      network.request.getMockImplementation()!,
+    );
+    response({ choices: [{ message: { content: "OK" } }] });
+    expect(
+      await vault.testConnection!(
+        actor,
+        connection.id,
+        new AbortController().signal,
+      ),
+    ).toEqual({ connected: true, discovery: "UNSUPPORTED" });
+    expect(network.request.mock.calls.map((call) => call[1].method)).toEqual([
+      "GET",
+      "POST",
+    ]);
+  });
+
+  it("does not probe chat after authentication rejection", async () => {
+    const vault = openPersonalVault(directory);
+    vault.save(actor, 0, input);
+    const connection = vault.configuration!(actor).connections[0]!;
+    response({}, 401);
+    await expect(
+      vault.testConnection!(actor, connection.id, new AbortController().signal),
+    ).rejects.toMatchObject({
+      failure: { category: "AUTH_INVALID", status: 401 },
+    });
+    expect(network.request).toHaveBeenCalledTimes(1);
+  });
+  it("maps transport timeout without leaking the request key", async () => {
+    const vault = openPersonalVault(directory);
+    vault.save(actor, 0, input);
+    network.lookup.mockResolvedValue([{ address: "8.8.8.8", family: 4 }]);
+    network.request.mockImplementation(() => {
+      const req = new EventEmitter() as EventEmitter & { end(): void };
+      req.end = () =>
+        queueMicrotask(() =>
+          req.emit(
+            "error",
+            Object.assign(new Error(input.key), { code: "ETIMEDOUT" }),
+          ),
+        );
+      return req;
+    });
+    const failure = await vault
+      .resolve(actor, "personal")!
+      .complete("private", new AbortController().signal)
+      .catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      failure: { category: "NETWORK_TIMEOUT", retryable: true },
+    });
+    expect(JSON.stringify(failure)).not.toContain(input.key);
+  });
   it("uses only exact administrator trust for pinned private destinations and revocation", async () => {
     const vault = openPersonalVault(directory);
     const local = { ...input, endpoint: "https://127.0.0.1:8443/v1" };
@@ -468,7 +622,7 @@ describe("personal model vault and public-only egress", () => {
       vault
         .resolve(actor, "personal")!
         .complete("private", new AbortController().signal),
-    ).rejects.toThrow("MODEL_REQUEST_FAILED");
+    ).rejects.toThrow("PROTOCOL_ERROR");
     expect(network.request).toHaveBeenCalledTimes(1);
     response({ choices: [{ message: { content: "x", tool_calls: [{}] } }] });
     await expect(

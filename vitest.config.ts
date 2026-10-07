@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: ["packages/**/*.test.ts", "apps/web/src/**/*.test.ts"],
     environment: "node",
+    setupFiles: ["tests/integration-budget.ts"],
     // SQLite backup/restore and portable PostgreSQL share the local disk.
     // Bound parallel fixtures instead of weakening their timeout assertions.
     maxWorkers: process.env.CI ? 2 : 4,

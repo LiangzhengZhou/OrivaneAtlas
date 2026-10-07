@@ -223,9 +223,6 @@ export function CommandPalette({
           </Button>
         ))}
       </div>
-      <Button type="button" onClick={onClose}>
-        {zh ? "关闭" : "Close"}
-      </Button>
     </DismissibleDialog>
   );
 }

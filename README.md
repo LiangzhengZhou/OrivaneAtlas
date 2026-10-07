@@ -10,7 +10,7 @@
 
 ## What it is
 
-Orivane Atlas 2.3.0 is a self-hostable, knowledge-centric workspace with optional AI assistance. Projects organize work and bind knowledge spaces; documents retain Markdown, revisions, aliases and Wiki relationships. Web and native clients connect to the same server; the server remains the source of truth while clients may keep local drafts.
+Orivane Atlas 2.4.0 is a self-hostable, knowledge-centric workspace with optional AI assistance. Projects organize work and bind knowledge spaces; documents retain Markdown, revisions, aliases and Wiki relationships. Web and native clients connect to the same server; the server remains the source of truth while clients may keep local drafts.
 
 AI integration is optional. Orivane Atlas is not a handoff-only project: this repository is for people who want to run, use, extend, or contribute to the product.
 

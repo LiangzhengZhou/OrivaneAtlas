@@ -1,4 +1,7 @@
 fn main() {
+    // The Windows resource compiler reads this file outside Rust's dependency graph.
+    // Regenerate embedded frames when the canonical icon pipeline updates it.
+    println!("cargo:rerun-if-changed=icons/icon.ico");
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "check_app_update",

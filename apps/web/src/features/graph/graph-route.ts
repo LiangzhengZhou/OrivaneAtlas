@@ -1,4 +1,6 @@
 export interface GraphRoute {
+  taskScope?: import("./graph-scope").ProjectTaskScope;
+  includeExternal?: boolean;
   view?: "tree" | "graph";
   kind: "project" | "document";
   id: string;
@@ -50,6 +52,15 @@ export function parseGraphRoute(hash: string): GraphRoute | null {
       kind,
       id,
       mode,
+      ...(mode === "dependencies"
+        ? {
+            taskScope:
+              query.get("taskScope") === "PROJECT_TREE"
+                ? ("PROJECT_TREE" as const)
+                : ("DIRECT_PROJECT" as const),
+            includeExternal: query.get("external") === "1",
+          }
+        : {}),
       scope:
         query.get("scope") ??
         (mode === "knowledge"
@@ -95,6 +106,12 @@ export function graphHash(route: GraphRoute): string {
           }
         : {}),
       mode: route.mode,
+      ...(route.mode === "dependencies"
+        ? {
+            taskScope: route.taskScope ?? "DIRECT_PROJECT",
+            external: route.includeExternal ? "1" : "0",
+          }
+        : {}),
       scope: route.scope,
       depth: String(route.depth),
       hops: String(route.hops),

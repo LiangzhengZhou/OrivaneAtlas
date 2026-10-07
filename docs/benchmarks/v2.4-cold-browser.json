@@ -1,0 +1,301 @@
+{
+  "baseline": "361809f2ed045e5b1e5c2be5809c21f537ec90e4",
+  "cases": [
+    {
+      "file": "session127-final-shared-cold-150-desktop-en-0.json",
+      "firstContentfulPaintMs": 18096,
+      "metadataUsableMs": 20756.79999999702,
+      "bootstrapTransfer": [
+        {
+          "transferSize": 49136,
+          "encodedBodySize": 48836,
+          "decodedBodySize": 3094126,
+          "responseEndMs": 19231.20000000298
+        }
+      ],
+      "sessionRestoreMs": [195.5],
+      "artificialRequestLatencyMs": 150,
+      "latencyMethod": "CDP network latency",
+      "bandwidthBytesPerSecond": 131072,
+      "documents": 2000,
+      "initialPath": "/api/bootstrap",
+      "decodedInitialBytes": 3094126,
+      "eagerBodyCount": 0,
+      "requestedPaths": [
+        "/api/sync",
+        "/api/session",
+        "/api/workspace/events",
+        "/api/bootstrap",
+        "/api/sync",
+        "/api/document/body",
+        "/api/library/search"
+      ],
+      "lazyHydration": {
+        "completedMs": 20943.40000000596,
+        "elapsedMs": 178.20000000298023,
+        "decodedBytes": 52402
+      },
+      "projectSearchMs": 117.8999999910593,
+      "librarySearchMs": 178.79999999701977
+    },
+    {
+      "file": "session127-final-shared-cold-150-desktop-zh-0.json",
+      "firstContentfulPaintMs": 18080,
+      "metadataUsableMs": 20863.80000001192,
+      "bootstrapTransfer": [
+        {
+          "transferSize": 49247,
+          "encodedBodySize": 48947,
+          "decodedBodySize": 3094126,
+          "responseEndMs": 19212.60000000894
+        }
+      ],
+      "sessionRestoreMs": [176.3999999910593],
+      "artificialRequestLatencyMs": 150,
+      "latencyMethod": "CDP network latency",
+      "bandwidthBytesPerSecond": 131072,
+      "documents": 2000,
+      "initialPath": "/api/bootstrap",
+      "decodedInitialBytes": 3094126,
+      "eagerBodyCount": 0,
+      "requestedPaths": [
+        "/api/session",
+        "/api/workspace/events",
+        "/api/bootstrap",
+        "/api/sync",
+        "/api/document/body",
+        "/api/library/search"
+      ],
+      "lazyHydration": {
+        "completedMs": 21048.30000001192,
+        "elapsedMs": 170.5,
+        "decodedBytes": 52402
+      },
+      "projectSearchMs": 29.599999994039536,
+      "librarySearchMs": 182.69999998807907
+    },
+    {
+      "file": "session127-final-shared-cold-150-mobile-zh-0.json",
+      "firstContentfulPaintMs": 18040,
+      "metadataUsableMs": 20785.59999999404,
+      "bootstrapTransfer": [
+        {
+          "transferSize": 49040,
+          "encodedBodySize": 48740,
+          "decodedBodySize": 3094126,
+          "responseEndMs": 19171.59999999404
+        }
+      ],
+      "sessionRestoreMs": [179.8999999910593],
+      "artificialRequestLatencyMs": 150,
+      "latencyMethod": "CDP network latency",
+      "bandwidthBytesPerSecond": 131072,
+      "documents": 2000,
+      "initialPath": "/api/bootstrap",
+      "decodedInitialBytes": 3094126,
+      "eagerBodyCount": 0,
+      "requestedPaths": [
+        "/api/sync",
+        "/api/session",
+        "/api/workspace/events",
+        "/api/bootstrap",
+        "/api/sync",
+        "/api/document/body",
+        "/api/library/search"
+      ],
+      "lazyHydration": {
+        "completedMs": 20971.90000000596,
+        "elapsedMs": 174.30000001192093,
+        "decodedBytes": 52402
+      },
+      "projectSearchMs": 25.599999994039536,
+      "librarySearchMs": 181.30000001192093
+    },
+    {
+      "file": "session127-final-shared-cold-200-desktop-en-0.json",
+      "firstContentfulPaintMs": 116,
+      "metadataUsableMs": 2070.5999999940395,
+      "bootstrapTransfer": [
+        {
+          "transferSize": 48973,
+          "encodedBodySize": 48673,
+          "decodedBodySize": 3094126,
+          "responseEndMs": 636.4000000059605
+        }
+      ],
+      "sessionRestoreMs": [233.59999999403954],
+      "artificialRequestLatencyMs": 200,
+      "latencyMethod": "request dispatch delay",
+      "bandwidthBytesPerSecond": null,
+      "documents": 2000,
+      "initialPath": "/api/bootstrap",
+      "decodedInitialBytes": 3094126,
+      "eagerBodyCount": 0,
+      "requestedPaths": [
+        "/api/sync",
+        "/api/session",
+        "/api/workspace/events",
+        "/api/bootstrap",
+        "/api/sync"
+      ],
+      "lazyHydration": null,
+      "projectSearchMs": null,
+      "librarySearchMs": null
+    },
+    {
+      "file": "session127-final-shared-cold-200-desktop-zh-0.json",
+      "firstContentfulPaintMs": 120,
+      "metadataUsableMs": 2241.2999999970198,
+      "bootstrapTransfer": [
+        {
+          "transferSize": 49186,
+          "encodedBodySize": 48886,
+          "decodedBodySize": 3094126,
+          "responseEndMs": 640.2000000029802
+        }
+      ],
+      "sessionRestoreMs": [235.20000000298023],
+      "artificialRequestLatencyMs": 200,
+      "latencyMethod": "request dispatch delay",
+      "bandwidthBytesPerSecond": null,
+      "documents": 2000,
+      "initialPath": "/api/bootstrap",
+      "decodedInitialBytes": 3094126,
+      "eagerBodyCount": 0,
+      "requestedPaths": [
+        "/api/sync",
+        "/api/session",
+        "/api/workspace/events",
+        "/api/bootstrap",
+        "/api/sync"
+      ],
+      "lazyHydration": null,
+      "projectSearchMs": null,
+      "librarySearchMs": null
+    },
+    {
+      "file": "session127-final-shared-cold-200-mobile-zh-0.json",
+      "firstContentfulPaintMs": 132,
+      "metadataUsableMs": 2187.199999988079,
+      "bootstrapTransfer": [
+        {
+          "transferSize": 49093,
+          "encodedBodySize": 48793,
+          "decodedBodySize": 3094126,
+          "responseEndMs": 649.7999999970198
+        }
+      ],
+      "sessionRestoreMs": [239.69999998807907],
+      "artificialRequestLatencyMs": 200,
+      "latencyMethod": "request dispatch delay",
+      "bandwidthBytesPerSecond": null,
+      "documents": 2000,
+      "initialPath": "/api/bootstrap",
+      "decodedInitialBytes": 3094126,
+      "eagerBodyCount": 0,
+      "requestedPaths": [
+        "/api/sync",
+        "/api/session",
+        "/api/workspace/events",
+        "/api/bootstrap",
+        "/api/sync"
+      ],
+      "lazyHydration": null,
+      "projectSearchMs": null,
+      "librarySearchMs": null
+    },
+    {
+      "file": "session127-final-shared-cold-800-desktop-en-0.json",
+      "firstContentfulPaintMs": 152,
+      "metadataUsableMs": 4363.4000000059605,
+      "bootstrapTransfer": [
+        {
+          "transferSize": 49150,
+          "encodedBodySize": 48850,
+          "decodedBodySize": 3094126,
+          "responseEndMs": 1892.1000000089407
+        }
+      ],
+      "sessionRestoreMs": [839],
+      "artificialRequestLatencyMs": 800,
+      "latencyMethod": "request dispatch delay",
+      "bandwidthBytesPerSecond": null,
+      "documents": 2000,
+      "initialPath": "/api/bootstrap",
+      "decodedInitialBytes": 3094126,
+      "eagerBodyCount": 0,
+      "requestedPaths": [
+        "/api/sync",
+        "/api/session",
+        "/api/workspace/events",
+        "/api/bootstrap",
+        "/api/sync"
+      ],
+      "lazyHydration": null,
+      "projectSearchMs": null,
+      "librarySearchMs": null
+    },
+    {
+      "file": "session127-final-shared-cold-800-desktop-zh-0.json",
+      "firstContentfulPaintMs": 140,
+      "metadataUsableMs": 4353.29999999702,
+      "bootstrapTransfer": [
+        {
+          "transferSize": 49169,
+          "encodedBodySize": 48869,
+          "decodedBodySize": 3094126,
+          "responseEndMs": 1915.2000000029802
+        }
+      ],
+      "sessionRestoreMs": [847.6000000089407],
+      "artificialRequestLatencyMs": 800,
+      "latencyMethod": "request dispatch delay",
+      "bandwidthBytesPerSecond": null,
+      "documents": 2000,
+      "initialPath": "/api/bootstrap",
+      "decodedInitialBytes": 3094126,
+      "eagerBodyCount": 0,
+      "requestedPaths": [
+        "/api/sync",
+        "/api/session",
+        "/api/workspace/events",
+        "/api/bootstrap",
+        "/api/sync"
+      ],
+      "lazyHydration": null,
+      "projectSearchMs": null,
+      "librarySearchMs": null
+    },
+    {
+      "file": "session127-final-shared-cold-800-mobile-zh-0.json",
+      "firstContentfulPaintMs": 160,
+      "metadataUsableMs": 4201.20000000298,
+      "bootstrapTransfer": [
+        {
+          "transferSize": 49197,
+          "encodedBodySize": 48897,
+          "decodedBodySize": 3094126,
+          "responseEndMs": 1899.5
+        }
+      ],
+      "sessionRestoreMs": [844.4000000059605],
+      "artificialRequestLatencyMs": 800,
+      "latencyMethod": "request dispatch delay",
+      "bandwidthBytesPerSecond": null,
+      "documents": 2000,
+      "initialPath": "/api/bootstrap",
+      "decodedInitialBytes": 3094126,
+      "eagerBodyCount": 0,
+      "requestedPaths": [
+        "/api/sync",
+        "/api/session",
+        "/api/workspace/events",
+        "/api/bootstrap",
+        "/api/sync"
+      ],
+      "lazyHydration": null,
+      "projectSearchMs": null,
+      "librarySearchMs": null
+    }
+  ]
+}

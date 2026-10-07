@@ -1,0 +1,155 @@
+{
+  "baseline": "361809f2ed045e5b1e5c2be5809c21f537ec90e4",
+  "samplesPerBuild": 5,
+  "threshold": 1.1,
+  "fixture": {
+    "projects": 150,
+    "tasks": 1500,
+    "edges": 3000,
+    "documents": 2000,
+    "wikiLinks": 5000,
+    "sessions": 100,
+    "messagesPerSession": 1000
+  },
+  "rows": [
+    {
+      "action": "Now→Scheduled",
+      "metric": "scriptMs",
+      "baselineMs": 6.138000000000001,
+      "currentMs": 6.159999999999998,
+      "ratio": 1.0035842293906807,
+      "pass": true
+    },
+    {
+      "action": "Task tab switch",
+      "metric": "scriptMs",
+      "baselineMs": 7.026999999999998,
+      "currentMs": 7.062000000000002,
+      "ratio": 1.0049807883876483,
+      "pass": true
+    },
+    {
+      "action": "Project filter",
+      "metric": "scriptMs",
+      "baselineMs": 10.591000000000003,
+      "currentMs": 10.686999999999996,
+      "ratio": 1.0090642998772537,
+      "pass": true
+    },
+    {
+      "action": "List→Board",
+      "metric": "scriptMs",
+      "baselineMs": 5.6649999999999965,
+      "currentMs": 5.817000000000003,
+      "ratio": 1.0268314210061795,
+      "pass": true
+    },
+    {
+      "action": "Calendar open",
+      "metric": "scriptMs",
+      "baselineMs": 12.165000000000003,
+      "currentMs": 11.107,
+      "ratio": 0.9130291820797367,
+      "pass": true
+    },
+    {
+      "action": "Calendar month switch",
+      "metric": "scriptMs",
+      "baselineMs": 1.9630000000000063,
+      "currentMs": 2.0349999999999953,
+      "ratio": 1.0366785532348388,
+      "pass": true
+    },
+    {
+      "action": "Dependency local graph",
+      "metric": "scriptMs",
+      "baselineMs": 24.229,
+      "currentMs": 21.51600000000001,
+      "ratio": 0.8880267448099389,
+      "pass": true
+    },
+    {
+      "action": "Task picker open",
+      "metric": "scriptMs",
+      "baselineMs": 2.805000000000002,
+      "currentMs": 2.5730000000000057,
+      "ratio": 0.9172905525846716,
+      "pass": true
+    },
+    {
+      "action": "Task picker drill-down",
+      "metric": "scriptMs",
+      "baselineMs": 1.7510000000000026,
+      "currentMs": 1.8320000000000003,
+      "ratio": 1.0462592804111923,
+      "pass": true
+    },
+    {
+      "action": "Knowledge local graph",
+      "metric": "scriptMs",
+      "baselineMs": 16.058000000000003,
+      "currentMs": 16.834000000000003,
+      "ratio": 1.0483248225183708,
+      "pass": true
+    },
+    {
+      "action": "50KB typing",
+      "metric": "p95TaskMs",
+      "baselineMs": 10.189000000000004,
+      "currentMs": 9.237999999999968,
+      "ratio": 0.9066640494651059,
+      "pass": true
+    },
+    {
+      "action": "100KB typing",
+      "metric": "p95TaskMs",
+      "baselineMs": 13.552000000000008,
+      "currentMs": 13.093000000000021,
+      "ratio": 0.9661304604486433,
+      "pass": true
+    },
+    {
+      "action": "Atlas conversation list",
+      "metric": "scriptMs",
+      "baselineMs": 33.734000000000044,
+      "currentMs": 31.027000000000026,
+      "ratio": 0.9197545503053295,
+      "pass": true
+    },
+    {
+      "action": "Atlas conversation open",
+      "metric": "scriptMs",
+      "baselineMs": 17.679000000000002,
+      "currentMs": 16.568000000000026,
+      "ratio": 0.937157079020308,
+      "pass": true
+    }
+  ],
+  "liveRows": [
+    {
+      "liveListRows": 10,
+      "liveBoardRows": 14,
+      "liveSessionRows": 9
+    },
+    {
+      "liveListRows": 10,
+      "liveBoardRows": 14,
+      "liveSessionRows": 9
+    },
+    {
+      "liveListRows": 10,
+      "liveBoardRows": 14,
+      "liveSessionRows": 9
+    },
+    {
+      "liveListRows": 10,
+      "liveBoardRows": 14,
+      "liveSessionRows": 9
+    },
+    {
+      "liveListRows": 10,
+      "liveBoardRows": 14,
+      "liveSessionRows": 9
+    }
+  ]
+}

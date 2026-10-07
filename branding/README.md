@@ -7,13 +7,14 @@ The web wordmark remains a separate typographic asset, not an application icon.
 
 Run `pnpm icons:generate` with the repository's installed Playwright Chromium.
 The script generates Windows ICO frames (16, 24, 32, 48, 64, 128, 256), PNG,
-Store and macOS/iOS resources, Android adaptive foreground, dark background,
+Store and macOS/iOS resources, Android adaptive foreground, neutral background,
 legacy and round launchers, and Web favicon/192px/512px resources. Windows
 16/24/32px frames use the entire source image without extra padding. A shared
-`#172033` backplate provides contrast for the pale source at small sizes; the
-artwork is not tinted, cropped or redrawn. Contain scaling preserves the source's
+transparent background preserves the canonical alpha. Only the separate Android
+adaptive background uses neutral `#71777f`; it is never baked into legacy,
+Windows or web images. The artwork is not tinted, cropped or redrawn. Contain scaling preserves the source's
 non-square aspect ratio. Android
-uses source-image padding and the existing 13% foreground wrapper to keep the
+uses 8% source-image padding and the existing 13% foreground wrapper to keep the
 complete source within the 66dp safe circle. The OS monochrome notification glyph
 is a separate system resource and is not a launcher icon.
 
@@ -25,6 +26,11 @@ the real Gradle application's `res` directory. The notification plugin reference
 `atlas_notification`; Tauri's bundle configuration references `icons/icon.ico`.
 Do not edit generated resources independently. Check safety and packaging parity
 with `pwsh -File scripts/check-android-icon.ps1`.
+
+The v2.4 [before/after preview](../docs/branding/v2.4-icon-preview.png) includes
+actual 16/24/32px frames on light and dark surfaces, plus circle/squircle/round
+Android masks. The compass remains recognizable; the wordmark is not readable
+at the smallest sizes. No separate optical artwork was introduced.
 
 Automated pixel/frame checks and successful builds do not verify Explorer,
 taskbar, shortcuts, or a physical Android launcher. Those require device checks.

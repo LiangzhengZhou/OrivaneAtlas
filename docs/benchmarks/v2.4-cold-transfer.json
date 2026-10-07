@@ -1,0 +1,30 @@
+{
+  "tasks": 1500,
+  "projects": 150,
+  "documents": 500,
+  "small1KB": {
+    "bytes": 1217900,
+    "decodedBytes": 1217900,
+    "elapsedMs": 50.81809999999996
+  },
+  "large50KB": {
+    "bytes": 1218400,
+    "decodedBytes": 1218400,
+    "elapsedMs": 109.44489999999996
+  },
+  "brotli50KB": {
+    "bytes": 11486,
+    "decodedBytes": 1218400,
+    "elapsedMs": 113.65560000000005
+  },
+  "bodyHydration50KB": {
+    "bytes": 51545,
+    "decodedBytes": 51545,
+    "elapsedMs": 3.832999999999629
+  },
+  "legacySnapshot50KB": {
+    "bytes": 26799277,
+    "decodedBytes": 26799277,
+    "elapsedMs": 233.30349999999999
+  }
+}

@@ -1,5 +1,10 @@
 # Orivane Atlas v2.3 implementation candidate — local acceptance
 
+> Historical pre-release acceptance record (2026-10-06). The metadata and
+> “not performed” statements below describe that local verification window.
+> v2.3.0 was subsequently published; current implementation metadata is 2.3.0.
+> This record is not v2.4 acceptance evidence. v2.4 work remains local.
+
 Verified 2026-10-06 against the supplied v2.3 product specification. Publication metadata intentionally remains2.2.0 until human acceptance, as permitted by the specification. All changes remain local.
 
 1. **Baseline:** main, HEAD `389b9386b84bdf99093b75a438d773d94f4ad4e2`. Existing work preserved; no reset.

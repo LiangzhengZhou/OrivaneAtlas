@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orivane Atlas workspace API",
-    "version": "2.3.0",
+    "version": "2.4.0",
     "description": "HTTPS self-hosted accounts with isolated workspaces. Registration is PENDING until admin approval. Legacy-key session alone binds ADMIN to original workspace. Cookie + CSRF or 30/90/365-day or non-expiring revocable Bearer credentials: write allows create/update/delete and responses may include the affected entity (not append-only or confidential blind-write); read-write explicitly permits all private workspace content reads. Bearer forbids admin/accounts/tokens/backup/server AI. Business POSTs use atomic durable Idempotency-Key receipts and current versions. Claim/password/token issuance consume keys without replaying secret responses (409 on consumed key). Passwords and secret-response plaintext are never in receipts. Registration requires a key but deduplicates by unique normalized username (retry after success can return 400). Login/logout/read-only backup do not use receipts. No server AI configuration needed for local AI uploads. No email recovery/MFA/offline replication/public sharing or unrestricted autonomous tools. PDF is client browser print, not a PDF-generation API. Legacy /api and versioned /api/v1 aliases have identical behavior. Owner-encrypted Provider Connections, Models, Profiles and Bindings support bounded multi-provider Atlas execution. Model routing is separate from retrieval; precedence Explicit > Space > Project > Personal. Tools use real version-bound approval, shared capability services and bounded durable audit. Read old 2.0.2 encrypted provider arrays, atomically write catalog format 2 without returning keys. SQLite backup excludes the separate provider vault and its master key."
   },
   "servers": [
@@ -10461,7 +10461,7 @@
     "/api/ai/connections/models": {
       "post": {
         "operationId": "discoverConnectionModels",
-        "summary": "Test connection and discover models through the provider adapter",
+        "summary": "Discover models through the provider adapter",
         "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace.",
         "security": [
           {
@@ -10786,7 +10786,7 @@
     "/api/v1/ai/connections/models": {
       "post": {
         "operationId": "discoverConnectionModelsV1",
-        "summary": "Test connection and discover models through the provider adapter",
+        "summary": "Discover models through the provider adapter",
         "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace.",
         "security": [
           {
@@ -12406,6 +12406,192 @@
           },
           "404": {
             "description": "Space unavailable in authenticated workspace"
+          }
+        }
+      }
+    },
+    "/api/ai/connections/test": {
+      "post": {
+        "operationId": "testProviderConnection",
+        "summary": "Validate a provider connection independently of model discovery",
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace. Unsupported discovery uses a configured model for a minimal authenticated probe; without a configured model, it does not claim successful authentication.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "connectionId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+                  }
+                },
+                "required": ["connectionId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated connection is usable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["connected", "discovery"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "connected": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "discovery": {
+                      "type": "string",
+                      "enum": ["AVAILABLE", "UNSUPPORTED"]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ai/connections/test": {
+      "post": {
+        "operationId": "testProviderConnectionV1",
+        "summary": "Validate a provider connection independently of model discovery",
+        "description": "Human cookie session only. Workspace and principal ownership enforced. Secret-bearing mutations use atomic encrypted Vault compare-and-swap; no secret-bearing receipts. Local endpoints require the existing Trusted AI Endpoint allowlist. Model bindings validate live entities in this workspace. Unsupported discovery uses a configured model for a minimal authenticated probe; without a configured model, it does not claim successful authentication.",
+        "security": [
+          {
+            "ownerSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Must exactly match the configured application origin.",
+              "example": "https://your-host.example"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "connectionId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+                  }
+                },
+                "required": ["connectionId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated connection is usable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["connected", "discovery"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "connected": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "discovery": {
+                      "type": "string",
+                      "enum": ["AVAILABLE", "UNSUPPORTED"]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid; 401 session; 403 CSRF/Origin or AI daily/concurrency limit; 404 missing; 409 stale/config changed/unconfigured/duplicate; 429 capacity; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

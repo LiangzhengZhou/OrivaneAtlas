@@ -14,6 +14,7 @@ import type {
   ModelResponse,
   ModelToolCall,
 } from "./provider-adapter";
+import { providerDiagnostic } from "./provider-error";
 
 export interface HarnessLimits {
   maxSteps: number;
@@ -299,7 +300,10 @@ export class AgentHarness {
         : reason === "LIMIT_REACHED"
           ? "LIMIT_REACHED"
           : "ERROR";
-      state.error = error instanceof DomainError ? error.code : reason;
+      state.error =
+        error instanceof DomainError
+          ? error.code
+          : (providerDiagnostic(error) ?? reason);
       await persist();
       return state;
     } finally {

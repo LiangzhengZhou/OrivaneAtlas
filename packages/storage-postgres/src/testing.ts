@@ -7,7 +7,8 @@ import { join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { WorkService } from "@arclattice/application";
 import { Client, type ClientConfig, Pool, type PoolClient } from "pg";
-import { afterAll, afterEach, beforeAll } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
+import { FixtureScope } from "../../../tests/fixture-scope";
 import { PostgresUnitOfWork } from "./index";
 
 const execute = promisify(execFile);
@@ -195,10 +196,13 @@ export function postgresHarness() {
   let cluster: TemporaryPostgres;
   const databases = new Set<string>();
   const connections: PostgresUnitOfWork[] = [];
+  const scope = new FixtureScope();
+  beforeEach(() => scope.start());
   beforeAll(async () => {
     cluster = await TemporaryPostgres.start();
   }, 60_000);
   afterEach(async () => {
+    await scope.drain();
     for (const db of connections.splice(0)) await db.close();
     for (const name of databases) {
       if (!/^arclattice_test_[a-f0-9]{32}$/.test(name))
@@ -210,39 +214,43 @@ export function postgresHarness() {
   afterAll(async () => {
     if (cluster) await cluster.dispose();
   }, 30_000);
-  const database = async () => {
-    const name = "arclattice_test_" + randomUUID().replaceAll("-", "");
-    await cluster.query("postgres", 'CREATE DATABASE "' + name + '"');
-    databases.add(name);
-    return name;
-  };
-  const open = async (name: string, lockTimeoutMs = 2000) => {
-    const db = await PostgresUnitOfWork.open({
-      connection: { ...cluster.connection, database: name },
-      lockTimeoutMs,
+  const database = () =>
+    scope.run(async () => {
+      const name = "arclattice_test_" + randomUUID().replaceAll("-", "");
+      await cluster.query("postgres", 'CREATE DATABASE "' + name + '"');
+      databases.add(name);
+      return name;
     });
-    connections.push(db);
-    return db;
-  };
+  const open = (name: string, lockTimeoutMs = 2000) =>
+    scope.run(async () => {
+      const db = await PostgresUnitOfWork.open({
+        connection: { ...cluster.connection, database: name },
+        lockTimeoutMs,
+      });
+      connections.push(db);
+      return db;
+    });
   const provision = async (db: PostgresUnitOfWork) => {
     for (const id of ["workspace-a", "workspace-b"])
       await db.provisionWorkspace({ id, name: id }, [principal]);
     return db;
   };
-  const create = async () => provision(await open(await database()));
+  const create = () =>
+    scope.run(async () => provision(await open(await database())));
   const client = async <T>(
     name: string,
     action: (client: PoolClient) => Promise<T>,
-  ) => {
-    const pool = new Pool({ ...cluster.connection, database: name, max: 1 });
-    const connection = await pool.connect();
-    try {
-      return await action(connection);
-    } finally {
-      connection.release(true);
-      await pool.end();
-    }
-  };
+  ) =>
+    scope.run(async () => {
+      const pool = new Pool({ ...cluster.connection, database: name, max: 1 });
+      const connection = await pool.connect();
+      try {
+        return await action(connection);
+      } finally {
+        connection.release(true);
+        await pool.end();
+      }
+    });
   return {
     database,
     open,
@@ -251,7 +259,7 @@ export function postgresHarness() {
     client,
     cluster: () => cluster,
     query: (name: string, sql: string, values?: unknown[]) =>
-      cluster.query(name, sql, values),
+      scope.run(() => cluster.query(name, sql, values)),
   };
 }
 export function service(db: PostgresUnitOfWork) {

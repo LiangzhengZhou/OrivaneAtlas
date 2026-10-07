@@ -19,6 +19,19 @@ export function RecurrenceSummary({
   const text = (cn: string, en: string) =>
     i18n.language.startsWith("zh") ? cn : en;
   const [detail, setDetail] = useState(false);
+  if (
+    !records.some(
+      (record) =>
+        !record.deletedAt &&
+        (record.payload.kind === "RECURRENCE" ||
+          record.payload.kind === "OCCURRENCE"),
+    )
+  )
+    return (
+      <Button variant="ghost" type="button" onClick={onManage}>
+        {text("管理周期任务", "Manage recurring tasks")}
+      </Button>
+    );
   const today = localCalendarDay(new Date().toISOString(), timezone),
     seven = new Date(today + "T00:00:00Z");
   seven.setUTCDate(seven.getUTCDate() - 6);

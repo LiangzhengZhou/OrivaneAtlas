@@ -124,6 +124,9 @@ export function ProjectWorkspace({
     focus: "",
     hops: 1,
     scope: "focus",
+    taskScope:
+      "DIRECT_PROJECT" as import("./features/graph/graph-scope").ProjectTaskScope,
+    includeExternal: false,
   });
   const [inspectedId, setInspectedId] = useState(project.id);
   const liveItems = useMemo(
@@ -769,24 +772,22 @@ export function ProjectWorkspace({
             <div className="project-canvas-layout">
               <ProjectDependencyGraph
                 scopeProjectId={project.id}
-                initialFocus={
-                  taskIds.has(dependencyState.focus)
-                    ? dependencyState.focus
-                    : ""
-                }
+                initialFocus={dependencyState.focus}
                 initialHops={dependencyState.hops}
                 initialScope={dependencyState.scope}
+                initialTaskScope={dependencyState.taskScope}
+                initialIncludeExternal={dependencyState.includeExternal}
                 onStateChange={setDependencyState}
                 onWorkspace={() =>
                   openGraph({
                     kind: "project",
                     id: project.id,
                     mode: "dependencies",
-                    focus: taskIds.has(dependencyState.focus)
-                      ? dependencyState.focus
-                      : "",
+                    focus: dependencyState.focus,
                     hops: dependencyState.hops,
                     scope: dependencyState.scope,
+                    taskScope: dependencyState.taskScope,
+                    includeExternal: dependencyState.includeExternal,
                     selection: inspectedId,
                   })
                 }

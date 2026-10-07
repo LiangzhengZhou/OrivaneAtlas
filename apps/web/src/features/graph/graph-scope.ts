@@ -1,4 +1,5 @@
 import { dependency, type WorkEdge, type WorkItem } from "@arclattice/domain";
+export type ProjectTaskScope = "DIRECT_PROJECT" | "PROJECT_TREE";
 export function buildDependencyGraphIndex(
   items: readonly WorkItem[],
   edges: readonly WorkEdge[],
@@ -11,6 +12,22 @@ export function buildDependencyGraphIndex(
   const neighbors = new Map<string, Set<string>>();
   const counts = new Map<string, { blockers: number; dependents: number }>();
   const connections: { id: string; source: string; target: string }[] = [];
+  const childrenByProjectId = new Map<string, string[]>();
+  const tasksByProjectId = new Map<string, string[]>();
+  for (const item of items) {
+    if (item.deletedAt) continue;
+    if (item.type === "PROJECT" && item.parentProjectId) {
+      const children = childrenByProjectId.get(item.parentProjectId) ?? [];
+      children.push(item.id);
+      childrenByProjectId.set(item.parentProjectId, children);
+    }
+    if (item.type === "TASK")
+      for (const projectId of item.projectIds ?? []) {
+        const members = tasksByProjectId.get(projectId) ?? [];
+        members.push(item.id);
+        tasksByProjectId.set(projectId, members);
+      }
+  }
   const order = new Map([...tasks.keys()].map((id, index) => [id, index]));
   for (const edge of edges) {
     const pair = dependency(edge);
@@ -29,7 +46,38 @@ export function buildDependencyGraphIndex(
       neighbors.set(a, set);
     }
   }
-  return { tasks, neighbors, counts, connections, order };
+  return {
+    tasks,
+    neighbors,
+    counts,
+    connections,
+    order,
+    childrenByProjectId,
+    tasksByProjectId,
+  };
+}
+
+export function projectDependencyMembership(
+  index: ReturnType<typeof buildDependencyGraphIndex>,
+  projectId: string,
+  scope: ProjectTaskScope,
+) {
+  const projectIds = new Set([projectId]);
+  if (scope === "PROJECT_TREE") {
+    const frontier = [projectId];
+    for (let cursor = 0; cursor < frontier.length; cursor++)
+      for (const child of index.childrenByProjectId.get(frontier[cursor]!) ??
+        [])
+        if (!projectIds.has(child)) {
+          projectIds.add(child);
+          frontier.push(child);
+        }
+  }
+  const taskIds = new Set<string>();
+  for (const id of projectIds)
+    for (const taskId of index.tasksByProjectId.get(id) ?? [])
+      taskIds.add(taskId);
+  return { projectIds, taskIds };
 }
 
 export function indexedDependencyNeighborhood(

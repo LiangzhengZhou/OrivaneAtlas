@@ -151,6 +151,18 @@ export function CalendarMonth({
                   )}
                 </div>
                 <span className="calendar-day-signals">
+                  {entries.length > 0 && (
+                    <span
+                      className="calendar-mobile-count"
+                      aria-label={
+                        zh
+                          ? `${entries.length} 项任务`
+                          : `${entries.length} tasks`
+                      }
+                    >
+                      · {entries.length}
+                    </span>
+                  )}
                   {summary.reminders.length > 0 && (
                     <Bell size={12} aria-label={zh ? "提醒" : "Reminders"} />
                   )}

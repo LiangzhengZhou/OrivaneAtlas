@@ -43,6 +43,11 @@ export interface PersonalModelVault {
     actor: ActorContext,
     connectionId: string,
   ): import("./provider-adapter").ModelProviderAdapter;
+  testConnection?(
+    actor: ActorContext,
+    connectionId: string,
+    signal: AbortSignal,
+  ): Promise<{ connected: true; discovery: "AVAILABLE" | "UNSUPPORTED" }>;
   setTrustedEndpoints?(entries: readonly TrustedAiEndpoint[]): void;
   list(actor: ActorContext): PersonalModelSummary[];
   save(

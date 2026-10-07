@@ -56,12 +56,14 @@ export function GraphWorkspace({
       : null;
   const projectChildren = useMemo(
     () =>
-      projectTreeIndex(
-        snapshot.items.filter(
-          (item) => item.type === "PROJECT" && !item.deletedAt,
-        ),
-      ),
-    [snapshot.items],
+      route.mode === "structure"
+        ? projectTreeIndex(
+            snapshot.items.filter(
+              (item) => item.type === "PROJECT" && !item.deletedAt,
+            ),
+          )
+        : new Map<string, WorkItem[]>(),
+    [snapshot.items, route.mode],
   );
   const directChildren = projectChildren.get(route.id) ?? [];
   const expandedIds = new Set(
@@ -136,6 +138,12 @@ export function GraphWorkspace({
       false
     );
   const { scoped, scopedTaskIds, scopedSnapshot } = useMemo(() => {
+    if (route.mode !== "dependencies")
+      return {
+        scoped: null,
+        scopedTaskIds: new Set<string>(),
+        scopedSnapshot: snapshot,
+      };
     const projectIds = project
       ? new Set([
           project.id,
@@ -182,7 +190,7 @@ export function GraphWorkspace({
         ),
       },
     };
-  }, [project, snapshot]);
+  }, [project, snapshot, workIndex, route.mode]);
   if (
     (route.kind === "project" && !project) ||
     (route.kind === "document" && !document)
@@ -439,6 +447,8 @@ export function GraphWorkspace({
           initialFocus={scopedTaskIds.has(route.focus) ? route.focus : ""}
           initialHops={route.hops}
           initialScope={route.scope}
+          initialTaskScope={route.taskScope ?? "DIRECT_PROJECT"}
+          initialIncludeExternal={route.includeExternal ?? false}
           selectionId={route.selection}
           onStateChange={(state) => update(state)}
           onSelect={(ref) => update({ selection: ref.id })}

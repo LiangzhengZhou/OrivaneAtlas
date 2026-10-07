@@ -14,9 +14,9 @@ import { chromium } from "@playwright/test";
 // All application icon resources derive from the repository PNG source.
 // The Sidebar wordmark and Android monochrome status glyph remain separate assets.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-// Preserve the pale source artwork; one contrasting backplate also keeps the
-// smallest Windows frames legible without tinting, cropping or redrawing it.
-const applicationBackground = "#172033";
+// Adaptive launchers require a separate opaque platform background.
+// Normal Windows, web and legacy resources preserve the canonical alpha.
+const adaptiveBackground = "#71777f";
 const master = (
   await readFile(path.join(root, "branding/application-icon-source.png"))
 ).toString("base64");
@@ -36,7 +36,7 @@ async function save(relative, bytes) {
 }
 async function png(
   size,
-  { padding = 0, background = applicationBackground, round = false } = {},
+  { padding = 0, background = "transparent", round = false } = {},
 ) {
   await page.setViewportSize({ width: size, height: size });
   await page.setContent(
@@ -150,7 +150,7 @@ try {
   await save("apps/web/public/application-icon-512.png", await png(512));
   await save(
     "assets/orivane-atlas-android.png",
-    await png(512, { padding: 0.22, background: "transparent" }),
+    await png(512, { padding: 0.08, background: "transparent" }),
   );
   for (const name of await readdir(path.join(root, "src-tauri/icons"))) {
     const store = /^Square(\d+)x\d+Logo\.png$/.exec(name);
@@ -178,7 +178,7 @@ try {
   ]) {
     await save(
       `src-tauri/icons/android/mipmap-${density}/ic_launcher_foreground.png`,
-      await png(108 * scale, { padding: 0.22, background: "transparent" }),
+      await png(108 * scale, { padding: 0.08, background: "transparent" }),
     );
     await save(
       `src-tauri/icons/android/mipmap-${density}/ic_launcher.png`,
@@ -192,7 +192,7 @@ try {
   await save(
     "src-tauri/icons/android/values/ic_launcher_background.xml",
     Buffer.from(
-      `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n  <color name="ic_launcher_background">${applicationBackground}</color>\n</resources>\n`,
+      `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n  <color name="ic_launcher_background">${adaptiveBackground}</color>\n</resources>\n`,
     ),
   );
   async function mirror(relative) {

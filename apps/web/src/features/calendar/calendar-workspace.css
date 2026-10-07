@@ -97,6 +97,9 @@
   color: var(--text-muted);
   font-size: var(--font-meta-size);
 }
+.calendar-mobile-count {
+  display: none;
+}
 .calendar-day-signals {
   display: flex;
   gap: var(--space-1);
@@ -158,5 +161,21 @@
   }
   .calendar-preview > span {
     font-size: 10px;
+  }
+}
+@media (max-width: 480px) {
+  .calendar-preview {
+    display: none;
+  }
+  .calendar-mobile-count {
+    display: inline;
+  }
+  .calendar-week span {
+    padding: var(--space-2) var(--space-1);
+  }
+  .calendar-day-signals {
+    align-items: center;
+    gap: 2px;
+    justify-self: start;
   }
 }

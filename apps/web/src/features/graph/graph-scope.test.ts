@@ -5,6 +5,7 @@ import {
   buildDependencyGraphIndex,
   dependencyNeighborhood,
   indexedDependencyNeighborhood,
+  projectDependencyMembership,
   projectDepth,
 } from "./graph-scope";
 
@@ -66,6 +67,8 @@ test("graph URL preserves scope focus selection depth and safe Back", () => {
     selection: "task?2",
     back: "#projects/p?tab=tasks",
     view: "graph" as const,
+    taskScope: "DIRECT_PROJECT" as const,
+    includeExternal: false,
   };
   expect(parseGraphRoute(graphHash(route))).toEqual(route);
   expect(
@@ -91,4 +94,50 @@ test("graph URL preserves scope focus selection depth and safe Back", () => {
       "#graph/document/d?mode=structure&back=https://evil.invalid",
     ),
   ).toMatchObject({ mode: "knowledge", back: "#library", depth: 1, hops: 1 });
+});
+
+test("dependency membership defaults to direct ownership and tree never includes boundary blockers", () => {
+  const projects = [
+    { ...work("p"), type: "PROJECT" as const, parentProjectId: null },
+    { ...work("child"), type: "PROJECT" as const, parentProjectId: "p" },
+    {
+      ...work("grandchild"),
+      type: "PROJECT" as const,
+      parentProjectId: "child",
+    },
+    { ...work("other"), type: "PROJECT" as const, parentProjectId: null },
+  ];
+  const tasks = [
+    { ...work("direct"), projectIds: ["p"] },
+    { ...work("child-task"), projectIds: ["child"] },
+    { ...work("grandchild-task"), projectIds: ["grandchild"] },
+    { ...work("shared"), projectIds: ["p", "other"] },
+    { ...work("external"), projectIds: ["other"] },
+    { ...work("unassigned"), projectIds: [] },
+    {
+      ...work("deleted"),
+      projectIds: ["p"],
+      deletedAt: "2026-10-07T00:00:00Z",
+    },
+  ];
+  const index = buildDependencyGraphIndex(
+    [...projects, ...tasks],
+    [edge("external", "direct", "BLOCKS", "boundary")],
+  );
+  const direct = projectDependencyMembership(index, "p", "DIRECT_PROJECT");
+  expect([...direct.projectIds]).toEqual(["p"]);
+  expect([...direct.taskIds]).toEqual(["direct", "shared"]);
+  const tree = projectDependencyMembership(index, "p", "PROJECT_TREE");
+  expect([...tree.projectIds]).toEqual(["p", "child", "grandchild"]);
+  expect([...tree.taskIds]).toEqual([
+    "direct",
+    "shared",
+    "child-task",
+    "grandchild-task",
+  ]);
+  expect(tree.taskIds.has("external")).toBe(false);
+  expect(index.neighbors.get("direct")?.has("external")).toBe(true);
+  expect(parseGraphRoute("#graph/project/p?mode=dependencies")?.taskScope).toBe(
+    "DIRECT_PROJECT",
+  );
 });

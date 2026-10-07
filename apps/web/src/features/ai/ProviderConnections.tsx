@@ -3,20 +3,28 @@ import type {
   ProviderConnection,
   ProviderKind,
 } from "@arclattice/application";
-import { useState } from "react";
+import { MoreHorizontal } from "lucide-react";
+import { useRef, useState } from "react";
 import type { Runtime } from "../../bootstrap";
-import { Button } from "../../components/ui/Button";
-import { ConfirmDialog, Dialog, Select } from "../../components/ui/Surfaces";
+import { Button, IconButton } from "../../components/ui/Button";
+import { MenuItem } from "../../components/ui/Content";
+import {
+  ConfirmDialog,
+  Dialog,
+  Menu,
+  Select,
+} from "../../components/ui/Surfaces";
 import {
   configurationInput,
   type ModelSettingsSectionProps,
 } from "./model-settings-types";
+import { ProviderErrorNotice } from "./ProviderErrorNotice";
 
 const kinds: [ProviderKind, string, string][] = [
   ["OPENAI", "OpenAI", "https://api.openai.com/v1/"],
   ["ANTHROPIC", "Anthropic", "https://api.anthropic.com/v1/"],
   ["GEMINI", "Gemini", "https://generativelanguage.googleapis.com/v1beta/"],
-  ["DEEPSEEK", "DeepSeek", "https://api.deepseek.com/v1/"],
+  ["DEEPSEEK", "DeepSeek", "https://api.deepseek.com/"],
   ["OPENROUTER", "OpenRouter", "https://openrouter.ai/api/v1/"],
   ["OLLAMA", "Ollama", "http://127.0.0.1:11434/"],
   ["LM_STUDIO", "LM Studio", "http://127.0.0.1:1234/v1/"],
@@ -36,10 +44,14 @@ export function ProviderConnections({
   const [discovery, setDiscovery] = useState<{
     id: string;
     models: string[];
-    error: string;
+    error: unknown;
     capabilities?: ModelProviderCapabilities;
   } | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
+  const [connectionResult, setConnectionResult] = useState<{
+    discovery?: "AVAILABLE" | "UNSUPPORTED";
+    error?: unknown;
+  } | null>(null);
   const [removing, setRemoving] = useState<ProviderConnection | null>(null);
   const close = () => setEditing(null);
   return (
@@ -67,7 +79,11 @@ export function ProviderConnections({
         return (
           <div className="model-settings-row" key={connection.id}>
             <strong>{connection.name}</strong>
-            <span>{connection.kind}</span>
+            <span>
+              {connection.kind === "CUSTOM_OPENAI" && zh
+                ? "兼容 OpenAI 的服务"
+                : kinds.find(([kind]) => kind === connection.kind)?.[1]}
+            </span>
             <details>
               <summary>{zh ? "高级" : "Advanced"}</summary>
               <small>{connection.endpoint}</small>
@@ -83,10 +99,22 @@ export function ProviderConnections({
             </span>
             <Button
               type="button"
-              disabled={busy}
-              onClick={() => setEditing(connection)}
+              disabled={busy || !!testing}
+              onClick={async () => {
+                setTesting(connection.id);
+                setConnectionResult(null);
+                try {
+                  setConnectionResult(
+                    await runtime.testConnection(connection.id),
+                  );
+                } catch (error) {
+                  setConnectionResult({ error });
+                } finally {
+                  setTesting(null);
+                }
+              }}
             >
-              {zh ? "编辑连接" : "Edit connection"}
+              {zh ? "测试连接" : "Test connection"}
             </Button>
             <Button
               type="button"
@@ -106,44 +134,42 @@ export function ProviderConnections({
                   setDiscovery({
                     id: connection.id,
                     models: [],
-                    error:
-                      failure instanceof Error
-                        ? failure.message
-                        : "CONNECTION_FAILED",
+                    error: failure,
                   });
                 } finally {
                   setTesting(null);
                 }
               }}
             >
-              {zh ? "测试并发现模型" : "Test and discover models"}
+              {zh ? "发现模型" : "Discover models"}
             </Button>
-            <Button
-              type="button"
-              disabled={busy || used}
-              title={
-                used
-                  ? zh
-                    ? "先移除引用这些模型的配置"
-                    : "Remove profiles using these models first"
-                  : undefined
-              }
-              onClick={() => setRemoving(connection)}
-            >
-              {zh ? "移除连接" : "Remove connection"}
-            </Button>
+            <ConnectionMenu
+              connection={connection}
+              busy={busy}
+              used={used}
+              zh={zh}
+              onEdit={() => setEditing(connection)}
+              onRemove={() => setRemoving(connection)}
+            />
           </div>
         );
       })}
+      {connectionResult &&
+        (connectionResult.error ? (
+          <ProviderErrorNotice error={connectionResult.error} zh={zh} />
+        ) : (
+          <p role="status">
+            {zh ? "连接成功" : "Connection successful"}
+            {connectionResult.discovery === "UNSUPPORTED" &&
+              (zh
+                ? "；模型自动发现不可用，请手动添加模型。"
+                : "; automatic discovery is unavailable. Add a model manually.")}
+          </p>
+        ))}
       {discovery && (
         <div role="status">
           {discovery.error ? (
-            <p>
-              {zh
-                ? "模型发现失败；不支持发现的服务可在模型区域手工添加。"
-                : "Model discovery failed. Services without discovery can be added manually in Models."}{" "}
-              {discovery.error}
-            </p>
+            <ProviderErrorNotice error={discovery.error} zh={zh} />
           ) : (
             <>
               <p>
@@ -245,6 +271,72 @@ export function ProviderConnections({
         </ConfirmDialog>
       )}
     </section>
+  );
+}
+function ConnectionMenu({
+  connection,
+  busy,
+  used,
+  zh,
+  onEdit,
+  onRemove,
+}: {
+  connection: ProviderConnection;
+  busy: boolean;
+  used: boolean;
+  zh: boolean;
+  onEdit(): void;
+  onRemove(): void;
+}) {
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const label =
+    (zh ? "更多连接操作：" : "More connection actions: ") + connection.name;
+  return (
+    <>
+      <IconButton
+        ref={anchorRef}
+        label={label}
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <MoreHorizontal />
+      </IconButton>
+      {open && (
+        <Menu
+          anchorRef={anchorRef}
+          label={label}
+          onDismiss={() => setOpen(false)}
+        >
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
+              onEdit();
+            }}
+          >
+            {zh ? "编辑连接" : "Edit connection"}
+          </MenuItem>
+          <MenuItem
+            disabled={used}
+            title={
+              used
+                ? zh
+                  ? "先移除引用这些模型的配置"
+                  : "Remove profiles using these models first"
+                : undefined
+            }
+            onClick={() => {
+              setOpen(false);
+              onRemove();
+            }}
+          >
+            {zh ? "移除连接" : "Remove connection"}
+          </MenuItem>
+        </Menu>
+      )}
+    </>
   );
 }
 function ConnectionForm({

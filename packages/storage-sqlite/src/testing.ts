@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { WorkService } from "@arclattice/application";
-import { afterEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
+import { FixtureScope } from "../../../tests/fixture-scope";
 import { SqliteUnitOfWork } from "./index";
 
 export const context = { workspaceId: "workspace-a", principalId: "human" };
@@ -17,7 +18,10 @@ export const principal = {
 export function sqliteHarness() {
   const directories: string[] = [];
   const connections: SqliteUnitOfWork[] = [];
+  const scope = new FixtureScope();
+  beforeEach(() => scope.start());
   afterEach(async () => {
+    await scope.drain();
     for (const db of connections.splice(0)) await db.close();
     for (const directory of directories.splice(0)) {
       const prefix = resolve(tmpdir()) + sep + "arclattice-sqlite-";
@@ -27,21 +31,26 @@ export function sqliteHarness() {
     }
   });
   const file = () => {
+    scope.assertOpen();
     const directory = mkdtempSync(join(tmpdir(), "arclattice-sqlite-"));
     directories.push(directory);
     return join(directory, "work.sqlite");
   };
-  const open = async (path = file(), timeoutMs = 2000) => {
-    const db = await SqliteUnitOfWork.open(path, { lockTimeoutMs: timeoutMs });
-    connections.push(db);
-    return db;
-  };
-  const create = async () => {
-    const db = await open();
-    for (const id of ["workspace-a", "workspace-b"])
-      await db.provisionWorkspace({ id, name: id }, [principal]);
-    return db;
-  };
+  const open = (path = file(), timeoutMs = 2000) =>
+    scope.run(async () => {
+      const db = await SqliteUnitOfWork.open(path, {
+        lockTimeoutMs: timeoutMs,
+      });
+      connections.push(db);
+      return db;
+    });
+  const create = () =>
+    scope.run(async () => {
+      const db = await open();
+      for (const id of ["workspace-a", "workspace-b"])
+        await db.provisionWorkspace({ id, name: id }, [principal]);
+      return db;
+    });
   return { file, open, create };
 }
 

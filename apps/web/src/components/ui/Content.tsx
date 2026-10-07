@@ -2,6 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 
 /** Content selection is distinct from action buttons; nested actions remain valid. */
 export function PressableSurface({
+  as: Surface = "div",
   selected = false,
   disabled = false,
   onSelect,
@@ -10,13 +11,14 @@ export function PressableSurface({
   children,
   ...props
 }: Omit<ComponentProps<"div">, "onSelect"> & {
+  as?: "div" | "article";
   selected?: boolean;
   disabled?: boolean;
   onSelect?(): void;
   onOpen?(): void;
 }) {
   return (
-    <div
+    <Surface
       {...props}
       className={`ui-pressable ${className}`}
       role={props.role ?? "button"}
@@ -79,7 +81,7 @@ export function PressableSurface({
       }}
     >
       {children}
-    </div>
+    </Surface>
   );
 }
 

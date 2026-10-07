@@ -1149,6 +1149,7 @@ export type {
 export { type AiTextEdit, parseAiTextEdits } from "./personal-ai";
 export * from "./project-knowledge-scope";
 export * from "./provider-adapter";
+export * from "./provider-error";
 export * from "./recurrence-lifecycle";
 export * from "./retrieval";
 export * from "./retrieval-context-resolver";

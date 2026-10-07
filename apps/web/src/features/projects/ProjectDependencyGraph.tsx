@@ -3,7 +3,7 @@ import { MarkerType } from "@xyflow/react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../../bootstrap";
-import { Button } from "../../components/ui/Button";
+import { Button, SegmentedControl } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/Surfaces";
 import {
   GraphViewport,
@@ -13,6 +13,8 @@ import { collectionRevision } from "../graph/graph-revision";
 import {
   buildDependencyGraphIndex,
   indexedDependencyNeighborhood,
+  type ProjectTaskScope,
+  projectDependencyMembership,
 } from "../graph/graph-scope";
 import { dependencyDagreLayout } from "../graph/layouts/DependencyDagreLayout";
 import { useStructuralLayout } from "../graph/layouts/useStructuralLayout";
@@ -26,6 +28,8 @@ export function ProjectDependencyGraph({
   initialFocus = "",
   initialHops = 1,
   initialScope = "focus",
+  initialTaskScope = "DIRECT_PROJECT",
+  initialIncludeExternal = false,
   onStateChange,
   onWorkspace,
   workspace = false,
@@ -42,7 +46,15 @@ export function ProjectDependencyGraph({
   initialFocus?: string;
   initialHops?: number;
   initialScope?: string;
-  onStateChange?(state: { focus: string; hops: number; scope: string }): void;
+  initialTaskScope?: ProjectTaskScope;
+  initialIncludeExternal?: boolean;
+  onStateChange?(state: {
+    focus: string;
+    hops: number;
+    scope: string;
+    taskScope: ProjectTaskScope;
+    includeExternal: boolean;
+  }): void;
   onWorkspace?(): void;
   workspace?: boolean;
   selectionId?: string | undefined;
@@ -54,27 +66,71 @@ export function ProjectDependencyGraph({
   const [focus, setFocus] = useState(initialFocus),
     [hops, setHops] = useState(initialHops),
     [scope, setScope] = useState(initialScope),
-    [includeExternal, setExternal] = useState(false);
+    [taskScope, setTaskScope] = useState(initialTaskScope),
+    [includeExternal, setExternal] = useState(initialIncludeExternal),
+    [focusCleared, setFocusCleared] = useState(false);
   useEffect(() => {
     setFocus(initialFocus);
     setHops(initialHops);
     setScope(initialScope);
-  }, [initialFocus, initialHops, initialScope]);
+    setTaskScope(initialTaskScope);
+    setExternal(initialIncludeExternal);
+  }, [
+    initialFocus,
+    initialHops,
+    initialScope,
+    initialTaskScope,
+    initialIncludeExternal,
+  ]);
   const all = fullSnapshot ?? snapshot;
   const index = useMemo(
     () => buildDependencyGraphIndex(all.items, all.edges),
     [all.items, all.edges],
   );
   const { counts } = index;
+  const membership = useMemo(
+    () =>
+      scopeProjectId
+        ? projectDependencyMembership(index, scopeProjectId, taskScope)
+        : null,
+    [index, scopeProjectId, taskScope],
+  );
   const scopedIds = useMemo(
     () =>
+      membership?.taskIds ??
       new Set(
         snapshot.items
           .filter((i) => i.type === "TASK" && !i.deletedAt)
           .map((i) => i.id),
       ),
-    [snapshot.items],
+    [snapshot.items, membership],
   );
+  const pickerItems = useMemo(
+    () =>
+      membership
+        ? all.items.filter(
+            (item) =>
+              membership.taskIds.has(item.id) ||
+              membership.projectIds.has(item.id),
+          )
+        : snapshot.items,
+    [all.items, membership, snapshot.items],
+  );
+  useEffect(() => {
+    if (focus && !scopedIds.has(focus)) {
+      setFocus("");
+      setFocusCleared(true);
+      onStateChange?.({ focus: "", hops, scope, taskScope, includeExternal });
+    }
+  }, [
+    focus,
+    scopedIds,
+    hops,
+    scope,
+    taskScope,
+    includeExternal,
+    onStateChange,
+  ]);
   const externalBlockers = useMemo(() => {
     const ids = new Set<string>();
     for (const edge of index.connections) {
@@ -83,24 +139,53 @@ export function ProjectDependencyGraph({
     return ids;
   }, [scopedIds, index]);
   const update = (
-    next: Partial<{ focus: string; hops: number; scope: string }>,
+    next: Partial<{
+      focus: string;
+      hops: number;
+      scope: string;
+      taskScope: ProjectTaskScope;
+      includeExternal: boolean;
+    }>,
   ) => {
-    const state = { focus, hops, scope, ...next };
+    const state = { focus, hops, scope, taskScope, includeExternal, ...next };
+    if (scopeProjectId && next.taskScope) {
+      const members = projectDependencyMembership(
+        index,
+        scopeProjectId,
+        next.taskScope,
+      );
+      if (state.focus && !members.taskIds.has(state.focus)) {
+        state.focus = "";
+        setFocusCleared(true);
+      }
+    }
     setFocus(state.focus);
     setHops(state.hops);
     setScope(state.scope);
+    setTaskScope(state.taskScope);
+    setExternal(state.includeExternal);
     onStateChange?.(state);
   };
   const visible =
-    scope === "project"
-      ? all.items.filter(
-          (i) =>
-            i.type === "TASK" &&
-            !i.deletedAt &&
-            (scopedIds.has(i.id) ||
-              (includeExternal && externalBlockers.has(i.id))),
-        )
-      : indexedDependencyNeighborhood(index, focus, hops);
+    !focus || !scopedIds.has(focus)
+      ? []
+      : scope === "project"
+        ? all.items.filter(
+            (i) =>
+              i.type === "TASK" &&
+              !i.deletedAt &&
+              (scopedIds.has(i.id) ||
+                (includeExternal && externalBlockers.has(i.id))),
+          )
+        : indexedDependencyNeighborhood(
+            index,
+            scopedIds.has(focus) ? focus : "",
+            hops,
+          ).filter(
+            (task) =>
+              scopedIds.has(task.id) ||
+              (includeExternal && externalBlockers.has(task.id)),
+          );
   const ids = new Set(visible.map((i) => i.id));
   const edges = index.connections.flatMap((edge) => {
     return ids.has(edge.source) && ids.has(edge.target)
@@ -134,6 +219,7 @@ export function ProjectDependencyGraph({
             {text("后续", "Dependents")} {counts.get(task.id)?.dependents ?? 0}
           </small>
           {scope !== "project" &&
+            scopedIds.has(task.id) &&
             hops === 1 &&
             (counts.get(task.id)?.blockers ?? 0) +
               (counts.get(task.id)?.dependents ?? 0) >
@@ -165,7 +251,10 @@ export function ProjectDependencyGraph({
     },
   }));
   return (
-    <section className="dependency-focus-graph">
+    <section
+      className="dependency-focus-graph"
+      data-project-id={scopeProjectId}
+    >
       <GraphViewport
         initialViewport={initialViewport}
         onViewportChange={onViewportChange}
@@ -183,15 +272,32 @@ export function ProjectDependencyGraph({
         inspector={inspector}
         toolbar={
           <div className="action-row">
+            {scopeProjectId && (
+              <SegmentedControl
+                label={text("任务依赖范围", "Task dependency scope")}
+                value={taskScope}
+                options={[
+                  {
+                    value: "DIRECT_PROJECT",
+                    label: text("本项目", "This project"),
+                  },
+                  {
+                    value: "PROJECT_TREE",
+                    label: text("包含子项目", "Include subprojects"),
+                  },
+                ]}
+                onChange={(taskScope) => update({ taskScope })}
+              />
+            )}
             <label>
               {text("焦点任务", "Focus task")}
               <TaskEntityPicker
-                key={scopeProjectId ?? "workspace"}
+                key={`${scopeProjectId ?? "workspace"}:${taskScope}`}
                 {...(scopeProjectId ? { scopeProjectId } : {})}
                 mode="single"
                 disabled={false}
                 label={text("选择焦点任务", "Choose focus task")}
-                items={snapshot.items}
+                items={pickerItems}
                 values={focus ? [focus] : []}
                 onChange={(values) =>
                   update({ focus: values.at(-1) ?? "", scope: "focus" })
@@ -219,17 +325,27 @@ export function ProjectDependencyGraph({
               aria-pressed={scope === "project"}
               onClick={() => update({ scope: "project" })}
             >
-              {text("整个项目", "Entire project")}
+              {text("范围内全部任务", "All tasks in scope")}
             </Button>
-            {scope === "project" && (
+            {
               <label>
                 <input
                   type="checkbox"
                   checked={includeExternal}
-                  onChange={(e) => setExternal(e.target.checked)}
+                  onChange={(e) =>
+                    update({ includeExternal: e.target.checked })
+                  }
                 />
-                {text("包含项目外阻塞", "Include external blockers")}
+                {text("显示项目外阻塞", "Show external blockers")}
               </label>
+            }
+            {focusCleared && !focus && (
+              <p role="status">
+                {text(
+                  "当前焦点不在此范围内，请重新选择任务。",
+                  "The focus task is outside this scope. Choose another task.",
+                )}
+              </p>
             )}
             {!focus && scope === "focus" && (
               <p>
