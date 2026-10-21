@@ -2,7 +2,7 @@ package app.orivane.atlas
 
 import java.security.MessageDigest
 
-data class AtlasNotificationIntent(val id: String, val scope: String, val title: String, val deliverAtMs: Long)
+data class AtlasNotificationIntent(val id: String, val scope: String, val title: String, val deliverAtMs: Long, val body: String = "", val route: String = "", val urgency: String = "NORMAL")
 
 object NotificationPolicy {
     const val MAX_INTENTS = 256
@@ -13,8 +13,13 @@ object NotificationPolicy {
         require(intents.map { it.id }.distinct().size == intents.size)
         require(intents.map { key(it.id) }.distinct().size == intents.size)
         require(intents.map { it.scope }.distinct().size <= 1)
-        for (intent in intents) require(intent.id.isNotEmpty() && intent.id.length <= 2048 && intent.scope.length <= 1024 && intent.title.isNotEmpty() && intent.title.length <= 120 && intent.deliverAtMs in 0..253402300799999L)
+        for (intent in intents) {
+            require(intent.id.isNotEmpty() && intent.id.length <= 2048 && intent.scope.length <= 1024 && intent.title.isNotEmpty() && intent.title.length <= 120 && intent.deliverAtMs in 0..253402300799999L)
+            require(intent.body.length <= 400 && intent.urgency in listOf("LOW", "NORMAL", "HIGH"))
+            require(intent.route.isEmpty() || validRoute(intent.route))
+        }
     }
+    fun validRoute(route: String): Boolean = route.startsWith("/") && !route.startsWith("//") && !route.contains("://") && !route.contains("\\") && route.length <= 512 && route.none { it.isISOControl() }
     fun delay(intent: AtlasNotificationIntent, now: Long): Long = (intent.deliverAtMs - now).coerceAtLeast(0)
     fun expired(intent: AtlasNotificationIntent, now: Long): Boolean = now > intent.deliverAtMs + LATE_GRACE_MS
 }

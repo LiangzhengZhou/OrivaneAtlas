@@ -3,9 +3,16 @@ import {
   knowledgeRuntimeRoundTrip,
   knowledgeRuntimeScenario,
 } from "../../../tests/contracts/knowledge-runtime";
+import { stableKnowledgeScenario } from "../../../tests/contracts/stable-knowledge";
 import { context, postgresHarness } from "./testing";
 
 const harness = postgresHarness();
+it("preserves stable Note/Space/Document IDs and ordinary body/revision rules on PostgreSQL", async () => {
+  const db = await harness.create();
+  await db.knowledge(context, (_uow, library, _projects, _sessions, notes) =>
+    stableKnowledgeScenario(notes, library),
+  );
+}, 30000);
 it("runs the shared knowledge application scenario on PostgreSQL", async () => {
   const db = await harness.create();
   const state = await db.knowledge(context, knowledgeRuntimeScenario);

@@ -61,6 +61,33 @@ export async function seedV22Backup(
   );
   if (!occurrence) throw new Error("Missing backup occurrence");
   await workflow.skipOccurrence(actor, occurrence.id, occurrence.version);
+  await workflow.saveRecurrence(actor, {
+    version: 0,
+    deleted: false,
+    rule: {
+      title: "Natural monthly backup",
+      descriptionMd: "Original\nSecond",
+      frequency: "MONTHLY",
+      interval: 2,
+      startDate: "2026-10-04",
+      timezone: "UTC",
+      monthlyRule: { kind: "ORDINAL_WEEKDAY", ordinal: -1, weekday: 1 },
+      endAfterCompleted: 4,
+    },
+  });
+  await workflow.saveRecurrence(actor, {
+    version: 0,
+    deleted: false,
+    rule: {
+      title: "Natural weekly backup",
+      descriptionMd: "",
+      frequency: "WEEKLY",
+      interval: 2,
+      startDate: "2026-10-04",
+      timezone: "UTC",
+      weekdays: [1, 5],
+    },
+  });
   const api = new AgentSessionService(sessions, auth, clock, ids);
   const session = await api.create(actor, "Backup conversation");
   await sessions.save(

@@ -10,11 +10,13 @@ export function EntityMenu({
   pending = false,
   onOpen,
   onDelete,
+  onDownload,
 }: {
   title: string;
   pending?: boolean;
-  onOpen(): void;
+  onOpen?(): void;
   onDelete?(): void;
+  onDownload?(): void;
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
@@ -35,16 +37,32 @@ export function EntityMenu({
       </IconButton>
       {open && (
         <Menu anchorRef={anchor} label={label} onDismiss={() => setOpen(false)}>
-          <MenuItem
-            onClick={() => {
-              setOpen(false);
-              onOpen();
-            }}
-          >
-            {zh ? "打开" : "Open"}
-          </MenuItem>
+          {onOpen && (
+            <MenuItem
+              onClick={() => {
+                setOpen(false);
+                onOpen();
+              }}
+            >
+              {zh ? "打开" : "Open"}
+            </MenuItem>
+          )}
+          {onDownload && (
+            <MenuItem
+              onClick={() => {
+                setOpen(false);
+                onDownload();
+              }}
+            >
+              {zh ? "下载" : "Download"}
+            </MenuItem>
+          )}
+          {onDelete && (onOpen || onDownload) && (
+            <hr className="ui-menu-separator" />
+          )}
           {onDelete && (
             <MenuItem
+              className="ui-menu-item-danger"
               disabled={pending}
               onClick={() => {
                 setOpen(false);

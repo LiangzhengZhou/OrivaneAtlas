@@ -7,6 +7,7 @@ import {
   type WorkspaceLibraryEntry,
   type WorkspaceNote,
 } from "@arclattice/application";
+import type { LibraryFile } from "@arclattice/domain";
 import type { EditorView } from "@codemirror/view";
 import {
   type ComponentProps,
@@ -25,10 +26,18 @@ import { Button, SegmentedControl } from "./components/ui/Button";
 import { confirmAction } from "./components/ui/ConfirmationHost";
 import { exportHtml, exportMarkdownZip, exportPdf } from "./documentExports";
 import { FilePicker } from "./FilePicker";
+import {
+  type EditorAtlasDraft,
+  EditorAtlasFloat,
+} from "./features/ai/EditorAtlasFloat";
 import { DiffViewer } from "./features/documents/DiffViewer";
 import { DocumentDrilldownPicker } from "./features/documents/DocumentDrilldownPicker";
 import { DocumentPopover } from "./features/documents/DocumentPopover";
+import { DocumentSaveStatus } from "./features/documents/DocumentSaveStatus";
 import { mergeMarkdown } from "./features/documents/merge";
+import { FileDetail, type FileDraft } from "./features/files/FileDetail";
+import { fileMarkdownLink } from "./features/files/fileRoute";
+import { DocumentSpaceActions } from "./features/knowledge/DocumentSpaceActions";
 import { NoteKnowledgeActions } from "./features/knowledge/NoteKnowledgeActions";
 import { WikiRelations } from "./features/knowledge/WikiRelations";
 import { imageAnchor, pendingImage } from "./imageInsertion";
@@ -50,7 +59,19 @@ export type DocumentRequest = {
   spaceId?: string | null | undefined;
   projectId?: string | undefined;
 };
-type Tab = DocumentRequest & {
+export type FileRequest = {
+  key: string;
+  kind: "FILE";
+  file: LibraryFile;
+  entity?: undefined;
+  day?: undefined;
+  spaceId?: string | null | undefined;
+  projectId?: string | undefined;
+};
+export type WorkspaceRequest = DocumentRequest | FileRequest;
+type Tab = WorkspaceRequest & {
+  fileDraft?: FileDraft;
+  fileAtlasDraft?: import("./features/files/FileAtlasFloat").FileAtlasDraft;
   dirty?: boolean;
   busy?: boolean;
   title?: string;
@@ -66,7 +87,7 @@ export function DocumentWorkspace({
   onDirty,
   onActive,
 }: {
-  request: DocumentRequest | null;
+  request: WorkspaceRequest | null;
   visible: boolean;
   runtime: Runtime;
   onChange: () => void;
@@ -74,24 +95,87 @@ export function DocumentWorkspace({
   onVisibility: () => void;
   snapshot: Snapshot;
   onDirty: (dirty: boolean) => void;
-  onActive: (request: DocumentRequest | null) => void;
+  onActive: (request: WorkspaceRequest | null) => void;
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
   const [tabs, setTabs] = useState<Tab[]>([]),
     [active, setActive] = useState("");
   const tabsRef = useRef(tabs);
+  const tabStrip = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const strip = tabStrip.current;
+    if (!strip) return;
+    const reveal = () => {
+      const selected = strip.querySelector<HTMLElement>(
+        '[role="tab"][aria-selected="true"]',
+      )?.parentElement;
+      if (!selected) return;
+      const item = selected.getBoundingClientRect(),
+        bounds = strip.getBoundingClientRect();
+      if (item.left < bounds.left) strip.scrollLeft -= bounds.left - item.left;
+      else if (item.right > bounds.right)
+        strip.scrollLeft += item.right - bounds.right;
+    };
+    reveal();
+    const observer = new ResizeObserver(reveal);
+    observer.observe(strip);
+    // Font/style settling may resize preceding tabs without resizing the strip.
+    // Keep the active identity visible after those intrinsic width changes too.
+    for (const tab of strip.querySelectorAll(".document-tab"))
+      observer.observe(tab);
+    return () => observer.disconnect();
+  }, [active, tabs.length, visible]);
   const closeHandlers = useRef(
     new Map<string, () => Promise<{ saved: boolean; draftStored: boolean }>>(),
   );
   tabsRef.current = tabs;
-  useEffect(
-    () =>
-      onActive(
-        visible ? (tabs.find((tab) => tab.key === active) ?? null) : null,
-      ),
-    [tabs, active, visible, onActive],
+  const activeTab = visible
+    ? (tabs.find((tab) => tab.key === active) ?? null)
+    : null;
+  const filesById = useMemo(
+    () => new Map((snapshot.files ?? []).map((file) => [file.id, file])),
+    [snapshot.files],
   );
+  const activeFile =
+    activeTab?.kind === "FILE"
+      ? (filesById.get(activeTab.file.id) ?? activeTab.file)
+      : null;
+  const fileTitle = (tab: Tab) =>
+    tab.kind === "FILE" ? (filesById.get(tab.file.id) ?? tab.file).name : "";
+  // Shell context contains identity and saved entity metadata, not tab status.
+  // Dirty/busy/title edits stay in this workspace until the entity is saved.
+  const activeContext = useMemo<WorkspaceRequest | null>(
+    () =>
+      activeTab
+        ? activeTab.kind === "FILE"
+          ? {
+              key: activeTab.key,
+              kind: "FILE",
+              file: activeFile!,
+              spaceId: activeTab.spaceId,
+              projectId: activeTab.projectId,
+            }
+          : {
+              key: activeTab.key,
+              kind: activeTab.kind,
+              entity: activeTab.entity,
+              day: activeTab.day,
+              spaceId: activeTab.spaceId,
+              projectId: activeTab.projectId,
+            }
+        : null,
+    [
+      activeTab?.key,
+      activeTab?.kind,
+      activeTab?.entity,
+      activeTab?.day,
+      activeTab?.spaceId,
+      activeTab?.projectId,
+      activeFile,
+    ],
+  );
+  useEffect(() => onActive(activeContext), [activeContext, onActive]);
   useEffect(
     () => onDirty(tabs.some((t) => t.dirty || t.busy)),
     [tabs, onDirty],
@@ -134,8 +218,8 @@ export function DocumentWorkspace({
       !(await confirmAction(
         prepared?.draftStored
           ? zh
-            ? "未能保存到服务器，本地草稿已保留。关闭此标签？"
-            : "Could not save to the server. Your local draft is retained. Close this tab?"
+            ? "未能保存到本机数据库，本地草稿已保留。关闭此标签？"
+            : "Could not save to the local database. Your local draft is retained. Close this tab?"
           : zh
             ? "尚有未保存内容，关闭将丢弃此草稿。是否关闭？"
             : "Unsaved draft will be lost. Close this tab?",
@@ -150,6 +234,7 @@ export function DocumentWorkspace({
   return (
     <section className="document-workspace" hidden={!tabs.length}>
       <div
+        ref={tabStrip}
         className="document-tabs no-print"
         role="tablist"
         aria-label={zh ? "打开的文档" : "Open documents"}
@@ -168,17 +253,24 @@ export function DocumentWorkspace({
                 onVisibility();
               }}
             >
-              {tab.dirty ? "● " : ""}
-              {tab.title ||
-                tab.entity?.title ||
-                tab.day ||
-                (zh ? "未命名" : "Untitled")}
+              <span className="document-tab-label">
+                {tab.dirty ? "● " : ""}
+                {tab.title ||
+                  fileTitle(tab) ||
+                  tab.entity?.title ||
+                  tab.day ||
+                  (zh ? "未命名" : "Untitled")}
+              </span>
             </Button>
             <Button
               type="button"
               aria-label={
                 (zh ? "关闭 " : "Close ") +
-                (tab.title || tab.entity?.title || tab.day || "")
+                (tab.title ||
+                  fileTitle(tab) ||
+                  tab.entity?.title ||
+                  tab.day ||
+                  "")
               }
               onClick={() => close(tab)}
               disabled={tab.busy}
@@ -190,70 +282,140 @@ export function DocumentWorkspace({
       </div>
       {tabs.map((tab) => (
         <div key={tab.key} hidden={!visible || active !== tab.key}>
-          <HydratedDocumentPane
-            active={visible && active === tab.key}
-            snapshot={snapshot}
-            onWikiCreated={(entity) => {
-              const key = `DOCUMENT:${entity.id}`;
-              setTabs((old) => [
-                ...old,
-                {
-                  key,
-                  kind: "DOCUMENT",
-                  entity,
-                  spaceId: entity.spaceId,
-                  projectId: tab.projectId,
-                },
-              ]);
-              setActive(key);
-            }}
-            onWikiOpen={(id) => {
-              const entity = [...snapshot.library, ...snapshot.notes].find(
-                (entry) => entry.id === id && !entry.deletedAt,
-              );
-              if (!entity) return;
-              const key = `${entity.kind}:${id}`;
-              setTabs((old) =>
-                old.some((entry) => entry.key === key)
-                  ? old
-                  : [
-                      ...old,
-                      {
-                        key,
-                        kind: entity.kind,
-                        entity,
-                        spaceId: "spaceId" in entity ? entity.spaceId : null,
-                        projectId: tab.projectId,
-                      },
-                    ],
-              );
-              setActive(key);
-            }}
-            request={tab}
-            onRegisterClose={(handler) => {
-              if (handler) closeHandlers.current.set(tab.key, handler);
-              else closeHandlers.current.delete(tab.key);
-            }}
-            runtime={runtime}
-            remote={[...snapshot.notes, ...snapshot.library].find(
-              (e) => e.id === tab.entity?.id,
-            )}
-            onSaved={onChange}
-            onClose={() => close({ ...tab, dirty: false, busy: false })}
-            onStatus={(dirty, title, entity, busy) =>
-              setTabs((old) =>
-                old.map((t) =>
-                  t.key === tab.key &&
-                  (t.dirty !== dirty ||
-                    t.busy !== busy ||
-                    t.title !== title ||
-                    t.entity !== entity)
-                    ? { ...t, dirty, title, entity, busy }
-                    : t,
-                ),
-              )
-            }
-          />
+          {tab.kind === "FILE" ? (
+            visible &&
+            active === tab.key && (
+              <FileDetail
+                file={filesById.get(tab.file.id) ?? tab.file}
+                snapshot={snapshot}
+                runtime={runtime}
+                draft={tab.fileDraft}
+                atlasDraft={tab.fileAtlasDraft}
+                onAtlasDraft={(draft) =>
+                  setTabs((old) =>
+                    old.map((entry) =>
+                      entry.key === tab.key
+                        ? { ...entry, fileAtlasDraft: draft }
+                        : entry,
+                    ),
+                  )
+                }
+                onChanged={async () => {
+                  await onChange();
+                }}
+                onClose={() => {
+                  void close({ ...tab, dirty: false, busy: false });
+                }}
+                onOpenDocument={(entity) => {
+                  const key = `DOCUMENT:${entity.id}`;
+                  setTabs((old) =>
+                    old.some((entry) => entry.key === key)
+                      ? old
+                      : [
+                          ...old,
+                          {
+                            key,
+                            kind: "DOCUMENT",
+                            entity,
+                            spaceId: entity.spaceId,
+                          },
+                        ],
+                  );
+                  setActive(key);
+                  onVisibility();
+                }}
+                onStatus={(draft, dirty, busy) =>
+                  setTabs((old) => {
+                    const current = old.find((entry) => entry.key === tab.key);
+                    const previous = current?.fileDraft;
+                    if (
+                      current?.dirty === dirty &&
+                      current.busy === busy &&
+                      previous?.name === draft.name &&
+                      previous.policy.aiAccess === draft.policy.aiAccess &&
+                      previous.policy.classification ===
+                        draft.policy.classification &&
+                      previous.policy.processingBoundary ===
+                        draft.policy.processingBoundary
+                    )
+                      return old;
+                    return old.map((entry) =>
+                      entry.key === tab.key
+                        ? { ...entry, fileDraft: draft, dirty, busy }
+                        : entry,
+                    );
+                  })
+                }
+              />
+            )
+          ) : (
+            <HydratedDocumentPane
+              active={visible && active === tab.key}
+              snapshot={snapshot}
+              onWikiCreated={(entity) => {
+                const key = `DOCUMENT:${entity.id}`;
+                setTabs((old) => [
+                  ...old,
+                  {
+                    key,
+                    kind: "DOCUMENT",
+                    entity,
+                    spaceId: entity.spaceId,
+                    projectId: tab.projectId,
+                  },
+                ]);
+                setActive(key);
+                onVisibility();
+              }}
+              onWikiOpen={(id) => {
+                const entity = [...snapshot.library, ...snapshot.notes].find(
+                  (entry) => entry.id === id && !entry.deletedAt,
+                );
+                if (!entity) return;
+                const key = `${entity.kind}:${id}`;
+                setTabs((old) =>
+                  old.some((entry) => entry.key === key)
+                    ? old
+                    : [
+                        ...old,
+                        {
+                          key,
+                          kind: entity.kind,
+                          entity,
+                          spaceId: "spaceId" in entity ? entity.spaceId : null,
+                          projectId: tab.projectId,
+                        },
+                      ],
+                );
+                setActive(key);
+              }}
+              request={tab}
+              onRegisterClose={(handler) => {
+                if (handler) closeHandlers.current.set(tab.key, handler);
+                else closeHandlers.current.delete(tab.key);
+              }}
+              runtime={runtime}
+              remote={[...snapshot.notes, ...snapshot.library].find(
+                (e) => e.id === tab.entity?.id,
+              )}
+              onSaved={onChange}
+              onClose={() => close({ ...tab, dirty: false, busy: false })}
+              onStatus={(dirty, title, entity, busy) =>
+                setTabs((old) =>
+                  old.map((t) =>
+                    t.kind !== "FILE" &&
+                    t.key === tab.key &&
+                    (t.dirty !== dirty ||
+                      t.busy !== busy ||
+                      t.title !== title ||
+                      t.entity !== entity)
+                      ? { ...t, dirty, title, entity, busy }
+                      : t,
+                  ),
+                )
+              }
+            />
+          )}
         </div>
       ))}
     </section>
@@ -430,6 +592,70 @@ function DocumentPane({
     gate = useRef(false),
     failed = useRef(false),
     baseRef = useRef(base);
+  const attachmentInput = useRef<HTMLInputElement | null>(null);
+  async function attachOriginal(file: File) {
+    const view = editor.current,
+      document = view?.state.doc,
+      selection = view?.state.selection.main,
+      base = baseRef.current;
+    if (!view || !document || !selection || busy) return;
+    setBusy(true);
+    try {
+      const original = await runtime.uploadFile(
+        {
+          name: file.name,
+          mime: file.type || "application/octet-stream",
+          spaceId:
+            base && "spaceId" in base
+              ? base.kind === "SPACE"
+                ? base.id
+                : base.spaceId
+              : null,
+          parentDocumentId:
+            base && "spaceId" in base && base.kind === "DOCUMENT"
+              ? base.id
+              : null,
+        },
+        file,
+      );
+      const reference = fileMarkdownLink(original);
+      if (
+        editor.current !== view ||
+        view.state.doc !== document ||
+        document.length - (selection.to - selection.from) + reference.length >
+          200000
+      ) {
+        showToast(
+          zh
+            ? "原文件已保存；正文已改变，请从资料库复制文件引用。"
+            : "Original saved. The text changed; copy its reference from the Library.",
+        );
+      } else {
+        view.dispatch({
+          changes: {
+            from: selection.from,
+            to: selection.to,
+            insert: reference,
+          },
+          selection: { anchor: selection.from + reference.length },
+          userEvent: "input.file",
+        });
+      }
+      onSaved();
+    } catch {
+      setError(
+        zh
+          ? "文件上传失败，正文未改变。"
+          : "File upload failed. The text is unchanged.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  const [editorAtlasOpen, setEditorAtlasOpen] = useState(false);
+  const [editorAtlasDraft, setEditorAtlasDraft] = useState<
+    EditorAtlasDraft | undefined
+  >();
   const current = useRef({ title, body, composing, aiPolicy });
   current.current = { title, body, composing, aiPolicy };
   const callbacks = useRef({ onStatus, onSaved });
@@ -546,7 +772,7 @@ function DocumentPane({
       return false;
     }
     if (
-      !draft.title.trim() ||
+      (!draft.title.trim() && request.kind !== "DOCUMENT") ||
       (!previous && !draft.body.trim() && request.kind === "JOURNAL")
     )
       return false;
@@ -577,7 +803,10 @@ function DocumentPane({
                 previous?.version ?? 0,
                 {
                   kind: request.kind as "SPACE" | "DOCUMENT",
-                  spaceId: request.spaceId ?? null,
+                  spaceId:
+                    baseRef.current && "spaceId" in baseRef.current
+                      ? baseRef.current.spaceId
+                      : (request.spaceId ?? null),
                   title: draft.title,
                   bodyMd: draft.body,
                   aiPolicy: draft.aiPolicy,
@@ -733,8 +962,8 @@ function DocumentPane({
       } catch (cause) {
         setImageError(
           zh
-            ? "图片上传失败，请检查连接、登录状态或工作区容量后重试。正文未被替换。"
-            : "Image upload failed. Check your connection, session or workspace quota and retry. Your text was not replaced.",
+            ? "图片未能保存到本机，请检查图片格式或本机存储后重试。正文未被替换。"
+            : "Could not save the image on this device. Check its format or device storage and retry. Your text was not replaced.",
         );
         throw cause;
       } finally {
@@ -776,17 +1005,28 @@ function DocumentPane({
           ))}
         </DocumentPopover>
         <span className="action-spacer" />
-        <span role="status">
-          {busy
-            ? t("saving")
-            : dirty
-              ? zh
-                ? "未保存"
-                : "Unsaved"
-              : zh
-                ? "已保存"
-                : "Saved"}
+        <span
+          className="document-atlas-action"
+          style={mode === "read" ? { visibility: "hidden" } : undefined}
+          aria-hidden={mode === "read" || undefined}
+        >
+          <Button
+            variant="ghost"
+            disabled={mode === "read"}
+            onClick={() => setEditorAtlasOpen(true)}
+          >
+            {zh ? "询问 Atlas" : "Ask Atlas"}
+          </Button>
         </span>
+        <DocumentSaveStatus
+          runtime={runtime}
+          id={base?.id}
+          library={library}
+          dirty={dirty}
+          busy={busy}
+          error={!!error}
+          zh={zh}
+        />
         <DocumentPopover className="document-actions-menu" label={<>···</>}>
           <DocumentPopover
             className="document-export"
@@ -930,8 +1170,8 @@ function DocumentPane({
                 label={s("image")}
                 hint={
                   zh
-                    ? "PNG / JPEG / WebP · 不限文件大小"
-                    : "PNG / JPEG / WebP · No file-size cap"
+                    ? "PNG / JPEG / WebP · 原图先保存到本机"
+                    : "PNG / JPEG / WebP · Originals saved on this device first"
                 }
                 disabled={busy || !!base?.deletedAt}
                 accept="image/png,image/jpeg,image/webp"
@@ -940,8 +1180,8 @@ function DocumentPane({
             </div>
             <p className="upload-hint">
               {zh
-                ? "也可在编辑器内直接粘贴图片（Ctrl/⌘ V）。图片保存在自己的服务器，仅当前工作区可访问；导出的 Markdown 不包含图片文件。"
-                : "Or paste an image into the editor (Ctrl/⌘ V). Images stay on your server, accessible only within this workspace; Markdown exports do not include image files."}
+                ? "也可直接粘贴图片（Ctrl/⌘ V）。原图先保存到本机，连接工作区后在后台同步。Markdown ZIP 可包含原图。"
+                : "Paste images with Ctrl/⌘ V. Originals are saved on this device first and sync in the background when connected. Markdown ZIP can include originals."}
             </p>
             {history.map((revision) => (
               <details key={revision.version}>
@@ -1143,10 +1383,26 @@ function DocumentPane({
         aria-label={
           library
             ? s(request.kind === "SPACE" ? "spaceTitle" : "title")
-            : t("noteTitle")
+            : request.kind === "JOURNAL"
+              ? zh
+                ? "日记标题"
+                : "Journal title"
+              : t("noteTitle")
         }
         maxLength={240}
-        placeholder={t("noteTitle")}
+        placeholder={
+          library
+            ? request.kind === "SPACE"
+              ? s("spaceTitle")
+              : zh
+                ? "未命名文档"
+                : "Untitled document"
+            : request.kind === "JOURNAL"
+              ? zh
+                ? "日记标题"
+                : "Journal title"
+              : t("noteTitle")
+        }
         value={title}
         onCompositionStart={() => setComposing(true)}
         onCompositionEnd={() => setComposing(false)}
@@ -1204,6 +1460,8 @@ function DocumentPane({
           </label>
         )}
         <LiveMarkdown
+          onAttachFile={() => attachmentInput.current?.click()}
+          onAtlas={() => setEditorAtlasOpen(true)}
           onPendingChange={(pending) => {
             editorPendingRef.current = pending;
             setEditorPending(pending);
@@ -1222,6 +1480,38 @@ function DocumentPane({
           onImages={insertImages}
         />
       </div>
+      <input
+        ref={attachmentInput}
+        type="file"
+        hidden
+        aria-label={zh ? "附加原文件" : "Attach original file"}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) void attachOriginal(file);
+        }}
+      />
+      {editorAtlasOpen && editor.current && mode !== "read" && (
+        <EditorAtlasFloat
+          draft={editorAtlasDraft}
+          onDraft={setEditorAtlasDraft}
+          runtime={runtime}
+          editor={editor.current}
+          identity={{
+            documentId: base?.id ?? request.key,
+            version: base?.version ?? 0,
+            kind:
+              request.kind === "SPACE"
+                ? "SPACE"
+                : request.kind === "DOCUMENT"
+                  ? "DOCUMENT"
+                  : "NOTE",
+          }}
+          policy={aiPolicy}
+          zh={zh}
+          onClose={() => setEditorAtlasOpen(false)}
+        />
+      )}
       {readingBody.current !== null && (
         <div
           className={
@@ -1231,6 +1521,20 @@ function DocumentPane({
           <h1 className="print-only">{title}</h1>
           <Markdown text={readingBody.current} />
         </div>
+      )}
+      {base && "spaceId" in base && base.kind === "DOCUMENT" && (
+        <DocumentSpaceActions
+          document={base}
+          runtime={runtime}
+          snapshot={snapshot}
+          disabled={busy || dirty}
+          zh={zh}
+          onMoved={(saved) => {
+            baseRef.current = saved;
+            setBase(saved);
+          }}
+          onChanged={onSaved}
+        />
       )}
       {base && "day" in base && (
         <NoteKnowledgeActions
@@ -1243,7 +1547,7 @@ function DocumentPane({
           onOpenWiki={onWikiOpen}
         />
       )}
-      {request.kind === "DOCUMENT" && base && (
+      {active && request.kind === "DOCUMENT" && base && (
         <WikiRelations
           runtime={runtime}
           documentId={base.id}

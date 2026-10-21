@@ -84,9 +84,35 @@ test("Gateway registry policy persists and approved alternatives are visible bef
         })
       ).status(),
     ).toBe(200);
-    await page.goto(origin);
     const zh = info.project.name.endsWith("zh");
-    await page.goto(origin + "/#settings");
+    await page.goto(origin + "/#account");
+    await page
+      .getByRole("button", {
+        name: zh ? "查看同步选项" : "Review sync options",
+        exact: true,
+      })
+      .click();
+    await Promise.all([
+      page.waitForNavigation(),
+      page
+        .getByRole("button", {
+          name: zh ? "打开账户工作区" : "Open account workspace",
+          exact: true,
+        })
+        .click(),
+    ]);
+    await page.evaluate(() => {
+      location.hash = "account";
+    });
+    await expect(
+      page.getByRole("button", {
+        name: zh ? "查看同步选项" : "Review sync options",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.evaluate(() => {
+      location.hash = "settings";
+    });
     const defaultRow = page
       .locator(".model-settings-row")
       .filter({ has: page.locator("strong", { hasText: "Default profile" }) });
@@ -120,6 +146,18 @@ test("Gateway registry policy persists and approved alternatives are visible bef
       zh ? "模型设置已保存" : "Model settings saved",
     );
     await page.reload();
+    await page.evaluate(() => {
+      location.hash = "account";
+    });
+    await expect(
+      page.getByRole("button", {
+        name: zh ? "查看同步选项" : "Review sync options",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.evaluate(() => {
+      location.hash = "settings";
+    });
     await defaultRow
       .getByRole("button", {
         name: zh ? "编辑配置" : "Edit profile",

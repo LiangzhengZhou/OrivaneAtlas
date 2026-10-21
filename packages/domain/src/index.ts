@@ -1,8 +1,13 @@
 export * from "./agent";
 export * from "./calendar";
 export * from "./data-policy";
+export * from "./entity-memo";
+export * from "./file-extraction";
 export * from "./governance";
+export * from "./library-file";
+export * from "./manual-order";
 export * from "./navigation";
+export * from "./notification";
 export * from "./project-lifecycle";
 export * from "./projects";
 export * from "./recurrence";
@@ -139,6 +144,15 @@ export function requireTitle(title: string): string {
   const value = title.trim();
   if (
     !value ||
+    value.length > 240 ||
+    [...value].some((character) => character.charCodeAt(0) < 32)
+  )
+    throw new DomainError("VALIDATION_ERROR", { field: "title" });
+  return value;
+}
+export function optionalTitle(title: string): string {
+  const value = title.trim();
+  if (
     value.length > 240 ||
     [...value].some((character) => character.charCodeAt(0) < 32)
   )

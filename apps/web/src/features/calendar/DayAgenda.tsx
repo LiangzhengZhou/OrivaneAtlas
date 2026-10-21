@@ -30,6 +30,10 @@ export function DayAgenda({
   const { t, i18n } = useTranslation("desk");
   const zh = i18n.language.startsWith("zh");
   const [createRequest, setCreateRequest] = useState(0);
+  const [secondaryOpen, setSecondaryOpen] = useState(false);
+  const [expandedSecondary, setExpandedSecondary] = useState<Set<string>>(
+    new Set(),
+  );
   const summary = index.daySummary(day);
   const groups = [
     { label: zh ? "截止" : "Due", signal: "◇", entries: summary.due },
@@ -87,6 +91,7 @@ export function DayAgenda({
               items={group.entries}
               virtualizeAfter={12}
               estimatedRowHeight={44}
+              fixedRowHeight
               render={(item) => (
                 <CalendarEventRow
                   item={item}
@@ -128,26 +133,53 @@ export function DayAgenda({
         </section>
       )}
       {(index.overdue.length > 0 || index.unscheduled.length > 0) && (
-        <details className="calendar-secondary">
+        <details
+          className="calendar-secondary"
+          onToggle={(event) => {
+            if (event.target === event.currentTarget)
+              setSecondaryOpen(event.currentTarget.open);
+          }}
+        >
           <summary>{zh ? "其他任务" : "Other tasks"}</summary>
-          {[
-            { label: t("overdue"), entries: index.overdue },
-            { label: t("unscheduled"), entries: index.unscheduled },
-          ]
-            .filter((group) => group.entries.length > 0)
-            .map((group) => (
-              <details key={group.label}>
-                <summary>
-                  {group.label} · {group.entries.length}
-                </summary>
-                <VirtualTaskCollection
-                  items={group.entries}
-                  render={(item) => (
-                    <CalendarEventRow item={item} signal="○" onOpen={onOpen} />
+          {secondaryOpen &&
+            [
+              { label: t("overdue"), entries: index.overdue },
+              { label: t("unscheduled"), entries: index.unscheduled },
+            ]
+              .filter((group) => group.entries.length > 0)
+              .map((group) => (
+                <details
+                  key={group.label}
+                  open={expandedSecondary.has(group.label)}
+                  onToggle={(event) => {
+                    if (event.target !== event.currentTarget) return;
+                    const open = event.currentTarget.open;
+                    setExpandedSecondary((previous) => {
+                      if (previous.has(group.label) === open) return previous;
+                      const next = new Set(previous);
+                      if (open) next.add(group.label);
+                      else next.delete(group.label);
+                      return next;
+                    });
+                  }}
+                >
+                  <summary>
+                    {group.label} · {group.entries.length}
+                  </summary>
+                  {expandedSecondary.has(group.label) && (
+                    <VirtualTaskCollection
+                      items={group.entries}
+                      render={(item) => (
+                        <CalendarEventRow
+                          item={item}
+                          signal="○"
+                          onOpen={onOpen}
+                        />
+                      )}
+                    />
                   )}
-                />
-              </details>
-            ))}
+                </details>
+              ))}
         </details>
       )}
     </aside>

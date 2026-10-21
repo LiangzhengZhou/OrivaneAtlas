@@ -91,6 +91,14 @@ export function libraryStore(
   return {
     async purge(id, expected) {
       guard();
+      const indexState = (
+        await client.query(
+          "SELECT index_version,dirty FROM arclattice.wiki_index_state WHERE workspace_id=$1",
+          [context.workspaceId],
+        )
+      ).rows[0];
+      const indexWasClean =
+        indexState?.index_version === 1 && indexState.dirty === 0;
       const entry = await get(id);
       if (entry.version !== expected) throw new DomainError("VERSION_CONFLICT");
       if (!entry.deletedAt) throw new DomainError("VALIDATION_ERROR");
@@ -144,8 +152,8 @@ export function libraryStore(
         );
       }
       await client.query(
-        "UPDATE arclattice.document_wiki_link SET target_document_id=NULL WHERE workspace_id=$1 AND target_document_id=$2",
-        [context.workspaceId, id],
+        "UPDATE arclattice.document_wiki_link SET target_document_id=NULL,version=version+1,updated_at=$3 WHERE workspace_id=$1 AND target_document_id=$2",
+        [context.workspaceId, id, new Date().toISOString()],
       );
       for (const assetId of retained)
         for (const table of ["library_asset", "library_asset_upload"])
@@ -188,6 +196,11 @@ export function libraryStore(
         "INSERT INTO arclattice.knowledge_outbox VALUES ($1,$2,'LIBRARY_PURGED')",
         [context.workspaceId, eventId],
       );
+      if (indexWasClean)
+        await client.query(
+          "UPDATE arclattice.wiki_index_state SET dirty=0 WHERE workspace_id=$1",
+          [context.workspaceId],
+        );
     },
     async listMetadata() {
       guard();
@@ -460,13 +473,13 @@ export function libraryStore(
               )
             )
               await client.query(
-                "UPDATE arclattice.document_wiki_link SET target_document_id=$1 WHERE workspace_id=$2 AND id=$3",
-                [entry.id, context.workspaceId, link.id],
+                "UPDATE arclattice.document_wiki_link SET target_document_id=$1,version=version+1,updated_at=$4 WHERE workspace_id=$2 AND id=$3 AND target_document_id IS NULL",
+                [entry.id, context.workspaceId, link.id, entry.updatedAt],
               );
         } else
           await client.query(
-            "UPDATE arclattice.document_wiki_link SET target_document_id=NULL WHERE workspace_id=$1 AND target_document_id=$2",
-            [context.workspaceId, entry.id],
+            "UPDATE arclattice.document_wiki_link SET target_document_id=NULL,version=version+1,updated_at=$3 WHERE workspace_id=$1 AND target_document_id=$2",
+            [context.workspaceId, entry.id, entry.updatedAt],
           );
       }
       if (indexWasClean && (entry.kind === "DOCUMENT" || spaceStaysLive))

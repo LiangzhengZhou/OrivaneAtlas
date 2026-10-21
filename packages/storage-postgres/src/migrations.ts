@@ -247,6 +247,86 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 28,
+    name: "manual-order",
+    sql: readFileSync(
+      new URL("./migrations/0028-manual-order.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 29,
+    name: "library-files",
+    sql: readFileSync(
+      new URL("./migrations/0029-library-files.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 30,
+    name: "file-binary-completion",
+    sql: readFileSync(
+      new URL("./migrations/0030-file-binary-completion.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 31,
+    name: "request-receipts",
+    sql: readFileSync(
+      new URL("./migrations/0031-request-receipts.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 32,
+    name: "connected-runtime",
+    sql: readFileSync(
+      new URL("./migrations/0032-connected-runtime.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 33,
+    name: "file-extraction",
+    sql: readFileSync(
+      new URL("./migrations/0033-file-extraction.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 34,
+    name: "file-extraction-search",
+    sql: readFileSync(
+      new URL("./migrations/0034-file-extraction-search.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 35,
+    name: "owned-workspaces",
+    sql: readFileSync(
+      new URL("./migrations/0035-owned-workspaces.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 36,
+    name: "entity-memos",
+    sql: readFileSync(
+      new URL("./migrations/0036-entity-memos.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 37,
+    name: "credential-grants",
+    sql: readFileSync(
+      new URL("./migrations/0037-credential-grants.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")
@@ -280,9 +360,11 @@ export async function inspectSchema(
     routines.some(
       (routine) =>
         routine.nspname !== "arclattice" ||
-        !["record_workspace_change", "mark_wiki_index_dirty"].includes(
-          routine.proname,
-        ) ||
+        ![
+          "record_workspace_change",
+          "mark_wiki_index_dirty",
+          "capture_entity_memo_change",
+        ].includes(routine.proname) ||
         routine.prosecdef ||
         routine.pronargs !== 0 ||
         routine.return_type !== "trigger" ||
@@ -293,7 +375,9 @@ export async function inspectSchema(
                 step.name ===
                 (routine.proname === "record_workspace_change"
                   ? "workspace-changes"
-                  : "wiki-index-state"),
+                  : routine.proname === "capture_entity_memo_change"
+                    ? "entity-memos"
+                    : "wiki-index-state"),
             )
             ?.sql.split("AS $$")[1]
             ?.split("$$;")[0],
@@ -371,6 +455,21 @@ export async function inspectSchema(
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
   }
   const knowledgeTables = [
+    ...(rows.length >= 36
+      ? ["entity_memo", "entity_memo_activity", "entity_memo_outbox"]
+      : []),
+    ...(rows.length >= 32
+      ? ["agent_run", "connected_activity", "connected_outbox"]
+      : []),
+    ...(rows.length >= 29
+      ? [
+          "library_file",
+          "file_activity",
+          "file_outbox",
+          "file_blob_descriptor",
+          "file_blob_chunk",
+        ]
+      : []),
     ...(rows.length >= 24 ? ["workspace_sync_state", "workspace_change"] : []),
     ...(rows.length >= 12 ? ["library_entry", "document_wiki_link"] : []),
     ...(rows.length >= 13 ? ["project_knowledge_binding"] : []),
@@ -409,12 +508,20 @@ export async function inspectSchema(
       ? ["agent_session_metadata", "agent_session_message"]
       : []),
     ...(rows.length >= 27 ? ["wiki_index_state"] : []),
+    ...(rows.length >= 28 ? ["manual_order_scope"] : []),
   ];
   if (rows.length >= 24) {
-    if (routines.length !== (rows.length >= 27 ? 2 : 1))
+    if (routines.length !== (rows.length >= 36 ? 3 : rows.length >= 27 ? 2 : 1))
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
-    const expected =
-      plan.find((step) => step.name === "workspace-changes")?.sql ?? "";
+    const expected = [
+      rows.length >= 29
+        ? (plan.find((step) => step.name === "library-files")?.sql ?? "")
+        : "",
+      plan.find((step) => step.name === "workspace-changes")?.sql ?? "",
+      rows.length >= 28
+        ? (plan.find((step) => step.name === "manual-order")?.sql ?? "")
+        : "",
+    ].join("\n");
     const triggers = (
       await client.query(
         "SELECT t.tgname,t.tgenabled,p.proname FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='arclattice' AND NOT t.tgisinternal",
@@ -453,6 +560,20 @@ export async function inspectSchema(
               trigger.proname === "mark_wiki_index_dirty",
           ),
       )
+    )
+      throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
+  }
+  if (rows.length >= 36) {
+    const trigger = (
+      await client.query(
+        "SELECT t.tgenabled,p.proname,c.relname FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='arclattice' AND t.tgname='sync_entity_memo' AND NOT t.tgisinternal",
+      )
+    ).rows;
+    if (
+      trigger.length !== 1 ||
+      trigger[0]?.tgenabled !== "O" ||
+      trigger[0]?.proname !== "capture_entity_memo_change" ||
+      trigger[0]?.relname !== "entity_memo"
     )
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
   }

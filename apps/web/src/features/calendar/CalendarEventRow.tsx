@@ -15,6 +15,7 @@ export function CalendarEventRow({
   return (
     <ListRow
       className="calendar-event-row"
+      title={item.title}
       selected={
         selection?.selected?.kind === "WORK" &&
         selection.selected.id === item.id

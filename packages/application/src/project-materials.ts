@@ -14,6 +14,7 @@ import {
   LibraryService,
   type LibraryStore,
 } from "./library";
+import { stableEntityIds } from "./stable-entity-ids";
 
 export interface ProjectMaterial {
   id: string;
@@ -80,6 +81,21 @@ export class ProjectService {
       return item;
     });
   }
+  /** Read-only compatibility boundary for originals created before first-class Files. */
+  async legacyOriginal(context: ActorContext, id: string, version: number) {
+    await this.authorization.require(context, "work:read");
+    const material = await this.store.get(id);
+    if (
+      material.workspaceId !== context.workspaceId ||
+      material.kind !== "FILE" ||
+      material.deletedAt
+    )
+      throw new DomainError("NOT_FOUND");
+    await this.project(context, material.projectId);
+    if (!Number.isSafeInteger(version) || material.version !== version)
+      throw new DomainError("VERSION_CONFLICT");
+    return { material, base64: await this.store.file(id) };
+  }
   private material(
     context: ActorContext,
     projectId: string,
@@ -88,7 +104,7 @@ export class ProjectService {
     targetId: string | null,
   ): ProjectMaterial {
     return {
-      id: this.ids.next(),
+      id: this.ids.nextFor?.("PROJECT_MATERIAL") ?? this.ids.next(),
       workspaceId: context.workspaceId,
       projectId,
       kind,
@@ -120,6 +136,90 @@ export class ProjectService {
       createdBy: material.updatedBy,
       updatedAt: material.updatedAt,
     };
+  }
+  /** Called inside the same enclosing project/library mutation transaction. */
+  private async stableCreation<T>(
+    contextInput: ActorContext,
+    materialId: string,
+    targetId: string | null,
+    operation: (service: ProjectService) => Promise<T>,
+  ) {
+    const context = structuredClone(contextInput);
+    await this.authorization.require(context, "work:create");
+    let ids = stableEntityIds(this.ids, "PROJECT_MATERIAL", materialId);
+    if (targetId !== null) ids = stableEntityIds(ids, "LIBRARY", targetId);
+    try {
+      await this.store.get(materialId);
+      throw new DomainError("VERSION_CONFLICT");
+    } catch (error) {
+      if (!(error instanceof DomainError) || error.code !== "NOT_FOUND")
+        throw error;
+    }
+    if (targetId !== null) {
+      try {
+        await this.library.get(targetId);
+        throw new DomainError("VERSION_CONFLICT");
+      } catch (error) {
+        if (!(error instanceof DomainError) || error.code !== "NOT_FOUND")
+          throw error;
+      }
+    }
+    return operation(
+      new ProjectService(
+        this.uow,
+        this.store,
+        this.library,
+        this.authorization,
+        this.clock,
+        ids,
+      ),
+    );
+  }
+  createProjectSpaceWithStableIds(
+    contextInput: ActorContext,
+    materialId: string,
+    targetId: string,
+    inputValue: Parameters<ProjectService["createProjectSpace"]>[1],
+  ) {
+    const context = structuredClone(contextInput),
+      input = structuredClone(inputValue);
+    return this.stableCreation(context, materialId, targetId, (service) =>
+      service.createProjectSpace(context, input),
+    );
+  }
+  linkProjectSpaceWithStableId(
+    contextInput: ActorContext,
+    materialId: string,
+    inputValue: Parameters<ProjectService["linkProjectSpace"]>[1],
+  ) {
+    const context = structuredClone(contextInput),
+      input = structuredClone(inputValue);
+    return this.stableCreation(context, materialId, null, (service) =>
+      service.linkProjectSpace(context, input),
+    );
+  }
+  linkWithStableId(
+    contextInput: ActorContext,
+    materialId: string,
+    projectId: string,
+    targetId: string,
+  ) {
+    const context = structuredClone(contextInput);
+    return this.stableCreation(context, materialId, null, (service) =>
+      service.link(context, projectId, targetId),
+    );
+  }
+  createProjectDocumentWithStableIds(
+    contextInput: ActorContext,
+    materialId: string,
+    targetId: string,
+    inputValue: Parameters<ProjectService["createProjectDocument"]>[1],
+  ) {
+    const context = structuredClone(contextInput),
+      input = structuredClone(inputValue);
+    return this.stableCreation(context, materialId, targetId, (service) =>
+      service.createProjectDocument(context, input),
+    );
   }
   async listProjectSpaces(
     context: ActorContext,
@@ -224,8 +324,17 @@ export class ProjectService {
     )
       throw new DomainError("VALIDATION_ERROR");
     await this.project(context, input.projectId);
-    const space = await this.library.get(input.spaceId);
-    if (space.deletedAt || space.kind !== "SPACE")
+    const space = this.library.listMetadata
+      ? (await this.library.listMetadata()).find(
+          (entry) => entry.id === input.spaceId,
+        )
+      : await this.library.get(input.spaceId);
+    if (
+      !space ||
+      space.workspaceId !== context.workspaceId ||
+      space.deletedAt ||
+      space.kind !== "SPACE"
+    )
       throw new DomainError("NOT_FOUND");
     const existing = (await this.store.list()).some(
       (material) =>

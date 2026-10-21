@@ -6,6 +6,7 @@ import {
   blockers,
   dependency,
   isReady,
+  optionalTitle,
   requireTitle,
   validateEdge,
   type WorkEdge,
@@ -14,6 +15,11 @@ import {
 describe("Work domain", () => {
   it("normalizes titles without losing user content", () => {
     expect(requireTitle("  中文 title  ")).toBe("中文 title");
+  });
+  it("allows an untitled document while retaining title validation", () => {
+    expect(optionalTitle("   ")).toBe("");
+    expect(optionalTitle("  document  ")).toBe("document");
+    expect(() => optionalTitle("bad\u0000title")).toThrow("VALIDATION_ERROR");
   });
   it.each(["", "   ", "x".repeat(241), "two\nlines", "bad\u0000title"])(
     "rejects invalid title %j",

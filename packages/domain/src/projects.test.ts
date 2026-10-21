@@ -3,6 +3,7 @@ import { work } from "../../../tests/fixtures";
 import {
   inheritedArchiveSource,
   projectAncestors,
+  projectCompletion,
   projectDescendants,
   type WorkItem,
 } from "./index";
@@ -22,6 +23,24 @@ const child: WorkItem = {
 };
 const task: WorkItem = { ...work("task"), projectIds: [child.id] };
 describe("project projections", () => {
+  it("completion counts unfinished milestones independently of task progress", () => {
+    const milestone = {
+      ...work("milestone"),
+      type: "MILESTONE" as const,
+      parentProjectId: child.id,
+    };
+    expect(
+      projectCompletion(root, [root, child, task, milestone]),
+    ).toMatchObject({
+      unfinished: 1,
+      unfinishedProjects: 1,
+      unfinishedMilestones: 1,
+    });
+    expect(
+      projectCompletion(root, [root, child, { ...milestone, status: "DONE" }])
+        .unfinishedMilestones,
+    ).toBe(0);
+  });
   it("shared tasks stay visible while any membership is unarchived", () => {
     const shared = { ...task, projectIds: [root.id, child.id] };
     const items = [root, child, shared];

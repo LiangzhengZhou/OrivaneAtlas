@@ -1,0 +1,7 @@
+# ADR0098 — Human File content policy editing
+
+2026-10-15. FINAL first-class Files require explicit AI/data permission rather than inferring disclosure from links, parser readiness or project membership. Reuse ContentPolicy validation and the existing human File mutation path. A human may edit classification, processing boundary and AI access; defaults remain PRIVATE/LOCAL_ONLY/DENY. This edit grants no model request by itself. Parent policy, current source, data permission and execution approval must still be checked at inference time.
+
+Policy edits increment the ordinary File version and capture immutable file.policy intent in the same business/Activity/Outbox transaction. Original bytes, content address, original filename and provenance remain unchanged. Host owner-session/CSRF/idempotency/original-receipt handling and native exact-route transport are preserved. Bearer File access remains denied; no AI capability changes content policy. JSON File policy already exists in SQLite/PostgreSQL; no new columns or historical migration changes. Source/index version checks invalidate obsolete derived views without overwriting canonical originals.
+
+UI uses the shared policy editor with a confirmation before saving and safe dirty close. It does not send content when selection or permission changes. Acceptance includes unauthorized-before-read, stale/deleted input, original-command vs later projection, host replay/digest/Bearer denial, real local restart/sync and SQL/PostgreSQL parity.

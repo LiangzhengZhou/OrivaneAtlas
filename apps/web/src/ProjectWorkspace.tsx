@@ -1,10 +1,12 @@
 import {
   type EntityRef,
+  FileProjectLinkError,
   type KnowledgeLink,
   scopedKnowledgeDocuments,
 } from "@arclattice/application";
 import {
-  effectiveCategoryId,
+  type LibraryFile,
+  manualOrderScopeKey,
   type ProjectScope,
   projectLifecycle,
   projectScope,
@@ -21,6 +23,7 @@ import { ListRow, MenuItem } from "./components/ui/Content";
 import { Menu, Popover, Select } from "./components/ui/Surfaces";
 import { openGraph } from "./features/graph/graph-route";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
+import { EntityMemo } from "./features/memos/EntityMemo";
 import { ProjectDependencyGraph } from "./features/projects/ProjectDependencyGraph";
 import { ProjectStructureTree } from "./features/projects/ProjectStructureTree";
 import {
@@ -28,6 +31,7 @@ import {
   TasksWorkspace,
 } from "./features/tasks/TasksWorkspace";
 import { type TaskWorkspaceIndex } from "./features/tasks/task-selectors";
+import { taskPresentationComparator } from "./features/tasks/task-sort";
 import type { WorkspaceWorkIndex } from "./features/tasks/workspace-work-index";
 import {
   ProjectBriefEditor,
@@ -59,6 +63,7 @@ export function ProjectWorkspace({
   onBack,
   onProject,
   onOpen,
+  onLifecycle,
   onNewPage,
   onCreate,
   onLink,
@@ -88,6 +93,7 @@ export function ProjectWorkspace({
   onBack(): void;
   onProject(id: string): void;
   onOpen(ref: EntityRef): void;
+  onLifecycle(project: WorkItem): void;
   onNewPage(spaceId: string): void;
   onCreate(type: "PROJECT" | "TASK" | "MILESTONE", parentId: string): void;
   onLink(from: EntityRef, to: EntityRef): Promise<boolean>;
@@ -116,9 +122,14 @@ export function ProjectWorkspace({
   const scope = routeScope;
   const setScope = (scope: ProjectScope) => onRouteChange(tab, scope);
   const [referenceQuery, setReferenceQuery] = useState("");
+  const [taskSort, setTaskSort] = useState("updated");
   const briefState = useRef<ProjectBriefState>({ draft: null, mode: "live" });
   const [knowledgeQuery, setKnowledgeQuery] = useState("");
   const [knowledgeGraphOpen, setKnowledgeGraphOpen] = useState(false);
+  const [unlinkedFile, setUnlinkedFile] = useState<{
+    projectId: string;
+    file: LibraryFile;
+  } | null>(null);
   const [dependencyOpen, setDependencyOpen] = useState(false);
   const [dependencyState, setDependencyState] = useState({
     focus: "",
@@ -166,6 +177,29 @@ export function ProjectWorkspace({
     );
   }, [snapshot.projectMaterials, project.id, ancestorIds]);
   const tasks = scoped.tasks;
+  const orderScope = useMemo(
+    () => ({ kind: "PROJECT_TASKS", projectId: project.id }) as const,
+    [project.id],
+  );
+  const orderScopeKey = manualOrderScopeKey(orderScope);
+  const taskOrder = snapshot.manualOrders?.find(
+    (state) => state.id === orderScopeKey,
+  );
+  const taskPositions = useMemo(
+    () =>
+      new Map(
+        taskOrder?.entries.map((entry) => [entry.entityId, entry.position]) ??
+          [],
+      ),
+    [taskOrder],
+  );
+  const orderedTasks = useMemo(
+    () =>
+      [...tasks].sort(
+        taskPresentationComparator(taskSort, i18n.language, taskPositions),
+      ),
+    [tasks, taskSort, i18n.language, taskPositions],
+  );
   const recentKnowledge = useMemo(
     () =>
       tab === "overview"
@@ -231,10 +265,40 @@ export function ProjectWorkspace({
   }, [snapshot.notes, snapshot.library, tab]);
   const references = snapshot.links.filter(
     (link) =>
+      !link.deletedAt &&
       link.from.kind === "WORK" &&
       projectIds.has(link.from.id) &&
       link.relation === "REFERENCES",
   );
+  const projectFileIds = new Set(
+    references
+      .filter((link) => link.to.kind === "FILE")
+      .map((link) => link.to.id),
+  );
+  const projectFiles = (snapshot.files ?? []).filter((file) =>
+    projectFileIds.has(file.id),
+  );
+  async function downloadProjectFile(file: LibraryFile) {
+    await run(() => saveProjectOriginal(file));
+  }
+  async function saveProjectOriginal(file: LibraryFile) {
+    const bytes = await runtime.readFileBytes(file.id);
+    const url = URL.createObjectURL(bytes);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = file.name;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  async function importProjectOriginal(id: string) {
+    try {
+      return await runtime.importLegacyProjectFile(id);
+    } catch (error) {
+      if (error instanceof FileProjectLinkError)
+        setUnlinkedFile({ projectId: project.id, file: error.file });
+      throw error;
+    }
+  }
   const linked = references.flatMap((link) => {
     const entry = materials.find(
       (entry) => entry.ref.kind === link.to.kind && entry.ref.id === link.to.id,
@@ -262,7 +326,7 @@ export function ProjectWorkspace({
             snapshot.categories?.find(
               (category) =>
                 !category.deletedAt &&
-                category.id === effectiveCategoryId(project, liveItems),
+                category.id === workIndex.categoryIdByProjectId.get(project.id),
             )?.name
           }
         </p>
@@ -328,6 +392,15 @@ export function ProjectWorkspace({
                 disabled={busy}
                 onClick={() => {
                   setHeaderMenuOpen(false);
+                  onLifecycle(project);
+                }}
+              >
+                {t("changeProjectLifecycle")}
+              </MenuItem>
+              <MenuItem
+                disabled={busy}
+                onClick={() => {
+                  setHeaderMenuOpen(false);
                   onCreate("PROJECT", project.id);
                 }}
               >
@@ -373,6 +446,11 @@ export function ProjectWorkspace({
       >
         {tab === "overview" && (
           <div>
+            <EntityMemo
+              runtime={runtime}
+              targetKind="PROJECT"
+              targetId={project.id}
+            />
             <section className="project-next">
               <h2>{t("taskWorkspace.now")}</h2>
               {selectedTasks.focusTasks
@@ -591,6 +669,34 @@ export function ProjectWorkspace({
                     {entry.title}
                   </Button>
                 ))}
+            {unlinkedFile?.projectId === project.id && (
+              <div role="status">
+                {i18n.language.startsWith("zh")
+                  ? `“${unlinkedFile.file.name}”已保存到本机，但未关联到项目。`
+                  : `“${unlinkedFile.file.name}” is saved locally but is not linked to this project.`}
+                <Button
+                  onClick={() =>
+                    onOpen({ kind: "FILE", id: unlinkedFile.file.id })
+                  }
+                >
+                  {i18n.language.startsWith("zh") ? "打开文件" : "Open file"}
+                </Button>
+                <Button
+                  disabled={busy}
+                  onClick={async () => {
+                    const linked = await onLink(
+                      { kind: "WORK", id: project.id },
+                      { kind: "FILE", id: unlinkedFile.file.id },
+                    );
+                    if (linked) setUnlinkedFile(null);
+                  }}
+                >
+                  {i18n.language.startsWith("zh")
+                    ? "重试关联"
+                    : "Retry linking"}
+                </Button>
+              </div>
+            )}
             <ProjectMaterials
               library={snapshot.library}
               onCreateSpace={(input) =>
@@ -607,7 +713,34 @@ export function ProjectWorkspace({
               busy={busy}
               onOpen={onOpen}
               onNewPage={onNewPage}
-              onUpload={(input) => run(() => runtime.projectUpload(input))}
+              files={projectFiles}
+              onFileDownload={downloadProjectFile}
+              onFileDelete={(file, deleted) =>
+                run(() => runtime.deleteFile(file.id, file.version, deleted))
+              }
+              onUpload={(file) =>
+                run(async () => {
+                  try {
+                    await runtime.uploadProjectFile(
+                      project.id,
+                      {
+                        name: file.name,
+                        mime: file.type || "application/octet-stream",
+                        spaceId: null,
+                      },
+                      file,
+                    );
+                  } catch (error) {
+                    if (error instanceof FileProjectLinkError) {
+                      setUnlinkedFile({
+                        projectId: project.id,
+                        file: error.file,
+                      });
+                    }
+                    throw error;
+                  }
+                })
+              }
               onDelete={(material, deleted) =>
                 run(() =>
                   runtime.projectDelete(material.id, material.version, deleted),
@@ -615,18 +748,13 @@ export function ProjectWorkspace({
               }
               onDownload={async (id) => {
                 await run(async () => {
-                  const result = await runtime.projectFile(id);
-                  const bytes = Uint8Array.from(atob(result.base64), (char) =>
-                    char.charCodeAt(0),
-                  );
-                  const url = URL.createObjectURL(
-                    new Blob([bytes], { type: "application/octet-stream" }),
-                  );
-                  const anchor = document.createElement("a");
-                  anchor.href = url;
-                  anchor.download = result.material.title;
-                  anchor.click();
-                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  await saveProjectOriginal(await importProjectOriginal(id));
+                });
+              }}
+              onLegacyOpen={async (id) => {
+                await run(async () => {
+                  const file = await importProjectOriginal(id);
+                  onOpen({ kind: "FILE", id: file.id });
                 });
               }}
             />
@@ -701,6 +829,38 @@ export function ProjectWorkspace({
           <TasksWorkspace
             filterControls={
               <>
+                <label className="sort-control">
+                  <span>
+                    {i18n.language.startsWith("zh") ? "排序" : "Sort"}
+                  </span>
+                  <Select
+                    aria-label={
+                      i18n.language.startsWith("zh") ? "任务排序" : "Task sort"
+                    }
+                    value={taskSort}
+                    onChange={(event) => setTaskSort(event.target.value)}
+                  >
+                    <option value="manual">
+                      {i18n.language.startsWith("zh")
+                        ? "自定义顺序"
+                        : "Custom order"}
+                    </option>
+                    <option value="updated">
+                      {i18n.language.startsWith("zh")
+                        ? "最近更新"
+                        : "Recently updated"}
+                    </option>
+                    <option value="due">
+                      {i18n.language.startsWith("zh") ? "截止时间" : "Due date"}
+                    </option>
+                    <option value="priority">
+                      {i18n.language.startsWith("zh") ? "优先级" : "Priority"}
+                    </option>
+                    <option value="title">
+                      {i18n.language.startsWith("zh") ? "标题" : "Title"}
+                    </option>
+                  </Select>
+                </label>
                 <Button
                   ref={taskFilterAnchor}
                   variant="ghost"
@@ -742,7 +902,26 @@ export function ProjectWorkspace({
             timelineMode="gantt"
             taskIndex={selectedTasks}
             derived={selectedTasks.derived}
-            items={tasks}
+            items={orderedTasks}
+            manualOrder={
+              taskSort === "manual"
+                ? {
+                    scopeKey: orderScopeKey,
+                    pending: busy,
+                    move: (entityId, anchorId, placement) => {
+                      void run(() =>
+                        runtime.moveManualOrder({
+                          scope: orderScope,
+                          version: taskOrder?.version ?? 0,
+                          entityId,
+                          anchorId,
+                          placement,
+                        }),
+                      );
+                    },
+                  }
+                : undefined
+            }
             allItems={liveItems}
             edges={snapshot.edges}
             today={today}

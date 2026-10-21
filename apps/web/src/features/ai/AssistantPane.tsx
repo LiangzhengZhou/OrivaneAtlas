@@ -6,7 +6,16 @@ import type {
   EntityRef,
   ModelProfile,
 } from "@arclattice/application";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { aiContextNavigationRef } from "@arclattice/application";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "../../bootstrap";
 import { Button } from "../../components/ui/Button";
@@ -17,6 +26,17 @@ import { AnswerSources } from "./AnswerSources";
 import { ContextBar } from "./ContextBar";
 import { ConversationFilters } from "./ConversationFilters";
 import { ConversationMenu } from "./ConversationMenu";
+import { conversationHash } from "./conversation-route";
+import {
+  accessibleConversationSelection,
+  conversationSelectionKey,
+  latestConversationRunId,
+} from "./conversation-selection";
+import {
+  createMessageMarkdownViewport,
+  DeferredMessageMarkdown,
+  MessageMarkdownViewportContext,
+} from "./DeferredMessageMarkdown";
 import { HarnessApproval, ToolActivity } from "./ToolActivity";
 
 export function AssistantPane({
@@ -26,8 +46,11 @@ export function AssistantPane({
   currentSpaceId,
   onClose,
   embedded = false,
+  hosted = false,
   snapshot,
   onSource,
+  requestedSessionId,
+  workspaceActions,
 }: {
   runtime: Runtime;
   context: AiContextItem[];
@@ -35,11 +58,33 @@ export function AssistantPane({
   currentSpaceId?: string | undefined;
   onClose(): void;
   embedded?: boolean;
+  /** The surface hosting this pane already renders the title and close control. */
+  hosted?: boolean;
   snapshot?: Snapshot;
   onSource?(ref: EntityRef): void;
+  requestedSessionId?: string | null;
+  workspaceActions?: ReactNode;
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
+  const selectionKey = conversationSelectionKey(
+    runtime.serverOrigin,
+    runtime.remoteContext?.workspaceId ?? "",
+    runtime.remoteContext?.principalId ?? "",
+    embedded
+      ? "workspace"
+      : JSON.stringify([
+          projectId,
+          currentSpaceId,
+          context.map((item) => [item.ref.kind, item.ref.id]),
+        ]),
+  );
+  const currentSelectionKey = useRef(selectionKey);
+  currentSelectionKey.current = selectionKey;
+  function rememberSelection(id: string | null) {
+    if (id) localStorage.setItem(selectionKey, id);
+    else localStorage.removeItem(selectionKey);
+  }
   const [prompt, setPrompt] = useState("");
   const [selectedProject, setSelectedProject] = useState<string | null>(
     projectId ?? null,
@@ -64,6 +109,13 @@ export function AssistantPane({
     setSelectedSpace(currentSpaceId ?? null);
   }, [currentSpaceId]);
   const [sessions, setSessions] = useState<AgentSessionSummary[]>([]);
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const sessionListScope = useRef<string | null>(null);
+  const [sessionListLoad, setSessionListLoad] = useState(0);
+  const [sessionLoadFailed, setSessionLoadFailed] = useState(false);
+  const [configurationLoadFailed, setConfigurationLoadFailed] = useState(false);
+  const [sessionReload, setSessionReload] = useState(0);
   const [conversationSearch, setConversationSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [groupByProject, setGroupByProject] = useState(false);
@@ -128,6 +180,7 @@ export function AssistantPane({
         changes,
       );
       if (updated.deletedAt) {
+        rememberSelection(null);
         setDeletedSession(updated);
         setSession(null);
         setRun(null);
@@ -146,10 +199,49 @@ export function AssistantPane({
     new Set(),
   );
   const [session, setSession] = useState<AgentSession | null>(null);
+  const messagesElement = useRef<HTMLDivElement>(null);
+  const markdownViewport = useMemo(createMessageMarkdownViewport, []);
+  useEffect(() => () => markdownViewport.dispose(), [markdownViewport]);
+  const messageLayoutFrame = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (messageLayoutFrame.current !== null)
+        cancelAnimationFrame(messageLayoutFrame.current);
+    },
+    [],
+  );
+  const followLatest = useRef(true);
+  const lastOpenedSession = useRef<string | null>(null);
+  const followMessageLayout = useCallback(() => {
+    if (followLatest.current && messagesElement.current)
+      messagesElement.current.scrollTop = messagesElement.current.scrollHeight;
+  }, []);
+  const queueMessageLayout = useCallback(() => {
+    if (messageLayoutFrame.current !== null) return;
+    messageLayoutFrame.current = requestAnimationFrame(() => {
+      messageLayoutFrame.current = null;
+      followMessageLayout();
+    });
+  }, [followMessageLayout]);
+  useLayoutEffect(() => {
+    const id = session?.id ?? null;
+    if (id !== lastOpenedSession.current) followLatest.current = true;
+    lastOpenedSession.current = id;
+    if (session?.messages.length) queueMessageLayout();
+  }, [session?.id, session?.messages.length, queueMessageLayout]);
   const [historyBefore, setHistoryBefore] = useState(0);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   async function openSession(id: string) {
+    const requestedKey = selectionKey;
     const page = await runtime.agentSessionPage(id);
+    if (currentSelectionKey.current !== requestedKey) return page.session;
+    rememberSelection(page.session.id);
+    if (embedded)
+      history.replaceState(
+        history.state,
+        "",
+        conversationHash(page.session.id),
+      );
     setSession(page.session);
     setHistoryBefore(page.before);
     setHasMoreHistory(page.hasMore);
@@ -159,62 +251,89 @@ export function AssistantPane({
     [explicitProfile, setExplicitProfile] = useState("");
   useEffect(() => {
     let active = true;
+    setConfigurationLoadFailed(false);
     void runtime
       .modelConfiguration()
       .then((configuration) => {
         if (active) setProfiles(configuration.profiles);
       })
-      .catch((failure) => {
-        if (active)
-          setError(
-            failure instanceof Error
-              ? failure.message
-              : "MODEL_CONFIGURATION_UNAVAILABLE",
-          );
+      .catch(() => {
+        if (active) setConfigurationLoadFailed(true);
       });
     return () => {
       active = false;
     };
-  }, [runtime]);
+  }, [runtime, sessionReload]);
   useEffect(() => {
     setExplicitProfile(session?.modelProfileOverride ?? "");
   }, [session?.id, session?.modelProfileOverride]);
   useEffect(() => {
     let active = true;
-    void Promise.all([runtime.agentSessions(), runtime.ai()])
-      .then(async ([sessions, state]) => {
+    sessionListScope.current = null;
+    setPending(true);
+    setSessionLoadFailed(false);
+    setError("");
+    setSession(null);
+    setRun(null);
+    setHistoryBefore(0);
+    setHasMoreHistory(false);
+    void runtime
+      .agentSessions()
+      .then((sessions) => {
         if (active) {
           setSessions(sessions);
-          const latestSummary =
-            sessions.find((entry) => !entry.archivedAt) ?? null;
-          const latest = latestSummary
-            ? await runtime.agentSessionPage(latestSummary.id)
-            : null;
-          if (!active) return;
-          setSession(latest?.session ?? null);
-          setHistoryBefore(latest?.before ?? 0);
-          setHasMoreHistory(latest?.hasMore ?? false);
-          setRun(
-            state.runs.find(
-              (entry) =>
-                entry.sessionId === latest?.session.id &&
-                ["WAITING_APPROVAL", "RUNNING"].includes(entry.status),
-            ) ??
-              state.runs.find(
-                (entry) => entry.sessionId === latest?.session.id,
-              ) ??
-              null,
-          );
+          sessionListScope.current = selectionKey;
+          setSessionListLoad((value) => value + 1);
         }
       })
-      .catch((failure) => {
-        if (active)
-          setError(failure instanceof Error ? failure.message : "UNAVAILABLE");
+      .catch(() => {
+        if (active) {
+          setSessionLoadFailed(true);
+          setPending(false);
+        }
       });
     return () => {
       active = false;
     };
-  }, [runtime]);
+  }, [runtime, selectionKey, sessionReload]);
+  useEffect(() => {
+    if (sessionListScope.current !== selectionKey) return;
+    let active = true;
+    setPending(true);
+    setSessionLoadFailed(false);
+    setError("");
+    setSession(null);
+    setRun(null);
+    setHistoryBefore(0);
+    setHasMoreHistory(false);
+    const selectedId = accessibleConversationSelection(
+      requestedSessionId ?? localStorage.getItem(selectionKey),
+      sessionsRef.current,
+    );
+    void (
+      selectedId ? runtime.agentSessionPage(selectedId) : Promise.resolve(null)
+    )
+      .then(async (latest) => {
+        if (!active) return;
+        setSession(latest?.session ?? null);
+        setHistoryBefore(latest?.before ?? 0);
+        setHasMoreHistory(latest?.hasMore ?? false);
+        const lastRunId = latest
+          ? latestConversationRunId(latest.session.messages)
+          : null;
+        const lastRun = lastRunId ? await runtime.agentRun(lastRunId) : null;
+        if (active) setRun(lastRun);
+      })
+      .catch(() => {
+        if (active) setSessionLoadFailed(true);
+      })
+      .finally(() => {
+        if (active) setPending(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [runtime, selectionKey, requestedSessionId, sessionListLoad]);
   const [run, setRun] = useState<AgentRun | null>(null);
   const [pending, setPending] = useState(false);
   const [streamedText, setStreamedText] = useState("");
@@ -246,8 +365,7 @@ export function AssistantPane({
       if (loading || !active) return;
       loading = true;
       try {
-        const result = await runtime.ai();
-        const latest = result.runs.find((entry) => entry.id === run.id);
+        const latest = await runtime.agentRun(run.id);
         if (active && latest) {
           if (latest.status !== "RUNNING") {
             if (latest.sessionId) {
@@ -366,9 +484,9 @@ export function AssistantPane({
       }
       aria-label="Atlas Assistant"
     >
-      <header>
+      <header hidden={hosted}>
         <h2>Atlas</h2>
-        {!embedded && (
+        {!embedded && !hosted && (
           <Button
             type="button"
             onClick={onClose}
@@ -380,22 +498,27 @@ export function AssistantPane({
       </header>
       <div className="conversation-body">
         <div className="conversation-sidebar">
-          <Button
-            variant="secondary"
-            type="button"
-            disabled={
-              pending ||
-              run?.status === "RUNNING" ||
-              run?.status === "WAITING_APPROVAL"
-            }
-            onClick={() => {
-              setSession(null);
-              setRun(null);
-              setExplicitProfile("");
-            }}
-          >
-            {zh ? "新对话" : "New conversation"}
-          </Button>
+          <div className="conversation-sidebar-actions">
+            <Button
+              variant="secondary"
+              type="button"
+              disabled={
+                pending ||
+                run?.status === "RUNNING" ||
+                run?.status === "WAITING_APPROVAL"
+              }
+              onClick={() => {
+                rememberSelection(null);
+                setSession(null);
+                setRun(null);
+                setExplicitProfile("");
+                if (embedded) location.hash = "ai";
+              }}
+            >
+              {zh ? "新对话" : "New conversation"}
+            </Button>
+            {workspaceActions}
+          </div>
           <nav
             className="conversation-list"
             aria-label={zh ? "最近对话" : "Recent conversations"}
@@ -435,16 +558,22 @@ export function AssistantPane({
                         run?.status === "WAITING_APPROVAL"
                       }
                       onClick={async () => {
+                        if (embedded) {
+                          location.hash = conversationHash(entry.id);
+                          return;
+                        }
                         setPending(true);
                         try {
-                          await openSession(entry.id);
+                          const opened = await openSession(entry.id);
                           setRun(null);
                           setStreamedText("");
-                          const state = await runtime.ai();
+                          const lastRunId = latestConversationRunId(
+                            opened.messages,
+                          );
                           setRun(
-                            state.runs.find(
-                              (run) => run.sessionId === entry.id,
-                            ) ?? null,
+                            lastRunId
+                              ? await runtime.agentRun(lastRunId)
+                              : null,
                           );
                         } catch (failure) {
                           setError(
@@ -474,7 +603,18 @@ export function AssistantPane({
           </nav>
         </div>
         <div className="conversation-main">
-          <div className="conversation-messages">
+          <div
+            className="conversation-messages"
+            ref={messagesElement}
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              followLatest.current =
+                element.scrollHeight -
+                  element.clientHeight -
+                  element.scrollTop <
+                32;
+            }}
+          >
             {session && (
               <div className="toolbar">
                 <h3 className="conversation-title">{session.title}</h3>
@@ -699,6 +839,15 @@ export function AssistantPane({
                         <code>{message.text}</code>
                       </details>
                     </div>
+                  ) : session && session.messages.length > 20 ? (
+                    <MessageMarkdownViewportContext.Provider
+                      value={markdownViewport}
+                    >
+                      <DeferredMessageMarkdown
+                        text={message.text}
+                        onLayout={queueMessageLayout}
+                      />
+                    </MessageMarkdownViewportContext.Provider>
                   ) : (
                     <Markdown text={message.text} />
                   )}
@@ -716,6 +865,33 @@ export function AssistantPane({
               </section>
             ))}
 
+            {(sessionLoadFailed || configurationLoadFailed) && (
+              <div role="alert">
+                <strong>
+                  {sessionLoadFailed
+                    ? zh
+                      ? "对话暂时无法加载"
+                      : "Conversations could not be loaded"
+                    : zh
+                      ? "模型设置暂时无法加载"
+                      : "Model settings could not be loaded"}
+                </strong>
+                <p>
+                  {zh
+                    ? "请检查连接后重新加载。此操作不会发送模型请求，本机内容不受影响。"
+                    : "Check the connection and reload. This does not send a model request or change local content."}
+                </p>
+                <Button
+                  disabled={pending}
+                  onClick={() => {
+                    setSessionLoadFailed(false);
+                    setSessionReload((value) => value + 1);
+                  }}
+                >
+                  {zh ? "重新加载对话" : "Reload conversations"}
+                </Button>
+              </div>
+            )}
             {error && (
               <div role="alert">
                 <strong>{zh ? "模型请求失败" : "Model request failed"}</strong>
@@ -844,7 +1020,7 @@ export function AssistantPane({
                       key={source.ref.kind + source.ref.id}
                       type="button"
                       onClick={() => {
-                        onSource?.(source.ref);
+                        onSource?.(aiContextNavigationRef(source.ref));
                         if (!embedded) onClose();
                       }}
                     >
@@ -902,101 +1078,6 @@ export function AssistantPane({
               )}
           </div>
           <div className="conversation-composer">
-            <label>
-              {zh ? "模型配置" : "Model profile"}
-              <Select
-                aria-label={zh ? "对话模型配置" : "Conversation model profile"}
-                value={explicitProfile}
-                disabled={
-                  pending ||
-                  run?.status === "WAITING_APPROVAL" ||
-                  run?.status === "RUNNING"
-                }
-                onChange={async (event) => {
-                  const selected = event.target.value;
-                  if (!session) {
-                    setExplicitProfile(selected);
-                    return;
-                  }
-                  setPending(true);
-                  setError("");
-                  try {
-                    const updated = await runtime.setAgentSessionProfile(
-                      session.id,
-                      session.version,
-                      selected || null,
-                    );
-                    setSession(updated);
-                    setSessions(await runtime.agentSessions());
-                    setExplicitProfile(selected);
-                  } catch (failure) {
-                    setError(
-                      failure instanceof Error
-                        ? failure.message
-                        : "MODEL_PROFILE_SAVE_FAILED",
-                    );
-                  } finally {
-                    setPending(false);
-                  }
-                }}
-              >
-                <option value="">
-                  {zh
-                    ? "自动继承空间 / 项目 / 默认"
-                    : "Inherit space / project / default"}
-                </option>
-                {profiles.map((profile) => (
-                  <option
-                    key={profile.id}
-                    value={profile.id}
-                    disabled={profile.enabled === false}
-                  >
-                    {profile.name}
-                  </option>
-                ))}
-                {explicitProfile &&
-                  !profiles.some(
-                    (profile) => profile.id === explicitProfile,
-                  ) && (
-                    <option value={explicitProfile}>
-                      {zh ? "配置不可用" : "Profile unavailable"}
-                    </option>
-                  )}
-              </Select>
-            </label>
-            {snapshot ? (
-              <ContextBar
-                snapshot={snapshot}
-                projectId={selectedProject}
-                spaceId={selectedSpace}
-                context={selectedContext}
-                disabled={
-                  pending ||
-                  run?.status === "WAITING_APPROVAL" ||
-                  run?.status === "RUNNING"
-                }
-                onProject={setSelectedProject}
-                onSpace={setSelectedSpace}
-                onContext={setSelectedContext}
-              />
-            ) : (
-              <div className="context-bar">
-                {selectedContext.map((item) => (
-                  <Button
-                    type="button"
-                    key={item.ref.id}
-                    variant="toggle"
-                    onClick={() =>
-                      setExcludedContext(
-                        (previous) => new Set([...previous, item.ref.id]),
-                      )
-                    }
-                  >
-                    {item.title}
-                  </Button>
-                ))}
-              </div>
-            )}
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -1010,17 +1091,116 @@ export function AssistantPane({
                 onChange={(event) => setPrompt(event.target.value)}
                 placeholder={zh ? "问 Atlas…" : "Ask anything…"}
               />
-              <Button
-                variant="primary"
-                type="submit"
-                disabled={
-                  pending ||
-                  run?.status === "RUNNING" ||
-                  run?.status === "WAITING_APPROVAL"
-                }
-              >
-                {zh ? "发送" : "Send"}
-              </Button>
+              <div className="conversation-composer-controls">
+                <label>
+                  {zh ? "模型配置" : "Model profile"}
+                  <Select
+                    aria-label={
+                      zh ? "对话模型配置" : "Conversation model profile"
+                    }
+                    value={explicitProfile}
+                    disabled={
+                      pending ||
+                      run?.status === "WAITING_APPROVAL" ||
+                      run?.status === "RUNNING"
+                    }
+                    onChange={async (event) => {
+                      const selected = event.target.value;
+                      if (!session) {
+                        setExplicitProfile(selected);
+                        return;
+                      }
+                      setPending(true);
+                      setError("");
+                      try {
+                        const updated = await runtime.setAgentSessionProfile(
+                          session.id,
+                          session.version,
+                          selected || null,
+                        );
+                        setSession(updated);
+                        setSessions(await runtime.agentSessions());
+                        setExplicitProfile(selected);
+                      } catch (failure) {
+                        setError(
+                          failure instanceof Error
+                            ? failure.message
+                            : "MODEL_PROFILE_SAVE_FAILED",
+                        );
+                      } finally {
+                        setPending(false);
+                      }
+                    }}
+                  >
+                    <option value="">
+                      {zh
+                        ? "自动继承空间 / 项目 / 默认"
+                        : "Inherit space / project / default"}
+                    </option>
+                    {profiles.map((profile) => (
+                      <option
+                        key={profile.id}
+                        value={profile.id}
+                        disabled={profile.enabled === false}
+                      >
+                        {profile.name}
+                      </option>
+                    ))}
+                    {explicitProfile &&
+                      !profiles.some(
+                        (profile) => profile.id === explicitProfile,
+                      ) && (
+                        <option value={explicitProfile}>
+                          {zh ? "配置不可用" : "Profile unavailable"}
+                        </option>
+                      )}
+                  </Select>
+                </label>
+                {snapshot ? (
+                  <ContextBar
+                    snapshot={snapshot}
+                    projectId={selectedProject}
+                    spaceId={selectedSpace}
+                    context={selectedContext}
+                    disabled={
+                      pending ||
+                      run?.status === "WAITING_APPROVAL" ||
+                      run?.status === "RUNNING"
+                    }
+                    onProject={setSelectedProject}
+                    onSpace={setSelectedSpace}
+                    onContext={setSelectedContext}
+                  />
+                ) : (
+                  <div className="context-bar">
+                    {selectedContext.map((item) => (
+                      <Button
+                        type="button"
+                        key={item.ref.id}
+                        variant="toggle"
+                        onClick={() =>
+                          setExcludedContext(
+                            (previous) => new Set([...previous, item.ref.id]),
+                          )
+                        }
+                      >
+                        {item.title}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                <Button
+                  variant="primary"
+                  type="submit"
+                  disabled={
+                    pending ||
+                    run?.status === "RUNNING" ||
+                    run?.status === "WAITING_APPROVAL"
+                  }
+                >
+                  {zh ? "发送" : "Send"}
+                </Button>
+              </div>
             </form>
           </div>
         </div>

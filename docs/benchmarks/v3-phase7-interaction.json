@@ -1,0 +1,361 @@
+{
+  "baselineSha": "a9dc99a37486a191139c548a70150df2d20d6c67",
+  "status": "Phase7 interaction checkpoint passes all14; whole v3 FINAL pending",
+  "samplesPerBuild": 20,
+  "collectionOrder": "baseline1/current1 repeated20; traceoff both",
+  "files": {
+    "baseline": [
+      "session141-target-markdown-baseline-01-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-02-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-03-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-04-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-05-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-06-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-07-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-08-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-09-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-10-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-11-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-12-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-13-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-14-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-15-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-16-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-17-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-18-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-19-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-baseline-20-complete-benchmark-desktop-zh.json"
+    ],
+    "current": [
+      "session141-target-markdown-current-01-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-02-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-03-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-04-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-05-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-06-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-07-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-08-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-09-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-10-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-11-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-12-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-13-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-14-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-15-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-16-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-17-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-18-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-19-complete-benchmark-desktop-zh.json",
+      "session141-target-markdown-current-20-complete-benchmark-desktop-zh.json"
+    ]
+  },
+  "rows": [
+    {
+      "action": "Now→Scheduled",
+      "metric": "scriptMs",
+      "baselineMs": 11.39,
+      "currentMs": 11.304000000000002,
+      "ratio": 0.9924495171202811,
+      "pass": true,
+      "baselineRange": {
+        "min": 7.524999999999997,
+        "max": 15.647000000000004
+      },
+      "currentRange": {
+        "min": 5.979000000000002,
+        "max": 20.292000000000005
+      }
+    },
+    {
+      "action": "Task tab switch",
+      "metric": "scriptMs",
+      "baselineMs": 11.590499999999999,
+      "currentMs": 12.511,
+      "ratio": 1.0794184892800138,
+      "pass": true,
+      "baselineRange": {
+        "min": 7.4500000000000055,
+        "max": 15.039000000000003
+      },
+      "currentRange": {
+        "min": 6.476999999999997,
+        "max": 15.822000000000003
+      }
+    },
+    {
+      "action": "Project filter",
+      "metric": "scriptMs",
+      "baselineMs": 18.498999999999995,
+      "currentMs": 17.457999999999995,
+      "ratio": 0.9437266879290772,
+      "pass": true,
+      "baselineRange": {
+        "min": 12.718,
+        "max": 23.377000000000002
+      },
+      "currentRange": {
+        "min": 11.312000000000003,
+        "max": 20.829999999999995
+      }
+    },
+    {
+      "action": "List→Board",
+      "metric": "scriptMs",
+      "baselineMs": 11.518500000000001,
+      "currentMs": 10.479000000000003,
+      "ratio": 0.9097538742023702,
+      "pass": true,
+      "baselineRange": {
+        "min": 7.641999999999996,
+        "max": 17.887
+      },
+      "currentRange": {
+        "min": 6.059000000000009,
+        "max": 12.455000000000007
+      }
+    },
+    {
+      "action": "Calendar open",
+      "metric": "scriptMs",
+      "baselineMs": 19.207499999999996,
+      "currentMs": 18.175999999999995,
+      "ratio": 0.946297019393466,
+      "pass": true,
+      "baselineRange": {
+        "min": 14.173000000000005,
+        "max": 24.506
+      },
+      "currentRange": {
+        "min": 12.547000000000002,
+        "max": 24.046
+      }
+    },
+    {
+      "action": "Calendar month switch",
+      "metric": "scriptMs",
+      "baselineMs": 3.397000000000004,
+      "currentMs": 2.8185000000000016,
+      "ratio": 0.8297026788342651,
+      "pass": true,
+      "baselineRange": {
+        "min": 2.378000000000005,
+        "max": 5.31899999999999
+      },
+      "currentRange": {
+        "min": 1.689999999999997,
+        "max": 4.424999999999998
+      }
+    },
+    {
+      "action": "Dependency local graph",
+      "metric": "scriptMs",
+      "baselineMs": 31.917,
+      "currentMs": 30.815499999999997,
+      "ratio": 0.9654886110850016,
+      "pass": true,
+      "baselineRange": {
+        "min": 24.666000000000007,
+        "max": 37.442
+      },
+      "currentRange": {
+        "min": 20.392000000000007,
+        "max": 42.03699999999999
+      }
+    },
+    {
+      "action": "Task picker open",
+      "metric": "scriptMs",
+      "baselineMs": 3.340499999999996,
+      "currentMs": 3.128000000000006,
+      "ratio": 0.9363867684478401,
+      "pass": true,
+      "baselineRange": {
+        "min": 1.9349999999999923,
+        "max": 5.463000000000023
+      },
+      "currentRange": {
+        "min": 1.606000000000024,
+        "max": 4.356999999999999
+      }
+    },
+    {
+      "action": "Task picker drill-down",
+      "metric": "scriptMs",
+      "baselineMs": 2.748500000000001,
+      "currentMs": 2.3224999999999913,
+      "ratio": 0.845006367109329,
+      "pass": true,
+      "baselineRange": {
+        "min": 1.3950000000000073,
+        "max": 4.963999999999996
+      },
+      "currentRange": {
+        "min": 1.2060000000000126,
+        "max": 4.7979999999999965
+      }
+    },
+    {
+      "action": "Knowledge local graph",
+      "metric": "scriptMs",
+      "baselineMs": 27.3945,
+      "currentMs": 26.007000000000005,
+      "ratio": 0.9493511471280733,
+      "pass": true,
+      "baselineRange": {
+        "min": 20.678,
+        "max": 34.22500000000001
+      },
+      "currentRange": {
+        "min": 16.394999999999992,
+        "max": 32.18499999999999
+      }
+    },
+    {
+      "action": "50KB typing",
+      "metric": "p95TaskMs",
+      "baselineMs": 7.2665000000000095,
+      "currentMs": 5.7514999999999645,
+      "ratio": 0.7915089795637456,
+      "pass": true,
+      "baselineRange": {
+        "min": 5.46100000000016,
+        "max": 12.785000000000046
+      },
+      "currentRange": {
+        "min": 3.6559999999998816,
+        "max": 9.066000000000018
+      }
+    },
+    {
+      "action": "100KB typing",
+      "metric": "p95TaskMs",
+      "baselineMs": 6.960499999999925,
+      "currentMs": 4.143499999999967,
+      "ratio": 0.5952876948495096,
+      "pass": true,
+      "baselineRange": {
+        "min": 4.998999999999976,
+        "max": 11.056999999999872
+      },
+      "currentRange": {
+        "min": 3.1529999999999614,
+        "max": 10.898999999999992
+      }
+    },
+    {
+      "action": "Atlas conversation list",
+      "metric": "scriptMs",
+      "baselineMs": 15.902000000000026,
+      "currentMs": 15.42850000000001,
+      "ratio": 0.9702238712111675,
+      "pass": true,
+      "baselineRange": {
+        "min": 12.330000000000062,
+        "max": 18.750000000000043
+      },
+      "currentRange": {
+        "min": 9.80700000000001,
+        "max": 19.921999999999997
+      }
+    },
+    {
+      "action": "Atlas conversation open",
+      "metric": "scriptMs",
+      "baselineMs": 32.26400000000001,
+      "currentMs": 23.57549999999997,
+      "ratio": 0.7307060500867829,
+      "pass": true,
+      "baselineRange": {
+        "min": 24.14000000000005,
+        "max": 39.439
+      },
+      "currentRange": {
+        "min": 15.516999999999948,
+        "max": 28.897000000000062
+      }
+    }
+  ],
+  "liveDOM": [
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    },
+    {
+      "list": 10,
+      "board": 14
+    }
+  ],
+  "protocol": "Vite production both; traceoff; same target conversation+actual Markdown strong settlement; trusted CDP typing; alternating20pairs, fixed source; failed previous cohorts retained"
+}

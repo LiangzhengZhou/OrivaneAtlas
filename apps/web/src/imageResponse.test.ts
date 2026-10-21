@@ -1,5 +1,38 @@
 import { describe, expect, test } from "vitest";
-import { imageResponseBlob } from "./imageResponse";
+import {
+  imageFailureReason,
+  imageLoadFailure,
+  imageResponseBlob,
+} from "./imageResponse";
+
+test("image diagnostics never disclose arbitrary private exception content", () => {
+  expect(imageFailureReason(new Error("private URL and credential"))).toBe(
+    "UNCLASSIFIED",
+  );
+  expect(imageFailureReason(new Error("VERSION_CONFLICT"))).toBe(
+    "VERSION_CONFLICT",
+  );
+});
+
+test.each([
+  ["UNAUTHORIZED", "access", 401],
+  ["FORBIDDEN", "access", 403],
+  ["NOT_FOUND", "missing", 404],
+  ["FILE_DOWNLOAD_401", "access", 401],
+  ["FILE_DOWNLOAD_403", "access", 403],
+  ["FILE_DOWNLOAD_404", "missing", 404],
+])("maps File/native image failure %s safely", (code, kind, status) => {
+  expect(imageLoadFailure(new Error(code))).toMatchObject({
+    code: kind,
+    status,
+  });
+  expect(imageLoadFailure(code)).toMatchObject({ code: kind, status });
+});
+
+test("keeps unrelated transport and validation errors intact", () => {
+  const error = new Error("VALIDATION_ERROR");
+  expect(imageLoadFailure(error)).toBe(error);
+});
 
 describe("private image response", () => {
   test("preserves every binary byte and MIME after a native Base64 round trip", async () => {

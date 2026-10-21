@@ -101,6 +101,14 @@ select {
   gap: 12px;
   overflow: hidden;
 }
+.conversation-sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.conversation-sidebar-actions > .ui-button:first-child {
+  flex: 1;
+}
 .conversation-sidebar {
   display: flex;
   flex-direction: column;
@@ -182,12 +190,19 @@ select {
   border-top: 1px solid var(--border-default);
   background: inherit;
 }
-.conversation-composer > label {
+.conversation-composer-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.conversation-composer-controls > label {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 8px;
+  font-size: var(--font-meta-size);
+  color: var(--text-secondary);
 }
 .conversation-composer select {
   flex: 1;
@@ -195,10 +210,12 @@ select {
   max-width: 100%;
 }
 .conversation-composer form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+}
+.conversation-composer-controls > .ui-button:last-child {
+  margin-left: auto;
 }
 .conversation-messages > .toolbar {
   display: flex;
@@ -346,9 +363,4 @@ select {
 }
 .sidebar-collapsed .sidebar .nav-item {
   justify-content: center;
-}
-
-.task-priority-signal {
-  color: var(--text-muted);
-  font-size: var(--font-size-small, 12px);
 }

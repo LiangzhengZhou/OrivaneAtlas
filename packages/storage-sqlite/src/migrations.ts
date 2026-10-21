@@ -289,6 +289,78 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 34,
+    name: "manual-order",
+    sql: readFileSync(
+      new URL("./migrations/0034-manual-order.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 35,
+    name: "library-files",
+    sql: readFileSync(
+      new URL("./migrations/0035-library-files.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 36,
+    name: "file-binary-completion",
+    sql: readFileSync(
+      new URL("./migrations/0036-file-binary-completion.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 37,
+    name: "request-receipt-device",
+    sql: readFileSync(
+      new URL("./migrations/0037-request-receipt-device.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 38,
+    name: "file-extraction",
+    sql: readFileSync(
+      new URL("./migrations/0038-file-extraction.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 39,
+    name: "file-extraction-search",
+    sql: readFileSync(
+      new URL("./migrations/0039-file-extraction-search.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 40,
+    name: "owned-workspaces",
+    sql: readFileSync(
+      new URL("./migrations/0040-owned-workspaces.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 41,
+    name: "entity-memos",
+    sql: readFileSync(
+      new URL("./migrations/0041-entity-memos.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 42,
+    name: "credential-grants",
+    sql: readFileSync(
+      new URL("./migrations/0042-credential-grants.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {
@@ -347,9 +419,53 @@ export function inspectSchema(
     "work_edge_dependency",
     "work_edge_target",
   ];
+  if (version >= 41)
+    required.push(
+      "entity_memo",
+      "entity_memo_activity",
+      "entity_memo_outbox",
+      "sync_entity_memo_insert",
+      "sync_entity_memo_update",
+      "sync_entity_memo_delete",
+    );
+  if (
+    version >= 42 &&
+    !db
+      .prepare("PRAGMA table_info(api_credential)")
+      .all()
+      .some((column) => column.name === "grants_json")
+  )
+    throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (version >= 35)
+    required.push(
+      "library_file",
+      "library_file_space",
+      "file_activity",
+      "file_outbox",
+      "file_blob_descriptor",
+      "file_blob_chunk",
+    );
+  if (version >= 34) {
+    required.push(
+      "manual_order_scope",
+      "sync_manual_order_insert",
+      "sync_manual_order_update",
+      "sync_manual_order_delete",
+    );
+  }
   if (version >= 30) {
-    const expected =
-      plan.find((step) => step.name === "workspace-changes")?.sql ?? "";
+    const expected = [
+      version >= 41
+        ? (plan.find((step) => step.name === "entity-memos")?.sql ?? "")
+        : "",
+      version >= 35
+        ? (plan.find((step) => step.name === "library-files")?.sql ?? "")
+        : "",
+      plan.find((step) => step.name === "workspace-changes")?.sql ?? "",
+      version >= 34
+        ? (plan.find((step) => step.name === "manual-order")?.sql ?? "")
+        : "",
+    ].join("\n");
     for (const name of [
       "workspace_change",
       "workspace_sync_state",

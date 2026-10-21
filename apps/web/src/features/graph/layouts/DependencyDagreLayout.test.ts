@@ -39,3 +39,36 @@ test("cyclic and larger dependency graphs retain finite Dagre positions", () => 
     ).toBe(true);
   }
 });
+
+test("TB direction ranks top to bottom and LR stays the default", () => {
+  const edges = [
+    { source: "a", target: "b" },
+    { source: "a", target: "c" },
+    { source: "b", target: "d" },
+  ];
+  const ids = ["a", "b", "c", "d"];
+  const pos = (nodes: ReturnType<typeof dependencyDagreLayout>) =>
+    new Map(nodes.map((node) => [node.id, node.position]));
+  const lr = pos(dependencyDagreLayout(ids, edges));
+  const explicit = pos(dependencyDagreLayout(ids, edges, "LR"));
+  expect(explicit).toEqual(lr);
+  const tb = pos(dependencyDagreLayout(ids, edges, "TB"));
+  for (const edge of edges) {
+    expect(tb.get(edge.target)!.y).toBeGreaterThan(tb.get(edge.source)!.y);
+    expect(lr.get(edge.target)!.x).toBeGreaterThan(lr.get(edge.source)!.x);
+  }
+  expect(tb.get("b")!.x).not.toBe(tb.get("c")!.x);
+});
+
+test("TB direction also applies to the Dagre fallback for cycles and large graphs", () => {
+  const ids = Array.from({ length: 45 }, (_, index) => String(index));
+  const edges = ids.slice(1).map((target, index) => ({
+    source: ids[index]!,
+    target,
+  }));
+  const tb = new Map(
+    dependencyDagreLayout(ids, edges, "TB").map((n) => [n.id, n.position]),
+  );
+  for (const edge of edges)
+    expect(tb.get(edge.target)!.y).toBeGreaterThan(tb.get(edge.source)!.y);
+});

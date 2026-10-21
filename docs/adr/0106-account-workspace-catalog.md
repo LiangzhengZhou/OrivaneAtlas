@@ -1,0 +1,7 @@
+# ADR0106 — Separate account-workspace replicas and durable catalog
+
+2026-10-15, implementation in progress. FINAL8 option A opens an account workspace in a separate local metadata/blob database. The existing default workspace remains available and unchanged. A separate installation-local IndexedDB catalog records active database and remote origin/workspace/principal references, never credentials. Concurrent reservation of the same remote identity selects one database; active selection uses CAS. Corrupt catalog entries fail closed without deleting or regenerating user data.
+
+Application revalidates the explicit metadata preview and authenticated generation, reserves a target entry, opens its independent durable identity/binding and pulls through the existing canonical sync coordinator. Activation occurs only after successful pull and final scope validation. Failures leave the source workspace active and preserve the target for recovery. Returning to another catalog entry requires explicit selection and dirty-draft handling. This does not authorize merge or new remote workspace creation; FINAL options B/C require separate review/apply contracts and remain open until implemented and verified.
+
+The catalog is a new independent IndexedDB database, not a modification of historical SQLite/PostgreSQL migrations or existing local workspace stores. Bootstrap owns infrastructure construction; Application owns preview and activation sequencing; UI owns explicit choice, leave confirmation and reloading the assembled workspace.

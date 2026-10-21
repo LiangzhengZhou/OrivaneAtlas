@@ -5,12 +5,21 @@ import {
   NoteKnowledgeService,
 } from "@arclattice/application";
 import { expect, it } from "vitest";
+import { noteKnowledgeReplayScenario } from "../../../tests/contracts/note-knowledge-replay";
 import { context, sqliteHarness } from "./testing";
 
 const harness = sqliteHarness();
 const auth = { require: async () => {} };
 const clock = { now: () => "2026-10-02T10:00:00.000Z" };
 const ids = { next: randomUUID };
+it("SQLite original Note promotion preserves identities and rolls back incomplete effects", async () => {
+  const db = await harness.create();
+  await noteKnowledgeReplayScenario((operation) =>
+    db.request(context, null, (_uow, notes, connected, library) =>
+      operation(notes, library, connected),
+    ),
+  );
+});
 it("promotes atomically, preserves Markdown/policy/provenance and links without duplicating a document", async () => {
   const db = await harness.create();
   const state = await db.request(

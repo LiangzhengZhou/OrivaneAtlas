@@ -20,6 +20,7 @@ import { NotificationSettings } from "../NotificationSettings";
 
 interface Props {
   notifications: Parameters<typeof NotificationSettings>[0]["notifications"];
+  notificationCenter: Parameters<typeof NotificationSettings>[0]["center"];
   active: boolean;
   context: ActorContext;
   runtime: Runtime;
@@ -39,6 +40,7 @@ interface Props {
 export function SettingsRoute({
   active,
   notifications,
+  notificationCenter,
   context,
   runtime,
   snapshot,
@@ -85,23 +87,37 @@ export function SettingsRoute({
         <>
           <section className="panel">
             <h2>Atlas</h2>
-            <AiSettingsView runtime={runtime} snapshot={snapshot} />
+            {runtime.account ? (
+              <AiSettingsView runtime={runtime} snapshot={snapshot} />
+            ) : (
+              <p>{t("remoteModelSettingsDisconnected")}</p>
+            )}
           </section>
           <NavigationSettings
             {...navigation}
             key={navigation.preference.version}
           />
           <CalendarSettings {...calendar} />
-          <NotificationSettings notifications={notifications} />
+          <NotificationSettings
+            notifications={notifications}
+            center={notificationCenter}
+          />
           <AppUpdater updates={runtime.updates} />
 
           <section>
             <h2>{t("dataControl")}</h2>
-            {runtime.account?.role === "USER" ? (
+            {runtime.storageMode !== "local" &&
+            runtime.account?.role === "USER" ? (
               <p>{t("spaces:backupAdmin")}</p>
             ) : (
               <>
-                <p>{t("backupHint")}</p>
+                <p>
+                  {t(
+                    runtime.storageMode === "local"
+                      ? "localBackupHint"
+                      : "backupHint",
+                  )}
+                </p>
                 <Button
                   variant="primary"
                   type="button"
@@ -112,14 +128,18 @@ export function SettingsRoute({
                       const url = URL.createObjectURL(blob);
                       const link = document.createElement("a");
                       link.href = url;
-                      link.download = "arclattice-" + day + ".sqlite";
+                      link.download = "orivane-atlas-" + day + ".oab";
                       link.click();
                       setTimeout(() => URL.revokeObjectURL(url), 1000);
                     })
                   }
                 >
                   <Download size={17} />
-                  {t("backupDatabase")}
+                  {t(
+                    runtime.storageMode === "local"
+                      ? "localBackup"
+                      : "backupDatabase",
+                  )}
                 </Button>
               </>
             )}

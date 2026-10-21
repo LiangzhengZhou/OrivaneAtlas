@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { CategoryService } from "@arclattice/application";
 import { expect, test } from "vitest";
+import { categoryReplayScenario } from "../../../tests/contracts/category-replay";
 import { categoryPort } from "./categories";
 import { migrate, migrations } from "./migrations";
 import { context, postgresHarness, service } from "./testing";
 
 const harness = postgresHarness();
+test("stable category original replay and complete reorder rollback on PostgreSQL", async () => {
+  const db = await harness.create();
+  await categoryReplayScenario((actor, operation) =>
+    db.knowledge(actor, (uow) => operation(uow)),
+  );
+});
 test("registered PostgreSQL category metadata survives membership-preserving legacy edits", async () => {
   const db = await harness.create();
   const project = await service(db).create(context, {

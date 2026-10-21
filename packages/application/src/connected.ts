@@ -7,12 +7,18 @@ import {
   gatewayReservation,
   settleGatewayMoney,
 } from "./gateway-policy";
-import type { AuthorizationService, Clock, IdGenerator } from "./index";
+import type {
+  ApplicationIdPurpose,
+  AuthorizationService,
+  Clock,
+  IdGenerator,
+} from "./index";
 import { requestLimitThreshold } from "./model-configuration";
 import type { ModelProviderAdapter } from "./provider-adapter";
+import { stableEntityIds } from "./stable-entity-ids";
 
 export interface EntityRef {
-  kind: "NOTE" | "WORK" | "SPACE" | "DOCUMENT";
+  kind: "NOTE" | "WORK" | "SPACE" | "DOCUMENT" | "FILE";
   id: string;
 }
 export interface ConnectedEntity {
@@ -54,6 +60,8 @@ export type RunStatus =
   | "REJECTED"
   | "INTERRUPTED";
 export interface AgentRun extends ConnectedEntity {
+  /** Original human prompt, separate from canonical context/model instructions. */
+  userPrompt?: string;
   parentRunId?: string;
   harness?: import("./agent-harness").HarnessState;
   toolApprovals?: Record<
@@ -74,10 +82,16 @@ export interface AgentRun extends ConnectedEntity {
     usage?: ModelUsage;
   };
   context?: {
+    range?: { from: number; to: number };
+    file?: import("./file-ai-context").FileContextIdentity;
     source?: AiContextItem["source"];
     tokenEstimate?: number;
     permission?: AiContextItem["permission"];
-    ref: EntityRef;
+    ref: AiContextItem["ref"];
+    memo?: Pick<
+      import("./memo-ai-context").MemoAiContext,
+      "target" | "ownerPrincipalId"
+    >;
     version: number;
     title: string;
     bodyMd: string;
@@ -122,10 +136,15 @@ export class ConnectedService {
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
   ) {}
-  private base(context: ActorContext): ConnectedEntity {
+  private base(
+    context: ActorContext,
+    purpose?: ApplicationIdPurpose,
+  ): ConnectedEntity {
     const now = this.clock.now();
     return {
-      id: this.ids.next(),
+      id: purpose
+        ? (this.ids.nextFor?.(purpose) ?? this.ids.next())
+        : this.ids.next(),
       workspaceId: context.workspaceId,
       version: 1,
       createdBy: context.principalId,
@@ -135,17 +154,40 @@ export class ConnectedService {
       deletedAt: null,
     };
   }
-  async link(
-    context: ActorContext,
+  async linkWithStableId(
+    contextInput: ActorContext,
+    id: string,
     from: EntityRef,
     to: EntityRef,
     relation: KnowledgeLink["relation"],
   ) {
+    const context = Object.freeze({ ...contextInput }),
+      captured = structuredClone({ from, to, relation });
+    await this.auth.require(context, "graph:write");
+    const ids = stableEntityIds(this.ids, "KNOWLEDGE_LINK", id);
+    if ((await this.store.links()).some((link) => link.id === id))
+      throw new DomainError("VERSION_CONFLICT");
+    return new ConnectedService(this.store, this.auth, this.clock, ids).link(
+      context,
+      captured.from,
+      captured.to,
+      captured.relation,
+    );
+  }
+  async link(
+    contextInput: ActorContext,
+    fromInput: EntityRef,
+    toInput: EntityRef,
+    relation: KnowledgeLink["relation"],
+  ) {
+    const context = Object.freeze({ ...contextInput }),
+      from = structuredClone(fromInput),
+      to = structuredClone(toInput);
     await this.auth.require(context, "graph:write");
     if (
       ![from, to].every(
         (r) =>
-          ["NOTE", "WORK", "SPACE", "DOCUMENT"].includes(r.kind) &&
+          ["NOTE", "WORK", "SPACE", "DOCUMENT", "FILE"].includes(r.kind) &&
           typeof r.id === "string" &&
           r.id.length > 0 &&
           r.id.length <= 240,
@@ -168,7 +210,12 @@ export class ConnectedService {
       )
     )
       throw new DomainError("DUPLICATE_EDGE");
-    const link = { ...this.base(context), from, to, relation };
+    const link = {
+      ...this.base(context, "KNOWLEDGE_LINK"),
+      from,
+      to,
+      relation,
+    };
     await this.store.saveLink(link, 0);
     return link;
   }
@@ -192,13 +239,20 @@ export class ConnectedService {
     prompt: string,
     route: ModelRoute,
     sources: NonNullable<AgentRun["context"]> = [],
-    session: Pick<AgentRun, "sessionId" | "sessionVersion"> = {},
+    session: Pick<AgentRun, "sessionId" | "sessionVersion" | "userPrompt"> = {},
   ) {
     await this.auth.require(context, "work:create");
     if (
       typeof prompt !== "string" ||
       !prompt.trim() ||
       prompt.length > route.maxInputChars
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    if (
+      session.userPrompt !== undefined &&
+      (typeof session.userPrompt !== "string" ||
+        !session.userPrompt.trim() ||
+        session.userPrompt.length > route.maxInputChars)
     )
       throw new DomainError("VALIDATION_ERROR");
     const run: AgentRun = {
@@ -283,6 +337,19 @@ export class ConnectedService {
     return run;
   }
   /** Must commit in the same transaction as fresh authorization/context checks. */
+  async readRun(actorInput: ActorContext, id: string): Promise<AgentRun> {
+    const actor = Object.freeze({ ...actorInput });
+    await this.auth.require(actor, "work:read");
+    const run = await this.store.getRun(id);
+    if (
+      run.workspaceId !== actor.workspaceId ||
+      run.createdBy !== actor.principalId ||
+      run.deletedAt
+    )
+      throw new DomainError("NOT_FOUND");
+    return run;
+  }
+
   async reserve(context: ActorContext, id: string, version: number) {
     await this.auth.require(context, "work:update");
     const old = await this.store.getRun(id);

@@ -1,4 +1,6 @@
 import type { ActorContext } from "@arclattice/domain";
+import type { ApiScope } from "./api-scopes";
+import type { OwnedWorkspace, OwnedWorkspaceCreate } from "./owned-workspaces";
 
 export interface Account extends ActorContext {
   id: string;
@@ -17,6 +19,7 @@ export interface ApiCredential {
   principalId: string;
   name: string;
   scope: "write" | "read-write";
+  grants?: readonly ApiScope[];
   expiresAt: string | null;
   revokedAt: string | null;
 }
@@ -38,6 +41,11 @@ export interface AccountSession {
 }
 
 export interface AccountStore {
+  workspaces(accountId: string): OwnedWorkspace[];
+  createWorkspace(
+    accountId: string,
+    input: OwnedWorkspaceCreate,
+  ): OwnedWorkspace;
   session(hash: string, now: number): LoginSession | null;
   createSession(
     accountId: string,
@@ -63,6 +71,7 @@ export interface AccountStore {
     scope: ApiCredential["scope"],
     hash: string,
     days?: 30 | 90 | 365 | null,
+    grants?: readonly ApiScope[],
   ): ApiCredential;
   resolve(hash: string): { account: Account; credential: ApiCredential } | null;
   revoke(accountId: string, id: string): void;

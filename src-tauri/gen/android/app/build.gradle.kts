@@ -30,6 +30,7 @@ android {
         }
     }
     defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "app.orivane.atlas"
         minSdk = 24
@@ -69,6 +70,9 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    sourceSets.getByName("androidTest").assets.srcDir(
+        file("../../../../.artifacts/android-local-storage/assets")
+    )
 }
 
 rust {

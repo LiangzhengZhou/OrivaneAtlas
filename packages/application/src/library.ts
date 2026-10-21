@@ -1,10 +1,12 @@
 import {
   type ActorContext,
   DomainError,
+  optionalTitle,
   requireTitle,
 } from "@arclattice/domain";
 import { type ContentPolicy, contentPolicy } from "./content-policy";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
+import { stableEntityIds } from "./stable-entity-ids";
 import type { BodyManifest } from "./workspace-bootstrap";
 
 /** Asset ids only, never copies Markdown or image data into a purge event. */
@@ -55,6 +57,8 @@ export interface LibraryAsset {
 export interface LibraryStore {
   ensureWikiIndex?(): Promise<boolean>;
   listMetadata?(): Promise<BodyManifest<LibraryEntry>[]>;
+  getMetadata?(id: string): Promise<BodyManifest<LibraryEntry>>;
+  searchIds?(query: string): Promise<string[]>;
   rebuildWikiIndex?(): Promise<void>;
   wikiLinks?(): Promise<DocumentWikiLink[]>;
   list(): Promise<LibraryEntry[]>;
@@ -87,6 +91,37 @@ export class LibraryService {
     private readonly source: LibraryEntry["provenance"] = "HUMAN",
     private readonly inheritedPolicy?: ContentPolicy,
   ) {}
+  /** Invoke inside the authenticated business/receipt transaction for offline creation. */
+  async createWithStableId(
+    contextInput: ActorContext,
+    id: string,
+    input: LibraryInput,
+  ): Promise<LibraryEntry> {
+    const context = Object.freeze({ ...contextInput }),
+      captured = structuredClone(input);
+    await this.authorization.require(context, "work:create");
+    const ids = stableEntityIds(this.ids, "LIBRARY", id);
+    try {
+      await this.store.get(id);
+      throw new DomainError("VERSION_CONFLICT");
+    } catch (error) {
+      if (!(error instanceof DomainError) || error.code !== "NOT_FOUND")
+        throw error;
+    }
+    return new LibraryService(
+      this.store,
+      this.authorization,
+      this.clock,
+      ids,
+      this.source,
+      this.inheritedPolicy,
+    ).save(context, null, 0, captured);
+  }
+  private hierarchyEntries() {
+    return this.store.listMetadata
+      ? this.store.listMetadata()
+      : this.store.list();
+  }
   async rebuildWikiIndex(context: ActorContext) {
     await this.authorization.require(context, "work:update");
     if (!this.store.rebuildWikiIndex) throw new DomainError("FORBIDDEN");
@@ -101,14 +136,26 @@ export class LibraryService {
     )
       throw new DomainError("NOT_FOUND");
     if (entry.spaceId) {
-      const space = await this.store.get(entry.spaceId);
+      const space = this.store.getMetadata
+        ? await this.store.getMetadata(entry.spaceId)
+        : (await this.hierarchyEntries()).find(
+            (value) => value.id === entry.spaceId,
+          );
       if (
+        !space ||
+        space.id !== entry.spaceId ||
+        space.kind !== "SPACE" ||
         space.workspaceId !== context.workspaceId ||
         (space.deletedAt && !includeDeleted)
       )
         throw new DomainError("NOT_FOUND");
     }
     return entry;
+  }
+
+  async revisions(context: ActorContext, id: string) {
+    await this.read(context, id, true);
+    return this.store.revisions(id);
   }
   async save(
     context: ActorContext,
@@ -132,12 +179,16 @@ export class LibraryService {
       throw new DomainError("NOT_FOUND");
     if (old && (old.kind !== input.kind || old.spaceId !== input.spaceId))
       throw new DomainError("VALIDATION_ERROR");
+    const entries = (await this.hierarchyEntries()).filter(
+      (entry) => entry.workspaceId === context.workspaceId,
+    );
     if (input.kind === "SPACE") {
       if (input.spaceId !== null) throw new DomainError("VALIDATION_ERROR");
     } else {
       if (!input.spaceId) throw new DomainError("VALIDATION_ERROR");
-      const space = await this.store.get(input.spaceId);
+      const space = entries.find((entry) => entry.id === input.spaceId);
       if (
+        !space ||
         space.workspaceId !== context.workspaceId ||
         space.kind !== "SPACE" ||
         space.deletedAt
@@ -148,9 +199,6 @@ export class LibraryService {
       input.parentDocumentId === undefined
         ? (old?.parentDocumentId ?? null)
         : input.parentDocumentId;
-    const entries = (await this.store.list()).filter(
-      (entry) => entry.workspaceId === context.workspaceId,
-    );
     if (input.kind === "SPACE" && parentDocumentId)
       throw new DomainError("VALIDATION_ERROR");
     if (parentDocumentId) {
@@ -186,7 +234,10 @@ export class LibraryService {
       ...new Map(
         [
           ...rawAliases,
-          ...(old && old.title !== input.title && old.kind === "DOCUMENT"
+          ...(old &&
+          old.title.trim() &&
+          old.title !== input.title &&
+          old.kind === "DOCUMENT"
             ? [old.title]
             : []),
         ].map((alias) => [normalize(alias), alias.trim()]),
@@ -226,8 +277,11 @@ export class LibraryService {
         this.source === "HUMAN" ? input.aiPolicy : undefined,
         old?.aiPolicy ?? this.inheritedPolicy,
       ),
-      title: requireTitle(input.title),
-      id: old?.id ?? this.ids.next(),
+      title:
+        input.kind === "DOCUMENT"
+          ? optionalTitle(input.title)
+          : requireTitle(input.title),
+      id: old?.id ?? this.ids.nextFor?.("LIBRARY") ?? this.ids.next(),
       workspaceId: context.workspaceId,
       version: (old?.version ?? 0) + 1,
       createdAt: old?.createdAt ?? now,
@@ -248,9 +302,11 @@ export class LibraryService {
   ) {
     await this.authorization.require(context, "work:update");
     const document = await this.store.get(id);
-    const target = await this.store.get(spaceId);
+    const entries = await this.hierarchyEntries();
+    const target = entries.find((entry) => entry.id === spaceId);
     if (
       document.workspaceId !== context.workspaceId ||
+      !target ||
       target.workspaceId !== context.workspaceId ||
       document.deletedAt ||
       target.deletedAt ||
@@ -260,23 +316,24 @@ export class LibraryService {
       throw new DomainError("NOT_FOUND");
     if (document.version !== version) throw new DomainError("VERSION_CONFLICT");
     if (
-      (await this.store.list()).some(
-        (entry) => entry.parentDocumentId === id && !entry.deletedAt,
-      )
+      entries.some((entry) => entry.parentDocumentId === id && !entry.deletedAt)
     )
       throw new DomainError("DEPENDENCY_EXISTS");
     const normalize = (value: string) =>
       value.trim().normalize("NFKC").toLocaleLowerCase();
-    const names = [document.title, ...(document.aliases ?? [])].map(normalize);
+    const names = (document.aliases ?? []).map(normalize);
     if (
-      (await this.store.list()).some(
+      entries.some(
         (entry) =>
           entry.id !== id &&
           !entry.deletedAt &&
           entry.spaceId === spaceId &&
-          [entry.title, ...(entry.aliases ?? [])].some((name) =>
+          ([entry.title, ...(entry.aliases ?? [])].some((name) =>
             names.includes(normalize(name)),
-          ),
+          ) ||
+            (entry.aliases ?? []).some(
+              (name) => normalize(name) === normalize(document.title),
+            )),
       )
     )
       throw new DomainError("VALIDATION_ERROR");
@@ -303,7 +360,7 @@ export class LibraryService {
     if (entry.version !== version) throw new DomainError("VERSION_CONFLICT");
     if (!entry.deletedAt) throw new DomainError("VALIDATION_ERROR");
     if (
-      (await this.store.list()).some(
+      (await this.hierarchyEntries()).some(
         (child) =>
           child.workspaceId === context.workspaceId &&
           (child.spaceId === id || child.parentDocumentId === id),
@@ -311,6 +368,25 @@ export class LibraryService {
     )
       throw new DomainError("DEPENDENCY_EXISTS");
     await this.store.purge(id, version);
+  }
+  /** Explicit human recovery; existing hierarchy/policy validation and one caller transaction. */
+  async restoreAndSave(
+    context: ActorContext,
+    id: string,
+    version: number,
+    input: LibraryInput,
+  ) {
+    context = Object.freeze({ ...context });
+    input = structuredClone(input);
+    await this.authorization.require(context, "work:update");
+    if (this.source !== "HUMAN") throw new DomainError("FORBIDDEN");
+    const old = await this.store.get(id);
+    if (old.workspaceId !== context.workspaceId)
+      throw new DomainError("NOT_FOUND");
+    if (!old.deletedAt || old.kind !== "DOCUMENT")
+      throw new DomainError("VERSION_CONFLICT");
+    const restored = await this.setDeleted(context, id, version, false);
+    return this.save(context, id, restored.version, input);
   }
   async setDeleted(
     context: ActorContext,
@@ -327,7 +403,7 @@ export class LibraryService {
       throw new DomainError("NOT_FOUND");
     if (
       deleted &&
-      (await this.store.list()).some(
+      (await this.hierarchyEntries()).some(
         (entry) =>
           entry.workspaceId === context.workspaceId &&
           !entry.deletedAt &&

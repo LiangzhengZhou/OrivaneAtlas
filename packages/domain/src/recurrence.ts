@@ -5,6 +5,12 @@ export interface CalendarRule {
   timezone: string;
   frequency: "DAILY" | "WEEKLY" | "MONTHLY";
   interval: number;
+  /** ISO weekdays, Monday=1. Omitted preserves the historical start-day rule. */
+  weekdays?: number[];
+  monthlyRule?:
+    | { kind: "DAY"; day: number }
+    | { kind: "ORDINAL_WEEKDAY"; ordinal: number; weekday: number };
+  endAfterCompleted?: number | null;
 }
 export function validateCalendarRule(rule: CalendarRule): void {
   validateSchedule(rule.startDate, rule.endDate ?? rule.startDate);
@@ -18,6 +24,39 @@ export function validateCalendarRule(rule: CalendarRule): void {
     rule.interval > 366
   )
     throw new DomainError("VALIDATION_ERROR");
+  if (
+    (rule.weekdays !== undefined &&
+      (rule.frequency !== "WEEKLY" ||
+        !Array.isArray(rule.weekdays) ||
+        rule.weekdays.length === 0 ||
+        rule.weekdays.length > 7 ||
+        new Set(rule.weekdays).size !== rule.weekdays.length ||
+        rule.weekdays.some(
+          (day) => !Number.isInteger(day) || day < 1 || day > 7,
+        ))) ||
+    (rule.endAfterCompleted != null &&
+      (!Number.isInteger(rule.endAfterCompleted) ||
+        rule.endAfterCompleted < 1 ||
+        rule.endAfterCompleted > 100000 ||
+        !!rule.endDate))
+  )
+    throw new DomainError("VALIDATION_ERROR");
+  if (rule.monthlyRule !== undefined) {
+    const monthly = rule.monthlyRule;
+    if (
+      !monthly ||
+      rule.frequency !== "MONTHLY" ||
+      (monthly.kind === "DAY"
+        ? !Number.isInteger(monthly.day) || monthly.day < 1 || monthly.day > 31
+        : monthly.kind !== "ORDINAL_WEEKDAY" ||
+          !Number.isInteger(monthly.ordinal) ||
+          ![-1, 1, 2, 3, 4, 5].includes(monthly.ordinal) ||
+          !Number.isInteger(monthly.weekday) ||
+          monthly.weekday < 1 ||
+          monthly.weekday > 7)
+    )
+      throw new DomainError("VALIDATION_ERROR");
+  }
   try {
     new Intl.DateTimeFormat("en-CA", { timeZone: rule.timezone }).format();
   } catch {
@@ -74,11 +113,23 @@ export function occurrenceDays(
       (day.getUTCFullYear() - base.getUTCFullYear()) * 12 +
       day.getUTCMonth() -
       base.getUTCMonth();
+    const weekday = day.getUTCDay() || 7;
+    const monthlyMatch =
+      rule.monthlyRule?.kind === "ORDINAL_WEEKDAY"
+        ? weekday === rule.monthlyRule.weekday &&
+          (rule.monthlyRule.ordinal === -1
+            ? new Date(time + 7 * 86400000).getUTCMonth() !== day.getUTCMonth()
+            : Math.ceil(day.getUTCDate() / 7) === rule.monthlyRule.ordinal)
+        : day.getUTCDate() === (rule.monthlyRule?.day ?? base.getUTCDate());
+    const week = Math.floor((elapsed + ((base.getUTCDay() || 7) - 1)) / 7);
     const match =
       rule.frequency === "MONTHLY"
-        ? months % rule.interval === 0 && day.getUTCDate() === base.getUTCDate()
-        : elapsed % (rule.interval * (rule.frequency === "WEEKLY" ? 7 : 1)) ===
-          0;
+        ? months % rule.interval === 0 && monthlyMatch
+        : rule.frequency === "WEEKLY" && rule.weekdays
+          ? week % rule.interval === 0 && rule.weekdays.includes(weekday)
+          : elapsed %
+              (rule.interval * (rule.frequency === "WEEKLY" ? 7 : 1)) ===
+            0;
     if (match) result.push(day.toISOString().slice(0, 10));
   }
   return result;

@@ -5,9 +5,13 @@ import {
   projectLifecycle,
   projectLifecycles,
 } from "@arclattice/domain";
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { DismissibleDialog } from "./app/DismissibleDialog";
+import {
+  EditorActionsMenu,
+  EditorShell,
+} from "./components/ui/InteractionSurfaces";
+import "./features/tasks/task-editor.css";
 import { DateField } from "./components/DateField";
 import { Button } from "./components/ui/Button";
 import { Select } from "./components/ui/Surfaces";
@@ -19,6 +23,8 @@ import {
 import type { WorkEditorProps } from "./WorkItemEditor";
 
 export function ProjectEditor({
+  memo,
+  intent = "EDIT",
   item,
   projects,
   categories = [],
@@ -30,7 +36,10 @@ export function ProjectEditor({
   onSave,
   onDelete,
 }: WorkEditorProps) {
-  const { t } = useTranslation(["common", "desk", "work"]);
+  const { t, i18n } = useTranslation(["common", "desk", "work"]);
+  const formId = useId();
+  const lifecycleOnly = intent === "LIFECYCLE" && !!item;
+  const pendingChange = useRef<(() => void) | null>(null);
   const sharedWorkIndex = useContext(WorkspaceWorkIndexContext);
   const workIndex = useMemo(
     () => sharedWorkIndex ?? buildWorkspaceWorkIndex(projects, []),
@@ -70,7 +79,9 @@ export function ProjectEditor({
     lifecycle === "COMPLETED" &&
     item?.lifecycle !== "COMPLETED" &&
     !!completion &&
-    (completion.unfinished > 0 || completion.unfinishedProjects > 0);
+    (completion.unfinished > 0 ||
+      completion.unfinishedProjects > 0 ||
+      completion.unfinishedMilestones > 0);
   const blocked =
     incomplete && (!resolution || (resolution === "MOVE" && !destination));
   const [discard, setDiscard] = useState(false);
@@ -81,7 +92,23 @@ export function ProjectEditor({
     parent !== (item?.parentProjectId ?? initialProjectId) ||
     start !== (item?.startDate ?? "") ||
     due !== (item?.dueDate ?? "");
-  const close = () => (dirty ? setDiscard(true) : onClose());
+  const close = () => {
+    pendingChange.current = null;
+    if (dirty) setDiscard(true);
+    else onClose();
+  };
+  useEffect(() => {
+    const change = (event: Event) => {
+      if (!dirty) return;
+      event.preventDefault();
+      if (!busy) {
+        pendingChange.current = (event as CustomEvent<() => void>).detail;
+        setDiscard(true);
+      }
+    };
+    window.addEventListener("atlas:task-detail-change", change);
+    return () => window.removeEventListener("atlas:task-detail-change", change);
+  }, [dirty, busy]);
   const candidates = eligibleProjectParents(item, projects);
   const invalidParent = !!parent && !candidates.some((p) => p.id === parent);
   useEffect(() => {
@@ -95,221 +122,22 @@ export function ProjectEditor({
     return () => window.removeEventListener("beforeunload", leave);
   }, [dirty]);
   return (
-    <DismissibleDialog
-      className="task-dialog project-settings-dialog"
-      aria-labelledby="project-editor-heading"
-      onRequestClose={() => {
-        if (!busy) close();
-      }}
-    >
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!busy && !invalidParent && !blocked)
-            void onSave({
-              title,
-              categoryId: categoryId || null,
-              ...(!item ? { lifecycle } : {}),
-              ...(item && lifecycle !== projectLifecycle(item)
-                ? { projectLifecycle: lifecycle }
-                : {}),
-              ...(incomplete && resolution
-                ? {
-                    completionResolution: {
-                      action: resolution,
-                      ...(destination ? { projectId: destination } : {}),
-                    },
-                  }
-                : {}),
-              parentProjectId: parent || null,
-              startDate: start || null,
-              dueDate: due || null,
-            });
-        }}
-      >
-        <div className="dialog-heading">
-          <h2 id="project-editor-heading">
-            {t(item ? "desk:projectSettings" : "desk:newProject")}
-          </h2>
-          <Button
-            type="button"
-            variant="toggle"
-            disabled={busy}
-            onClick={close}
-          >
-            {t("close")}
-          </Button>
-        </div>
-        {error && (
-          <p role="alert" className="error">
-            {error}
-          </p>
-        )}
-        {discard && (
-          <div className="error">
-            {t("desk:discardHint")}
-            <Button type="button" variant="danger" onClick={onClose}>
-              {t("desk:discard")}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setDiscard(false)}
-            >
-              {t("cancel")}
-            </Button>
-          </div>
-        )}
-        <label className="field">
-          <span>{t("work:title")}</span>
-          <input
-            required
-            maxLength={240}
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </label>
-        <label className="field">
-          <span>{t("desk:parentProject")}</span>
-          <output
-            className="parent-selection"
-            aria-label={t("desk:parentProject")}
-          >
-            {parent
-              ? projects.find((project) => project.id === parent)?.title
-              : t("desk:noProject")}
-          </output>
-        </label>
-        {invalidParent && <p role="alert">{t("desk:invalidProjectParent")}</p>}
-        {!parent && (
-          <label className="field">
-            <span>{t("desk:categories.filter")}</span>
-            <Select
-              value={categoryId}
-              onChange={(event) => setCategoryId(event.target.value)}
-            >
-              <option value="">{t("desk:noProject")}</option>
-              {categories
-                .filter((category) => !category.deletedAt)
-                .map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-            </Select>
-          </label>
-        )}
-        <ProjectDrilldownPicker
-          mode="single"
-          projects={projects}
-          disabledIds={
-            new Set(
-              projects
-                .filter(
-                  (project) =>
-                    !candidates.some(
-                      (candidate) => candidate.id === project.id,
-                    ),
-                )
-                .map((project) => project.id),
-            )
-          }
-          value={parent}
-          disabled={busy}
-          onChange={(value) => {
-            setParent(typeof value === "string" ? value : "");
-          }}
-        />
-        {item && (
-          <label className="field">
-            <span>{t("desk:projectLifecycle")}</span>
-            <Select
-              aria-label={t("desk:projectLifecycle")}
-              value={lifecycle}
-              onChange={(event) =>
-                setLifecycle(event.target.value as ProjectLifecycle)
-              }
-            >
-              {projectLifecycles.map((value) => (
-                <option key={value} value={value}>
-                  {t("desk:projectLifecycles." + value)}
-                </option>
-              ))}
-            </Select>
-          </label>
-        )}
-        {completion && (
-          <p>
-            {t("desk:projectProgress", completion)} ·{" "}
-            {t("desk:unfinishedSubprojects", {
-              count: completion.unfinishedProjects,
-            })}
-          </p>
-        )}
-        {item && <p className="muted">{t("desk:projectCompletionHint")}</p>}
-        {incomplete && (
-          <fieldset className="field">
-            <legend>{t("desk:completionResolution.title")}</legend>
-            <Select
-              value={resolution}
-              onChange={(event) =>
-                setResolution(event.target.value as typeof resolution)
-              }
-            >
-              <option value="">{t("desk:completionResolution.choose")}</option>
-              {(["KEEP", "CANCEL", "INBOX", "MOVE"] as const).map((action) => (
-                <option key={action} value={action}>
-                  {t("desk:completionResolution." + action)}
-                </option>
-              ))}
-            </Select>
-            {resolution === "MOVE" && (
-              <ProjectDrilldownPicker
-                projects={projects}
-                value={destination || null}
-                mode="single"
-                disabledIds={excludedDestinations}
-                onChange={(value) =>
-                  setDestination(typeof value === "string" ? value : "")
-                }
-              />
-            )}
-          </fieldset>
-        )}
-        <div className="schedule-fields">
-          <label className="field">
-            <span>{t("desk:startDate")}</span>
-            <DateField
-              aria-label={t("desk:startDate")}
-              min="0001-01-01"
-              max={due || "9999-12-31"}
-              value={start}
-              onChange={setStart}
-            />
-          </label>
-          <label className="field">
-            <span>{t("desk:dueDate")}</span>
-            <DateField
-              aria-label={t("desk:dueDate")}
-              min={start || "0001-01-01"}
-              max="9999-12-31"
-              value={due}
-              onChange={setDue}
-            />
-          </label>
-        </div>
-        <p className="muted">{t("desk:projectBriefSeparate")}</p>
-        <div className="dialog-actions">
-          {onDelete && (
-            <Button
-              type="button"
-              variant="danger"
-              disabled={busy}
-              onClick={() => void onDelete()}
-            >
-              {t("delete")}
-            </Button>
-          )}
+    <EditorShell
+      className="work-editor-surface project-editor-surface project-settings-dialog"
+      pending={busy}
+      title={
+        lifecycleOnly
+          ? t("desk:changeProjectLifecycle")
+          : t(item ? "desk:projectSettings" : "desk:newProject")
+      }
+      onClose={close}
+      actions={
+        lifecycleOnly ? undefined : (
+          <EditorActionsMenu pending={busy} onDelete={onDelete} />
+        )
+      }
+      footer={
+        <>
           <div className="action-spacer" />
           <Button
             type="button"
@@ -322,12 +150,224 @@ export function ProjectEditor({
           <Button
             variant="primary"
             type="submit"
-            disabled={busy || !title.trim() || invalidParent || blocked}
+            form={formId}
+            disabled={
+              busy ||
+              !title.trim() ||
+              (!lifecycleOnly && invalidParent) ||
+              blocked
+            }
           >
             {item ? t("save") : t("desk:createProject")}
           </Button>
-        </div>
+        </>
+      }
+    >
+      <form
+        id={formId}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!busy && (lifecycleOnly || !invalidParent) && !blocked)
+            void onSave({
+              ...(lifecycleOnly
+                ? { title: item!.title }
+                : {
+                    title,
+                    categoryId: categoryId || null,
+                    parentProjectId: parent || null,
+                    startDate: start || null,
+                    dueDate: due || null,
+                  }),
+              ...(!item ? { lifecycle } : {}),
+              ...(item && lifecycle !== projectLifecycle(item)
+                ? { projectLifecycle: lifecycle }
+                : {}),
+              ...(incomplete && resolution
+                ? {
+                    completionResolution: {
+                      action: resolution,
+                      ...(destination ? { projectId: destination } : {}),
+                    },
+                  }
+                : {}),
+            });
+        }}
+      >
+        {error && (
+          <p role="alert" className="error">
+            {error}
+          </p>
+        )}
+        {discard && (
+          <div className="error">
+            {t("desk:discardHint")}
+            <Button
+              type="button"
+              variant="danger"
+              onClick={() =>
+                pendingChange.current ? pendingChange.current() : onClose()
+              }
+            >
+              {t("desk:discard")}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setDiscard(false)}
+            >
+              {t("cancel")}
+            </Button>
+          </div>
+        )}
+        {!lifecycleOnly && (
+          <>
+            {" "}
+            <label className="field">
+              <span>{t("work:title")}</span>
+              <input
+                required
+                maxLength={240}
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            </label>
+            {invalidParent && (
+              <p role="alert">{t("desk:invalidProjectParent")}</p>
+            )}
+            {!parent && (
+              <label className="field">
+                <span>{t("desk:categories.filter")}</span>
+                <Select
+                  value={categoryId}
+                  onChange={(event) => setCategoryId(event.target.value)}
+                >
+                  <option value="">{t("desk:noProject")}</option>
+                  {categories
+                    .filter((category) => !category.deletedAt)
+                    .map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                </Select>
+              </label>
+            )}
+            <ProjectDrilldownPicker
+              label={t("desk:parentProject")}
+              mode="single"
+              projects={projects}
+              disabledIds={
+                new Set(
+                  projects
+                    .filter(
+                      (project) =>
+                        !candidates.some(
+                          (candidate) => candidate.id === project.id,
+                        ),
+                    )
+                    .map((project) => project.id),
+                )
+              }
+              value={parent}
+              disabled={busy}
+              onChange={(value) => {
+                setParent(typeof value === "string" ? value : "");
+              }}
+            />
+            <div className="schedule-fields">
+              <label className="field">
+                <span>{t("desk:startDate")}</span>
+                <DateField
+                  aria-label={t("desk:startDate")}
+                  min="0001-01-01"
+                  max={due || "9999-12-31"}
+                  value={start}
+                  onChange={setStart}
+                />
+              </label>
+              <label className="field">
+                <span>{t("desk:dueDate")}</span>
+                <DateField
+                  aria-label={t("desk:dueDate")}
+                  min={start || "0001-01-01"}
+                  max="9999-12-31"
+                  value={due}
+                  onChange={setDue}
+                />
+              </label>
+            </div>
+            <p className="muted">{t("desk:projectBriefSeparate")}</p>
+          </>
+        )}
+        {lifecycleOnly && (
+          <>
+            {" "}
+            {item && (
+              <label className="field">
+                <span>{t("desk:projectLifecycle")}</span>
+                <Select
+                  aria-label={t("desk:projectLifecycle")}
+                  value={lifecycle}
+                  onChange={(event) =>
+                    setLifecycle(event.target.value as ProjectLifecycle)
+                  }
+                >
+                  {projectLifecycles.map((value) => (
+                    <option key={value} value={value}>
+                      {t("desk:projectLifecycles." + value)}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            )}
+            {completion && (
+              <p>
+                {t("desk:projectProgress", completion)} ·{" "}
+                {t("desk:unfinishedSubprojects", {
+                  count: completion.unfinishedProjects,
+                })}
+                {completion.unfinishedMilestones > 0 &&
+                  ` · ${i18n.language.startsWith("zh") ? "未完成里程碑" : "Unfinished milestones"}: ${completion.unfinishedMilestones}`}
+              </p>
+            )}
+            {item && <p className="muted">{t("desk:projectCompletionHint")}</p>}
+            {incomplete && (
+              <fieldset className="field">
+                <legend>{t("desk:completionResolution.title")}</legend>
+                <Select
+                  value={resolution}
+                  onChange={(event) =>
+                    setResolution(event.target.value as typeof resolution)
+                  }
+                >
+                  <option value="">
+                    {t("desk:completionResolution.choose")}
+                  </option>
+                  {(["KEEP", "CANCEL", "INBOX", "MOVE"] as const).map(
+                    (action) => (
+                      <option key={action} value={action}>
+                        {t("desk:completionResolution." + action)}
+                      </option>
+                    ),
+                  )}
+                </Select>
+                {resolution === "MOVE" && (
+                  <ProjectDrilldownPicker
+                    projects={projects}
+                    value={destination || null}
+                    mode="single"
+                    disabledIds={excludedDestinations}
+                    onChange={(value) =>
+                      setDestination(typeof value === "string" ? value : "")
+                    }
+                  />
+                )}
+              </fieldset>
+            )}
+          </>
+        )}
+        {memo}
       </form>
-    </DismissibleDialog>
+    </EditorShell>
   );
 }

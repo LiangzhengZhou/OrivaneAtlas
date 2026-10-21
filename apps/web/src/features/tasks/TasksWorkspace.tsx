@@ -106,11 +106,7 @@ export function TasksWorkspace({
     onPresentationChange?.({ tab: next, view });
   };
   const selected = props.taskIndex;
-  const ids = useMemo(
-    () => new Set(props.items.map((item) => item.id)),
-    [props.items],
-  );
-  const items = useMemo(() => {
+  const scopedCollections = useMemo(() => {
     const views = {
       now: selected.openActiveTasks,
       later: selected.laterTasks,
@@ -118,8 +114,21 @@ export function TasksWorkspace({
       completed: selected.completedTasks,
       all: selected.tasks,
     };
-    return views[tab].filter((item) => ids.has(item.id));
-  }, [selected, tab, ids]);
+    const intersect = (collection: readonly (typeof props.items)[number][]) => {
+      const eligible = new Set(collection.map((item) => item.id));
+      return props.items.filter((item) => eligible.has(item.id));
+    };
+    // Preserve the caller's project/filter/manual ordering once per input
+    // revision. Scope switches only choose an existing collection.
+    return {
+      now: intersect(views.now),
+      later: intersect(views.later),
+      scheduled: intersect(views.scheduled),
+      completed: intersect(views.completed),
+      all: intersect(views.all),
+    };
+  }, [selected, props.items]);
+  const items = scopedCollections[tab];
   return (
     <section className="tasks-workspace">
       <Toolbar

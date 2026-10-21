@@ -1,0 +1,44 @@
+.workspace-conflict-review {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+.workspace-conflict-review dl {
+  display: grid;
+  gap: 12px;
+  margin-block: 16px;
+}
+.workspace-conflict-review dt {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+.workspace-conflict-review dd {
+  margin: 4px 0 0;
+}
+.workspace-conflict-review fieldset {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin-block: 20px;
+  border: 0;
+}
+.workspace-conflict-review legend {
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+.workspace-conflict-review fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  cursor: pointer;
+}
+.workspace-conflict-review input[type="radio"] {
+  flex: none;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  padding: 0;
+}

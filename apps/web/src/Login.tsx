@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime } from "./bootstrap";
 import { Button } from "./components/ui/Button";
+import { loginErrorKey } from "./login-error";
 export function Login({
   runtime,
   onLogin,
@@ -25,27 +26,7 @@ export function Login({
       })
     : a("forgetAccount");
   function showLoginError(cause: unknown) {
-    const code =
-      cause && typeof cause === "object" && "code" in cause
-        ? String(cause.code)
-        : cause instanceof Error
-          ? cause.message
-          : String(cause);
-    const messages: Record<string, string> = {
-      INVALID_SERVER: "loginInvalidServer",
-      VALIDATION_ERROR: "loginInvalidInput",
-      UNAUTHORIZED: "loginCredentials",
-      ACCOUNT_MISMATCH: "loginCredentials",
-      FORBIDDEN: "loginForbidden",
-      RATE_LIMITED: "loginRateLimited",
-      LOGIN_TIMEOUT: "loginTimeout",
-      NETWORK_ERROR: "loginNetwork",
-      INVALID_RESPONSE: "loginInvalidResponse",
-      SERVER_CHANGED: "loginServerChanged",
-      SECURE_STORAGE: "loginSecureStorage",
-      VAULT_FULL: "loginVaultFull",
-    };
-    setError(messages[code] ?? "loginError");
+    setError(loginErrorKey(cause));
   }
   return (
     <main className="login-shell">
@@ -69,11 +50,10 @@ export function Login({
           setError("");
           try {
             await runtime.setServerOrigin(server);
-            const context = await runtime.session({
+            await runtime.session({
               username: username.trim(),
               password,
             });
-            runtime.context = context;
             setPassword("");
             onLogin();
           } catch (cause) {

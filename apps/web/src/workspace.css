@@ -31,29 +31,67 @@
 }
 .document-tabs {
   display: flex;
+  align-items: stretch;
+  min-height: 36px;
+  max-height: 36px;
   gap: 4px;
-  padding: 8px 18px 0;
+  padding: 0 18px;
   overflow-x: auto;
+  overflow-y: hidden;
+  overflow-anchor: none;
+  white-space: nowrap;
   border-bottom: 1px solid var(--border-default);
   background: var(--surface-subtle);
 }
 .document-tab {
   display: flex;
   flex-shrink: 0;
+  min-width: 0;
+  height: 35px;
   border: 1px solid var(--border-default);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
   max-width: 280px;
+  color: var(--text-secondary);
 }
 .document-tab button {
   background: transparent;
   border: 0;
-  padding: 10px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 10px;
   color: inherit;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.document-tab button:first-child {
+  max-width: min(240px, 28vw);
+  justify-content: flex-start;
+}
+.document-tab-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.document-tab button:last-child {
+  width: 30px;
+  padding-inline: 6px;
+}
+@media (pointer: coarse) {
+  .document-tabs {
+    min-height: 44px;
+    max-height: 44px;
+  }
+  .document-tab {
+    height: 43px;
+  }
+  .document-tab button {
+    min-height: 42px;
+  }
 }
 .document-tab button[aria-selected="true"] {
   background: var(--surface);
@@ -112,6 +150,9 @@
   outline: none;
 }
 .live-markdown .cm-scroller {
+  font-family: var(--font-ui);
+}
+.live-markdown.markdown-source .cm-scroller {
   font-family: ui-monospace, "Cascadia Code", monospace;
 }
 .live-markdown .cm-content {

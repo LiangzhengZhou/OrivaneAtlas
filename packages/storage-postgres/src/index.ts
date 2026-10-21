@@ -2,12 +2,24 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type {
   ActivityEvent,
   AgentSessionStore,
+  ConnectedStore,
+  EntityMemoTransaction,
+  LibraryFileStore,
   LibraryStore,
+  LocalChunkBlobStore,
+  MutationReceipt,
   NotebookStore,
   OutboxEvent,
   ProjectStore,
   UnitOfWork,
   WorkTransaction,
+} from "@arclattice/application";
+import {
+  assertWorkspaceMutationPrecondition,
+  mutationReceiptDigest,
+  requireMutationReceipt,
+  requireReviewedMutationReceiptProof,
+  requireStableUuid,
 } from "@arclattice/application";
 import {
   type ActorContext,
@@ -17,6 +29,7 @@ import {
 } from "@arclattice/domain";
 import { Pool, type PoolClient, type PoolConfig } from "pg";
 import { agentSessionStore } from "./agent-session";
+import { connectedStore } from "./connected";
 import {
   begin,
   lockWorkspace,
@@ -24,7 +37,10 @@ import {
   sharedMigrationLock,
   translateError,
 } from "./database";
+import { entityMemoStore } from "./entity-memos";
 import { activityFields, outboxFields, projection } from "./fields";
+import { binaryStore } from "./file-binary";
+import { fileStore } from "./files";
 import { libraryStore } from "./library";
 import { type BeforeUpgrade, migrate, migrations } from "./migrations";
 import { notebookStore } from "./notebook";
@@ -222,16 +238,14 @@ export class PostgresUnitOfWork implements UnitOfWork {
       }),
     );
   }
-  knowledge<T>(
-    actor: ActorContext,
-    operation: (
-      uow: UnitOfWork,
-      library: LibraryStore,
-      projects: ProjectStore,
-      sessions: AgentSessionStore,
-      notes: NotebookStore,
-    ) => Promise<T>,
-  ): Promise<T> {
+  lookupReviewedMutationReceipt(
+    actorInput: ActorContext,
+    commandId: string,
+    proof: string,
+  ): Promise<unknown | null> {
+    requireStableUuid(commandId, "commandId");
+    requireReviewedMutationReceiptProof(proof);
+    const actor = Object.freeze({ ...actorInput });
     return this.accept(() =>
       this.transaction(async (client) => {
         await lockWorkspace(client, actor.workspaceId);
@@ -244,13 +258,107 @@ export class PostgresUnitOfWork implements UnitOfWork {
           ).rowCount
         )
           throw new DomainError("FORBIDDEN");
+        const row = (
+          await client.query(
+            "SELECT result FROM arclattice.request_receipt WHERE workspace_id=$1 AND principal_id=$2 AND key=$3 AND digest=$4",
+            [actor.workspaceId, actor.principalId, commandId, proof],
+          )
+        ).rows[0];
+        return row ? (JSON.parse(String(row.result)) as unknown) : null;
+      }),
+    );
+  }
+  lookupMutationReceipt(
+    actorInput: ActorContext,
+    commandId: string,
+    deviceId: string,
+  ): Promise<unknown | null> {
+    requireStableUuid(commandId, "commandId");
+    requireStableUuid(deviceId, "deviceId");
+    const actor = Object.freeze({ ...actorInput });
+    return this.accept(() =>
+      this.transaction(async (client) => {
+        await lockWorkspace(client, actor.workspaceId);
+        if (
+          !(
+            await client.query(
+              "SELECT 1 FROM arclattice.workspace_principal WHERE workspace_id=$1 AND principal_id=$2",
+              [actor.workspaceId, actor.principalId],
+            )
+          ).rowCount
+        )
+          throw new DomainError("FORBIDDEN");
+        const row = (
+          await client.query(
+            "SELECT result FROM arclattice.request_receipt WHERE workspace_id=$1 AND principal_id=$2 AND key=$3 AND device_id=$4",
+            [actor.workspaceId, actor.principalId, commandId, deviceId],
+          )
+        ).rows[0];
+        return row ? (JSON.parse(String(row.result)) as unknown) : null;
+      }),
+    );
+  }
+
+  knowledge<T>(
+    actorInput: ActorContext,
+    operation: (
+      uow: UnitOfWork,
+      library: LibraryStore,
+      projects: ProjectStore,
+      sessions: AgentSessionStore,
+      notes: NotebookStore,
+      files: LibraryFileStore,
+      fileBlobs: LocalChunkBlobStore,
+      connected: ConnectedStore,
+      memos: EntityMemoTransaction,
+    ) => Promise<T>,
+    receiptInput: MutationReceipt | null = null,
+  ): Promise<T> {
+    const actor = Object.freeze({ ...actorInput });
+    const receipt = receiptInput
+      ? Object.freeze(structuredClone(receiptInput))
+      : null;
+    return this.accept(() =>
+      this.transaction(async (client) => {
+        await lockWorkspace(client, actor.workspaceId);
+        if (
+          !(
+            await client.query(
+              "SELECT 1 FROM arclattice.workspace_principal WHERE workspace_id=$1 AND principal_id=$2",
+              [actor.workspaceId, actor.principalId],
+            )
+          ).rowCount
+        )
+          throw new DomainError("FORBIDDEN");
+        if (receipt) {
+          requireMutationReceipt(receipt);
+          const cached = (
+            await client.query(
+              "SELECT digest,result,device_id FROM arclattice.request_receipt WHERE workspace_id=$1 AND principal_id=$2 AND key=$3",
+              [actor.workspaceId, actor.principalId, receipt.key],
+            )
+          ).rows[0];
+          if (cached) {
+            if (
+              cached.digest !== mutationReceiptDigest(receipt) ||
+              (cached.device_id ?? null) !== (receipt.deviceId ?? null)
+            )
+              throw new DomainError("VERSION_CONFLICT");
+            return JSON.parse(String(cached.result)) as T;
+          }
+        }
         const handle = repository(client, actor.workspaceId);
+        if (receipt?.workspacePrecondition)
+          await assertWorkspaceMutationPrecondition(
+            handle.port,
+            receipt.workspacePrecondition,
+          );
         let active = true;
         const guard = () => {
           if (!active) throw new PostgresStorageError("TRANSACTION_CLOSED");
         };
         try {
-          return await operation(
+          const result = await operation(
             {
               run: async (workspaceId, callback) => {
                 guard();
@@ -263,7 +371,25 @@ export class PostgresUnitOfWork implements UnitOfWork {
             projectStore(client, actor, guard),
             agentSessionStore(client, actor, guard),
             notebookStore(client, actor, guard),
+            fileStore(client, actor, guard),
+            binaryStore(client, actor, guard),
+            connectedStore(client, actor, guard),
+            entityMemoStore(client, actor, guard),
           );
+          if (receipt)
+            await client.query(
+              "INSERT INTO arclattice.request_receipt(workspace_id,principal_id,key,digest,result,created_at,device_id) VALUES($1,$2,$3,$4,$5,$6,$7)",
+              [
+                actor.workspaceId,
+                actor.principalId,
+                receipt.key,
+                mutationReceiptDigest(receipt),
+                JSON.stringify(result ?? null),
+                new Date().toISOString(),
+                receipt.deviceId ?? null,
+              ],
+            );
+          return result;
         } finally {
           active = false;
           await handle.finish();

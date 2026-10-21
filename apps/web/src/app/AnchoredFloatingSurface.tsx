@@ -6,7 +6,6 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
 import { createPortal } from "react-dom";
 
@@ -26,6 +25,7 @@ export function AnchoredFloatingSurface({
   portalTarget,
   dismissBoundaryRef,
   deferFocus = false,
+  role = "menu",
 }: {
   anchorRef: RefObject<HTMLElement | null>;
   onDismiss(): void;
@@ -36,6 +36,8 @@ export function AnchoredFloatingSurface({
   portalTarget?: Element | undefined;
   dismissBoundaryRef?: RefObject<HTMLElement | null>;
   deferFocus?: boolean;
+  /** "menu" for item lists; "dialog" for surfaces with arbitrary controls. */
+  role?: "menu" | "dialog";
 }) {
   const parent = useContext(FloatingFamilyContext);
   const family = useMemo<FloatingFamily>(
@@ -45,7 +47,6 @@ export function AnchoredFloatingSurface({
   const surface = useRef<HTMLDivElement>(null);
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
-  const [position, setPosition] = useState({ left: 8, top: 8 });
   useLayoutEffect(() => {
     const anchor = anchorRef.current;
     const node = surface.current;
@@ -65,7 +66,7 @@ export function AnchoredFloatingSurface({
       const below = rect.bottom + 8;
       const preferred = placement === "top-start" ? above : below;
       const flipped = placement === "top-start" ? below : above;
-      setPosition({
+      const position = {
         left: Math.max(
           8,
           Math.min(rect.left, window.innerWidth - bounds.width - 8),
@@ -80,7 +81,11 @@ export function AnchoredFloatingSurface({
             window.innerHeight - bounds.height - 8,
           ),
         ),
-      });
+      };
+      // Anchoring coordinates do not change content. Position the existing
+      // surface without a second React render on opening or viewport scroll.
+      node.style.left = `${position.left}px`;
+      node.style.top = `${position.top}px`;
     };
     const outside = (event: MouseEvent) => {
       const path = event.composedPath();
@@ -145,12 +150,14 @@ export function AnchoredFloatingSurface({
     <FloatingFamilyContext.Provider value={family}>
       <div
         ref={surface}
-        role="menu"
+        data-floating-surface
+        role={role}
         aria-label={label}
         className={className}
         style={{
           position: "fixed",
-          ...position,
+          left: 8,
+          top: 8,
           maxWidth: "calc(100vw - 16px)",
           maxHeight: "calc(100vh - 16px)",
           overflow: "auto",

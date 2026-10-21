@@ -1,4 +1,5 @@
 import type { AgentSessionMessage, EntityRef } from "@arclattice/application";
+import { aiContextNavigationRef } from "@arclattice/application";
 import { Button } from "../../components/ui/Button";
 export function AnswerSources({
   evidence,
@@ -12,19 +13,22 @@ export function AnswerSources({
   if (!evidence?.length) return null;
   return (
     <section aria-label={zh ? "来源" : "Sources"} className="answer-sources">
-      <h3>
-        {zh ? "来源" : "Sources"} {evidence.length}
-      </h3>
-      {evidence.map((source) => (
-        <Button
-          key={source.ref.kind + source.ref.id}
-          type="button"
-          title={`${source.title} · v${source.version}`}
-          onClick={() => onOpen(source.ref)}
-        >
-          {source.title}
-        </Button>
-      ))}
+      <details>
+        <summary>
+          {zh ? "来源" : "Sources"} {evidence.length}
+        </summary>
+        {evidence.map((source) => (
+          <Button
+            key={source.ref.kind + source.ref.id}
+            type="button"
+            variant="ghost"
+            title={`${source.title} · v${source.version}`}
+            onClick={() => onOpen(aiContextNavigationRef(source.ref))}
+          >
+            {source.title}
+          </Button>
+        ))}
+      </details>
     </section>
   );
 }

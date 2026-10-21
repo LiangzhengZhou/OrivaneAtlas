@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-server-download-file"
+description = "Enables the server_download_file command without any pre-configured scope."
+commands.allow = ["server_download_file"]
+
+[[permission]]
+identifier = "deny-server-download-file"
+description = "Denies the server_download_file command without any pre-configured scope."
+commands.deny = ["server_download_file"]

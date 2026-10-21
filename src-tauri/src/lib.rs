@@ -57,6 +57,10 @@ pub fn run() {
                 app.manage(transport::Transport::with_vault(
                     session_store::WindowsVault(path),
                 ));
+                match notifications::start_activation(app.handle().clone()) {
+                    Ok(registration) => { app.manage(registration); }
+                    Err(_) => eprintln!("Notification activation unavailable"),
+                }
                 // If Explorer/tray creation fails, retain ordinary close behaviour.
                 if tray::setup(app).is_err() {
                     eprintln!("System tray unavailable");
@@ -74,6 +78,8 @@ pub fn run() {
             notifications::notification_request_permission,
             notifications::notification_reconcile,
             notifications::notification_cancel,
+            notifications::notification_present,
+            notifications::notification_take_route,
             update::check_app_update,
             update::install_app_update,
             transport::configure_server,
@@ -81,7 +87,9 @@ pub fn run() {
             transport::select_account,
             transport::forget_account,
             transport::detach_account,
-            transport::server_request
+            transport::server_request,
+            transport::server_upload_chunk,
+            transport::server_download_file
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Orivane Atlas");

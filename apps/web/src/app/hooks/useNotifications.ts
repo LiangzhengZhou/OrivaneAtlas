@@ -1,20 +1,18 @@
 import {
   type NotificationPermission,
-  NotificationPlanner,
   notificationScope,
 } from "@arclattice/application";
 import type { ActorContext } from "@arclattice/domain";
-import { useEffect, useMemo, useState } from "react";
-import type { Runtime, Snapshot } from "../../bootstrap";
+import { useEffect, useState } from "react";
+import type { Runtime } from "../../bootstrap";
 
-export function useNotifications(
-  runtime: Runtime,
-  actor: ActorContext,
-  snapshot: Snapshot,
-  today: string,
-  locale: "en-US" | "zh-CN",
-  loading: boolean,
-) {
+/**
+ * Native delivery switch and OS permission only. What gets delivered is decided
+ * by the NotificationRecord pipeline (useNotificationCenter): record -> policy
+ * -> delivery -> native present. This hook must never schedule toasts itself,
+ * otherwise the same logical notification is delivered twice.
+ */
+export function useNotifications(runtime: Runtime, actor: ActorContext) {
   const key =
     "orivane.atlas.notifications.v1:" +
     notificationScope(runtime.serverOrigin, actor);
@@ -28,33 +26,6 @@ export function useNotifications(
   const [permission, setPermission] =
     useState<NotificationPermission>("unavailable");
   const [error, setError] = useState(false);
-  const [count, setCount] = useState(0);
-  const intents = useMemo(
-    () =>
-      new NotificationPlanner().plan({
-        server: runtime.serverOrigin,
-        actor,
-        items: snapshot.items,
-        workflows: snapshot.workflows ?? [],
-        reminders: snapshot.reminders ?? [],
-        timezone: snapshot.calendarTimezone ?? "UTC",
-        today,
-        now: new Date().toISOString(),
-        dailyDigest: true,
-        locale,
-      }),
-    [
-      runtime,
-      actor,
-      snapshot.items,
-      snapshot.workflows,
-      snapshot.reminders,
-      snapshot.calendarTimezone,
-      today,
-      locale,
-    ],
-  );
-  const signature = JSON.stringify(intents.slice(0, 256));
   useEffect(() => {
     let active = true;
     void runtime.notifications.permission().then(
@@ -69,28 +40,6 @@ export function useNotifications(
       active = false;
     };
   }, [runtime]);
-  useEffect(() => {
-    if (loading) return;
-    let active = true;
-    const scheduled =
-      enabled && permission === "granted"
-        ? (JSON.parse(signature) as typeof intents)
-        : [];
-    void runtime.notifications.reconcile(scheduled).then(
-      () => {
-        if (active) {
-          setError(false);
-          setCount(scheduled.length);
-        }
-      },
-      () => {
-        if (active) setError(true);
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [runtime, enabled, permission, signature, loading]);
   async function toggle(value: boolean) {
     setError(false);
     try {
@@ -101,17 +50,9 @@ export function useNotifications(
       const next = value && allowed === "granted";
       localStorage.setItem(key, String(next));
       setEnabled(next);
-      if (!next) await runtime.notifications.reconcile([]);
     } catch {
       setError(true);
     }
   }
-  return {
-    enabled,
-    permission,
-    error,
-    count,
-    limited: intents.length > 256,
-    toggle,
-  };
+  return { enabled, permission, error, toggle };
 }

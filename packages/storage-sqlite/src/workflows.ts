@@ -102,7 +102,10 @@ function readWorkflowPayload(json: string): WorkflowRecord["payload"] {
     ...(payload.recurrences ?? []),
   ]) {
     if (rule && (rule.kind === "RECURRENCE" || rule.frequency)) {
-      rule.projectIds ??= rule.projectId ? [rule.projectId] : [];
+      // PLAN omission means inherit its project context; [] means no membership.
+      // Convert an explicit legacy field, but do not invent one in a manifest.
+      if (payload.kind !== "PLAN" || Object.hasOwn(rule, "projectId"))
+        rule.projectIds ??= rule.projectId ? [rule.projectId] : [];
       delete rule.projectId;
     }
   }

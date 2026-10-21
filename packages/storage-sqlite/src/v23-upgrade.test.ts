@@ -18,7 +18,8 @@ it("upgrades exact v2.2 SQLite schema32 with a dirty Wiki gate and restorable or
     raw
       .prepare("INSERT INTO library_entry VALUES ('w','legacy-document',1,?)")
       .run(legacyV21Document);
-    backup = (await migrate(raw, file, 100)).backupPath ?? "";
+    backup =
+      (await migrate(raw, file, 100, migrations.slice(0, 33))).backupPath ?? "";
     expect(backup).not.toBe("");
     expect(inspectSchema(raw)).toBe(33);
     expect(
@@ -32,6 +33,14 @@ it("upgrades exact v2.2 SQLite schema32 with a dirty Wiki gate and restorable or
         .get()?.payload,
     ).toBe(legacyV21Document);
     expect(raw.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    const next = await migrate(raw, file, 100);
+    expect(next.backupPath).toBeTruthy();
+    expect(inspectSchema(raw)).toBe(42);
+    expect(
+      raw
+        .prepare("SELECT payload FROM library_entry WHERE id='legacy-document'")
+        .get()?.payload,
+    ).toBe(legacyV21Document);
   } finally {
     raw.close();
   }

@@ -1,7 +1,13 @@
+import { navigationGroup, navigationViews } from "@arclattice/domain";
 import { LogOut, PanelLeft, Settings2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/ui/Button";
+import {
+  DragHandle,
+  SortableList,
+  SortableRow,
+} from "../components/ui/Sortable";
 import { AnchoredFloatingSurface } from "./AnchoredFloatingSurface";
 import { type NavigationView, navigation, type View } from "./navigation";
 
@@ -11,6 +17,9 @@ export function Sidebar({
   canAdmin,
   activeView,
   navigationOrder,
+  pinnedNavigation,
+  reorderPending,
+  onReorder,
   taskCount,
   noteCount,
   label,
@@ -24,6 +33,13 @@ export function Sidebar({
   canAdmin: boolean;
   activeView: View;
   navigationOrder: readonly NavigationView[];
+  pinnedNavigation: readonly string[];
+  reorderPending: boolean;
+  onReorder(
+    movingId: string,
+    anchorId: string,
+    placement: "BEFORE" | "AFTER",
+  ): void;
   taskCount: string;
   noteCount: string;
   label(value: string): string;
@@ -78,34 +94,86 @@ export function Sidebar({
         {groups.map((group) => (
           <section key={group.views.join("-")}>
             {group.label && <p className="section-label">{group.label}</p>}
-            {navigationOrder
-              .filter((next) => group.views.includes(next))
-              .map((next) => navigation.find((item) => item.view === next)!)
-              .filter(Boolean)
-              .filter((n) => n.view !== "admin" || canAdmin)
-              .map(({ view: next, icon: Icon }) => (
-                <Button
-                  variant="ghost"
-                  type="button"
-                  key={next}
-                  className={
-                    "nav-item " + (activeView === next ? "active" : "")
-                  }
-                  aria-current={activeView === next ? "page" : undefined}
-                  aria-label={label(next)}
-                  onClick={() => onNavigate(next)}
-                  title={collapsed ? label(next) : undefined}
-                >
-                  <Icon size={18} />
-                  <span>{label(next)}</span>
-                  {next === "tasks" && (
-                    <span className="nav-count">{taskCount}</span>
-                  )}
-                  {next === "notes" && (
-                    <span className="nav-count">{noteCount}</span>
-                  )}
-                </Button>
-              ))}
+            <SortableList className="sidebar-sortable-list">
+              {navigationOrder
+                .filter((next) => group.views.includes(next))
+                .map((next) => navigation.find((item) => item.view === next)!)
+                .filter(Boolean)
+                .filter((n) => n.view !== "admin" || canAdmin)
+                .map(({ view: next, icon: Icon }) => {
+                  const id = navigationViews.find((id) => id === next)!;
+                  const scopeKey = `NAV:${navigationGroup(id)}:${pinnedNavigation.includes(next) ? "pinned" : "ordinary"}`;
+                  const peers = navigationOrder.filter(
+                    (peer) =>
+                      group.views.includes(peer) &&
+                      pinnedNavigation.includes(peer) ===
+                        pinnedNavigation.includes(next),
+                  );
+                  const position = peers.indexOf(next);
+                  return (
+                    <SortableRow
+                      key={next}
+                      entityId={next}
+                      scopeKey={scopeKey}
+                      intent="NAV_REORDER"
+                      disabled={collapsed || reorderPending || peers.length < 2}
+                      onMoveBefore={(moving, anchor) =>
+                        onReorder(moving, anchor, "BEFORE")
+                      }
+                      onMoveAfter={(moving, anchor) =>
+                        onReorder(moving, anchor, "AFTER")
+                      }
+                    >
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        key={next}
+                        className={
+                          "nav-item " + (activeView === next ? "active" : "")
+                        }
+                        aria-current={activeView === next ? "page" : undefined}
+                        aria-label={label(next)}
+                        onClick={() => onNavigate(next)}
+                        title={collapsed ? label(next) : undefined}
+                        data-reorder-surface="true"
+                      >
+                        <Icon size={18} />
+                        <span>{label(next)}</span>
+                        {next === "tasks" && (
+                          <span className="nav-count">{taskCount}</span>
+                        )}
+                        {next === "notes" && (
+                          <span className="nav-count">{noteCount}</span>
+                        )}
+                      </Button>
+                      {!collapsed && peers.length > 1 && (
+                        <DragHandle
+                          label={t("moveNavigationItem", {
+                            title: label(next),
+                          })}
+                          input={{
+                            version: 1,
+                            intent: "NAV_REORDER",
+                            entityId: next,
+                            scopeKey,
+                          }}
+                          disabled={reorderPending}
+                          onMove={(direction) => {
+                            const anchor =
+                              peers[position + (direction === "UP" ? -1 : 1)];
+                            if (anchor)
+                              onReorder(
+                                next,
+                                anchor,
+                                direction === "UP" ? "BEFORE" : "AFTER",
+                              );
+                          }}
+                        />
+                      )}
+                    </SortableRow>
+                  );
+                })}
+            </SortableList>
           </section>
         ))}
       </nav>

@@ -4,6 +4,31 @@ export type HierarchyEntry = {
   parentId: string | null;
 };
 
+export function buildHierarchyIndex(entries: readonly HierarchyEntry[]) {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const childrenByParentId = new Map<string | null, HierarchyEntry[]>();
+  const searchTextById = new Map<string, string>();
+  for (const entry of entries) {
+    const children = childrenByParentId.get(entry.parentId) ?? [];
+    children.push(entry);
+    childrenByParentId.set(entry.parentId, children);
+    searchTextById.set(entry.id, entry.title.toLocaleLowerCase());
+  }
+  const path = (id: string | null) => {
+    const result: HierarchyEntry[] = [],
+      visited = new Set<string>();
+    while (id && !visited.has(id)) {
+      visited.add(id);
+      const entry = byId.get(id);
+      if (!entry) break;
+      result.unshift(entry);
+      id = entry.parentId;
+    }
+    return result;
+  };
+  return { byId, childrenByParentId, searchTextById, path };
+}
+
 export function currentLevel(
   entries: readonly HierarchyEntry[],
   parentId: string | null,

@@ -58,7 +58,7 @@ dependencies = [
 
 [[package]]
 name = "arclattice"
-version = "2.4.0"
+version = "3.0.0"
 dependencies = [
  "base64 0.22.1",
  "reqwest",
@@ -72,6 +72,7 @@ dependencies = [
  "tokio",
  "webpki-roots",
  "windows",
+ "windows-core 0.61.2",
  "windows-sys 0.61.2",
 ]
 

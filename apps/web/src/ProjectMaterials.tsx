@@ -4,11 +4,17 @@ import type {
   ProjectActivity,
   ProjectMaterial,
 } from "@arclattice/application";
-import { type WorkEdge, type WorkItem } from "@arclattice/domain";
+import {
+  type LibraryFile,
+  type WorkEdge,
+  type WorkItem,
+} from "@arclattice/domain";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "./components/ui/Button";
+import { EntityMenu } from "./components/ui/EntityMenu";
 import { FilePicker } from "./FilePicker";
+import { ProjectFileRow } from "./features/files/ProjectFileRow";
 import { VirtualTaskCollection } from "./features/tasks/VirtualTaskCollection";
 import { buildWorkspaceWorkIndex } from "./features/tasks/workspace-work-index";
 
@@ -24,8 +30,12 @@ export function ProjectMaterials({
   busy,
   onNewPage,
   onUpload,
+  files,
+  onFileDelete,
+  onFileDownload,
   onDelete,
   onDownload,
+  onLegacyOpen,
   onOpen,
 }: {
   library: {
@@ -51,14 +61,13 @@ export function ProjectMaterials({
   inheritedSpaces?: ProjectMaterial[];
   busy: boolean;
   onNewPage(spaceId: string): void;
-  onUpload(input: {
-    projectId: string;
-    name: string;
-    mime: string;
-    base64: string;
-  }): Promise<boolean>;
+  files: readonly LibraryFile[];
+  onFileDelete(file: LibraryFile, deleted: boolean): Promise<boolean>;
+  onFileDownload(file: LibraryFile): Promise<void>;
+  onUpload(file: File): Promise<boolean>;
   onDelete(material: ProjectMaterial, deleted: boolean): Promise<boolean>;
   onDownload(id: string): Promise<void>;
+  onLegacyOpen(id: string): Promise<void>;
   onOpen(ref: EntityRef): void;
 }) {
   const { i18n } = useTranslation();
@@ -84,33 +93,36 @@ export function ProjectMaterials({
       (showDeleted || !entry.deletedAt),
   );
   return (
-    <section className="panel project-summary">
+    <section className="project-summary project-knowledge-list">
       <h2>{zh ? "项目知识" : "Knowledge"}</h2>
       {!spaces.length && (
         <p>{zh ? "尚无项目知识" : "No project knowledge yet"}</p>
       )}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void onCreateSpace({
-            projectId,
-            title: spaceTitle,
-            inheritToChildren: true,
-          }).then((ok) => {
-            if (ok) setSpaceTitle("");
-          });
-        }}
-      >
-        <input
-          aria-label={zh ? "知识空间名称" : "Wiki space title"}
-          required
-          value={spaceTitle}
-          onChange={(event) => setSpaceTitle(event.target.value)}
-        />
-        <Button variant="primary" type="submit" disabled={busy}>
-          {zh ? "创建 Wiki" : "Create Wiki"}
-        </Button>
-      </form>
+      <details open={spaces.length === 0}>
+        <summary>{zh ? "新建知识空间" : "New knowledge space"}</summary>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onCreateSpace({
+              projectId,
+              title: spaceTitle,
+              inheritToChildren: true,
+            }).then((ok) => {
+              if (ok) setSpaceTitle("");
+            });
+          }}
+        >
+          <input
+            aria-label={zh ? "知识空间名称" : "Wiki space title"}
+            required
+            value={spaceTitle}
+            onChange={(event) => setSpaceTitle(event.target.value)}
+          />
+          <Button variant="secondary" type="submit" disabled={busy}>
+            {zh ? "创建 Wiki" : "Create Wiki"}
+          </Button>
+        </form>
+      </details>
       <details>
         <summary>{zh ? "链接现有空间" : "Link existing space"}</summary>
         <input
@@ -147,37 +159,41 @@ export function ProjectMaterials({
             </Button>
           ))}
       </details>
-      {(["OWNED", "LINKED"] as const).map((ownership) => (
-        <section key={ownership}>
-          <h3>
-            {ownership === "OWNED"
-              ? zh
-                ? "项目空间"
-                : "Project spaces"
-              : zh
-                ? "链接空间"
-                : "Linked spaces"}
-          </h3>
-          {spaces
-            .filter((space) => space.ownership === ownership)
-            .map((space) => (
-              <Button
-                type="button"
-                variant="toggle"
-                key={space.id}
-                aria-pressed={selectedSpace === space.targetId}
-                onClick={() => {
-                  setSelectedSpace(space.targetId ?? "");
-                  if (space.targetId)
-                    onOpen({ kind: "SPACE", id: space.targetId });
-                }}
-              >
-                {space.role === "PRIMARY" ? "★ " : ""}
-                {space.title}
-              </Button>
-            ))}
-        </section>
-      ))}
+      {(["OWNED", "LINKED"] as const)
+        .filter((ownership) =>
+          spaces.some((space) => space.ownership === ownership),
+        )
+        .map((ownership) => (
+          <section key={ownership}>
+            <h3>
+              {ownership === "OWNED"
+                ? zh
+                  ? "项目空间"
+                  : "Project spaces"
+                : zh
+                  ? "链接空间"
+                  : "Linked spaces"}
+            </h3>
+            {spaces
+              .filter((space) => space.ownership === ownership)
+              .map((space) => (
+                <Button
+                  type="button"
+                  variant="toggle"
+                  key={space.id}
+                  aria-pressed={selectedSpace === space.targetId}
+                  onClick={() => {
+                    setSelectedSpace(space.targetId ?? "");
+                    if (space.targetId)
+                      onOpen({ kind: "SPACE", id: space.targetId });
+                  }}
+                >
+                  {space.role === "PRIMARY" ? "★ " : ""}
+                  {space.title}
+                </Button>
+              ))}
+          </section>
+        ))}
       {inheritedSpaces.length > 0 && (
         <section aria-label={zh ? "继承空间" : "Inherited spaces"}>
           <h3>{zh ? "继承空间" : "Inherited spaces"}</h3>
@@ -196,7 +212,7 @@ export function ProjectMaterials({
         </section>
       )}
       <Button
-        variant="primary"
+        variant="secondary"
         type="button"
         disabled={busy || !spaces.length}
         onClick={() => {
@@ -229,38 +245,19 @@ export function ProjectMaterials({
         label={zh ? "上传项目文件" : "Upload project file"}
         hint={
           zh
-            ? "最大 2 MiB，保留原始文件"
-            : "Up to 2 MiB; original file preserved"
+            ? "原始文件保存到本机，后台同步"
+            : "Original file saved locally; sync runs in the background"
         }
         accept=""
         disabled={busy || uploading}
         onFile={(file) => {
-          if (!file.size || file.size > 2097152) {
-            setError(
-              zh
-                ? "文件必须为 1 字节至 2 MiB。"
-                : "Files must contain 1 byte to 2 MiB.",
-            );
+          if (!file.size) {
+            setError(zh ? "请选择非空文件。" : "Choose a nonempty file.");
             return;
           }
           setError("");
           setUploading(true);
-          void file
-            .arrayBuffer()
-            .then(async (buffer) => {
-              const bytes = new Uint8Array(buffer);
-              let binary = "";
-              for (let offset = 0; offset < bytes.length; offset += 8192)
-                binary += String.fromCharCode(
-                  ...bytes.subarray(offset, offset + 8192),
-                );
-              await onUpload({
-                projectId,
-                name: file.name,
-                mime: file.type || "application/octet-stream",
-                base64: btoa(binary),
-              });
-            })
+          void onUpload(file)
             .catch(() =>
               setError(zh ? "读取文件失败。" : "Could not read the file."),
             )
@@ -276,8 +273,27 @@ export function ProjectMaterials({
         />
         {zh ? "包含已删除资料" : "Include deleted materials"}
       </label>
+      {files
+        .filter((file) => showDeleted || !file.deletedAt)
+        .map((file) => (
+          <ProjectFileRow
+            key={file.id}
+            file={file}
+            busy={busy}
+            onOpen={onOpen}
+            onDownload={onFileDownload}
+            onDelete={onFileDelete}
+          />
+        ))}
       {entries
-        .filter((entry) => entry.kind !== "SPACE")
+        .filter(
+          (entry) =>
+            entry.kind !== "SPACE" &&
+            !(
+              entry.kind === "FILE" &&
+              files.some((file) => file.id === entry.id)
+            ),
+        )
         .map((entry) => (
           <div className="project-material" key={entry.id}>
             <Button
@@ -285,7 +301,7 @@ export function ProjectMaterials({
               type="button"
               disabled={!!entry.deletedAt}
               onClick={() => {
-                if (entry.kind === "FILE") void onDownload(entry.id);
+                if (entry.kind === "FILE") void onLegacyOpen(entry.id);
                 else if (entry.targetId)
                   onOpen({ kind: entry.kind, id: entry.targetId });
               }}
@@ -308,20 +324,31 @@ export function ProjectMaterials({
                   ?.title
               }
             </small>
-            <Button
-              type="button"
-              variant="toggle"
-              disabled={busy}
-              onClick={() => void onDelete(entry, !entry.deletedAt)}
-            >
-              {entry.deletedAt
-                ? zh
-                  ? "恢复"
-                  : "Restore"
-                : zh
-                  ? "删除"
-                  : "Delete"}
-            </Button>
+            {entry.deletedAt ? (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => void onDelete(entry, false)}
+              >
+                {zh ? "恢复" : "Restore"}
+              </Button>
+            ) : (
+              <EntityMenu
+                title={entry.title}
+                pending={busy}
+                {...(entry.kind === "FILE"
+                  ? {
+                      onDownload: () => {
+                        void onDownload(entry.id);
+                      },
+                    }
+                  : {})}
+                onDelete={() => {
+                  void onDelete(entry, true);
+                }}
+              />
+            )}
           </div>
         ))}
     </section>

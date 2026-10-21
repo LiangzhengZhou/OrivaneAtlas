@@ -1,17 +1,48 @@
 import type { WorkspaceLibraryEntry as LibraryEntry } from "@arclattice/application";
-import { BookOpen, Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { BookOpen, File as FileIcon, Plus, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useEntitySelection } from "./app/EntitySelection";
 import { showToast } from "./app/ToastHost";
 import type { Runtime, Snapshot } from "./bootstrap";
-import { Button } from "./components/ui/Button";
+import { Button, SegmentedControl } from "./components/ui/Button";
 import { ListRow, ListSurface } from "./components/ui/Content";
 import { EntityMenu } from "./components/ui/EntityMenu";
-import type { DocumentRequest } from "./DocumentWorkspace";
+import { Select } from "./components/ui/Surfaces";
+import type { WorkspaceRequest } from "./DocumentWorkspace";
 import { SpaceBodyPreview } from "./features/documents/SpaceBodyPreview";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
+import { VirtualTaskCollection } from "./features/tasks/VirtualTaskCollection";
 import { useDebouncedValue } from "./utils/use-debounced-value";
+
+type FileType = "ALL" | "PDF" | "TABLE" | "SLIDES" | "IMAGE" | "OTHER";
+type LibraryViewState = {
+  spaceId: string | null;
+  query: string;
+  kind?: "ALL" | "DOCUMENT" | "FILE";
+  fileType?: FileType;
+};
+const extensionTypes: Record<string, FileType> = {
+  pdf: "PDF",
+  csv: "TABLE",
+  tsv: "TABLE",
+  xls: "TABLE",
+  xlsx: "TABLE",
+  ods: "TABLE",
+  ppt: "SLIDES",
+  pptx: "SLIDES",
+  odp: "SLIDES",
+  png: "IMAGE",
+  jpg: "IMAGE",
+  jpeg: "IMAGE",
+  gif: "IMAGE",
+  webp: "IMAGE",
+  svg: "IMAGE",
+  avif: "IMAGE",
+  bmp: "IMAGE",
+  tif: "IMAGE",
+  tiff: "IMAGE",
+};
 export function LibraryView({
   runtime,
   onOpen,
@@ -22,29 +53,129 @@ export function LibraryView({
   onViewChange,
 }: {
   runtime: Runtime;
-  onOpen: (request: DocumentRequest) => void;
+  onOpen: (request: WorkspaceRequest) => void;
   snapshot: Snapshot;
   onChanged(): Promise<void>;
   onTrash(): void;
-  viewState: { spaceId: string | null; query: string };
-  onViewChange(state: { spaceId: string | null; query: string }): void;
+  viewState: LibraryViewState;
+  onViewChange(state: LibraryViewState): void;
 }) {
   const { t } = useTranslation("spaces");
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
   const selection = useEntitySelection();
   const [graphOpen, setGraphOpen] = useState(false);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const [fileIndexRevision, setFileIndexRevision] = useState(0);
+  useEffect(
+    () =>
+      runtime.subscribeFileIndex(() =>
+        setFileIndexRevision((version) => version + 1),
+      ),
+    [runtime],
+  );
   const entries = snapshot.library;
   const entriesById = useMemo(
     () => new Map(entries.map((entry) => [entry.id, entry])),
     [entries],
   );
   const { spaceId, query } = viewState;
+  const kind = viewState.kind ?? "ALL";
+  const fileType = viewState.fileType ?? "ALL";
+  const fileTypes: { value: FileType; label: string }[] = [
+    { value: "ALL", label: zh ? "全部类型" : "All types" },
+    { value: "PDF", label: "PDF" },
+    { value: "TABLE", label: zh ? "表格" : "Spreadsheets" },
+    { value: "SLIDES", label: zh ? "演示" : "Presentations" },
+    { value: "IMAGE", label: zh ? "图片" : "Images" },
+    { value: "OTHER", label: zh ? "其它" : "Other" },
+  ];
+  const settledQuery = useDebouncedValue(query).trim().toLocaleLowerCase();
+  const fileSearch = useMemo(
+    () =>
+      new Map(
+        (snapshot.files ?? []).map((file) => [
+          file.id,
+          file.name.toLocaleLowerCase(),
+        ]),
+      ),
+    [snapshot.files],
+  );
+  const scopedFiles = useMemo(
+    () =>
+      (snapshot.files ?? []).filter(
+        (file) =>
+          !file.deletedAt &&
+          file.spaceId === spaceId &&
+          (fileType === "ALL" ||
+            (extensionTypes[file.extension ?? ""] ?? "OTHER") === fileType),
+      ),
+    [snapshot.files, spaceId, fileType],
+  );
+  const [fileMatches, setFileMatches] = useState<{
+    query: string;
+    spaceId: string | null;
+    fileType: FileType;
+    ids: ReadonlySet<string>;
+  } | null>(null);
+  const [fileSearchPending, setFileSearchPending] = useState(false);
+  const files = scopedFiles.filter(
+    (file) =>
+      !settledQuery ||
+      fileSearch.get(file.id)?.includes(settledQuery) ||
+      (fileMatches?.query === settledQuery &&
+        fileMatches.spaceId === spaceId &&
+        fileMatches.fileType === fileType &&
+        fileMatches.ids.has(file.id)),
+  );
   const setSpaceId = (spaceId: string | null) =>
     onViewChange({ ...viewState, spaceId });
   const setQuery = (query: string) => onViewChange({ ...viewState, query });
   const [error, setError] = useState(false),
     [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!settledQuery || !scopedFiles.length) {
+      setFileSearchPending(false);
+      return;
+    }
+    let current = true;
+    setFileSearchPending(true);
+    void runtime
+      .searchFileIds(
+        settledQuery,
+        scopedFiles.map((file) => file.id),
+      )
+      .then(
+        (ids) => {
+          if (current) {
+            setFileMatches({
+              query: settledQuery,
+              spaceId,
+              fileType,
+              ids: new Set(ids),
+            });
+            setFileSearchPending(false);
+          }
+        },
+        () => {
+          if (current) {
+            setFileMatches(null);
+            setError(true);
+            setFileSearchPending(false);
+          }
+        },
+      );
+    return () => {
+      current = false;
+    };
+  }, [
+    runtime,
+    settledQuery,
+    spaceId,
+    fileType,
+    scopedFiles,
+    fileIndexRevision,
+  ]);
   async function run(action: () => Promise<unknown>) {
     if (busy) return;
     setBusy(true);
@@ -60,7 +191,6 @@ export function LibraryView({
   }
   const spaces = entries.filter((e) => e.kind === "SPACE" && !e.deletedAt),
     space = spaces.find((e) => e.id === spaceId);
-  const settledQuery = useDebouncedValue(query).toLocaleLowerCase();
   const [matches, setMatches] = useState<{
     query: string;
     spaceId: string;
@@ -141,7 +271,12 @@ export function LibraryView({
     });
   }
   return (
-    <div className="library-view">
+    <div
+      className="library-view"
+      aria-busy={
+        query.trim().toLocaleLowerCase() !== settledQuery || fileSearchPending
+      }
+    >
       {error && (
         <p className="error" role="alert">
           {t("error")}
@@ -165,6 +300,33 @@ export function LibraryView({
         />
       )}
       <div className="library-toolbar action-row">
+        <input
+          ref={uploadRef}
+          type="file"
+          hidden
+          aria-label={zh ? "上传文件" : "Upload file"}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+            void run(async () => {
+              const created = await runtime.uploadFile(
+                {
+                  name: file.name,
+                  mime: file.type || "application/octet-stream",
+                  spaceId,
+                },
+                file,
+              );
+              onOpen({
+                key: `FILE:${created.id}`,
+                kind: "FILE",
+                file: created,
+                spaceId: created.spaceId,
+              });
+            });
+          }}
+        />
         <Button
           type="button"
           variant="toggle"
@@ -185,7 +347,51 @@ export function LibraryView({
           <Plus size={16} />
           {t(space ? "newLecture" : "newSpace")}
         </Button>
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onClick={() => uploadRef.current?.click()}
+        >
+          <Upload size={16} />
+          {zh ? "导入文件" : "Import file"}
+        </Button>
       </div>
+      <SegmentedControl
+        label={zh ? "内容类型" : "Content type"}
+        value={kind}
+        onChange={(kind) => onViewChange({ ...viewState, kind })}
+        options={[
+          { value: "ALL", label: zh ? "全部" : "All" },
+          { value: "DOCUMENT", label: zh ? "文档" : "Documents" },
+          { value: "FILE", label: zh ? "文件" : "Files" },
+        ]}
+      />
+      {kind !== "DOCUMENT" && (
+        <label className="field">
+          {zh ? "文件类型" : "File type"}
+          <Select
+            label={zh ? "文件类型" : "File type"}
+            value={fileType}
+            onChange={(event) => {
+              const selected = fileTypes.find(
+                (option) => option.value === event.target.value,
+              );
+              if (selected)
+                onViewChange({ ...viewState, fileType: selected.value });
+            }}
+          >
+            {fileTypes.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </label>
+      )}
+      <label className="field">
+        {zh ? "搜索" : "Search"}
+        <input value={query} onChange={(e) => setQuery(e.target.value)} />
+      </label>
       {space ? (
         <>
           <section className="panel account-panel">
@@ -230,61 +436,65 @@ export function LibraryView({
               </Button>
             </div>
           </section>
-          <label className="field">
-            {t("search")}
-            <input value={query} onChange={(e) => setQuery(e.target.value)} />
-          </label>
-          <ListSurface className="library-list">
-            {docs.map((doc) => (
-              <ListRow
-                className="library-document-row"
-                key={doc.id}
-                style={{ marginInlineStart: `${hierarchy(doc).length * 16}px` }}
-                selected={selection?.selected?.id === doc.id}
-                onSelect={() =>
-                  selection?.select({ kind: "DOCUMENT", id: doc.id })
-                }
-                onOpen={() => open(doc)}
-              >
-                <BookOpen size={20} />
-                <h3>{doc.title}</h3>
-                {hierarchy(doc).length > 0 && (
-                  <small>{hierarchy(doc).join(" / ")}</small>
-                )}
-                <small>
-                  {new Intl.DateTimeFormat(i18n.language, {
-                    dateStyle: "medium",
-                  }).format(new Date(doc.updatedAt))}
-                </small>
-                <EntityMenu
-                  title={doc.title}
-                  pending={busy}
-                  onOpen={() => open(doc)}
-                  onDelete={() =>
-                    void run(async () => {
-                      const deleted = await runtime.deleteLibrary(
-                        doc.id,
-                        doc.version,
-                        true,
-                      );
-                      showToast(
-                        zh ? "已移至回收站" : "Moved to Trash",
-                        async () => {
-                          await runtime.deleteLibrary(
-                            deleted.id,
-                            deleted.version,
-                            false,
-                          );
-                          await onChanged();
-                        },
-                      );
-                    })
-                  }
+          {kind !== "FILE" && (
+            <>
+              <ListSurface className="library-list">
+                <VirtualTaskCollection
+                  items={docs}
+                  estimatedRowHeight={64}
+                  render={(doc) => (
+                    <ListRow
+                      className="library-document-row"
+                      key={doc.id}
+                      style={{
+                        marginInlineStart: `${hierarchy(doc).length * 16}px`,
+                      }}
+                      selected={selection?.selected?.id === doc.id}
+                      intent="NAVIGATE"
+                      onOpen={() => open(doc)}
+                    >
+                      <BookOpen size={20} />
+                      <h3>{doc.title}</h3>
+                      {hierarchy(doc).length > 0 && (
+                        <small>{hierarchy(doc).join(" / ")}</small>
+                      )}
+                      <small>
+                        {new Intl.DateTimeFormat(i18n.language, {
+                          dateStyle: "medium",
+                        }).format(new Date(doc.updatedAt))}
+                      </small>
+                      <EntityMenu
+                        title={doc.title}
+                        pending={busy}
+                        onOpen={() => open(doc)}
+                        onDelete={() =>
+                          void run(async () => {
+                            const deleted = await runtime.deleteLibrary(
+                              doc.id,
+                              doc.version,
+                              true,
+                            );
+                            showToast(
+                              zh ? "已移至回收站" : "Moved to Trash",
+                              async () => {
+                                await runtime.deleteLibrary(
+                                  deleted.id,
+                                  deleted.version,
+                                  false,
+                                );
+                                await onChanged();
+                              },
+                            );
+                          })
+                        }
+                      />
+                    </ListRow>
+                  )}
                 />
-              </ListRow>
-            ))}
-          </ListSurface>
-          {!docs.length && <p>{t("empty")}</p>}{" "}
+              </ListSurface>
+              {!docs.length && <p>{t("empty")}</p>}
+            </>
+          )}
         </>
       ) : (
         <>
@@ -295,9 +505,7 @@ export function LibraryView({
                 className="space-card"
                 key={item.id}
                 selected={selection?.selected?.id === item.id}
-                onSelect={() =>
-                  selection?.select({ kind: "DOCUMENT", id: item.id })
-                }
+                intent="NAVIGATE"
                 onOpen={() => setSpaceId(item.id)}
               >
                 <BookOpen size={20} />
@@ -310,6 +518,67 @@ export function LibraryView({
             ))}
           </ListSurface>
         </>
+      )}
+      {kind !== "DOCUMENT" && files.length > 0 && (
+        <ListSurface className="library-list library-files">
+          <VirtualTaskCollection
+            items={files}
+            estimatedRowHeight={64}
+            render={(file) => (
+              <ListRow
+                key={file.id}
+                className="library-file-row"
+                intent="NAVIGATE"
+                onOpen={() =>
+                  onOpen({
+                    key: `FILE:${file.id}`,
+                    kind: "FILE",
+                    file,
+                    spaceId: file.spaceId,
+                  })
+                }
+              >
+                <FileIcon size={20} />
+                <h3>{file.name}</h3>
+                <small>
+                  {new Intl.NumberFormat(i18n.language).format(file.size)} B
+                </small>
+                <EntityMenu
+                  title={file.name}
+                  pending={busy}
+                  onOpen={() =>
+                    onOpen({
+                      key: `FILE:${file.id}`,
+                      kind: "FILE",
+                      file,
+                      spaceId: file.spaceId,
+                    })
+                  }
+                  onDelete={() => {
+                    void run(async () => {
+                      const deleted = await runtime.deleteFile(
+                        file.id,
+                        file.version,
+                        true,
+                      );
+                      showToast(
+                        zh ? "已移至回收站" : "Moved to Trash",
+                        async () => {
+                          await runtime.deleteFile(
+                            deleted.id,
+                            deleted.version,
+                            false,
+                          );
+                          await onChanged();
+                        },
+                      );
+                    });
+                  }}
+                />
+              </ListRow>
+            )}
+          />
+        </ListSurface>
       )}
       <Button variant="ghost" type="button" onClick={onTrash}>
         {zh ? "查看回收站 →" : "View Trash →"}

@@ -1,0 +1,11 @@
+# ADR0111 — Durable Markdown rebase and explicit three-way review
+
+2026-10-15. FINAL Phase11/12 requires different-field merging and Markdown three-way merging without silent overwrite. This extends ADR0107/0109 rather than introducing a second merge engine. The existing conservative linear mergeMarkdown remains the shared algorithm.
+
+A conflicting Note/Library command retains its original full base/body and immutable command bytes. Pull keeps body-free manifests. When a newer remote base needs Markdown comparison, Application reads the body through the authenticated document API with explicit destination workspace scope, validates the entire canonical entity at the captured version, and prepares a remote-base-only hydration transaction. Account, origin, epoch, workspace revision and original base are pinned. A newer body or metadata is rejected; local body, draft, Outbox and cursor are not replaced by this read. The transport and caller detach scope before asynchronous work.
+
+Never-sent singleton edits may automatically rebase disjoint fields or Markdown ranges. Same-field transmitted conflicts require explicit captured LOCAL/REMOTE review, original receipt recovery and a fresh pull. Replacement commands preserve the real save contract, including create:false, and use a new stable command ID. Original command and superseded mutation evidence remain durable. Structural/compound/delete conflicts are not silently treated as ordinary saves.
+
+One strict IndexedDB transaction commits the manifest, full body, immutable revision, substring-search projection, availability provenance, Library Wiki source syntax, new command/Outbox and superseded evidence. Every projection has an expected-version check. Missing projections or a changed projection abort the whole operation; search records pass through the adapter's existing index-key builder. Restart must retain exactly the same exported state. Existing generic stores suffice; no SQL or historical IndexedDB migration is changed.
+
+The real browser path must prove both explicit choices and offline reconnect clean merging, followed by remote canonical checks and offline body reads after reload. Unit-only success is insufficient. These targeted checks do not constitute full FINAL acceptance, and broader delete/structure/epoch cases remain separate required work.

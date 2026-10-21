@@ -1,14 +1,19 @@
 import { cpSync } from "node:fs";
 import { defineConfig } from "vite";
 export default defineConfig({
-  build: { ssr: "src/main.ts", outDir: "dist", minify: false },
+  build: {
+    ssr: true,
+    outDir: "dist",
+    minify: false,
+    rolldownOptions: {
+      input: {
+        main: "src/main.ts",
+        "file-parser-worker": "src/file-parser-worker.ts",
+      },
+    },
+  },
   ssr: {
-    noExternal: [
-      "@arclattice/application",
-      "@arclattice/domain",
-      "@arclattice/storage-sqlite",
-      "uuid",
-    ],
+    noExternal: /^(?!pdfjs-dist(?:\/|$))/,
   },
   plugins: [
     {

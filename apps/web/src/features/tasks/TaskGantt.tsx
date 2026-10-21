@@ -88,6 +88,9 @@ export function TaskGantt({ items, today, onOpen }: WorkProps) {
         className="gantt-scroll"
         ref={scroll}
         data-task-count={model.rows.length}
+        style={{
+          height: `min(${Math.max(240, model.rows.length * 48 + 42)}px, 62vh, 680px)`,
+        }}
         onScroll={(event) => {
           const left = event.currentTarget.scrollLeft;
           setViewport((previous) =>

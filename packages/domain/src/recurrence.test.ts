@@ -1,6 +1,87 @@
 import { expect, test } from "vitest";
 import { localCalendarDay, occurrenceDays } from "./recurrence";
 
+test("natural weekly choices use Monday weeks without changing legacy anchored rules", () => {
+  const rule = {
+    startDate: "2026-01-07",
+    timezone: "UTC",
+    frequency: "WEEKLY" as const,
+    interval: 2,
+  };
+  expect(
+    occurrenceDays({ ...rule, weekdays: [1, 5] }, "2026-01-07", "2026-01-27"),
+  ).toEqual(["2026-01-09", "2026-01-19", "2026-01-23"]);
+  expect(occurrenceDays(rule, "2026-01-07", "2026-01-27")).toEqual([
+    "2026-01-07",
+    "2026-01-21",
+  ]);
+  for (const weekdays of [[], [0], [8], [1, 1], [1.5]])
+    expect(() =>
+      occurrenceDays({ ...rule, weekdays }, "2026-01-07", "2026-01-27"),
+    ).toThrow("VALIDATION_ERROR");
+});
+
+test("monthly ordinal choices skip missing fifth weekdays and support the last weekday", () => {
+  const rule = {
+    startDate: "2026-01-01",
+    timezone: "UTC",
+    frequency: "MONTHLY" as const,
+    interval: 1,
+  };
+  expect(
+    occurrenceDays(
+      {
+        ...rule,
+        monthlyRule: { kind: "ORDINAL_WEEKDAY", ordinal: 2, weekday: 1 },
+      },
+      "2026-01-01",
+      "2026-03-31",
+    ),
+  ).toEqual(["2026-01-12", "2026-02-09", "2026-03-09"]);
+  expect(
+    occurrenceDays(
+      {
+        ...rule,
+        monthlyRule: { kind: "ORDINAL_WEEKDAY", ordinal: 5, weekday: 1 },
+      },
+      "2026-01-01",
+      "2026-03-31",
+    ),
+  ).toEqual(["2026-03-30"]);
+  expect(
+    occurrenceDays(
+      {
+        ...rule,
+        monthlyRule: { kind: "ORDINAL_WEEKDAY", ordinal: -1, weekday: 1 },
+      },
+      "2026-02-01",
+      "2026-02-28",
+    ),
+  ).toEqual(["2026-02-23"]);
+  expect(
+    occurrenceDays(
+      { ...rule, monthlyRule: { kind: "DAY", day: 31 } },
+      "2026-01-01",
+      "2026-03-31",
+    ),
+  ).toEqual(["2026-01-31", "2026-03-31"]);
+  for (const endAfterCompleted of [0, -1, 1.5, 100001])
+    expect(() =>
+      occurrenceDays(
+        { ...rule, endAfterCompleted },
+        "2026-01-01",
+        "2026-03-31",
+      ),
+    ).toThrow("VALIDATION_ERROR");
+  expect(() =>
+    occurrenceDays(
+      { ...rule, endAfterCompleted: 3, endDate: "2026-03-31" },
+      "2026-01-01",
+      "2026-03-31",
+    ),
+  ).toThrow("VALIDATION_ERROR");
+});
+
 test("calendar day conversion keeps interleaved workspace timezones independent", () => {
   const instant = "2026-03-08T04:30:00Z";
   for (let repeat = 0; repeat < 3; repeat++) {

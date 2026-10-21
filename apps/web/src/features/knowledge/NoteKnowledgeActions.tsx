@@ -50,7 +50,7 @@ export function NoteKnowledgeActions({
         disabled={disabled || pending}
         onClick={() => setAction("promote")}
       >
-        {zh ? "整理到知识库" : "Organize in Library"}
+        {zh ? "创建知识文档" : "Create knowledge document"}
       </Button>
       <Button
         type="button"
@@ -58,7 +58,7 @@ export function NoteKnowledgeActions({
         disabled={disabled || pending}
         onClick={() => setAction("link")}
       >
-        {zh ? "链接到知识空间" : "Link to knowledge space"}
+        {zh ? "关联到知识空间" : "Link to knowledge space"}
       </Button>
       {linked.map((link) => (
         <p key={link.id}>
@@ -91,6 +91,15 @@ export function NoteKnowledgeActions({
       )}
       {action && (
         <div className="panel">
+          <p>
+            {action === "promote"
+              ? zh
+                ? "创建独立知识文档，保留来源笔记及其正文。"
+                : "Create an independent knowledge document, preserving the source note and its body."
+              : zh
+                ? "仅创建关联，笔记位置和正文不变。"
+                : "Create a relationship; the note's location and body stay unchanged."}
+          </p>
           <SpacePicker
             spaces={snapshot.library}
             value={spaceId || null}
@@ -128,7 +137,7 @@ export function NoteKnowledgeActions({
                   disabled={pending}
                   onChange={(event) => setArchive(event.target.checked)}
                 />
-                {zh ? "归档来源笔记" : "Archive source note"}
+                {zh ? "将来源笔记移至回收站" : "Move source note to Trash"}
               </label>
             </>
           )}

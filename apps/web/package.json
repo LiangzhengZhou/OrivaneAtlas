@@ -13,6 +13,7 @@
     "@arclattice/application": "workspace:*",
     "@arclattice/domain": "workspace:*",
     "@arclattice/i18n": "workspace:*",
+    "@arclattice/storage-local": "workspace:*",
     "@arclattice/storage-memory": "workspace:*",
     "@arclattice/wiki-core": "workspace:*",
     "@codemirror/autocomplete": "^6.20.0",
@@ -27,6 +28,8 @@
     "@xyflow/react": "^12.11.6",
     "d3-force": "^3.0.0",
     "katex": "0.18.7",
+    "hast-util-to-jsx-runtime": "2.3.6",
+    "html-url-attributes": "3.0.1",
     "lucide-react": "^0.577.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -36,7 +39,12 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "4.0.1",
     "remark-math": "6.0.0",
-    "uuid": "14.0.2"
+    "remark-parse": "11.0.0",
+    "remark-rehype": "11.1.2",
+    "unified": "11.0.5",
+    "unist-util-visit": "5.1.0",
+    "uuid": "14.0.2",
+    "@arclattice/file-parsers": "workspace:*"
   },
   "devDependencies": {
     "@types/d3-force": "^3.0.10",

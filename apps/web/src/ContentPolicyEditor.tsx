@@ -6,26 +6,41 @@ export function ContentPolicyEditor({
   value,
   onChange,
   disabled,
+  description,
 }: {
   value: ContentPolicy;
   onChange: (value: ContentPolicy) => void;
   disabled: boolean;
+  description?: string;
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
   return (
     <details className="document-tools content-policy no-print">
       <summary>
-        {zh ? "AI 数据许可" : "AI data permission"} · {value.aiAccess}
+        {zh ? "AI 数据许可" : "AI data permission"} ·{" "}
+        {value.aiAccess === "DENY"
+          ? zh
+            ? "禁止"
+            : "Denied"
+          : value.aiAccess === "ASK"
+            ? zh
+              ? "逐次询问"
+              : "Ask each time"
+            : zh
+              ? "允许"
+              : "Allowed"}
       </summary>
       <p>
-        {zh
-          ? "默认禁止发送。允许询问仍需逐次审批；文档与所属空间均须允许。审批不能绕过禁止、机密或处理位置限制。"
-          : "Sending is denied by default. Ask still requires per-run approval. Both document and parent space must permit processing. Approval cannot override denial, secrets or location restrictions."}
+        {description ??
+          (zh
+            ? "默认禁止发送。允许询问仍需逐次审批；内容与所属空间均须允许。审批不能绕过禁止、机密或处理位置限制。"
+            : "Sending is denied by default. Ask still requires per-run approval. Both content and parent space must permit processing. Approval cannot override denial, secrets or location restrictions.")}
       </p>
       <label>
         {zh ? "AI 访问" : "AI access"}
         <Select
+          label={zh ? "AI 访问" : "AI access"}
           disabled={disabled}
           value={value.aiAccess}
           onChange={(e) =>
@@ -43,6 +58,7 @@ export function ContentPolicyEditor({
       <label>
         {zh ? "处理位置" : "Processing boundary"}
         <Select
+          label={zh ? "处理位置" : "Processing boundary"}
           disabled={disabled}
           value={value.processingBoundary}
           onChange={(e) =>
@@ -70,6 +86,7 @@ export function ContentPolicyEditor({
       <label>
         {zh ? "敏感级别" : "Classification"}
         <Select
+          label={zh ? "敏感级别" : "Classification"}
           disabled={disabled}
           value={value.classification}
           onChange={(e) =>

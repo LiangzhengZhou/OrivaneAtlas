@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { expect } from "vitest";
 import {
+  RecurrenceReplayUnitOfWork,
   type UnitOfWork,
   WorkflowService,
   WorkService,
 } from "../../packages/application/src/index";
+import { stableEntityIds } from "../../packages/application/src/stable-entity-ids";
 import type { ActorContext } from "../../packages/domain/src/index";
 
 export async function recurrenceLifecycleScenario(
@@ -21,6 +23,98 @@ export async function recurrenceLifecycleScenario(
     auth = { require: async () => {} };
   const workflow = (uow: UnitOfWork) =>
     new WorkflowService(uow, auth, clock, ids);
+  const stableId = randomUUID(),
+    stableInput = {
+      version: 0,
+      deleted: false,
+      rule: {
+        title: "Stable paused series",
+        descriptionMd: "原始正文\r\n[[Target]]",
+        frequency: "DAILY" as const,
+        interval: 1,
+        startDate: "2026-03-06",
+        timezone: "America/New_York",
+        state: "PAUSED" as const,
+      },
+    };
+  const stableEffect = {
+    collection: "workflows" as const,
+    id: stableId,
+    op: "UPSERT" as const,
+    baseVersion: 0,
+  };
+  await expect(
+    run(actor, (uow) => {
+      const guard = new RecurrenceReplayUnitOfWork(
+        uow,
+        actor.workspaceId,
+        actor.principalId,
+        [
+          stableEffect,
+          {
+            collection: "items",
+            id: randomUUID(),
+            op: "UPSERT",
+            baseVersion: 0,
+          },
+        ],
+      );
+      return workflow(guard).createRecurrenceWithStableId(
+        actor,
+        stableId,
+        stableInput,
+      );
+    }),
+  ).rejects.toThrow("VERSION_CONFLICT");
+  expect(
+    (await run(actor, (uow) => workflow(uow).list(actor))).some(
+      (entry) => entry.id === stableId,
+    ),
+  ).toBe(false);
+  const stable = await run(actor, async (uow) => {
+    const guard = new RecurrenceReplayUnitOfWork(
+      uow,
+      actor.workspaceId,
+      actor.principalId,
+      [stableEffect],
+    );
+    const result = await workflow(guard).createRecurrenceWithStableId(
+      actor,
+      stableId,
+      stableInput,
+    );
+    expect(guard.acceptedEffects).toEqual([
+      {
+        collection: "workflows",
+        id: stableId,
+        op: "UPSERT",
+        version: 1,
+        value: result,
+      },
+    ]);
+    return result;
+  });
+  expect(stable.id).toBe(stableId);
+  expect(stable.version).toBe(1);
+  expect(stable.payload).toMatchObject(stableInput.rule);
+  await expect(
+    run(actor, (uow) =>
+      workflow(uow).createRecurrenceWithStableId(actor, stableId, stableInput),
+    ),
+  ).rejects.toThrow("VERSION_CONFLICT");
+  await run(actor, (uow) =>
+    workflow(uow).saveRecurrence(actor, {
+      ...stableInput,
+      id: stableId,
+      version: 1,
+      deleted: true,
+    }),
+  );
+  await expect(
+    run(actor, (uow) =>
+      workflow(uow).createRecurrenceWithStableId(actor, stableId, stableInput),
+    ),
+  ).rejects.toThrow("VERSION_CONFLICT");
   const create = async (closeIncomplete: boolean) =>
     run(actor, (uow) =>
       workflow(uow).saveRecurrence(actor, {
@@ -310,4 +404,153 @@ export async function recurrenceLifecycleScenario(
       workflow(uow).saveTaskRecurrence(foreign, conversion),
     ),
   ).rejects.toThrow("NOT_FOUND");
+
+  // The completion limit counts successful outcomes, never missed/skipped
+  // dates. Exercise persistence and repeated ticks through both real adapters.
+  now = "2026-05-02T12:00:00.000Z";
+  const limited = await run(actor, (uow) =>
+    workflow(uow).saveRecurrence(actor, {
+      version: 0,
+      deleted: false,
+      rule: {
+        title: "Complete twice",
+        descriptionMd: "",
+        startDate: "2026-05-01",
+        timezone: "UTC",
+        frequency: "DAILY",
+        interval: 1,
+        endAfterCompleted: 2,
+      },
+    }),
+  );
+  await run(actor, (uow) => workflow(uow).tick(actor, limited.id));
+  const limitedOccurrences = async () =>
+    (await run(actor, (uow) => workflow(uow).list(actor))).filter(
+      (entry) =>
+        entry.payload.kind === "OCCURRENCE" &&
+        entry.payload.definitionId === limited.id,
+    );
+  let limitedRows = await limitedOccurrences();
+  expect(
+    limitedRows.map((entry) =>
+      entry.payload.kind === "OCCURRENCE" ? entry.payload.status : "",
+    ),
+  ).toEqual(["MISSED", "OPEN"]);
+  const toSkip = limitedRows[1]!;
+  await run(actor, (uow) =>
+    workflow(uow).skipOccurrence(actor, toSkip.id, toSkip.version),
+  );
+  for (const day of ["2026-05-03", "2026-05-04"]) {
+    now = day + "T12:00:00.000Z";
+    await run(actor, (uow) => workflow(uow).tick(actor, limited.id));
+    const open = (await limitedOccurrences()).find(
+      (entry) =>
+        entry.payload.kind === "OCCURRENCE" && entry.payload.day === day,
+    )!;
+    if (open.payload.kind !== "OCCURRENCE" || !open.payload.taskId)
+      throw new Error("Expected scheduled task");
+    const taskId = open.payload.taskId;
+    const task = await run(actor, (uow) =>
+      uow.run(actor.workspaceId, (tx) => tx.get(taskId)),
+    );
+    await run(actor, (uow) =>
+      new WorkService(uow, auth, clock, ids).update(
+        actor,
+        task.id,
+        task.version,
+        { status: "DONE" },
+      ),
+    );
+    await run(actor, (uow) => workflow(uow).tick(actor, limited.id));
+  }
+  now = "2026-05-05T12:00:00.000Z";
+  await run(actor, (uow) => workflow(uow).tick(actor, limited.id));
+  await run(actor, (uow) => workflow(uow).tick(actor, limited.id));
+  limitedRows = await limitedOccurrences();
+  expect(limitedRows).toHaveLength(4);
+  expect(
+    limitedRows.filter(
+      (entry) =>
+        entry.payload.kind === "OCCURRENCE" &&
+        entry.payload.status === "COMPLETED",
+    ),
+  ).toHaveLength(2);
+  expect(
+    (await run(actor, (uow) => workflow(uow).list(actor))).find(
+      (entry) => entry.id === limited.id,
+    )?.payload,
+  ).toMatchObject({ state: "ENDED", endAfterCompleted: 2 });
+  const replayDefinition = await create(true),
+    occurrenceId = `occurrence:${replayDefinition.id}:2026-03-06`;
+  await run(actor, async (uow) => {
+    const guard = new RecurrenceReplayUnitOfWork(
+      uow,
+      actor.workspaceId,
+      actor.principalId,
+      [
+        {
+          collection: "workflows",
+          id: occurrenceId,
+          op: "UPSERT",
+          baseVersion: 0,
+        },
+      ],
+    );
+    await workflow(guard).generate(
+      actor,
+      replayDefinition.id,
+      replayDefinition.version,
+      "2026-03-06",
+      "2026-03-06",
+    );
+    expect(guard.acceptedEffects[0]?.value).toMatchObject({
+      payload: { status: "MISSED", taskId: null },
+    });
+  });
+  const backfilledTaskId = randomUUID();
+  await run(actor, async (uow) => {
+    const guard = new RecurrenceReplayUnitOfWork(
+      uow,
+      actor.workspaceId,
+      actor.principalId,
+      [
+        {
+          collection: "items",
+          id: backfilledTaskId,
+          op: "UPSERT",
+          baseVersion: 0,
+        },
+        {
+          collection: "items",
+          id: backfilledTaskId,
+          op: "UPSERT",
+          baseVersion: 1,
+        },
+        {
+          collection: "workflows",
+          id: occurrenceId,
+          op: "UPSERT",
+          baseVersion: 1,
+        },
+      ],
+    );
+    await new WorkflowService(
+      guard,
+      auth,
+      clock,
+      stableEntityIds(ids, "WORK", backfilledTaskId),
+    ).backfill(actor, occurrenceId, 1, "2026-03-06T17:00:00.000Z");
+    expect(guard.acceptedEffects).toHaveLength(2);
+    expect(
+      guard.acceptedEffects.find((effect) => effect.collection === "items")
+        ?.value,
+    ).toMatchObject({ id: backfilledTaskId, version: 2, status: "DONE" });
+    expect(
+      guard.acceptedEffects.find((effect) => effect.collection === "workflows")
+        ?.value,
+    ).toMatchObject({
+      version: 2,
+      payload: { status: "BACKFILLED", taskId: backfilledTaskId },
+    });
+  });
 }

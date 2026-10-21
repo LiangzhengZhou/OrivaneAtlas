@@ -141,3 +141,40 @@ test("dependency membership defaults to direct ownership and tree never includes
     "DIRECT_PROJECT",
   );
 });
+
+test("graph direction survives hash round trips and rejects unknown values", () => {
+  const base = {
+    kind: "project" as const,
+    id: "p1",
+    mode: "dependencies" as const,
+    scope: "focus",
+    depth: 1,
+    hops: 1,
+    focus: "",
+    selection: "p1",
+    back: "#projects/p1",
+  };
+  for (const direction of ["LR", "TB"] as const)
+    expect(parseGraphRoute(graphHash({ ...base, direction }))?.direction).toBe(
+      direction,
+    );
+  expect(parseGraphRoute(graphHash(base))?.direction).toBeUndefined();
+  expect(
+    parseGraphRoute("#graph/project/p1?mode=structure&direction=sideways")
+      ?.direction,
+  ).toBeUndefined();
+  // Direction coexists with the other persisted state.
+  const both = parseGraphRoute(
+    graphHash({
+      ...base,
+      direction: "TB",
+      view: "graph",
+      viewport: { x: 1, y: 2, zoom: 1 },
+    }),
+  );
+  expect(both).toMatchObject({
+    direction: "TB",
+    view: "graph",
+    viewport: { x: 1, y: 2, zoom: 1 },
+  });
+});

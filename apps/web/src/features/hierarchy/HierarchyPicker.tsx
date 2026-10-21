@@ -1,13 +1,15 @@
-import { useContext, useEffect, useId, useRef, useState } from "react";
+import { useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnchoredFloatingSurface } from "../../app/AnchoredFloatingSurface";
 import { Button } from "../../components/ui/Button";
-import { currentLevel, type HierarchyEntry, hierarchyPath } from "./hierarchy";
+import { EntityPickerRow } from "../../components/ui/EntityPickerRow";
+import { pickerKeyboard } from "../../components/ui/picker-keyboard";
+import { buildHierarchyIndex, type HierarchyEntry } from "./hierarchy";
 import { PickerIdentityContext } from "./PickerIdentityContext";
 import { cleanRecent, recentKey } from "./recent";
 
 export type HierarchyPickerProps = {
-  kind?: "PROJECT" | "DOCUMENT";
+  kind?: "PROJECT" | "DOCUMENT" | "SPACE";
   accessibleIds?: ReadonlySet<string>;
   entries: readonly HierarchyEntry[];
   mode: "single" | "multiple";
@@ -15,6 +17,7 @@ export type HierarchyPickerProps = {
   excludedIds?: ReadonlySet<string>;
   disabledIds?: ReadonlySet<string>;
   disabled?: boolean;
+  allowClear?: boolean;
   initialParentId?: string | null;
   label: string;
   rootLabel: string;
@@ -30,6 +33,7 @@ export function HierarchyPicker({
   excludedIds,
   disabledIds,
   disabled,
+  allowClear = true,
   initialParentId,
   label,
   rootLabel,
@@ -38,6 +42,7 @@ export function HierarchyPicker({
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
   const searchId = useId();
+  const index = useMemo(() => buildHierarchyIndex(entries), [entries]);
   const root = useRef<HTMLElement>(null);
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -52,7 +57,14 @@ export function HierarchyPicker({
     ids: string[];
   }>({ key: null, ids: [] });
   const recent = storedRecent.key === key ? storedRecent.ids : [];
-  const setRecent = (ids: string[]) => setStoredRecent({ key, ids });
+  const setRecent = (ids: string[]) =>
+    setStoredRecent((previous) =>
+      previous.key === key &&
+      previous.ids.length === ids.length &&
+      previous.ids.every((id, index) => id === ids[index])
+        ? previous
+        : { key, ids },
+    );
   useEffect(() => {
     if (!key) {
       setRecent([]);
@@ -93,11 +105,22 @@ export function HierarchyPicker({
     );
     if (mode === "single") setOpen(false);
   };
-  const visible = currentLevel(entries, parentId, query).sort(
-    (a, b) => Number(recent.includes(b.id)) - Number(recent.includes(a.id)),
-  );
+  const visible = useMemo(() => {
+    if (!open) return [];
+    const search = query.trim().toLocaleLowerCase();
+    return [...(index.childrenByParentId.get(parentId) ?? [])]
+      .filter((entry) => index.searchTextById.get(entry.id)?.includes(search))
+      .sort(
+        (a, b) => Number(recent.includes(b.id)) - Number(recent.includes(a.id)),
+      );
+  }, [index, parentId, query, recent, open]);
   return (
-    <section className="hierarchy-picker" aria-label={label} ref={root}>
+    <section
+      className="hierarchy-picker"
+      data-picker-kind={kind}
+      aria-label={label}
+      ref={root}
+    >
       <div className="hierarchy-selected">
         {values.map((id) => (
           <Button
@@ -105,12 +128,13 @@ export function HierarchyPicker({
             variant="toggle"
             key={id}
             disabled={disabled}
-            title={hierarchyPath(entries, id)
+            title={index
+              .path(id)
               .map((entry) => entry.title)
               .join(" / ")}
             onClick={() => onChange(values.filter((value) => value !== id))}
           >
-            {entries.find((entry) => entry.id === id)?.title ?? id} ×
+            {index.byId.get(id)?.title ?? id} ×
           </Button>
         ))}
         <Button
@@ -140,7 +164,7 @@ export function HierarchyPicker({
             >
               {rootLabel}
             </Button>
-            {hierarchyPath(entries, parentId).map((entry) => (
+            {index.path(parentId).map((entry) => (
               <span key={entry.id}>
                 {" "}
                 /{" "}
@@ -154,6 +178,16 @@ export function HierarchyPicker({
               </span>
             ))}
           </nav>
+          {parentId && (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                navigate(index.byId.get(parentId)?.parentId ?? null)
+              }
+            >
+              {zh ? "返回上一级" : "Back one level"}
+            </Button>
+          )}
           <label htmlFor={searchId}>
             {zh ? "搜索当前层" : "Search current level"}
           </label>
@@ -162,8 +196,19 @@ export function HierarchyPicker({
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                event.currentTarget
+                  .closest(".hierarchy-browser")
+                  ?.querySelector<HTMLButtonElement>(
+                    ".ui-entity-picker-choice:not(:disabled)",
+                  )
+                  ?.focus();
+              }
+            }}
           />
-          {mode === "single" && (
+          {mode === "single" && allowClear && (
             <Button
               type="button"
               variant="toggle"
@@ -178,59 +223,47 @@ export function HierarchyPicker({
           )}
           <ul
             aria-label={label}
-            onKeyDown={(event) => {
-              if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key))
-                return;
-              const buttons = Array.from(
-                event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                  "button:not(:disabled)",
-                ),
-              );
-              const index = buttons.indexOf(event.target as HTMLButtonElement);
-              if (index < 0) return;
-              event.preventDefault();
-              const next =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? buttons.length - 1
-                    : index + (event.key === "ArrowDown" ? 1 : -1);
-              buttons[Math.max(0, Math.min(buttons.length - 1, next))]?.focus();
-            }}
+            onKeyDown={(event) =>
+              pickerKeyboard(
+                event,
+                parentId
+                  ? () => navigate(index.byId.get(parentId)?.parentId ?? null)
+                  : undefined,
+              )
+            }
           >
             {visible.map((entry) => {
               const blocked =
                 disabled ||
                 excludedIds?.has(entry.id) ||
                 disabledIds?.has(entry.id);
-              const children = entries.some(
-                (candidate) => candidate.parentId === entry.id,
-              );
+              const children =
+                (index.childrenByParentId.get(entry.id)?.length ?? 0) > 0;
               return (
-                <li key={entry.id} className="parent-tree-row">
-                  <Button
-                    type="button"
-                    className="parent-tree-choice"
-                    disabled={disabled || excludedIds?.has(entry.id)}
-                    onClick={() =>
-                      children
-                        ? navigate(entry.id)
-                        : !blocked && select(entry.id)
-                    }
-                  >
-                    {entry.title}
-                    {children && " ›"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="toggle"
-                    aria-pressed={values.includes(entry.id)}
-                    disabled={blocked}
-                    onClick={() => select(entry.id)}
-                  >
-                    {values.includes(entry.id) ? "✓" : zh ? "选择" : "Select"}
-                  </Button>
-                </li>
+                <EntityPickerRow
+                  key={entry.id}
+                  title={entry.title}
+                  description={
+                    query
+                      ? index
+                          .path(entry.id)
+                          .map((value) => value.title)
+                          .join(" / ")
+                      : undefined
+                  }
+                  path={index
+                    .path(entry.id)
+                    .map((value) => value.title)
+                    .join(" / ")}
+                  selected={values.includes(entry.id)}
+                  disabled={!!blocked}
+                  exploreDisabled={!!(disabled || excludedIds?.has(entry.id))}
+                  exploreLabel={
+                    (zh ? "浏览子项：" : "Browse children: ") + entry.title
+                  }
+                  onSelect={() => select(entry.id)}
+                  onExplore={children ? () => navigate(entry.id) : undefined}
+                />
               );
             })}
           </ul>

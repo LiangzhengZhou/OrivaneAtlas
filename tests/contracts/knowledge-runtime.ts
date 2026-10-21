@@ -61,10 +61,35 @@ export async function knowledgeRuntimeScenario(
     title: "Linked",
     bodyMd: "",
   });
-  await projects.linkProjectSpace(actor, {
+  const metadataProjects = new ProjectService(
+    uow,
+    materials,
+    {
+      ...library,
+      listMetadata: async () =>
+        (await library.list()).map(({ bodyMd, ...metadata }) => ({
+          ...metadata,
+          bodyState: "UNLOADED" as const,
+          bodyCharacterCount: bodyMd.length,
+        })),
+      get: async () => {
+        throw new Error("Linking must not hydrate a Space body");
+      },
+    },
+    authorization,
+    clock,
+    ids,
+  );
+  await metadataProjects.linkProjectSpace(actor, {
     projectId: project.id,
     spaceId: linkedSpace.id,
   });
+  await expect(
+    metadataProjects.linkProjectSpace(actor, {
+      projectId: project.id,
+      spaceId: randomUUID(),
+    }),
+  ).rejects.toMatchObject({ code: "NOT_FOUND" });
   const fallback = await documents.save(actor, null, 0, {
     kind: "SPACE",
     spaceId: null,

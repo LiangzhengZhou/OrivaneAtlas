@@ -1,0 +1,76 @@
+.atlas-floating-surface {
+  position: fixed;
+  inset: auto 16px 16px auto;
+  z-index: 800;
+  width: min(400px, calc(100vw - 16px));
+  max-height: 68dvh;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-floating);
+  overflow: hidden;
+}
+.atlas-floating-surface[open] {
+  display: flex;
+  flex-direction: column;
+}
+.atlas-floating-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.atlas-floating-header strong {
+  flex: 1;
+}
+.atlas-floating-grip {
+  touch-action: none;
+  cursor: grab;
+}
+.atlas-floating-body {
+  overflow: auto;
+  padding: var(--space-3);
+  min-height: 0;
+}
+/* The conversation is hosted by the float; it must not position itself as a side panel. */
+.atlas-floating-body .assistant-pane {
+  position: static;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  z-index: auto;
+  flex: 1;
+  min-height: 0;
+  overflow: visible;
+}
+.atlas-floating-surface:has(.assistant-pane) {
+  width: min(440px, calc(100vw - 16px));
+  height: min(640px, 80dvh);
+}
+.atlas-floating-body textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+}
+.atlas-floating-body .ui-toolbar {
+  flex-wrap: wrap;
+}
+.atlas-floating-context {
+  color: var(--text-secondary);
+  font-size: var(--font-meta-size);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .atlas-floating-surface {
+    right: 8px;
+    bottom: 8px;
+    max-height: 65dvh;
+  }
+}

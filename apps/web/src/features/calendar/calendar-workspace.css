@@ -138,6 +138,21 @@
   height: min(32dvh, 256px);
   min-height: 0;
 }
+.calendar-agenda-section [data-row-height="fixed"] .calendar-event-row {
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  overflow: hidden;
+}
+.calendar-agenda-section
+  [data-row-height="fixed"]
+  .calendar-event-row
+  > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .calendar-secondary {
   margin-top: var(--space-6);
   color: var(--text-secondary);
@@ -164,6 +179,10 @@
   }
 }
 @media (max-width: 480px) {
+  .calendar-grid .ui-calendar-day,
+  .calendar-blank {
+    min-height: 56px;
+  }
   .calendar-preview {
     display: none;
   }

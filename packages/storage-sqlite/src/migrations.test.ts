@@ -255,12 +255,21 @@ describe("SQLite migrations and recovery", () => {
       const result = await migrate(raw, path, 100);
       backup = result.backupPath!;
       expect(result.version).toBe(migrations.length);
-      expect(raw.prepare("SELECT * FROM api_credential").all()).toEqual(before);
+      expect(
+        raw
+          .prepare(
+            "SELECT id,account_id,principal_id,name,scope,hash,expires_at,revoked_at FROM api_credential",
+          )
+          .all(),
+      ).toEqual(before);
+      expect(
+        raw.prepare("SELECT grants_json FROM api_credential").all(),
+      ).toEqual([{ grants_json: null }]);
       expect(
         raw.prepare("SELECT * FROM schema_migrations WHERE version<=5").all(),
       ).toEqual(history);
       raw.exec(
-        "INSERT INTO api_credential VALUES ('forever','a','p','new','write','hash2',NULL,NULL)",
+        "INSERT INTO api_credential (id,account_id,principal_id,name,scope,hash,expires_at,revoked_at) VALUES ('forever','a','p','new','write','hash2',NULL,NULL)",
       );
       expect(
         raw

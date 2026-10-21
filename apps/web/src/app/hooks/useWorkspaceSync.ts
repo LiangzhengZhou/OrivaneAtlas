@@ -4,10 +4,15 @@ import {
   type SetStateAction,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import type { Runtime, Snapshot } from "../../bootstrap";
+import { coalescedRefresh } from "../coalesced-refresh";
+import { connectedWorkspaceSync } from "../connected-workspace-sync";
+import { stableWorkspaceSnapshot } from "../stable-workspace-snapshot";
+import { workspaceSnapshotLoader } from "../workspace-snapshot-loader";
 
 export function useWorkspaceSync(
   runtime: Runtime,
@@ -31,19 +36,40 @@ export function useWorkspaceSync(
     library: [],
     organization: [],
   });
-  const fetchSnapshot = useCallback(
+  const [attentionTick, setAttentionTick] = useState(0);
+  const loadSnapshot = useMemo(
+    () =>
+      workspaceSnapshotLoader(
+        () => runtime.workspaceRevision(),
+        () => runtime.loadWorkspaceWithRevision(),
+        (value) => value.revision,
+      ),
+    [runtime, identity],
+  );
+  const readSnapshot = useCallback(
     async (showError: boolean) => {
       const sequence = ++generation.current;
       try {
-        const value = await runtime.loadWorkspace();
+        await loadSnapshot((value) => {
+          if (
+            !mounted.current ||
+            identityRef.current !== identity ||
+            sequence !== generation.current
+          )
+            return false;
+          setSnapshot((previous) =>
+            stableWorkspaceSnapshot(previous, value.snapshot),
+          );
+          return true;
+        });
         if (
           !mounted.current ||
           identityRef.current !== identity ||
           sequence !== generation.current
         )
           return;
-        setSnapshot(value);
-        setSyncOffline(false);
+        setAttentionTick((tick) => tick + 1);
+        if (runtime.storageMode !== "local") setSyncOffline(false);
         if (showError) error.current(null);
       } catch (cause) {
         if (!mounted.current || identityRef.current !== identity) return;
@@ -61,7 +87,11 @@ export function useWorkspaceSync(
           setLoading(false);
       }
     },
-    [runtime, identity],
+    [runtime, identity, loadSnapshot],
+  );
+  const fetchSnapshot = useMemo(
+    () => coalescedRefresh(readSnapshot),
+    [readSnapshot],
   );
   const refresh = useCallback(() => fetchSnapshot(true), [fetchSnapshot]);
   useEffect(() => {
@@ -74,7 +104,8 @@ export function useWorkspaceSync(
       lastCursor = "";
     let stream: AbortController | null = null,
       reconnect: number | undefined;
-    const visible = () => !document.hidden && navigator.onLine;
+    const visible = () =>
+      !document.hidden && (runtime.storageMode === "local" || navigator.onLine);
     const pull = async () => {
       if (!active || !visible()) return;
       requested = true;
@@ -96,7 +127,14 @@ export function useWorkspaceSync(
       connected = false;
     };
     const connect = () => {
-      if (!active || runtime.native || !visible() || stream) return;
+      if (
+        !active ||
+        runtime.storageMode === "local" ||
+        runtime.native ||
+        !visible() ||
+        stream
+      )
+        return;
       const controller = new AbortController();
       stream = controller;
       void runtime
@@ -134,12 +172,51 @@ export function useWorkspaceSync(
     const foreground = () => {
       if (!visible()) {
         disconnect();
-        if (!navigator.onLine) setSyncOffline(true);
+        if (runtime.storageMode !== "local" && !navigator.onLine)
+          setSyncOffline(true);
         return;
       }
       void pull();
       connect();
     };
+    if (runtime.storageMode === "local") {
+      const network = connectedWorkspaceSync({
+        sync: () => runtime.synchronizeConnectedWorkspace(),
+        stream: runtime.native
+          ? undefined
+          : (cursor, signal, changed, connected) =>
+              runtime.streamWorkspaceEvents(cursor, signal, changed, connected),
+        schedule: (callback, delay) => {
+          const timer = window.setTimeout(callback, delay);
+          return () => window.clearTimeout(timer);
+        },
+        visible: () => !document.hidden && navigator.onLine,
+        onOffline: setSyncOffline,
+      });
+      const unsubscribe = runtime.subscribeWorkspace(() => {
+        void pull();
+        network.wake();
+      });
+      const wakeNetwork = () => network.wake();
+      void refresh();
+      window.addEventListener("online", wakeNetwork);
+      window.addEventListener("focus", foreground);
+      window.addEventListener("focus", wakeNetwork);
+      document.addEventListener("visibilitychange", foreground);
+      document.addEventListener("visibilitychange", wakeNetwork);
+      return () => {
+        active = false;
+        mounted.current = false;
+        ++generation.current;
+        unsubscribe();
+        network.stop();
+        window.removeEventListener("online", wakeNetwork);
+        window.removeEventListener("focus", foreground);
+        window.removeEventListener("focus", wakeNetwork);
+        document.removeEventListener("visibilitychange", foreground);
+        document.removeEventListener("visibilitychange", wakeNetwork);
+      };
+    }
     void refresh();
     connect();
     const fallback = window.setInterval(() => {
@@ -161,5 +238,12 @@ export function useWorkspaceSync(
       document.removeEventListener("visibilitychange", foreground);
     };
   }, [runtime, identity, fetchSnapshot, refresh]);
-  return { snapshot, setSnapshot, loading, syncOffline, refresh };
+  return {
+    snapshot,
+    setSnapshot,
+    loading,
+    syncOffline,
+    refresh,
+    attentionTick,
+  };
 }

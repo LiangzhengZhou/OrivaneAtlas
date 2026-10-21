@@ -16,7 +16,11 @@ import { chromium } from "@playwright/test";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // Adaptive launchers require a separate opaque platform background.
 // Normal Windows, web and legacy resources preserve the canonical alpha.
-const adaptiveBackground = "#71777f";
+const adaptiveBackground = "#F3F4F6";
+// Raster rounding at xhdpi can place a visible edge pixel outside the 66dp
+// circle at13%. Keep a small optical safety margin, derived identically for all
+// densities; this scales the source and never crops or redraws it.
+const adaptiveForegroundInset = 14;
 const master = (
   await readFile(path.join(root, "branding/application-icon-source.png"))
 ).toString("base64");
@@ -193,6 +197,12 @@ try {
     "src-tauri/icons/android/values/ic_launcher_background.xml",
     Buffer.from(
       `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n  <color name="ic_launcher_background">${adaptiveBackground}</color>\n</resources>\n`,
+    ),
+  );
+  await save(
+    "src-tauri/icons/android/drawable/atlas_launcher_safe_foreground.xml",
+    Buffer.from(
+      `<?xml version="1.0" encoding="utf-8"?>\n<!-- Generated from the canonical application icon; central66dp safe circle. -->\n<inset xmlns:android="http://schemas.android.com/apk/res/android"\n    android:drawable="@mipmap/ic_launcher_foreground"\n    android:inset="${adaptiveForegroundInset}%" />\n`,
     ),
   );
   async function mirror(relative) {

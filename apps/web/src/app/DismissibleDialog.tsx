@@ -5,9 +5,11 @@ export type DismissReason = "escape" | "outside" | "close-button";
 export function DismissibleDialog({
   onRequestClose,
   modal = true,
+  closeOnOutside = true,
   ...props
 }: Omit<ComponentProps<"dialog">, "onCancel"> & {
   modal?: boolean;
+  closeOnOutside?: boolean;
   onRequestClose(reason: DismissReason): void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -32,14 +34,25 @@ export function DismissibleDialog({
       );
     };
     const down = (event: PointerEvent) => {
-      startedOutside = outside(event);
+      const target = event.target as Element;
+      const otherDialog = target.closest("dialog[open]");
+      startedOutside = (!otherDialog || otherDialog === node) && outside(event);
     };
     const up = (event: PointerEvent) => {
-      if (startedOutside && outside(event)) request.current("outside");
+      if (closeOnOutside && startedOutside && outside(event))
+        request.current("outside");
       startedOutside = false;
     };
     const key = (event: KeyboardEvent) => {
-      if (!modal && event.key === "Escape" && !event.defaultPrevented) {
+      if (
+        !modal &&
+        event.key === "Escape" &&
+        !event.defaultPrevented &&
+        (!(event.target instanceof Element) ||
+          !event.target.closest("dialog[open]") ||
+          event.target.closest("dialog[open]") === node) &&
+        !node.querySelector("[data-floating-surface]")
+      ) {
         event.preventDefault();
         request.current("escape");
       }
@@ -51,11 +64,20 @@ export function DismissibleDialog({
       document.removeEventListener("pointerdown", down);
       document.removeEventListener("pointerup", up);
       document.removeEventListener("keydown", key);
+      const restoreFocus =
+        node.contains(document.activeElement) ||
+        document.activeElement === document.body;
       node.close();
-      if (previous instanceof HTMLElement && previous.isConnected)
-        previous.focus();
+      if (
+        restoreFocus &&
+        previous instanceof HTMLElement &&
+        previous.isConnected &&
+        previous !== document.activeElement &&
+        !previous.closest("[hidden]")
+      )
+        previous.focus({ preventScroll: true });
     };
-  }, [modal]);
+  }, [modal, closeOnOutside]);
   return (
     <dialog
       {...props}

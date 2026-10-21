@@ -3,9 +3,16 @@ import {
   knowledgeRuntimeRoundTrip,
   knowledgeRuntimeScenario,
 } from "../../../tests/contracts/knowledge-runtime";
+import { stableKnowledgeScenario } from "../../../tests/contracts/stable-knowledge";
 import { context, sqliteHarness } from "./testing";
 
 const harness = sqliteHarness();
+it("preserves stable Note/Space/Document IDs and ordinary body/revision rules on SQLite", async () => {
+  const db = await harness.create();
+  await db.request(context, null, (_uow, notes, _connected, library) =>
+    stableKnowledgeScenario(notes, library),
+  );
+});
 it("runs the shared knowledge application scenario on SQLite", async () => {
   const db = await harness.create();
   const state = await db.request(

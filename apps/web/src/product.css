@@ -429,13 +429,17 @@ body {
   color: var(--muted);
 }
 @media (max-width: 800px) {
-  .project-tree-list .project-compact-row {
+  :root .project-tree-list .project-compact-row {
     grid-template-columns: 20px minmax(0, 1fr) auto;
     gap: 8px;
+  }
+  .project-compact-row .project-lifecycle {
+    white-space: nowrap;
   }
   .project-compact-row .project-card-actions {
     grid-column: 2 / -1;
     flex-wrap: wrap;
+    justify-content: flex-end;
   }
   .project-compact-progress {
     grid-column: 2 / -1;

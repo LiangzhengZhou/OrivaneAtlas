@@ -5,6 +5,7 @@ import type {
 } from "@arclattice/application";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { WorkspaceConnection } from "./app/WorkspaceConnection";
 import type { Runtime } from "./bootstrap";
 import { Button } from "./components/ui/Button";
 import { confirmAction } from "./components/ui/ConfirmationHost";
@@ -22,6 +23,7 @@ export function AccountView({
   const { t, i18n } = useTranslation("spaces");
   const zh = i18n.language.startsWith("zh");
   const [days, setDays] = useState<30 | 90 | 365 | null>(30);
+  const [, accountChanged] = useState(0);
   const [sessions, setSessions] = useState<AccountSession[]>([]);
   useEffect(() => {
     let active = true;
@@ -37,7 +39,7 @@ export function AccountView({
     return () => {
       active = false;
     };
-  }, [runtime]);
+  }, [runtime, runtime.account?.id]);
   const [tokens, setTokens] = useState<ApiCredential[]>([]),
     [name, setName] = useState("");
   const [scope, setScope] = useState<ApiCredential["scope"]>("write"),
@@ -54,7 +56,7 @@ export function AccountView({
         .tokens()
         .then(setTokens)
         .catch(() => setError(true));
-  }, [runtime]);
+  }, [runtime, runtime.account?.id]);
   async function run(action: () => Promise<void>) {
     if (busy) return;
     setBusy(true);
@@ -69,6 +71,11 @@ export function AccountView({
   }
   return (
     <div className="account-grid">
+      <WorkspaceConnection
+        runtime={runtime}
+        confirmLeave={confirmLeave}
+        onChanged={() => accountChanged((value) => value + 1)}
+      />
       {error && (
         <p className="error" role="alert">
           {t("error")}
@@ -181,7 +188,7 @@ export function AccountView({
           </Button>
         </section>
       )}
-      {!runtime.account ? (
+      {!runtime.account && runtime.remoteContext ? (
         <section className="panel account-panel">
           <h2>{t("claim")}</h2>
           <p>{t("claimHint")}</p>
@@ -222,7 +229,7 @@ export function AccountView({
             </Button>
           </form>
         </section>
-      ) : (
+      ) : runtime.account ? (
         <section className="panel account-panel">
           <h2>{runtime.account.username}</h2>
           <p>{t(runtime.account.role)}</p>
@@ -267,7 +274,7 @@ export function AccountView({
             </Button>
           </form>
         </section>
-      )}
+      ) : null}
       <section className="panel account-panel">
         <h2>{t("tokens")}</h2>
         <p>{t("tokenHint")}</p>

@@ -1,0 +1,53 @@
+/*
+ * Glass = elevation. Use ONLY on transient surfaces floating above content
+ * (popovers, menus, Atlas Float, Notification Center, command palette, sheets).
+ * Never on document bodies, lists, tables, settings bodies or nested cards.
+ * The default is the opaque fallback; blur is an enhancement.
+ */
+.glass-surface {
+  background: var(--glass-fallback-bg);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-floating);
+  color: var(--text-primary);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  @media (prefers-reduced-transparency: no-preference) {
+    .glass-surface {
+      background: var(--glass-bg-strong);
+      border-color: var(--glass-border);
+      box-shadow: var(--glass-shadow);
+      -webkit-backdrop-filter: blur(var(--glass-blur))
+        saturate(var(--glass-saturation));
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+    }
+    .glass-surface.glass-light {
+      background: var(--glass-bg);
+    }
+  }
+}
+/* Mobile compositing and low-power: keep it opaque. */
+@media (max-width: 720px), (prefers-reduced-data: reduce) {
+  .glass-surface {
+    background: var(--glass-fallback-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more), (forced-colors: active) {
+  .glass-surface {
+    background: var(--glass-fallback-bg);
+    border-color: var(--border-strong);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+/* Legacy modal backdrops must respect the same accessibility/compositing
+ * budget as elevated surfaces. The document canvas itself remains opaque. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more),
+  (forced-colors: active), (max-width: 720px) {
+  .task-dialog::backdrop {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

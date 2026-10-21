@@ -3,30 +3,26 @@ import { X } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import type { Snapshot } from "../bootstrap";
-import { Button, IconButton, SegmentedControl } from "../components/ui/Button";
+import { Button, IconButton } from "../components/ui/Button";
 
 export function ContextPane({
   selected,
   snapshot,
-  atlas,
-  onMode,
   onClose,
   onOpen,
-  children,
   className = "",
   label,
   openLabel,
+  memo,
 }: {
   selected: EntityRef | null;
   snapshot: Snapshot;
-  atlas: boolean;
-  onMode(atlas: boolean): void;
   onClose(): void;
   onOpen(ref: EntityRef): void;
-  children?: ReactNode;
   className?: string;
   label?: string;
   openLabel?: string;
+  memo?: ReactNode;
 }) {
   const { i18n, t } = useTranslation("work");
   const zh = i18n.language.startsWith("zh");
@@ -51,19 +47,11 @@ export function ContextPane({
   }, [onClose]);
   return (
     <aside
-      className={`context-pane${atlas ? " is-atlas" : ""} ${className}`}
+      className={`context-pane ${className}`}
       aria-label={label ?? (zh ? "上下文" : "Context")}
     >
       <header className="context-pane-header">
-        <SegmentedControl
-          label={zh ? "上下文" : "Context"}
-          value={atlas ? "atlas" : "details"}
-          options={[
-            { value: "details", label: zh ? "详情" : "Details" },
-            { value: "atlas", label: "Atlas" },
-          ]}
-          onChange={(mode) => onMode(mode === "atlas")}
-        />
+        <strong>{zh ? "检查器" : "Inspector"}</strong>
         <IconButton
           label={zh ? "关闭上下文" : "Close context"}
           onClick={onClose}
@@ -71,9 +59,7 @@ export function ContextPane({
           <X />
         </IconButton>
       </header>
-      {atlas ? (
-        children
-      ) : entity && !entity.deletedAt ? (
+      {entity && !entity.deletedAt ? (
         <div className="entity-inspector">
           <h2>{entity.title}</h2>
           {"status" in entity && (
@@ -87,6 +73,7 @@ export function ContextPane({
               {openLabel ?? (zh ? "打开" : "Open")}
             </Button>
           )}
+          {memo}
         </div>
       ) : (
         <p className="muted entity-inspector">

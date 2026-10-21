@@ -28,6 +28,7 @@ import {
   type WorkTransaction,
 } from "./index";
 import { occurrenceExpiry, recurrenceDefaults } from "./recurrence-lifecycle";
+import { stableEntityIds } from "./stable-entity-ids";
 
 export interface TaskDefaults {
   projectIds?: string[];
@@ -169,6 +170,11 @@ export interface RecurrencePayload extends TaskDefaults {
   frequency: "DAILY" | "WEEKLY" | "MONTHLY";
   interval: number;
   schedulerThrough?: string;
+  weekdays?: number[];
+  monthlyRule?: NonNullable<
+    import("@arclattice/domain").CalendarRule["monthlyRule"]
+  >;
+  endAfterCompleted?: number | null;
 }
 export interface OccurrencePayload {
   kind: "OCCURRENCE";
@@ -553,6 +559,9 @@ export function parseProjectPlan(value: unknown): ParsedPlan {
       "timezone",
       "frequency",
       "interval",
+      "weekdays",
+      "monthlyRule",
+      "endAfterCompleted",
       ...defaultFields,
     ]);
     const rule = {
@@ -566,6 +575,19 @@ export function parseProjectPlan(value: unknown): ParsedPlan {
       timezone: entry.timezone as string,
       frequency: entry.frequency as RecurrencePayload["frequency"],
       interval: entry.interval as number,
+      ...(entry.weekdays !== undefined
+        ? { weekdays: entry.weekdays as number[] }
+        : {}),
+      ...(entry.monthlyRule !== undefined
+        ? {
+            monthlyRule: entry.monthlyRule as NonNullable<
+              RecurrencePayload["monthlyRule"]
+            >,
+          }
+        : {}),
+      ...(entry.endAfterCompleted !== undefined
+        ? { endAfterCompleted: entry.endAfterCompleted as number | null }
+        : {}),
     };
     validateCalendarRule(rule);
     return rule;
@@ -815,7 +837,7 @@ export class WorkflowService {
   ) {
     const now = this.clock.now();
     const record: WorkflowRecord = {
-      id: old?.id ?? id ?? this.ids.next(),
+      id: old?.id ?? id ?? this.ids.nextFor?.("WORKFLOW") ?? this.ids.next(),
       workspaceId: context.workspaceId,
       version: (old?.version ?? 0) + 1,
       createdBy: old?.createdBy ?? context.principalId,
@@ -860,6 +882,57 @@ export class WorkflowService {
         provenance: [],
       });
     });
+  }
+  /** Original offline preview; never silently replace its reviewed baseline. */
+  async previewWithStableId(
+    contextInput: ActorContext,
+    id: string,
+    projectId: string | null,
+    manifest: unknown,
+    expected: { baseRevision: string; documentRevision: string },
+  ) {
+    const context = Object.freeze({ ...contextInput }),
+      captured = structuredClone(manifest),
+      baseline = structuredClone(expected);
+    await this.auth.require(context, "work:create");
+    const ids = stableEntityIds(this.ids, "WORKFLOW", id);
+    if (
+      typeof baseline.baseRevision !== "string" ||
+      !baseline.baseRevision ||
+      typeof baseline.documentRevision !== "string"
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    const uow: UnitOfWork = {
+      run: (workspaceId, operation) =>
+        this.uow.run(workspaceId, async (tx) => {
+          if (workspaceId !== context.workspaceId)
+            throw new DomainError("FORBIDDEN");
+          if ((await tx.workflows()).some((record) => record.id === id))
+            throw new DomainError("VERSION_CONFLICT");
+          const result = await operation(tx);
+          const preview = (await tx.workflows()).find(
+            (record) => record.id === id,
+          );
+          if (
+            !preview ||
+            preview.payload.kind !== "PLAN" ||
+            preview.payload.baseRevision !== baseline.baseRevision ||
+            (preview.payload.documentRevision ?? "") !==
+              baseline.documentRevision
+          )
+            throw new DomainError("VERSION_CONFLICT", {
+              field: "planBaseline",
+            });
+          return result;
+        }),
+    };
+    return new WorkflowService(
+      uow,
+      this.auth,
+      this.clock,
+      ids,
+      this.documents,
+    ).preview(context, projectId, captured);
   }
   async revisePreview(
     context: ActorContext,
@@ -1125,6 +1198,76 @@ export class WorkflowService {
         plan,
       );
     });
+  }
+  /** Stable identity allocation stays inside the ordinary authorized transaction. */
+  async saveTaskRecurrenceWithStableId(
+    contextInput: ActorContext,
+    id: string,
+    input: Parameters<WorkflowService["saveTaskRecurrence"]>[1],
+  ) {
+    const context = Object.freeze({ ...contextInput }),
+      captured = structuredClone(input);
+    await this.auth.require(
+      context,
+      captured.task ? "work:update" : "work:create",
+    );
+    if (
+      captured.recurrence.version !== 0 ||
+      captured.recurrence.deleted ||
+      Object.hasOwn(captured.recurrence, "id")
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    const ids = stableEntityIds(this.ids, "WORKFLOW", id);
+    const uow: UnitOfWork = {
+      run: (workspaceId, operation) =>
+        this.uow.run(workspaceId, async (tx) => {
+          if (workspaceId !== context.workspaceId)
+            throw new DomainError("FORBIDDEN");
+          if ((await tx.workflows()).some((record) => record.id === id))
+            throw new DomainError("VERSION_CONFLICT");
+          return operation(tx);
+        }),
+    };
+    return new WorkflowService(
+      uow,
+      this.auth,
+      this.clock,
+      ids,
+      this.documents,
+    ).saveTaskRecurrence(context, captured);
+  }
+  async createRecurrenceWithStableId(
+    contextInput: ActorContext,
+    id: string,
+    input: Parameters<WorkflowService["saveRecurrence"]>[1],
+  ) {
+    const context = Object.freeze({ ...contextInput }),
+      captured = structuredClone(input);
+    await this.auth.require(context, "work:create");
+    if (
+      captured.version !== 0 ||
+      captured.deleted ||
+      Object.hasOwn(captured, "id")
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    const ids = stableEntityIds(this.ids, "WORKFLOW", id);
+    const uow: UnitOfWork = {
+      run: (workspaceId, operation) =>
+        this.uow.run(workspaceId, async (tx) => {
+          if (workspaceId !== context.workspaceId)
+            throw new DomainError("FORBIDDEN");
+          if ((await tx.workflows()).some((record) => record.id === id))
+            throw new DomainError("VERSION_CONFLICT");
+          return operation(tx);
+        }),
+    };
+    return new WorkflowService(
+      uow,
+      this.auth,
+      this.clock,
+      ids,
+      this.documents,
+    ).saveRecurrence(context, captured);
   }
   async saveRecurrence(
     context: ActorContext,
@@ -1421,6 +1564,21 @@ export class WorkflowService {
         }
       }
       if (rule.state !== "ACTIVE") return [];
+      if (rule.endAfterCompleted != null) {
+        const completed = (await tx.workflows()).filter(
+          (record) =>
+            !record.deletedAt &&
+            record.payload.kind === "OCCURRENCE" &&
+            record.payload.definitionId === id &&
+            (record.payload.status === "COMPLETED" ||
+              (record.payload.status === "BACKFILLED" &&
+                !!record.payload.completedAt)),
+        ).length;
+        if (completed >= rule.endAfterCompleted) {
+          await this.save(tx, context, { ...rule, state: "ENDED" }, definition);
+          return [];
+        }
+      }
       const today = localCalendarDay(this.clock.now(), rule.timezone);
       const from = rule.schedulerThrough
         ? calendarOffset(rule.schedulerThrough, 1)
@@ -1474,6 +1632,19 @@ export class WorkflowService {
         today = localCalendarDay(this.clock.now(), rule.timezone);
       if (to > today) throw new DomainError("VALIDATION_ERROR");
       if (rule.state !== "ACTIVE") return [];
+      if (
+        rule.endAfterCompleted != null &&
+        records.filter(
+          (record) =>
+            !record.deletedAt &&
+            record.payload.kind === "OCCURRENCE" &&
+            record.payload.definitionId === id &&
+            (record.payload.status === "COMPLETED" ||
+              (record.payload.status === "BACKFILLED" &&
+                !!record.payload.completedAt)),
+        ).length >= rule.endAfterCompleted
+      )
+        return [];
       const result: WorkflowRecord[] = [];
       for (const day of occurrenceDays(rule, from, to)) {
         const occurrenceId = `occurrence:${id}:${day}`,

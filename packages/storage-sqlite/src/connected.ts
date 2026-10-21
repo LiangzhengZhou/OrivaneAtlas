@@ -6,6 +6,7 @@ import type {
   ConnectedStore,
   KnowledgeLink,
 } from "@arclattice/application";
+import { requireCanonicalFile } from "@arclattice/application";
 import { type ActorContext, DomainError } from "@arclattice/domain";
 
 export function connectedStore(
@@ -93,6 +94,32 @@ export function connectedStore(
     },
     async exists(ref) {
       guard();
+      if (ref.kind === "FILE") {
+        const row = db
+          .prepare(
+            "SELECT version,payload FROM library_file WHERE workspace_id=? AND id=?",
+          )
+          .get(context.workspaceId, ref.id);
+        if (!row) return false;
+        const file = requireCanonicalFile(
+          JSON.parse(String(row.payload)),
+          ref.id,
+          context.workspaceId,
+          Number(row.version),
+        );
+        if (file.deletedAt) return false;
+        if (
+          file.spaceId &&
+          !(await this.exists({ kind: "SPACE", id: file.spaceId }))
+        )
+          return false;
+        if (
+          file.parentDocumentId &&
+          !(await this.exists({ kind: "DOCUMENT", id: file.parentDocumentId }))
+        )
+          return false;
+        return true;
+      }
       if (ref.kind === "SPACE" || ref.kind === "DOCUMENT") {
         const row = db
           .prepare(

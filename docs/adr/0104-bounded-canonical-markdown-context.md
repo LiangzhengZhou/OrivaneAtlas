@@ -1,0 +1,7 @@
+# ADR0104 — Bounded canonical Markdown context
+
+2026-10-15. Editor selection/paragraph requests must not transport the entire canonical document. Optional UTF-16 range coordinates and expected selected text are accepted only for NOTE/SPACE/DOCUMENT sources. Application validates safe integer bounds, nonempty range and a 12,000-character limit. Host reads the authorized canonical revision, compares the exact expected text and stores only coordinates plus canonical selected body in the existing AgentRun JSON. FILE continues through canonical extraction citations and rejects Markdown ranges.
+
+Approval and dispatch re-read revision, title, parent, workspace and content policy, then compare the canonical range with the approved body. Conversation continuation preserves the same selected range rather than silently expanding it to the entire document. Editor proposal application separately retains source hash, version, range and immutable CodeMirror document identity. Selection changes do not send data. Unsynced/new local-only document processing remains a separate requirement; this contract does not claim that a remote copy is the local source of truth.
+
+This is an additive JSON contract, not a schema-column change. No historical migration changes. OpenAPI documents exact range validation. The 100KB canonical document integration and browser fixture exercise bounded selection without increasing the model input budget or weakening approval.

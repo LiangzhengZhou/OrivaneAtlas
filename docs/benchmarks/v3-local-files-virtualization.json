@@ -1,0 +1,36 @@
+{
+  "scope": "Targeted production File-list virtualization, not full v3 performance acceptance",
+  "fixture": "1500 synthetic metadata rows cloned from one real uploaded File, plus the original; one verified content-addressed Blob",
+  "results": [
+    {
+      "project": "desktop-en",
+      "fileMetadataCount": 1501,
+      "liveFileRows": 12,
+      "verifiedOriginalBlobCount": 1,
+      "originalBytes": 25,
+      "offline": true,
+      "filteredFileOpened": "Fixture1499.txt",
+      "scope": "Targeted File list virtualization; not full v3 performance acceptance"
+    },
+    {
+      "project": "desktop-zh",
+      "fileMetadataCount": 1501,
+      "liveFileRows": 12,
+      "verifiedOriginalBlobCount": 1,
+      "originalBytes": 25,
+      "offline": true,
+      "filteredFileOpened": "Fixture1499.txt",
+      "scope": "Targeted File list virtualization; not full v3 performance acceptance"
+    },
+    {
+      "project": "mobile-zh",
+      "fileMetadataCount": 1501,
+      "liveFileRows": 13,
+      "verifiedOriginalBlobCount": 1,
+      "originalBytes": 25,
+      "offline": true,
+      "filteredFileOpened": "Fixture1499.txt",
+      "scope": "Targeted File list virtualization; not full v3 performance acceptance"
+    }
+  ]
+}

@@ -1,11 +1,13 @@
 import type { EntityRef } from "@arclattice/application";
 import type { WorkItem } from "@arclattice/domain";
 import { MarkerType } from "@xyflow/react";
+import { Link2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ContextPane } from "../../app/ContextPane";
+import { ShellActions } from "../../app/PageHeader";
 import type { Snapshot } from "../../bootstrap";
-import { Button } from "../../components/ui/Button";
+import { Button, IconButton } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Content";
 import { KnowledgeGraph } from "../knowledge/KnowledgeGraph";
 import { ProjectDependencyGraph } from "../projects/ProjectDependencyGraph";
@@ -20,6 +22,7 @@ import { collectionRevision } from "./graph-revision";
 import type { GraphRoute } from "./graph-route";
 import { dependencyDagreLayout } from "./layouts/DependencyDagreLayout";
 import { useStructuralLayout } from "./layouts/useStructuralLayout";
+import { StructureExpansionMenu } from "./StructureExpansionMenu";
 export function GraphWorkspace({
   workIndex,
   route,
@@ -80,9 +83,10 @@ export function GraphWorkspace({
           ...visibleProjectBranches(projectChildren, route.id, expandedIds),
         ]
       : [];
+  const direction = route.direction ?? "LR";
   const structureKey =
     route.mode === "structure"
-      ? `${collectionRevision(snapshot.items)}:${route.id}:${structure.map((item) => item.id).join(":")}`
+      ? `${direction}:${collectionRevision(snapshot.items)}:${route.id}:${structure.map((item) => item.id).join(":")}`
       : "inactive-structure";
   const structureIds = new Set(structure.map((item) => item.id));
   const edges = structure.flatMap((item) =>
@@ -100,7 +104,8 @@ export function GraphWorkspace({
   const positions = useStructuralLayout(
     structure.map((p) => p.id),
     edges,
-    dependencyDagreLayout,
+    (layoutIds, layoutEdges) =>
+      dependencyDagreLayout(layoutIds, layoutEdges, direction),
     structureKey,
   );
   const positionById = new Map(positions.map((p) => [p.id, p.position]));
@@ -127,10 +132,6 @@ export function GraphWorkspace({
             : null
         }
         snapshot={snapshot}
-        atlas={false}
-        onMode={(atlas) => {
-          if (atlas) onAtlas?.();
-        }}
         onClose={() => setInspectorOpen(false)}
         onOpen={onOpen}
       />
@@ -232,20 +233,27 @@ export function GraphWorkspace({
             onChange={(e) => setQuery(e.target.value)}
           />
         </Field>
-        <Button
-          type="button"
-          variant="toggle"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(location.href);
-              setCopyError(false);
-            } catch {
-              setCopyError(true);
-            }
-          }}
-        >
-          {text("复制链接", "Copy link")}
-        </Button>
+        <span className="graph-shell-actions">
+          {onAtlas && (
+            <Button variant="ghost" onClick={onAtlas}>
+              Atlas
+            </Button>
+          )}
+          <IconButton
+            label={text("复制链接", "Copy link")}
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(location.href);
+                setCopyError(false);
+              } catch {
+                setCopyError(true);
+              }
+            }}
+          >
+            <Link2 size={17} />
+          </IconButton>
+          <ShellActions />
+        </span>
       </header>
       {copyError && (
         <label role="alert">
@@ -340,42 +348,38 @@ export function GraphWorkspace({
           ))}
         </div>
       )}
+      {(route.mode === "dependencies" ||
+        (route.mode === "structure" && !tree)) && (
+        <div className="action-row">
+          {(["LR", "TB"] as const).map((value) => (
+            <Button
+              type="button"
+              variant="toggle"
+              key={value}
+              aria-pressed={direction === value}
+              onClick={() => update({ direction: value })}
+            >
+              {value === "LR"
+                ? text("横向布局", "Horizontal layout")
+                : text("纵向布局", "Vertical layout")}
+            </Button>
+          ))}
+        </div>
+      )}
       {route.mode === "structure" && (
         <>
           <div className="action-row">
-            {[1, 2].map((depth) => (
-              <Button
-                type="button"
-                variant="toggle"
-                key={depth}
-                aria-pressed={
-                  depth === 1
-                    ? expandedIds.size === 0
-                    : hasSecondLevel &&
-                      directChildren.every((item) => expandedIds.has(item.id))
-                }
-                disabled={depth === 2 && !hasSecondLevel}
-                title={
-                  depth === 2 && !hasSecondLevel
-                    ? text("没有第二层子项目", "No second-level subprojects")
-                    : undefined
-                }
-                onClick={() =>
-                  update({
-                    depth,
-                    expandedIds:
-                      depth === 2 ? directChildren.map((item) => item.id) : [],
-                  })
-                }
-              >
-                {depth === 1
-                  ? text("直属子项目", "Direct subprojects")
-                  : text("展开两层", "Expand two levels")}
-              </Button>
-            ))}
-            <Button variant="ghost" onClick={() => update({ expandedIds: [] })}>
-              {text("全部折叠", "Collapse all")}
-            </Button>
+            <StructureExpansionMenu
+              zh={i18n.language.startsWith("zh")}
+              hasSecondLevel={hasSecondLevel}
+              onExpand={() =>
+                update({
+                  depth: 2,
+                  expandedIds: directChildren.map((item) => item.id),
+                })
+              }
+              onCollapse={() => update({ depth: 1, expandedIds: [] })}
+            />
             <Button
               type="button"
               variant="toggle"
@@ -438,6 +442,7 @@ export function GraphWorkspace({
         <ProjectDependencyGraph
           initialViewport={route.viewport}
           onViewportChange={(viewport) => update({ viewport })}
+          direction={direction}
           key={route.id + route.mode}
           scopeProjectId={route.id}
           workspace

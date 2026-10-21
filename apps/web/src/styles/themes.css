@@ -1,5 +1,9 @@
 @media screen {
   :root[data-theme="dark"] {
+    --priority-urgent: #ff8c99;
+    --priority-high: #eeb07d;
+    --priority-medium: #a4b5c8;
+    --priority-low: #a1a1aa;
     --canvas: #111214;
     --sidebar-surface: #15171a;
     --surface: #1b1d21;
@@ -20,6 +24,15 @@
     --danger: #f0919a;
     --info: #82b6e0;
     --on-accent: #18181b;
+    --glass-bg: color-mix(in srgb, var(--surface-raised) 74%, transparent);
+    --glass-bg-strong: color-mix(
+      in srgb,
+      var(--surface-raised) 88%,
+      transparent
+    );
+    --glass-border: color-mix(in srgb, #fff 12%, transparent);
+    --glass-shadow:
+      0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset, 0 12px 34px #0007;
     color-scheme: dark;
   }
 }

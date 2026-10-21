@@ -36,7 +36,7 @@ export const largeMarkdownLanguage = StreamLanguage.define({
     if (stream.match(/^!?\[[^\]]*\](?:\([^)]*\)|\[[^\]]*\])/)) return "link";
     if (stream.match(/^\[\[[^\]]*\]\]/)) return "link";
     stream.next();
-    stream.eatWhile(/[^`*_\[!]/);
+    stream.match(/^[^`*_\[!]+/);
     return null;
   },
 });

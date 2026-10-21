@@ -11,9 +11,11 @@
   "dependencies": {
     "@arclattice/application": "workspace:*",
     "@arclattice/domain": "workspace:*",
+    "@arclattice/file-parsers": "workspace:*",
     "@arclattice/storage-sqlite": "workspace:*",
     "@arclattice/wiki-core": "workspace:*",
-    "uuid": "14.0.2"
+    "uuid": "14.0.2",
+    "pdfjs-dist": "6.4.299"
   },
   "devDependencies": {
     "vite": "8.3.0"

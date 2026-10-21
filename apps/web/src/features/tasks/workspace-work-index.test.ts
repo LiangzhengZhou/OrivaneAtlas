@@ -1,4 +1,7 @@
-import { inheritedArchiveSource } from "@arclattice/domain";
+import {
+  effectiveCategoryId,
+  inheritedArchiveSource,
+} from "@arclattice/domain";
 import { expect, test } from "vitest";
 import { work } from "../../../../../tests/fixtures";
 import { buildWorkspaceWorkIndex } from "./workspace-work-index";
@@ -58,4 +61,37 @@ test("broken foreign parents and cycles terminate without inheriting foreign arc
     [],
   );
   expect(cycle.ancestorIdsByProjectId.get(project.id)).toEqual([]);
+});
+
+test("category lookup preserves nearest inheritance without scanning rows", () => {
+  const root = {
+    ...work("root"),
+    type: "PROJECT" as const,
+    categoryId: "root-category",
+  };
+  const child = {
+    ...work("child"),
+    type: "PROJECT" as const,
+    parentProjectId: root.id,
+  };
+  const leaf = {
+    ...work("leaf"),
+    type: "PROJECT" as const,
+    parentProjectId: child.id,
+    categoryId: "leaf-category",
+  };
+  const items = [root, child, leaf];
+  const index = buildWorkspaceWorkIndex(items, []);
+  for (const project of items)
+    expect(index.categoryIdByProjectId.get(project.id)).toBe(
+      effectiveCategoryId(project, items),
+    );
+  expect(index.categoryIdByProjectId.get(child.id)).toBe("root-category");
+  expect(index.categoryIdByProjectId.get(leaf.id)).toBe("leaf-category");
+  const foreign = { ...root, workspaceId: "foreign" };
+  expect(
+    buildWorkspaceWorkIndex([foreign, child], []).categoryIdByProjectId.get(
+      child.id,
+    ),
+  ).toBeNull();
 });

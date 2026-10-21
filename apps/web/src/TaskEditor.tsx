@@ -9,20 +9,42 @@ import {
   type WorkStatus,
   workStatuses,
 } from "@arclattice/domain";
-import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { DismissibleDialog } from "./app/DismissibleDialog";
 import { DateField } from "./components/DateField";
-import { RepeatFields, type RepeatRule } from "./components/RepeatFields";
+import {
+  NaturalRecurrenceEditor,
+  type RepeatRule,
+} from "./components/RepeatFields";
 import { Button, SegmentedControl } from "./components/ui/Button";
+import {
+  EditorActionsMenu,
+  EditorShell,
+  FormSection,
+} from "./components/ui/InteractionSurfaces";
 import { Select } from "./components/ui/Surfaces";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
 import { Markdown } from "./Markdown";
 import type { WorkEditorProps } from "./WorkItemEditor";
+import "./features/tasks/task-editor.css";
 
-export function TaskEditor({
+export function QuickTaskCreate(props: WorkEditorProps) {
+  return <TaskEditorSurface {...props} mode="quick" />;
+}
+export function FullTaskEditor(props: WorkEditorProps) {
+  return <TaskEditorSurface {...props} mode="full" />;
+}
+export function TaskEditor(props: WorkEditorProps) {
+  return props.item ? (
+    <FullTaskEditor {...props} />
+  ) : (
+    <QuickTaskCreate {...props} />
+  );
+}
+function TaskEditorSurface({
+  memo,
+  mode,
   item,
   projects,
   createType,
@@ -39,8 +61,11 @@ export function TaskEditor({
   workflows = [],
   calendarTimezone = "UTC",
   onSaveRepeat,
-}: WorkEditorProps) {
+}: WorkEditorProps & { mode: "quick" | "full" }) {
   const { t, i18n } = useTranslation(["common", "work"]);
+  const formId = useId();
+  const [more, setMore] = useState(mode === "full");
+  const [descriptionOpen, setDescriptionOpen] = useState(mode === "full");
   const pendingChange = useRef<(() => void) | null>(null);
   const [discard, setDiscard] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -205,15 +230,39 @@ export function TaskEditor({
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
   return (
-    <DismissibleDialog
-      modal={window.matchMedia("(max-width: 767px)").matches}
-      className="task-dialog task-inspector"
-      aria-labelledby="editor-heading"
-      onRequestClose={() => {
-        if (!busy) close();
-      }}
+    <EditorShell
+      modal={
+        mode === "quick" || window.matchMedia("(max-width: 767px)").matches
+      }
+      className={`work-editor-surface task-inspector task-editor-surface ${mode === "quick" ? "task-quick-create" : "task-full-editor"}`}
+      title={item ? t("work:detail") : t("create")}
+      pending={busy}
+      actions={<EditorActionsMenu pending={busy} onDelete={onDelete} />}
+      onClose={close}
+      footer={
+        <>
+          <div className="action-spacer" />
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={close}
+          >
+            {t("cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            type="submit"
+            form={formId}
+            disabled={busy || !title.trim()}
+          >
+            {item ? t("save") : t("create")}
+          </Button>
+        </>
+      }
     >
       <form
+        id={formId}
         onSubmit={(event) => {
           event.preventDefault();
           if (!busy)
@@ -274,6 +323,11 @@ export function TaskEditor({
                       timezone: rule.timezone,
                       frequency: rule.frequency,
                       interval: rule.interval,
+                      ...(rule.weekdays ? { weekdays: rule.weekdays } : {}),
+                      ...(rule.monthlyRule
+                        ? { monthlyRule: rule.monthlyRule }
+                        : {}),
+                      endAfterCompleted: rule.endAfterCompleted ?? null,
                       assigneePrincipalId: rule.assigneePrincipalId ?? null,
                       title,
                       descriptionMd,
@@ -288,19 +342,6 @@ export function TaskEditor({
             })();
         }}
       >
-        <div className="dialog-heading">
-          <h2 id="editor-heading">{item ? t("work:detail") : t("create")}</h2>
-          <Button
-            type="button"
-            variant="ghost"
-            className="ui-icon-button"
-            aria-label={t("close")}
-            disabled={busy}
-            onClick={close}
-          >
-            <X size={20} aria-hidden="true" />
-          </Button>
-        </div>
         {error && (
           <div className="error" role="alert">
             {error}
@@ -327,281 +368,317 @@ export function TaskEditor({
             </Button>
           </div>
         )}
-        <label className="field">
-          <span>{t("work:title")}</span>
-          <input
-            aria-label={t("work:title")}
-            required
-            maxLength={240}
-            value={title}
-            placeholder={t("work:titlePlaceholder")}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </label>
-        {item && (
+        <FormSection title={t("taskIdentity")} hideTitle={mode === "quick"}>
           <label className="field">
-            <span>{t("work:status")}</span>
-            <Select
-              aria-label={t("work:status")}
-              value={status}
-              onChange={(event) => setStatus(event.target.value as WorkStatus)}
-            >
-              {workStatuses.map((value) => (
-                <option key={value} value={value}>
-                  {t("work:statuses." + value)}
-                </option>
-              ))}
-            </Select>
-          </label>
-        )}
-        {
-          <label className="field">
-            <span>{t("work:priority")}</span>
-            <Select
-              aria-label={t("work:priority")}
-              value={priority}
-              onChange={(event) => setPriority(event.target.value as Priority)}
-            >
-              {priorities.map((value) => (
-                <option key={value} value={value}>
-                  {t(`work:priorities.${value}`)}
-                </option>
-              ))}
-            </Select>
-          </label>
-        }
-        {(item?.type ?? createType) === "TASK" && (
-          <fieldset className="field project-memberships">
-            <legend>{t("desk:projects")}</legend>
-            <ProjectDrilldownPicker
-              mode="multiple"
-              projects={projects}
-              values={extraProjects}
-              disabled={busy}
-              onChange={(value) =>
-                setExtraProjects(Array.isArray(value) ? value : [])
-              }
+            <span>{t("work:title")}</span>
+            <input
+              aria-label={t("work:title")}
+              required
+              maxLength={240}
+              value={title}
+              placeholder={t("work:titlePlaceholder")}
+              onChange={(event) => setTitle(event.target.value)}
             />
-          </fieldset>
-        )}
-        <details className="task-advanced">
-          <summary>{t("desk:advanced")}</summary>
-          {(item?.type ?? createType) === "TASK" &&
-            onSaveRepeat &&
-            (occurrence ? (
-              <div className="occurrence-edit-scope">
-                <p>
-                  {i18n.language.startsWith("zh")
-                    ? "此任务属于一个周期任务"
-                    : "This task belongs to a recurring series"}
-                </p>
-                <SegmentedControl
-                  label={
-                    i18n.language.startsWith("zh") ? "修改范围" : "Edit scope"
-                  }
-                  value={seriesEditing ? "series" : "occurrence"}
-                  options={[
-                    {
-                      value: "occurrence",
-                      label: i18n.language.startsWith("zh")
-                        ? "编辑本次"
-                        : "Edit this occurrence",
-                    },
-                    {
-                      value: "series",
-                      label: i18n.language.startsWith("zh")
-                        ? "编辑整个系列"
-                        : "Edit entire series",
-                      disabled: !definition,
-                    },
-                  ]}
-                  onChange={(scope) => {
-                    if (scope === "occurrence") {
-                      if (!seriesEditing) return;
-                      changeEditScope(() => {
-                        setSeriesEditing(false);
-                        setRepeat(null);
-                        setTitle(item?.title ?? "");
-                        setDescription(item?.descriptionMd ?? "");
-                        setPriority(item?.priority ?? "MEDIUM");
-                        setExtraProjects([...(item?.projectIds ?? [])]);
-                        setActivationState(item?.activationState ?? "ACTIVE");
-                        setActivationPolicy(item?.activationPolicy ?? "MANUAL");
-                      });
-                      return;
-                    }
-                    if (seriesEditing) return;
-                    if (definition?.payload.kind === "RECURRENCE") {
-                      const series = definition.payload;
-                      changeEditScope(() => {
-                        setSeriesEditing(true);
-                        setRepeat(series);
-                        setTitle(series.title);
-                        setDescription(series.descriptionMd);
-                        setPriority(series.priority ?? "MEDIUM");
-                        setExtraProjects([...(series.projectIds ?? [])]);
-                        setActivationState(series.activationState ?? "ACTIVE");
-                        setActivationPolicy(
-                          series.activationPolicy ?? "MANUAL",
-                        );
-                      });
-                    }
-                  }}
-                />
-                {seriesEditing && (
-                  <RepeatFields
-                    rule={repeat}
-                    onChange={(next) => {
-                      if (next) setRepeat(next);
-                    }}
-                  />
-                )}
-              </div>
-            ) : (
-              <>
-                <RepeatFields
-                  rule={repeat}
-                  onChange={(next) =>
-                    setRepeat(
-                      next
-                        ? repeat
-                          ? next
-                          : {
-                              ...next,
-                              timezone: calendarTimezone,
-                              startDate: startDate || today || next.startDate,
-                            }
-                        : null,
-                    )
-                  }
-                />
-                {repeat && item && (
-                  <p>
-                    {i18n.language.startsWith("zh")
-                      ? "将此任务设为重复任务：当前任务会作为首次任务保留。"
-                      : "Convert this task to a recurring series, keeping it as the first occurrence."}
-                  </p>
-                )}
-              </>
-            ))}
-          {
+          </label>
+          {item && (
             <label className="field">
-              <span>{t("desk:activationPolicy")}</span>
+              <span>{t("work:status")}</span>
               <Select
-                aria-label={t("desk:activationPolicy")}
-                value={activationPolicy}
+                aria-label={t("work:status")}
+                value={status}
                 onChange={(event) =>
-                  setActivationPolicy(event.target.value as ActivationPolicy)
+                  setStatus(event.target.value as WorkStatus)
                 }
               >
-                {activationPolicies.map((policy) => (
-                  <option key={policy} value={policy}>
-                    {t("desk:activationPolicies." + policy)}
+                {workStatuses.map((value) => (
+                  <option key={value} value={value}>
+                    {t("work:statuses." + value)}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          )}
+        </FormSection>
+        <FormSection title={t("taskPlacement")} hideTitle={mode === "quick"}>
+          {(item?.type ?? createType) === "TASK" && (
+            <fieldset className="field project-memberships">
+              <legend>{t("desk:projects")}</legend>
+              <ProjectDrilldownPicker
+                mode="multiple"
+                projects={projects}
+                values={extraProjects}
+                disabled={busy}
+                onChange={(value) =>
+                  setExtraProjects(Array.isArray(value) ? value : [])
+                }
+              />
+            </fieldset>
+          )}
+        </FormSection>
+        <FormSection title={t("taskTiming")} hideTitle={mode === "quick"}>
+          <div className="schedule-fields">
+            <label className="field">
+              <span>{t("desk:startDate")}</span>
+              <DateField
+                aria-label={t("desk:startDate")}
+                min="0001-01-01"
+                required={activationPolicy === "AT_SCHEDULED_TIME"}
+                max={dueDate || "9999-12-31"}
+                value={startDate}
+                onChange={setStartDate}
+              />
+            </label>
+            <label className="field">
+              <span>{t("desk:dueDate")}</span>
+              <DateField
+                aria-label={t("desk:dueDate")}
+                min={startDate || "0001-01-01"}
+                max="9999-12-31"
+                value={dueDate}
+                onChange={setDueDate}
+              />
+            </label>
+          </div>
+          {
+            <label className="field">
+              <span>{t("work:priority")}</span>
+              <Select
+                aria-label={t("work:priority")}
+                value={priority}
+                onChange={(event) =>
+                  setPriority(event.target.value as Priority)
+                }
+              >
+                {priorities.map((value) => (
+                  <option key={value} value={value}>
+                    {t(`work:priorities.${value}`)}
                   </option>
                 ))}
               </Select>
             </label>
           }
-          {(item?.type ?? createType) === "TASK" && (
-            <fieldset className="field">
-              <legend>{t("work:prerequisites")}</legend>
-              <p className="muted">
-                {t("work:availability")}:{" "}
-                {t(`work:${previewAvailability.toLowerCase()}`)}
-              </p>
-              <TaskEntityPicker
-                items={items}
-                values={prerequisiteIds}
-                excludedId={item?.id}
-                disabled={busy}
-                onChange={setPrerequisiteIds}
-              />
-            </fieldset>
-          )}
-          {activationPolicy === "MANUAL" && (
+        </FormSection>
+        {!descriptionOpen && (
+          <Button variant="ghost" onClick={() => setDescriptionOpen(true)}>
+            {t("addDescription")}
+          </Button>
+        )}
+        {descriptionOpen && (
+          <>
             <label className="field">
-              <span>{t("desk:activationState")}</span>
-              <Select
-                aria-label={t("desk:activationState")}
-                value={
-                  activationState === "SCHEDULED" ? "INACTIVE" : activationState
-                }
-                onChange={(event) =>
-                  setActivationState(event.target.value as ActivationState)
-                }
-              >
-                <option value="ACTIVE">
-                  {t("desk:activationStates.ACTIVE")}
-                </option>
-                <option value="INACTIVE">
-                  {t("desk:activationStates.INACTIVE")}
-                </option>
-              </Select>
+              <span>{t("work:description")}</span>
+              <div className="editor-toolbar">
+                <Button
+                  variant="toggle"
+                  aria-pressed={!preview}
+                  type="button"
+                  onClick={() => {
+                    setPreview(false);
+                  }}
+                >
+                  {t("desk:write")}
+                </Button>
+                <Button
+                  variant="toggle"
+                  aria-pressed={preview}
+                  type="button"
+                  onClick={() => {
+                    setPreview(true);
+                  }}
+                >
+                  {i18n.language === "zh-CN" ? "预览" : "Preview"}
+                </Button>
+              </div>
+              {preview ? (
+                <Markdown text={descriptionMd} />
+              ) : (
+                <textarea
+                  aria-label={t("work:description")}
+                  rows={10}
+                  maxLength={200000}
+                  value={descriptionMd}
+                  onChange={(event) => setDescription(event.target.value)}
+                />
+              )}
             </label>
-          )}
-          {activationPolicy === "AT_SCHEDULED_TIME" && (
-            <p className="muted">{t("desk:scheduledHint")}</p>
-          )}
-        </details>
-        <div className="schedule-fields">
-          <label className="field">
-            <span>{t("desk:startDate")}</span>
-            <DateField
-              aria-label={t("desk:startDate")}
-              min="0001-01-01"
-              required={activationPolicy === "AT_SCHEDULED_TIME"}
-              max={dueDate || "9999-12-31"}
-              value={startDate}
-              onChange={setStartDate}
-            />
-          </label>
-          <label className="field">
-            <span>{t("desk:dueDate")}</span>
-            <DateField
-              aria-label={t("desk:dueDate")}
-              min={startDate || "0001-01-01"}
-              max="9999-12-31"
-              value={dueDate}
-              onChange={setDueDate}
-            />
-          </label>
-        </div>
-        <label className="field">
-          <span>{t("work:description")}</span>
-          <div className="editor-toolbar">
-            <Button
-              variant="toggle"
-              aria-pressed={!preview}
-              type="button"
-              onClick={() => {
-                setPreview(false);
-              }}
-            >
-              {t("desk:write")}
-            </Button>
-            <Button
-              variant="toggle"
-              aria-pressed={preview}
-              type="button"
-              onClick={() => {
-                setPreview(true);
-              }}
-            >
-              {i18n.language === "zh-CN" ? "预览" : "Preview"}
-            </Button>
-          </div>
-          {preview ? (
-            <Markdown text={descriptionMd} />
-          ) : (
-            <textarea
-              aria-label={t("work:description")}
-              rows={10}
-              maxLength={200000}
-              value={descriptionMd}
-              onChange={(event) => setDescription(event.target.value)}
-            />
-          )}
-        </label>
+          </>
+        )}
+        {mode === "quick" && (
+          <Button variant="ghost" onClick={() => setMore(!more)}>
+            {t(more ? "hideMoreSettings" : "moreSettings")}
+          </Button>
+        )}
+        {more && (
+          <FormSection title={t("taskRelationships")}>
+            {(item?.type ?? createType) === "TASK" && (
+              <fieldset className="field">
+                <legend>{t("work:prerequisites")}</legend>
+                <p className="muted">
+                  {t("work:availability")}:{" "}
+                  {t(`work:${previewAvailability.toLowerCase()}`)}
+                </p>
+                <TaskEntityPicker
+                  items={items}
+                  values={prerequisiteIds}
+                  excludedId={item?.id}
+                  disabled={busy}
+                  onChange={setPrerequisiteIds}
+                />
+              </fieldset>
+            )}
+          </FormSection>
+        )}
+        {more && (
+          <details className="task-advanced">
+            <summary>{t("taskBehavior")}</summary>
+            {(item?.type ?? createType) === "TASK" &&
+              onSaveRepeat &&
+              (occurrence ? (
+                <div className="occurrence-edit-scope">
+                  <p>
+                    {i18n.language.startsWith("zh")
+                      ? "此任务属于一个周期任务"
+                      : "This task belongs to a recurring series"}
+                  </p>
+                  <SegmentedControl
+                    label={
+                      i18n.language.startsWith("zh") ? "修改范围" : "Edit scope"
+                    }
+                    value={seriesEditing ? "series" : "occurrence"}
+                    options={[
+                      {
+                        value: "occurrence",
+                        label: i18n.language.startsWith("zh")
+                          ? "编辑本次"
+                          : "Edit this occurrence",
+                      },
+                      {
+                        value: "series",
+                        label: i18n.language.startsWith("zh")
+                          ? "编辑整个系列"
+                          : "Edit entire series",
+                        disabled: !definition,
+                      },
+                    ]}
+                    onChange={(scope) => {
+                      if (scope === "occurrence") {
+                        if (!seriesEditing) return;
+                        changeEditScope(() => {
+                          setSeriesEditing(false);
+                          setRepeat(null);
+                          setTitle(item?.title ?? "");
+                          setDescription(item?.descriptionMd ?? "");
+                          setPriority(item?.priority ?? "MEDIUM");
+                          setExtraProjects([...(item?.projectIds ?? [])]);
+                          setActivationState(item?.activationState ?? "ACTIVE");
+                          setActivationPolicy(
+                            item?.activationPolicy ?? "MANUAL",
+                          );
+                        });
+                        return;
+                      }
+                      if (seriesEditing) return;
+                      if (definition?.payload.kind === "RECURRENCE") {
+                        const series = definition.payload;
+                        changeEditScope(() => {
+                          setSeriesEditing(true);
+                          setRepeat(series);
+                          setTitle(series.title);
+                          setDescription(series.descriptionMd);
+                          setPriority(series.priority ?? "MEDIUM");
+                          setExtraProjects([...(series.projectIds ?? [])]);
+                          setActivationState(
+                            series.activationState ?? "ACTIVE",
+                          );
+                          setActivationPolicy(
+                            series.activationPolicy ?? "MANUAL",
+                          );
+                        });
+                      }
+                    }}
+                  />
+                  {seriesEditing && (
+                    <NaturalRecurrenceEditor
+                      rule={repeat}
+                      onChange={(next) => {
+                        if (next) setRepeat(next);
+                      }}
+                    />
+                  )}
+                </div>
+              ) : (
+                <>
+                  <NaturalRecurrenceEditor
+                    rule={repeat}
+                    onChange={(next) =>
+                      setRepeat(
+                        next
+                          ? repeat
+                            ? next
+                            : {
+                                ...next,
+                                timezone: calendarTimezone,
+                                startDate: startDate || today || next.startDate,
+                              }
+                          : null,
+                      )
+                    }
+                  />
+                  {repeat && item && (
+                    <p>
+                      {i18n.language.startsWith("zh")
+                        ? "将此任务设为重复任务：当前任务会作为首次任务保留。"
+                        : "Convert this task to a recurring series, keeping it as the first occurrence."}
+                    </p>
+                  )}
+                </>
+              ))}
+            {
+              <label className="field">
+                <span>{t("desk:activationPolicy")}</span>
+                <Select
+                  aria-label={t("desk:activationPolicy")}
+                  value={activationPolicy}
+                  onChange={(event) =>
+                    setActivationPolicy(event.target.value as ActivationPolicy)
+                  }
+                >
+                  {activationPolicies.map((policy) => (
+                    <option key={policy} value={policy}>
+                      {t("desk:activationPolicies." + policy)}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            }
+            {activationPolicy === "MANUAL" && (
+              <label className="field">
+                <span>{t("desk:activationState")}</span>
+                <Select
+                  aria-label={t("desk:activationState")}
+                  value={
+                    activationState === "SCHEDULED"
+                      ? "INACTIVE"
+                      : activationState
+                  }
+                  onChange={(event) =>
+                    setActivationState(event.target.value as ActivationState)
+                  }
+                >
+                  <option value="ACTIVE">
+                    {t("desk:activationStates.ACTIVE")}
+                  </option>
+                  <option value="INACTIVE">
+                    {t("desk:activationStates.INACTIVE")}
+                  </option>
+                </Select>
+              </label>
+            )}
+            {activationPolicy === "AT_SCHEDULED_TIME" && (
+              <p className="muted">{t("desk:scheduledHint")}</p>
+            )}
+          </details>
+        )}
         {item && (
           <details className="task-metadata">
             <summary>{t("desk:advanced")}</summary>
@@ -621,35 +698,8 @@ export function TaskEditor({
             </p>
           </details>
         )}
-        <div className="dialog-actions">
-          {onDelete && (
-            <Button
-              type="button"
-              variant="danger"
-              disabled={busy}
-              onClick={() => void onDelete()}
-            >
-              {t("delete")}
-            </Button>
-          )}
-          <div className="action-spacer" />
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={busy}
-            onClick={close}
-          >
-            {t("cancel")}
-          </Button>
-          <Button
-            variant="primary"
-            type="submit"
-            disabled={busy || !title.trim()}
-          >
-            {item ? t("save") : t("create")}
-          </Button>
-        </div>
+        {memo}
       </form>
-    </DismissibleDialog>
+    </EditorShell>
   );
 }

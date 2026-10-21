@@ -177,6 +177,9 @@
   "unscheduled": "未排期",
   "scheduleEmpty": "暂无任务，给自己留一些从容。",
   "backupDatabase": "下载完整数据库备份",
+  "localBackup": "备份本地工作区",
+  "remoteModelSettingsDisconnected": "连接账户后可管理远程模型设置。本地工作区可独立使用。",
+  "localBackupHint": "包含本地工作、Markdown、修订和原始文件，不包含模型服务凭据。无需连接服务器，请妥善保管备份。",
   "backupHint": "包含任务、笔记、全部修订和事件，不含访问密钥。请安全保存。每分钟一次，最大 64 MiB；恢复需由管理员操作到新数据库文件。",
   "importMarkdown": "导入 Markdown 文件",
   "importHint": "支持 UTF-8 的 .md / .markdown / .txt，最多 20 万字符。导入后先审核草稿再保存，不会转换成任务。",
@@ -320,5 +323,10 @@
   "movedToTrash": "已移至回收站",
   "selectedEntity": "选中实体",
   "graph": "图谱",
-  "openGraphWorkspace": "打开图谱工作区"
+  "openGraphWorkspace": "打开图谱工作区",
+  "moveNavigationItem": "移动导航项：{{title}}",
+  "moveProject": "移动项目：{{title}}",
+  "moveIntoProject": "移入 {{title}}",
+  "moveIntoCategory": "移到 {{title}}",
+  "changeProjectLifecycle": "更改项目状态"
 }

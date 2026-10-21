@@ -9,6 +9,37 @@ export class ImageLoadError extends Error {
   }
 }
 
+/** File hydration and native IPC expose codes, never private response bodies. */
+export function imageLoadFailure(error: unknown): unknown {
+  if (error instanceof ImageLoadError) return error;
+  const code = error instanceof Error ? error.message : error;
+  if (["UNAUTHORIZED", "FILE_DOWNLOAD_401"].includes(String(code)))
+    return new ImageLoadError("access", 401);
+  if (["FORBIDDEN", "FILE_DOWNLOAD_403"].includes(String(code)))
+    return new ImageLoadError("access", 403);
+  if (["NOT_FOUND", "FILE_DOWNLOAD_404"].includes(String(code)))
+    return new ImageLoadError("missing", 404);
+  return error;
+}
+
+/** Allowlisted diagnostic codes only; never log arbitrary exception messages. */
+export function imageFailureReason(error: unknown): string {
+  const code = error instanceof Error ? error.message : error;
+  return typeof code === "string" &&
+    [
+      "VERSION_CONFLICT",
+      "VALIDATION_ERROR",
+      "LOCAL_DATA_CORRUPT",
+      "FILE_BYTES_UNAVAILABLE",
+      "SERVER_CHANGED",
+      "NETWORK_ERROR",
+      "FORBIDDEN",
+      "NOT_FOUND",
+    ].includes(code)
+    ? code
+    : "UNCLASSIFIED";
+}
+
 export async function imageResponseBlob(response: Response): Promise<Blob> {
   const status = response.status;
   if (status === 401 || status === 403)

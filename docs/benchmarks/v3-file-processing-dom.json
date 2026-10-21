@@ -1,0 +1,268 @@
+{
+  "scope": "Targeted production File worker/shared extraction. All 3 serial samples retained. DOM search latency starts at actual input event and ends only when the correct row is rendered with aria-busy=false. Existing Playwright timing and assertions preserved. Historical benchmark lacks DOM timing, so this is not a before/after full FINAL acceptance claim.",
+  "samples": [
+    {
+      "project": "desktop-en",
+      "sample": 0,
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 321.5602000000001,
+          "searchMilliseconds": 238.67499999999995,
+          "searchDomMilliseconds": 217.40000000596046,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 229.9922999999999,
+          "searchMilliseconds": 236.0676000000003,
+          "searchDomMilliseconds": 217.79999999701977,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted production File processing/index worker/search, all repeated measurements retained"
+    },
+    {
+      "project": "desktop-en",
+      "sample": 1,
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 317.4479000000001,
+          "searchMilliseconds": 253.68949999999995,
+          "searchDomMilliseconds": 225,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 230.16690000000017,
+          "searchMilliseconds": 334.3602999999998,
+          "searchDomMilliseconds": 207.80000001192093,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted production File processing/index worker/search, all repeated measurements retained"
+    },
+    {
+      "project": "desktop-en",
+      "sample": 2,
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 331.70589999999993,
+          "searchMilliseconds": 242.2442000000001,
+          "searchDomMilliseconds": 221.70000000298023,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 237.71719999999982,
+          "searchMilliseconds": 328.1153999999997,
+          "searchDomMilliseconds": 217.20000000298023,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted production File processing/index worker/search, all repeated measurements retained"
+    },
+    {
+      "project": "desktop-zh",
+      "sample": 0,
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 341.6325999999999,
+          "searchMilliseconds": 240.9751000000001,
+          "searchDomMilliseconds": 218.40000000596046,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 232.58580000000006,
+          "searchMilliseconds": 336.6020999999996,
+          "searchDomMilliseconds": 215,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted production File processing/index worker/search, all repeated measurements retained"
+    },
+    {
+      "project": "desktop-zh",
+      "sample": 1,
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 328.5069000000001,
+          "searchMilliseconds": 235.84889999999996,
+          "searchDomMilliseconds": 216.79999999701977,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 232.03940000000011,
+          "searchMilliseconds": 240.59100000000035,
+          "searchDomMilliseconds": 209.5,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted production File processing/index worker/search, all repeated measurements retained"
+    },
+    {
+      "project": "desktop-zh",
+      "sample": 2,
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 322.22439999999983,
+          "searchMilliseconds": 242.59439999999995,
+          "searchDomMilliseconds": 214.3999999910593,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 228.91869999999994,
+          "searchMilliseconds": 235.0030999999999,
+          "searchDomMilliseconds": 214.69999998807907,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted production File processing/index worker/search, all repeated measurements retained"
+    },
+    {
+      "project": "mobile-zh",
+      "sample": 0,
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 317.0073,
+          "searchMilliseconds": 243.45550000000003,
+          "searchDomMilliseconds": 221.5,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 218.0367000000001,
+          "searchMilliseconds": 327.3678,
+          "searchDomMilliseconds": 218.29999999701977,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted production File processing/index worker/search, all repeated measurements retained"
+    },
+    {
+      "project": "mobile-zh",
+      "sample": 1,
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 327.0091,
+          "searchMilliseconds": 243.62609999999995,
+          "searchDomMilliseconds": 214.79999999701977,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 233.21450000000004,
+          "searchMilliseconds": 237.40419999999995,
+          "searchDomMilliseconds": 217.29999999701977,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted production File processing/index worker/search, all repeated measurements retained"
+    },
+    {
+      "project": "mobile-zh",
+      "sample": 2,
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 326.4611,
+          "searchMilliseconds": 239.01479999999992,
+          "searchDomMilliseconds": 219.90000000596046,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 222.79370000000017,
+          "searchMilliseconds": 235.91710000000012,
+          "searchDomMilliseconds": 220.90000000596046,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted production File processing/index worker/search, all repeated measurements retained"
+    }
+  ],
+  "results": [
+    {
+      "project": "desktop-en",
+      "bytes": 51200,
+      "extractionMedian": 321.5602000000001,
+      "automatedSearchMedian": 242.2442000000001,
+      "actualSearchDomMedian": 221.70000000298023,
+      "liveChunks": 4,
+      "totalChunks": 13
+    },
+    {
+      "project": "desktop-en",
+      "bytes": 102400,
+      "extractionMedian": 230.16690000000017,
+      "automatedSearchMedian": 328.1153999999997,
+      "actualSearchDomMedian": 217.20000000298023,
+      "liveChunks": 4,
+      "totalChunks": 26
+    },
+    {
+      "project": "desktop-zh",
+      "bytes": 51200,
+      "extractionMedian": 328.5069000000001,
+      "automatedSearchMedian": 240.9751000000001,
+      "actualSearchDomMedian": 216.79999999701977,
+      "liveChunks": 4,
+      "totalChunks": 13
+    },
+    {
+      "project": "desktop-zh",
+      "bytes": 102400,
+      "extractionMedian": 232.03940000000011,
+      "automatedSearchMedian": 240.59100000000035,
+      "actualSearchDomMedian": 214.69999998807907,
+      "liveChunks": 4,
+      "totalChunks": 26
+    },
+    {
+      "project": "mobile-zh",
+      "bytes": 51200,
+      "extractionMedian": 326.4611,
+      "automatedSearchMedian": 243.45550000000003,
+      "actualSearchDomMedian": 219.90000000596046,
+      "liveChunks": 4,
+      "totalChunks": 13
+    },
+    {
+      "project": "mobile-zh",
+      "bytes": 102400,
+      "extractionMedian": 222.79370000000017,
+      "automatedSearchMedian": 237.40419999999995,
+      "actualSearchDomMedian": 218.29999999701977,
+      "liveChunks": 4,
+      "totalChunks": 26
+    }
+  ]
+}

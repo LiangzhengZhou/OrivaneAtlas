@@ -30,12 +30,15 @@ export interface OrganizeInput {
 export class OrganizationService {
   constructor(
     private readonly store: OrganizationStore,
-    private readonly work: WorkService,
-    private readonly notes: NotebookService,
+    private readonly work: Pick<WorkService, "snapshot" | "setDeleted">,
+    private readonly notes: Pick<NotebookService, "list" | "setDeleted"> &
+      Partial<Pick<NotebookService, "manifest">>,
     private readonly authorization: AuthorizationService,
     private readonly clock: Clock,
   ) {}
-  async apply(context: ActorContext, input: OrganizeInput) {
+  async apply(contextInput: ActorContext, inputValue: OrganizeInput) {
+    const context = structuredClone(contextInput);
+    const input = structuredClone(inputValue);
     await this.authorization.require(
       context,
       input.action === "delete" ? "work:delete" : "work:update",
@@ -68,7 +71,9 @@ export class OrganizationService {
       throw new DomainError("VALIDATION_ERROR");
     const entities =
       input.kind === "NOTE"
-        ? await this.notes.list(context)
+        ? this.notes.manifest
+          ? await this.notes.manifest(context)
+          : await this.notes.list(context)
         : (await this.work.snapshot(context, true)).items;
     const metadata = await this.store.list();
     // Preflight all entries before any mutation. The enclosing transaction handles races.

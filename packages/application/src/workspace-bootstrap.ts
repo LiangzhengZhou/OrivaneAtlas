@@ -1,4 +1,4 @@
-import type { Reminder } from "@arclattice/domain";
+import type { LibraryFile, Reminder } from "@arclattice/domain";
 import type {
   DocumentWikiLink,
   KnowledgeLink,
@@ -34,6 +34,7 @@ export interface WorkspaceManifest {
 }
 export interface WorkspaceBootstrap extends WorkspaceManifest {
   workspace: WorkSnapshot & {
+    files?: LibraryFile[];
     projectMaterials: ProjectMaterial[];
     organization: Organization[];
     links: KnowledgeLink[];

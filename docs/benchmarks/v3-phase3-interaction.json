@@ -1,0 +1,301 @@
+{
+  "baselineSha": "a9dc99a37486a191139c548a70150df2d20d6c67",
+  "status": "Phase3 interaction performance verified; whole v3 FINAL acceptance pending",
+  "samplesPerBuild": 20,
+  "collectionOrder": "baseline10/current10/baseline10/current10",
+  "typingProtocol": "Trusted CDP Input.insertText in both harnesses; committed Markdown verified",
+  "baselineFiles": [
+    "session135-sampling-baseline-a-complete-benchmark-desktop-zh-repeat1.json",
+    "session135-sampling-baseline-a-complete-benchmark-desktop-zh-repeat2.json",
+    "session135-sampling-baseline-a-complete-benchmark-desktop-zh-repeat3.json",
+    "session135-sampling-baseline-a-complete-benchmark-desktop-zh-repeat4.json",
+    "session135-sampling-baseline-a-complete-benchmark-desktop-zh-repeat5.json",
+    "session135-sampling-baseline-a-complete-benchmark-desktop-zh-repeat6.json",
+    "session135-sampling-baseline-a-complete-benchmark-desktop-zh-repeat7.json",
+    "session135-sampling-baseline-a-complete-benchmark-desktop-zh-repeat8.json",
+    "session135-sampling-baseline-a-complete-benchmark-desktop-zh-repeat9.json",
+    "session135-sampling-baseline-a-complete-benchmark-desktop-zh.json",
+    "session135-sampling-baseline-b-complete-benchmark-desktop-zh-repeat1.json",
+    "session135-sampling-baseline-b-complete-benchmark-desktop-zh-repeat2.json",
+    "session135-sampling-baseline-b-complete-benchmark-desktop-zh-repeat3.json",
+    "session135-sampling-baseline-b-complete-benchmark-desktop-zh-repeat4.json",
+    "session135-sampling-baseline-b-complete-benchmark-desktop-zh-repeat5.json",
+    "session135-sampling-baseline-b-complete-benchmark-desktop-zh-repeat6.json",
+    "session135-sampling-baseline-b-complete-benchmark-desktop-zh-repeat7.json",
+    "session135-sampling-baseline-b-complete-benchmark-desktop-zh-repeat8.json",
+    "session135-sampling-baseline-b-complete-benchmark-desktop-zh-repeat9.json",
+    "session135-sampling-baseline-b-complete-benchmark-desktop-zh.json"
+  ],
+  "currentFiles": [
+    "session135-sampling-current-a-complete-benchmark-desktop-zh-repeat1.json",
+    "session135-sampling-current-a-complete-benchmark-desktop-zh-repeat2.json",
+    "session135-sampling-current-a-complete-benchmark-desktop-zh-repeat3.json",
+    "session135-sampling-current-a-complete-benchmark-desktop-zh-repeat4.json",
+    "session135-sampling-current-a-complete-benchmark-desktop-zh-repeat5.json",
+    "session135-sampling-current-a-complete-benchmark-desktop-zh-repeat6.json",
+    "session135-sampling-current-a-complete-benchmark-desktop-zh-repeat7.json",
+    "session135-sampling-current-a-complete-benchmark-desktop-zh-repeat8.json",
+    "session135-sampling-current-a-complete-benchmark-desktop-zh-repeat9.json",
+    "session135-sampling-current-a-complete-benchmark-desktop-zh.json",
+    "session135-sampling-current-b-complete-benchmark-desktop-zh-repeat1.json",
+    "session135-sampling-current-b-complete-benchmark-desktop-zh-repeat2.json",
+    "session135-sampling-current-b-complete-benchmark-desktop-zh-repeat3.json",
+    "session135-sampling-current-b-complete-benchmark-desktop-zh-repeat4.json",
+    "session135-sampling-current-b-complete-benchmark-desktop-zh-repeat5.json",
+    "session135-sampling-current-b-complete-benchmark-desktop-zh-repeat6.json",
+    "session135-sampling-current-b-complete-benchmark-desktop-zh-repeat7.json",
+    "session135-sampling-current-b-complete-benchmark-desktop-zh-repeat8.json",
+    "session135-sampling-current-b-complete-benchmark-desktop-zh-repeat9.json",
+    "session135-sampling-current-b-complete-benchmark-desktop-zh.json"
+  ],
+  "rows": [
+    {
+      "action": "Now→Scheduled",
+      "metric": "scriptMs",
+      "baselineMs": 6.621,
+      "currentMs": 5.971499999999999,
+      "ratio": 0.9019030357951969,
+      "pass": true,
+      "baselineRange": {
+        "min": 5.868000000000002,
+        "max": 9.282000000000002
+      },
+      "currentRange": {
+        "min": 5.552000000000001,
+        "max": 10.633000000000001
+      }
+    },
+    {
+      "action": "Task tab switch",
+      "metric": "scriptMs",
+      "baselineMs": 7.1274999999999995,
+      "currentMs": 6.8370000000000015,
+      "ratio": 0.9592423710978607,
+      "pass": true,
+      "baselineRange": {
+        "min": 6.666999999999996,
+        "max": 8.365999999999998
+      },
+      "currentRange": {
+        "min": 6.547000000000001,
+        "max": 8.596
+      }
+    },
+    {
+      "action": "Project filter",
+      "metric": "scriptMs",
+      "baselineMs": 10.980999999999998,
+      "currentMs": 11.171500000000002,
+      "ratio": 1.0173481467990169,
+      "pass": true,
+      "baselineRange": {
+        "min": 10.292000000000003,
+        "max": 15.976999999999999
+      },
+      "currentRange": {
+        "min": 10.675999999999998,
+        "max": 12.488
+      }
+    },
+    {
+      "action": "List→Board",
+      "metric": "scriptMs",
+      "baselineMs": 5.905500000000002,
+      "currentMs": 5.570000000000002,
+      "ratio": 0.9431885530437728,
+      "pass": true,
+      "baselineRange": {
+        "min": 5.4620000000000015,
+        "max": 9.349000000000004
+      },
+      "currentRange": {
+        "min": 5.248000000000003,
+        "max": 10.208000000000002
+      }
+    },
+    {
+      "action": "Calendar open",
+      "metric": "scriptMs",
+      "baselineMs": 12.191499999999998,
+      "currentMs": 11.831500000000002,
+      "ratio": 0.9704712299552971,
+      "pass": true,
+      "baselineRange": {
+        "min": 10.935999999999995,
+        "max": 17.467000000000002
+      },
+      "currentRange": {
+        "min": 11.147000000000004,
+        "max": 16.822999999999997
+      }
+    },
+    {
+      "action": "Calendar month switch",
+      "metric": "scriptMs",
+      "baselineMs": 2.016500000000004,
+      "currentMs": 2.099999999999998,
+      "ratio": 1.0414083808579189,
+      "pass": true,
+      "baselineRange": {
+        "min": 1.8449999999999993,
+        "max": 2.694999999999989
+      },
+      "currentRange": {
+        "min": 1.806000000000002,
+        "max": 2.485000000000001
+      }
+    },
+    {
+      "action": "Dependency local graph",
+      "metric": "scriptMs",
+      "baselineMs": 22.356999999999992,
+      "currentMs": 22.282999999999998,
+      "ratio": 0.9966900746969631,
+      "pass": true,
+      "baselineRange": {
+        "min": 20.061999999999998,
+        "max": 24.540999999999993
+      },
+      "currentRange": {
+        "min": 20.540000000000003,
+        "max": 26.098999999999997
+      }
+    },
+    {
+      "action": "Task picker open",
+      "metric": "scriptMs",
+      "baselineMs": 2.3309999999999995,
+      "currentMs": 2.1949999999999954,
+      "ratio": 0.9416559416559399,
+      "pass": true,
+      "baselineRange": {
+        "min": 1.781999999999992,
+        "max": 4.640999999999992
+      },
+      "currentRange": {
+        "min": 1.7179999999999973,
+        "max": 3.568000000000002
+      }
+    },
+    {
+      "action": "Task picker drill-down",
+      "metric": "scriptMs",
+      "baselineMs": 1.5814999999999926,
+      "currentMs": 1.719499999999999,
+      "ratio": 1.0872589313942504,
+      "pass": true,
+      "baselineRange": {
+        "min": 1.367999999999994,
+        "max": 2.020999999999995
+      },
+      "currentRange": {
+        "min": 1.5060000000000073,
+        "max": 2.381000000000008
+      }
+    },
+    {
+      "action": "Knowledge local graph",
+      "metric": "scriptMs",
+      "baselineMs": 19.279500000000006,
+      "currentMs": 19.691000000000003,
+      "ratio": 1.0213439145206047,
+      "pass": true,
+      "baselineRange": {
+        "min": 15.986999999999988,
+        "max": 20.938
+      },
+      "currentRange": {
+        "min": 16.957999999999988,
+        "max": 25.867
+      }
+    },
+    {
+      "action": "50KB typing",
+      "metric": "p95TaskMs",
+      "baselineMs": 6.917000000000007,
+      "currentMs": 5.117499999999941,
+      "ratio": 0.7398438629463547,
+      "pass": true,
+      "baselineRange": {
+        "min": 4.978999999999956,
+        "max": 13.163000000000036
+      },
+      "currentRange": {
+        "min": 3.815000000000013,
+        "max": 6.44100000000003
+      }
+    },
+    {
+      "action": "100KB typing",
+      "metric": "p95TaskMs",
+      "baselineMs": 6.09650000000006,
+      "currentMs": 3.709500000000032,
+      "ratio": 0.6084638727138515,
+      "pass": true,
+      "baselineRange": {
+        "min": 3.890999999999867,
+        "max": 8.774999999999977
+      },
+      "currentRange": {
+        "min": 2.9440000000000577,
+        "max": 9.643000000000068
+      }
+    },
+    {
+      "action": "Atlas conversation list",
+      "metric": "scriptMs",
+      "baselineMs": 34.30549999999997,
+      "currentMs": 36.57950000000001,
+      "ratio": 1.0662867470230735,
+      "pass": true,
+      "baselineRange": {
+        "min": 31.415999999999944,
+        "max": 46.39700000000002
+      },
+      "currentRange": {
+        "min": 31.613999999999976,
+        "max": 43.579000000000036
+      }
+    },
+    {
+      "action": "Atlas conversation open",
+      "metric": "scriptMs",
+      "baselineMs": 20.181000000000004,
+      "currentMs": 20.64550000000004,
+      "ratio": 1.0230166988751814,
+      "pass": true,
+      "baselineRange": {
+        "min": 14.427999999999997,
+        "max": 26.156999999999986
+      },
+      "currentRange": {
+        "min": 17.56000000000002,
+        "max": 34.89200000000003
+      }
+    }
+  ],
+  "releaseMetadata": "2.4.0 unchanged",
+  "fixture": {
+    "projects": 150,
+    "tasks": 1500,
+    "edges": 3000,
+    "documents": 2000,
+    "wikiLinks": 5000,
+    "sessions": 100,
+    "messagesPerSession": 1000
+  },
+  "liveDom": {
+    "list": {
+      "min": 10,
+      "max": 10
+    },
+    "board": {
+      "min": 14,
+      "max": 14
+    },
+    "sessions": {
+      "min": 9,
+      "max": 9
+    }
+  }
+}

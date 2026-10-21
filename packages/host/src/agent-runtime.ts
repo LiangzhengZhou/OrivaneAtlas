@@ -17,6 +17,7 @@ import {
   parseAiCapabilityCall,
   RetrievalContextResolver,
   RetrievalService,
+  selectFileContext,
   settleGatewayMoney,
   validateApprovedContext,
   validateContextPolicy,
@@ -66,7 +67,8 @@ export async function runAtlasHarness(
       actor,
       null,
       async (...args) => {
-        const [, notes, connected, library, , , sessions] = args;
+        const [, notes, connected, library, , , sessions, files, , memos] =
+          args;
         const persisted = await connected.getRun(current.id);
         if (
           persisted.version !== current.version ||
@@ -87,7 +89,14 @@ export async function runAtlasHarness(
         if (model.route.fingerprint !== persisted.route.fingerprint)
           throw new DomainError("VERSION_CONFLICT");
         if (contextCheck)
-          await validateApprovedContext(actor, persisted, notes, library);
+          await validateApprovedContext(
+            actor,
+            persisted,
+            notes,
+            library,
+            files,
+            memos,
+          );
         return operation(...args);
       },
       checkAccess,
@@ -244,13 +253,27 @@ export async function runAtlasHarness(
                     )
                   )
                     throw new DomainError("VERSION_CONFLICT");
-                  await transaction(async (_uow, notes, _store, library) =>
-                    validateApprovedContext(
-                      actor,
-                      { ...current, route: candidate.route },
+                  await transaction(
+                    async (
+                      _uow,
                       notes,
+                      _store,
                       library,
-                    ),
+                      _organization,
+                      _projects,
+                      _sessions,
+                      files,
+                      _blobs,
+                      memos,
+                    ) =>
+                      validateApprovedContext(
+                        actor,
+                        { ...current, route: candidate.route },
+                        notes,
+                        library,
+                        files,
+                        memos,
+                      ),
                   );
                   selectedRoute = candidate.route;
                   return await candidateAdapter.respond(
@@ -372,6 +395,7 @@ export async function runAtlasHarness(
             _organization,
             projects,
             sessions,
+            files,
           ) => {
             const work = new WorkService(uow, authorization, clock, ids);
             const scope = new RetrievalContextResolver().resolve({
@@ -410,6 +434,22 @@ export async function runAtlasHarness(
                   ids,
                 ),
               ),
+              {
+                files,
+                scope: current.route.scope ?? "personal",
+                validatePolicy: (entity) => {
+                  if (
+                    entity.aiPolicy?.aiAccess === "ASK" &&
+                    !(current.context ?? []).some(
+                      (source) =>
+                        source.ref.id === entity.id &&
+                        source.version === entity.version,
+                    )
+                  )
+                    throw new DomainError("FORBIDDEN");
+                  validateContextPolicy(actor, current.route, entity);
+                },
+              },
             );
             const parsed = parseAiCapabilityCall(
               call.name,
@@ -425,6 +465,21 @@ export async function runAtlasHarness(
             const compact = (value: unknown): unknown => {
               if (!value || typeof value !== "object") return value;
               const row = value as Record<string, unknown>;
+              if (
+                row.ref &&
+                typeof row.ref === "object" &&
+                "kind" in row.ref &&
+                row.ref.kind === "FILE" &&
+                typeof row.bodyMd === "string"
+              )
+                return {
+                  ref: row.ref,
+                  title: row.title,
+                  version: row.version,
+                  file: row.file,
+                  bodyMd: row.bodyMd.slice(0, 8000),
+                  truncated: row.bodyMd.length > 8000,
+                };
               if (row.document && typeof row.document === "object") {
                 const doc = row.document as Record<string, unknown>;
                 return {
@@ -476,6 +531,28 @@ export async function runAtlasHarness(
                     })
                   : [];
             const evidence = [...(current.context ?? [])];
+            if (parsed.name === "read_file_chunks") {
+              const source = rawResult as Awaited<
+                ReturnType<typeof selectFileContext>
+              >;
+              if (
+                !evidence.some(
+                  (entry) =>
+                    entry.ref.kind === "FILE" &&
+                    entry.ref.id === source.ref.id &&
+                    entry.version === source.version &&
+                    entry.bodyMd === source.bodyMd,
+                )
+              ) {
+                if (evidence.length >= 20) throw new DomainError("FORBIDDEN");
+                evidence.push({
+                  ...source,
+                  source: "retrieved",
+                  tokenEstimate: Math.ceil(source.bodyMd.length / 4),
+                  permission: (await files.get(source.ref.id)).aiPolicy,
+                });
+              }
+            }
             for (const id of evidenceIds) {
               if (
                 evidence.some((source) => source.ref.id === id) ||

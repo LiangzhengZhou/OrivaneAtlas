@@ -3,6 +3,7 @@ import dagre from "@dagrejs/dagre";
 export function dependencyDagreLayout(
   ids: readonly string[],
   edges: readonly { source: string; target: string }[],
+  direction: "LR" | "TB" = "LR",
 ) {
   // Local acyclic neighborhoods need ranks, not Dagre's global crossing sweeps.
   // Keep the full layout for larger graphs and cycles.
@@ -40,16 +41,19 @@ export function dependencyDagreLayout(
       const positions = new Map<string, { x: number; y: number }>();
       for (const [level, column] of columns)
         column.forEach((id, row) => {
-          positions.set(id, {
-            x: level * 300,
-            y: ((height - column.length) / 2 + row) * 115,
-          });
+          const across = ((height - column.length) / 2 + row) * 115;
+          positions.set(
+            id,
+            direction === "TB"
+              ? { x: across * 1.7, y: level * 150 }
+              : { x: level * 300, y: across },
+          );
         });
       return ids.map((id) => ({ id, position: positions.get(id)! }));
     }
   }
   const graph = new dagre.graphlib.Graph()
-    .setGraph({ rankdir: "LR", nodesep: 50, ranksep: 100 })
+    .setGraph({ rankdir: direction, nodesep: 50, ranksep: 100 })
     .setDefaultEdgeLabel(() => ({}));
   for (const id of ids) graph.setNode(id, { width: 200, height: 65 });
   for (const edge of edges) graph.setEdge(edge.source, edge.target);

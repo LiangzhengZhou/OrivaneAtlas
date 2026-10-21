@@ -40,7 +40,7 @@ export function notificationScope(server: string, actor: ActorContext): string {
   return JSON.stringify([server, actor.workspaceId, actor.principalId]);
 }
 
-function localHourInstant(
+export function notificationLocalTimeInstant(
   day: string,
   timezone: string,
   hour: number,
@@ -84,6 +84,18 @@ function localHourInstant(
   return low;
 }
 
+export function notificationTimeResolver() {
+  const instants = new Map<string, number>();
+  return (day: string, timezone: string, hour: number, minute = 0) => {
+    const key = JSON.stringify([day, timezone, hour, minute]);
+    const cached = instants.get(key);
+    if (cached !== undefined) return cached;
+    const instant = notificationLocalTimeInstant(day, timezone, hour, minute);
+    instants.set(key, instant);
+    return instant;
+  };
+}
+
 /** Pure snapshot planning. Native scheduling owns delivery after the application exits. */
 export class NotificationPlanner {
   plan(input: {
@@ -119,6 +131,7 @@ export class NotificationPlanner {
       ),
       now = Date.parse(input.now);
     const intents: NotificationIntent[] = [];
+    const localTime = notificationTimeResolver();
     const labels =
       input.locale === "zh-CN"
         ? {
@@ -142,7 +155,7 @@ export class NotificationPlanner {
       entityId: string | null,
       day: string,
       timezone = input.timezone,
-      instant = localHourInstant(day, timezone, hour),
+      instant = localTime(day, timezone, hour),
     ) => {
       if (instant < now || instant >= end) return;
       intents.push({
@@ -183,12 +196,7 @@ export class NotificationPlanner {
         continue;
       const [reminderHour, minute] = reminder.time.split(":").map(Number);
       const instant =
-        localHourInstant(
-          reminder.day,
-          reminder.timezone,
-          reminderHour!,
-          minute!,
-        ) -
+        localTime(reminder.day, reminder.timezone, reminderHour!, minute!) -
         (reminder.notifyMode === "MINUTES_BEFORE"
           ? (reminder.notifyOffsetMinutes ?? 0)
           : 0) *

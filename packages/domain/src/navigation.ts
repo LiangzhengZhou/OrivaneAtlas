@@ -17,6 +17,61 @@ export const navigationViews = [
   "trash",
 ] as const;
 export type NavigationViewId = (typeof navigationViews)[number];
+export function navigationGroup(view: NavigationViewId): string | undefined {
+  if (["overview", "focus", "tasks", "projects", "calendar"].includes(view))
+    return "workspace";
+  if (["notes", "journal", "library"].includes(view)) return "knowledge";
+  if (view === "ai") return "atlas";
+  return undefined;
+}
+
+/** Direct manipulation stays within a visible group and its pinned segment. */
+export function moveNavigationWithinGroup(
+  preference: NavigationPreference,
+  movingId: NavigationViewId,
+  anchorId: NavigationViewId,
+  placement: "BEFORE" | "AFTER",
+): NavigationPreference {
+  requireNavigationPreference(preference);
+  const group = navigationGroup(movingId);
+  const pinned = preference.desktop.pinned.includes(movingId);
+  if (
+    !group ||
+    group !== navigationGroup(anchorId) ||
+    preference.desktop.hidden.includes(movingId) ||
+    preference.desktop.hidden.includes(anchorId) ||
+    pinned !== preference.desktop.pinned.includes(anchorId) ||
+    (placement !== "BEFORE" && placement !== "AFTER")
+  )
+    throw new DomainError("VALIDATION_ERROR", { field: "navigationMove" });
+  if (movingId === anchorId) return preference;
+  const source = pinned ? preference.desktop.pinned : preference.desktop.order;
+  const members = source.filter(
+    (id) =>
+      navigationGroup(id) === group &&
+      !preference.desktop.hidden.includes(id) &&
+      preference.desktop.pinned.includes(id) === pinned,
+  );
+  const reordered = members.filter((id) => id !== movingId);
+  reordered.splice(
+    reordered.indexOf(anchorId) + (placement === "AFTER" ? 1 : 0),
+    0,
+    movingId,
+  );
+  let cursor = 0;
+  const memberSet = new Set(members);
+  const next = source.map((id) =>
+    memberSet.has(id) ? reordered[cursor++]! : id,
+  );
+  if (next.every((id, index) => id === source[index])) return preference;
+  return {
+    ...preference,
+    desktop: {
+      ...preference.desktop,
+      ...(pinned ? { pinned: next } : { order: next }),
+    },
+  };
+}
 export interface NavigationPreference {
   readonly version: number;
   readonly desktop: {

@@ -40,7 +40,9 @@ test("native secure account selector switches without password and forgets local
   if (!address || typeof address === "string") throw new Error("No listener");
   try {
     await page.addInitScript(() => {
-      let selected: string | null = null;
+      let selected: string | null = sessionStorage.getItem(
+        "fixture-selected-account",
+      );
       let entries = ["Research", "Personal"].map((name) => ({
         id: "https://" + name.toLowerCase() + ".example|same-account",
         serverUrl: "https://" + name.toLowerCase() + ".example",
@@ -69,16 +71,20 @@ test("native secure account selector switches without password and forgets local
               return "prompt";
             if (
               command === "notification_reconcile" ||
-              command === "notification_cancel"
+              command === "notification_cancel" ||
+              command === "notification_take_route"
             )
               return;
             if (command === "configure_server") return;
             if (command === "select_account") {
               selected = args.reference ?? null;
+              if (selected)
+                sessionStorage.setItem("fixture-selected-account", selected);
               return reply(200, {});
             }
             if (command === "detach_account") {
               selected = null;
+              sessionStorage.removeItem("fixture-selected-account");
               return;
             }
             if (command === "forget_account") {
@@ -118,12 +124,16 @@ test("native secure account selector switches without password and forgets local
                 createdBy: "same-account",
                 updatedBy: "same-account",
                 deletedAt: null,
+                provenance: "HUMAN",
+                classification: "PRIVATE",
+                boundary: "REMOTE",
+                aiAccess: "DENY",
               };
-              if (args.path === "/api/bootstrap") {
+              if (args.path?.split("?")[0] === "/api/bootstrap") {
                 const { bodyMd, ...metadata } = note;
                 return reply(200, {
                   schemaVersion: 1,
-                  cursor: 0,
+                  cursor: 1,
                   epoch: "secure-account-fixture",
                   library: [],
                   workspace: {
@@ -149,12 +159,61 @@ test("native secure account selector switches without password and forgets local
               }
               if (args.path?.startsWith("/api/document/body"))
                 return reply(200, note);
-              if (args.path?.startsWith("/api/sync"))
+              if (
+                args.path?.startsWith("/api/sync") ||
+                args.path?.startsWith("/api/v1/sync")
+              ) {
+                const privateOnly =
+                  new URL(
+                    args.path,
+                    "https://fixture.example",
+                  ).searchParams.get("privateMemos") === "only";
+                const after = Number(
+                  new URL(
+                    args.path,
+                    "https://fixture.example",
+                  ).searchParams.get("after") ?? 0,
+                );
+                const { bodyMd, ...metadata } = note;
                 return reply(200, {
-                  cursor: 0,
+                  cursor: 1,
                   epoch: "secure-account-fixture",
-                  changes: { collections: {}, values: {} },
+                  snapshot: null,
+                  recovery: false,
+                  hasMore: false,
+                  records:
+                    !privateOnly && after < 1
+                      ? [
+                          {
+                            seq: 1,
+                            workspaceId: "workspace",
+                            collection: "notes",
+                            entityId: note.id,
+                            op: "UPSERT",
+                            version: 1,
+                          },
+                        ]
+                      : [],
+                  changes: {
+                    collections:
+                      !privateOnly && after < 1
+                        ? {
+                            notes: {
+                              upserts: [
+                                {
+                                  ...metadata,
+                                  bodyState: "UNLOADED",
+                                  bodyCharacterCount: bodyMd.length,
+                                },
+                              ],
+                              removed: [],
+                            },
+                          }
+                        : {},
+                    values: {},
+                  },
                 });
+              }
               if (args.path === "/api/logout")
                 throw new Error("Switch must never logout");
               if (args.path === "/api/note/save")
@@ -199,6 +258,7 @@ test("native secure account selector switches without password and forgets local
         };
       });
     });
+    await page.goto("http://127.0.0.1:" + address.port + "/#account");
     await expect(
       page.getByRole("button", { name: "Research", exact: true }),
     ).toBeVisible();
@@ -207,34 +267,52 @@ test("native secure account selector switches without password and forgets local
       fullPage: true,
     });
     await page.getByRole("button", { name: "Research", exact: true }).click();
+    const openReplica = async () => {
+      await page
+        .getByRole("button", { name: /^(Review sync options|查看同步选项)$/ })
+        .click();
+      await page
+        .getByRole("button", {
+          name: /^(Open account workspace|打开账户工作区)$/,
+        })
+        .click();
+    };
+    await openReplica();
     await expect(page.locator(".app-shell")).toBeVisible();
     await page.evaluate(() => {
       location.hash = "notes";
     });
+    await expect(
+      page.locator(".note-card").filter({ hasText: "Remote note" }),
+    ).toBeVisible();
     await page.locator(".note-card").filter({ hasText: "Remote note" }).click();
     await page
       .locator(".note-card")
       .filter({ hasText: "Remote note" })
       .press("Enter");
+    // A legacy remote-keyed draft must not automatically enter a new local replica.
+    await expect(
+      page.getByRole("tab", { name: /research private draft/ }),
+    ).toHaveCount(0);
+    await expect(page.locator(".document-title")).toHaveValue("Remote note");
+    await page.locator(".document-title").fill("research private draft");
+    await page.locator(".cm-content").fill("research private body");
+    await page.keyboard.press("Control+s");
+    await expect(page.locator(".document-pane [role=status]")).toContainText(
+      /Saved on this device|已保存到本机/,
+    );
     await expect(
       page.getByRole("tab", { name: /research private draft/ }),
     ).toBeVisible();
     await page.evaluate(() => {
       location.hash = "account";
     });
-    const switcher = page.getByRole("button", {
-      name: /^(Switch account|切换账户)$/,
-    });
-    await switcher.click();
+    await page.getByRole("button", { name: "Personal", exact: true }).click();
     const confirmation = page.getByRole("dialog", {
       name: /^(确认操作|Confirm action)$/,
     });
-    await expect(confirmation).toBeVisible();
-    await confirmation
-      .getByRole("button", { name: /^(确认|Confirm)$/, exact: true })
-      .click();
-    await expect(page.locator(".login-form")).toBeVisible();
-    await page.getByRole("button", { name: "Personal", exact: true }).click();
+    await expect(confirmation).toHaveCount(0);
+    await openReplica();
     await expect(page.locator(".app-shell")).toBeVisible();
     await page.evaluate(() => {
       location.hash = "notes";
@@ -244,20 +322,51 @@ test("native secure account selector switches without password and forgets local
       .locator(".note-card")
       .filter({ hasText: "Remote note" })
       .press("Enter");
+    await expect(page.locator(".document-title")).toHaveValue("Remote note");
+    await expect(page.locator(".cm-content")).toHaveText("Remote body");
+    await page.locator(".document-title").fill("personal private draft");
+    await page.locator(".cm-content").fill("personal private body");
+    await page.keyboard.press("Control+s");
+    await expect(page.locator(".document-pane [role=status]")).toContainText(
+      /Saved on this device|已保存到本机/,
+    );
     await expect(
       page.getByRole("tab", { name: /personal private draft/ }),
     ).toBeVisible();
     await expect(
       page.getByRole("tab", { name: /research private draft/ }),
     ).toHaveCount(0);
+    // Returning to a prior origin must recover its durable local edit without
+    // importing the other origin's body, despite identical remote IDs.
     await page.evaluate(() => {
       location.hash = "account";
     });
-    await switcher.click();
-    await expect(confirmation).toBeVisible();
-    await confirmation
-      .getByRole("button", { name: /^(确认|Confirm)$/, exact: true })
-      .click();
+    await page.getByRole("button", { name: "Research", exact: true }).click();
+    await openReplica();
+    await page.evaluate(() => {
+      location.hash = "notes";
+    });
+    const research = page.locator(".note-card").filter({
+      hasText: "research private draft",
+    });
+    await research.press("Enter");
+    await expect(page.locator(".document-title")).toHaveValue(
+      "research private draft",
+    );
+    await expect(page.locator(".cm-content")).toHaveText(
+      "research private body",
+    );
+    await expect(
+      page.getByRole("tab", { name: /personal private draft/ }),
+    ).toHaveCount(0);
+    await page.evaluate(() => {
+      location.hash = "account";
+    });
+    await page.getByRole("button", { name: "Personal", exact: true }).click();
+    await openReplica();
+    await page.evaluate(() => {
+      location.hash = "account";
+    });
     await page
       .getByRole("button", { name: /^(Forget account|忘记账户) Research$/ })
       .click();

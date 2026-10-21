@@ -6,11 +6,23 @@ import {
 import type { AgentRun, ModelPort, ModelRoute, ModelUsage } from "./connected";
 import { type ContentPolicy, contentPolicy } from "./content-policy";
 import {
+  type EntityMemoTransaction,
+  readEntityMemoFromTransaction,
+} from "./entity-memos";
+import {
+  fileContextText,
+  readFileContextFile,
+  readFileContextSource,
+} from "./file-ai-context";
+import type { LibraryFileStore } from "./files";
+import {
   type GatewaySettlement,
   ModelNotSentError,
   validateGatewayPolicy,
 } from "./gateway-policy";
 import type { LibraryStore } from "./library";
+import { markdownContextRange } from "./markdown-context-range";
+import { MemoAiContextService } from "./memo-ai-context";
 import type { NotebookStore } from "./notebook";
 import { adaptModelProvider, type ModelEvent } from "./provider-adapter";
 import { type ProviderDiagnostic, providerDiagnostic } from "./provider-error";
@@ -64,9 +76,67 @@ export async function validateApprovedContext(
   run: AgentRun,
   notes: Pick<NotebookStore, "get">,
   library: Pick<LibraryStore, "get">,
+  files?: Pick<LibraryFileStore, "get" | "extractions">,
+  memos?: EntityMemoTransaction,
 ): Promise<void> {
   for (const source of run.context ?? []) {
     const kind = source.ref.kind;
+    if (kind === "MEMO") {
+      if (!memos || !source.memo || source.range || source.file)
+        throw new Error("CONTEXT_CHANGED");
+      await new MemoAiContextService(
+        {
+          get: (candidate, target) =>
+            readEntityMemoFromTransaction(candidate, target, memos),
+        },
+        async (candidate, fileId, route) => {
+          if (!files) throw new DomainError("FORBIDDEN");
+          const file = await files.get(fileId);
+          await readFileContextFile(
+            candidate,
+            files,
+            library,
+            fileId,
+            file.version,
+            route.scope ?? "personal",
+            (entity) => validateContextPolicy(candidate, route, entity),
+          );
+        },
+      ).recheck(
+        actor,
+        {
+          ref: { kind: "MEMO", id: source.ref.id, target: source.ref.target },
+          ...source.memo,
+          version: source.version,
+          bodyMd: source.bodyMd,
+          permission: contentPolicy(source.permission),
+        },
+        run.route,
+      );
+      continue;
+    }
+    if (kind === "FILE") {
+      if (source.range) throw new Error("CONTEXT_CHANGED");
+      if (!files || !source.file) throw new Error("CONTEXT_CHANGED");
+      const canonical = await readFileContextSource(
+        actor,
+        files,
+        library,
+        source.ref.id,
+        source.version,
+        run.route.scope ?? "personal",
+        (entity) => validateContextPolicy(actor, run.route, entity),
+      );
+      if (
+        source.title !== canonical.file.name ||
+        source.file.contentHash !== canonical.file.contentHash ||
+        source.file.indexVersion !== canonical.document.indexVersion ||
+        source.bodyMd !==
+          fileContextText(canonical.document, source.file.locators)
+      )
+        throw new Error("CONTEXT_CHANGED");
+      continue;
+    }
     if (!["NOTE", "SPACE", "DOCUMENT"].includes(kind))
       throw new Error("CONTEXT_CHANGED");
     const entity =
@@ -78,7 +148,9 @@ export async function validateApprovedContext(
       entity.deletedAt ||
       entity.version !== source.version ||
       entity.title !== source.title ||
-      entity.bodyMd !== source.bodyMd ||
+      (source.range
+        ? markdownContextRange(entity.bodyMd, source.range)
+        : entity.bodyMd) !== source.bodyMd ||
       (kind !== "NOTE" && entity.kind !== kind)
     )
       throw new Error("CONTEXT_CHANGED");

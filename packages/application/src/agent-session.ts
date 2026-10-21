@@ -1,5 +1,10 @@
-import { type ActorContext, DomainError } from "@arclattice/domain";
+import {
+  type ActorContext,
+  DomainError,
+  entityMemoTargetKinds,
+} from "@arclattice/domain";
 import type { AiContextItem } from "./ai-context";
+import type { AgentRun, ConnectedStore } from "./connected";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
 
 export interface AgentSessionMessage {
@@ -78,6 +83,93 @@ export class AgentSessionService {
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
   ) {}
+  /** Caller supplies only canonical run references, never fabricated messages.
+   * The outer UnitOfWork commits session/messages/run binding atomically. */
+  async promoteRuns(
+    actorInput: ActorContext,
+    runs: Pick<ConnectedStore, "getRun" | "saveRun">,
+    title: string,
+    input: { id: string; version: number }[],
+  ) {
+    const actor = Object.freeze({ ...actorInput }),
+      references = structuredClone(input);
+    await this.authorization.require(actor, "work:read");
+    await this.authorization.require(actor, "work:create");
+    await this.authorization.require(actor, "work:update");
+    if (
+      !Array.isArray(references) ||
+      !references.length ||
+      references.length > 20 ||
+      references.some((ref) => !ref || typeof ref.id !== "string") ||
+      new Set(references.map((ref) => ref.id)).size !== references.length
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    const canonical: AgentRun[] = [];
+    for (const ref of references) {
+      if (
+        !ref ||
+        typeof ref.id !== "string" ||
+        !ref.id ||
+        ref.id.length > 240 ||
+        !Number.isSafeInteger(ref.version) ||
+        ref.version < 1
+      )
+        throw new DomainError("VALIDATION_ERROR");
+      const run = await runs.getRun(ref.id);
+      if (
+        run.workspaceId !== actor.workspaceId ||
+        run.createdBy !== actor.principalId ||
+        run.deletedAt
+      )
+        throw new DomainError("NOT_FOUND");
+      if (
+        run.version !== ref.version ||
+        run.status !== "SUCCEEDED" ||
+        run.sessionId
+      )
+        throw new DomainError("VERSION_CONFLICT");
+      if (
+        !run.userPrompt ||
+        !run.output ||
+        run.userPrompt.length > 200000 ||
+        run.output.length > 200000
+      )
+        throw new DomainError("VALIDATION_ERROR");
+      canonical.push(run);
+    }
+    let session = await this.create(actor, title);
+    for (const run of canonical) {
+      session = await this.append(actor, session.id, session.version, {
+        kind: "USER",
+        text: run.userPrompt!,
+        runId: run.id,
+      });
+      session = await this.append(actor, session.id, session.version, {
+        kind: "ASSISTANT",
+        text: run.output!,
+        runId: run.id,
+        evidence:
+          run.context?.map((item) => ({
+            ref: item.ref,
+            title: item.title,
+            version: item.version,
+            source: item.source ?? "current",
+          })) ?? [],
+      });
+      await runs.saveRun(
+        {
+          ...run,
+          version: run.version + 1,
+          sessionId: session.id,
+          sessionVersion: session.version,
+          updatedAt: this.clock.now(),
+          updatedBy: actor.principalId,
+        },
+        run.version,
+      );
+    }
+    return session;
+  }
   async summaries(actor: ActorContext) {
     await this.authorization.require(actor, "work:read");
     return this.store.summaries();
@@ -264,7 +356,18 @@ export class AgentSessionService {
             typeof source.ref.id !== "string" ||
             !source.ref.id ||
             source.ref.id.length > 240 ||
-            !["WORK", "NOTE", "SPACE", "DOCUMENT"].includes(source.ref.kind),
+            (source.ref.kind === "MEMO"
+              ? !source.ref.target ||
+                Object.keys(source.ref.target).some(
+                  (key) => !["targetKind", "targetId"].includes(key),
+                ) ||
+                !entityMemoTargetKinds.includes(source.ref.target.targetKind) ||
+                typeof source.ref.target.targetId !== "string" ||
+                !source.ref.target.targetId ||
+                source.ref.target.targetId.length > 240
+              : !["WORK", "NOTE", "SPACE", "DOCUMENT", "FILE"].includes(
+                  source.ref.kind,
+                )),
         ))
     )
       throw new DomainError("VALIDATION_ERROR");

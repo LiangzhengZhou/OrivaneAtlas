@@ -9,6 +9,49 @@ import { inspectSchema, migrate, migrations } from "./migrations";
 import { context, postgresHarness } from "./testing";
 
 const h = postgresHarness();
+it("upgrades business-only v36 to v37 with physical backup recovery without inventing an account token store", async () => {
+  const name = await h.database();
+  await h.client(name, (client) =>
+    migrate(client, 2000, undefined, migrations.slice(0, 36)),
+  );
+  await h.query(
+    name,
+    "INSERT INTO arclattice.workspace VALUES ('w','Original')",
+  );
+  const backup = await h.cluster().snapshot();
+  await h.client(name, (client) =>
+    migrate(client, 2000, async () => {
+      expect((await stat(backup)).isDirectory()).toBe(true);
+    }),
+  );
+  expect(await h.client(name, (client) => inspectSchema(client))).toBe(37);
+  expect(
+    (
+      await h.query(
+        name,
+        "SELECT to_regclass('arclattice.api_credential') AS tokens",
+      )
+    ).rows[0]?.tokens,
+  ).toBeNull();
+  await h.cluster().withRestoredSnapshot(backup, async (restored) => {
+    expect(
+      (
+        await restored.query(
+          name,
+          "SELECT max(version) AS version FROM arclattice.schema_migrations",
+        )
+      ).rows[0]?.version,
+    ).toBe(36);
+    expect(
+      (
+        await restored.query(
+          name,
+          "SELECT name FROM arclattice.workspace WHERE id='w'",
+        )
+      ).rows[0]?.name,
+    ).toBe("Original");
+  });
+}, 180000);
 it("restores a real pre-v15 PostgreSQL backup into an independent data directory after upgrade", async () => {
   const name = await h.database();
   await h.client(name, (client) =>

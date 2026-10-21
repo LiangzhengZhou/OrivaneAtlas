@@ -1,0 +1,7 @@
+# ADR0089 — Original organization replay
+
+2026-10-13. Accepted for FINAL Phase10/11.
+
+Capture detached original OrganizeInput with the existing local entity/Outbox transaction. Preserve entity and organization versions and complete original membership. Archive/unarchive/note move use an authenticated complete OrganizationStore guard; canonical identity is kind:id while business value keeps original entity id. Delete invokes existing WorkService or NotebookService soft deletion with original effect guards; no direct data replacement, new archive semantics, or migration. Work batch guards wrap each actual delete, retain ordinary preflight snapshots and require full accepted effect count in the outer business/receipt transaction. Note deletion uses existing knowledge guard and paired body projection.
+
+Shared original serializer/ACK/pull/recovery/coordinator and explicit native alias. Strict IndexedDB receipt validation supports organization composite identity only when exact valid kind+id matches; foreign kind and wrong identity remain rejected before attempt/cursor writes. Body-aware projection is selected by actual effect collections, including organization note deletion, not only command name. Test transaction rollback, duplicate/receipt, crash/restart, workspace mapping, pending conflicts and both storage adapters. No automatic bind, last-write-wins, production operation or release authorization.

@@ -1,5 +1,26 @@
 import { DomainError } from "@arclattice/domain";
 import type { AiCapabilityRisk } from "./ai-context";
+import type { ApiScope } from "./api-scopes";
+
+const capabilityScopeRequirements = {
+  read_file_chunks: ["files:read", "files:content"],
+  search_documents: ["knowledge:read"],
+  read_document: ["knowledge:read"],
+  get_project: ["projects:read"],
+  list_project_tasks: ["projects:read", "tasks:read"],
+  create_task: ["tasks:write"],
+  propose_document_edit: ["knowledge:read", "proposals:write"],
+  link_documents: ["knowledge:write"],
+  update_task: ["tasks:write"],
+  complete_task: ["tasks:write"],
+  reschedule_task: ["tasks:write"],
+  set_task_priority: ["tasks:write"],
+  move_task_to_project: ["tasks:write", "projects:read"],
+  preview_plan: ["plans:propose", "proposals:write"],
+  publish_plan: ["plans:publish"],
+  create_document: ["knowledge:write"],
+  move_document: ["knowledge:write"],
+} as const satisfies Record<string, readonly ApiScope[]>;
 
 export interface CapabilitySchema {
   type: "object" | "string" | "integer" | "array";
@@ -14,6 +35,7 @@ export interface CapabilitySchema {
   enum?: readonly string[];
 }
 export interface CapabilityDefinition {
+  requiredScopes: readonly ApiScope[];
   previewOnly?: boolean;
   name: string;
   description: string;
@@ -28,7 +50,7 @@ const text: CapabilitySchema = { type: "string", minLength: 1, maxLength: 240 };
 const version: CapabilitySchema = { type: "integer", minimum: 1 };
 const ids: CapabilitySchema = { type: "array", items: text, maxItems: 100 };
 const define = (
-  name: string,
+  name: keyof typeof capabilityScopeRequirements,
   description: string,
   risk: AiCapabilityRisk,
   properties: Record<string, CapabilitySchema>,
@@ -37,6 +59,10 @@ const define = (
   name,
   description,
   risk,
+  requiredScopes: [
+    "capabilities:execute",
+    ...capabilityScopeRequirements[name],
+  ],
   inputSchema: {
     type: "object",
     properties,
@@ -54,6 +80,13 @@ const define = (
 
 /** Shared contract for internal agents and external MCP. Execution remains in AiCapabilityService. */
 export const capabilityRegistry: readonly CapabilityDefinition[] = [
+  define(
+    "read_file_chunks",
+    "Read at most three permitted canonical File chunks, with versioned source citations. Never downloads the original binary.",
+    "READ",
+    { id: text, version, query: { type: "string", maxLength: 200 } },
+    ["id", "version"],
+  ),
   define(
     "search_documents",
     "Search permitted documents in the current retrieval scope.",

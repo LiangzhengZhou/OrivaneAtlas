@@ -1,12 +1,30 @@
-import { createContext, memo, useContext, useEffect, useState } from "react";
+import { toJsxRuntime } from "hast-util-to-jsx-runtime";
+import { urlAttributes } from "html-url-attributes";
+import {
+  createContext,
+  Fragment,
+  memo,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import { jsx, jsxs } from "react/jsx-runtime";
 import { useTranslation } from "react-i18next";
-import ReactMarkdown, { type Components } from "react-markdown";
+import { type Components, defaultUrlTransform } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import remarkParse from "remark-parse";
+import remarkRehype from "remark-rehype";
+import { unified } from "unified";
+import { visit } from "unist-util-visit";
 import { Button } from "./components/ui/Button";
-import { ImageLoadError } from "./imageResponse";
+import { Dialog } from "./components/ui/Surfaces";
+import { FileLink } from "./features/files/FileLinkContext";
+import { parseFileHash } from "./features/files/fileRoute";
+import { ImageLoadError, imageFailureReason } from "./imageResponse";
+import { holdPrivateImage } from "./privateImageCache";
 import "katex/dist/katex.min.css";
 
 export const PrivateImageContext = createContext<
@@ -14,8 +32,10 @@ export const PrivateImageContext = createContext<
 >(null);
 function PrivateImage({ src, alt }: { src: string; alt: string }) {
   const load = useContext(PrivateImageContext);
-  const { t } = useTranslation("spaces");
+  const { t, i18n } = useTranslation("spaces");
+  const imageLabel = alt || (i18n.language.startsWith("zh") ? "图片" : "Image");
   const [attempt, setAttempt] = useState(0);
+  const [viewing, setViewing] = useState(false);
   const [failure, setFailure] = useState<{ path: string; code: string } | null>(
     null,
   );
@@ -28,11 +48,10 @@ function PrivateImage({ src, alt }: { src: string; alt: string }) {
     setResolved(null);
     if (!load) return;
     let active = true;
-    let url = "";
-    void load(src)
-      .then((blob) => {
+    const held = holdPrivateImage(load, src);
+    void held.promise
+      .then((url) => {
         if (!active) return;
-        url = URL.createObjectURL(blob);
         setResolved({ path: src, url });
       })
       .catch((error: unknown) => {
@@ -42,12 +61,13 @@ function PrivateImage({ src, alt }: { src: string; alt: string }) {
         console.warn("Private image load failed", {
           stage: "load",
           code,
+          reason: imageFailureReason(error),
           ...(error instanceof ImageLoadError ? { status: error.status } : {}),
         });
       });
     return () => {
       active = false;
-      if (url) URL.revokeObjectURL(url);
+      held.release();
     };
   }, [load, src, attempt]);
   const url = load ? (resolved?.path === src ? resolved.url : "") : src;
@@ -75,19 +95,55 @@ function PrivateImage({ src, alt }: { src: string; alt: string }) {
       </span>
     );
   return url ? (
-    <img
-      key={`${url}:${attempt}`}
-      src={url}
-      alt={alt}
-      loading="eager"
-      onError={() => {
-        setFailure({ path: src, code: "decode" });
-        console.warn("Private image load failed", {
-          stage: "decode",
-          code: "decode",
-        });
-      }}
-    />
+    <>
+      <img
+        key={`${url}:${attempt}`}
+        src={url}
+        alt={alt}
+        loading="eager"
+        tabIndex={0}
+        role="button"
+        aria-label={imageLabel}
+        onClick={() => setViewing(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            setViewing(true);
+          }
+        }}
+        onError={() => {
+          setFailure({ path: src, code: "decode" });
+          console.warn("Private image load failed", {
+            stage: "decode",
+            code: "decode",
+          });
+        }}
+      />
+      {viewing && (
+        <Dialog
+          className="ui-dialog image-viewer"
+          aria-label={imageLabel}
+          onRequestClose={() => setViewing(false)}
+        >
+          <Button
+            variant="ghost"
+            aria-label={i18n.language.startsWith("zh") ? "关闭" : "Close"}
+            onClick={() => setViewing(false)}
+          >
+            ×
+          </Button>
+          <img
+            src={url}
+            alt={alt}
+            style={{
+              maxWidth: "100%",
+              maxHeight: "80dvh",
+              objectFit: "contain",
+            }}
+          />
+        </Dialog>
+      )}
+    </>
   ) : (
     <span role="status">{t("imageLoading")}</span>
   );
@@ -98,32 +154,81 @@ function PrivateImage({ src, alt }: { src: string; alt: string }) {
 const markdownComponents: Components = {
   img: ({ src, alt }) =>
     typeof src === "string" &&
-    /^\/api\/library\/asset\?id=[a-zA-Z0-9-]+$/.test(src) ? (
+    /^\/api\/(?:library\/asset|v1\/files\/bytes)\?id=[a-zA-Z0-9-]+$/.test(
+      src,
+    ) ? (
       <PrivateImage src={src} alt={alt ?? ""} />
     ) : (
       <span>{alt}</span>
     ),
-  a: ({ href, children }) =>
-    href && /^(https?:\/\/|#)/.test(href) ? (
+  a: ({ href, children }) => {
+    const fileId = href ? parseFileHash(href) : null;
+    return fileId && href ? (
+      <FileLink id={fileId} href={href}>
+        {children}
+      </FileLink>
+    ) : href && /^(https?:\/\/|#)/.test(href) ? (
       <a href={href} rel="noreferrer noopener" target="_blank">
         {children}
       </a>
     ) : (
       <span>{children}</span>
-    ),
+    );
+  },
 };
 
 // No raw HTML, external images or executable links. User Markdown remains unchanged.
+// Freeze configuration once. Each document still receives its own syntax tree
+// and file; no user content is cached or shared between conversations.
+function createMarkdownProcessor(math: boolean) {
+  const parser = unified().use(remarkParse).use(remarkGfm);
+  if (math) parser.use(remarkMath);
+  const processor = parser
+    .use(remarkBreaks)
+    .use(remarkRehype, { allowDangerousHtml: true });
+  if (math) processor.use(rehypeKatex, { strict: "ignore", trust: false });
+  return processor.freeze();
+}
+let noteProcessor: ReturnType<typeof createMarkdownProcessor> | undefined;
+let mathProcessor: ReturnType<typeof createMarkdownProcessor> | undefined;
+const markdownUrlAttributes = Object.entries(urlAttributes);
+
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
+  // remark-math recognizes dollar delimiters. Without any dollar character,
+  // neither inline nor block math can occur, so avoid constructing that chain.
+  const hasMathDelimiter = text.includes("$");
+  const processor = hasMathDelimiter
+    ? (mathProcessor ??= createMarkdownProcessor(true))
+    : (noteProcessor ??= createMarkdownProcessor(false));
+  const tree = processor.runSync(processor.parse(text), { value: text });
+  visit(tree, (node, index, parent) => {
+    // Preserve raw HTML as inert text, matching the existing reader contract.
+    if (node.type === "raw" && parent && index !== undefined) {
+      parent.children[index] = { type: "text", value: node.value };
+    } else if (node.type === "element") {
+      for (const [property, tags] of markdownUrlAttributes) {
+        if (
+          Object.hasOwn(node.properties, property) &&
+          (tags === null || tags.includes(node.tagName))
+        ) {
+          node.properties[property] = defaultUrlTransform(
+            String(node.properties[property] ?? ""),
+          );
+        }
+      }
+    }
+  });
   return (
     <div className="markdown">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-        rehypePlugins={[[rehypeKatex, { strict: "ignore", trust: false }]]}
-        components={markdownComponents}
-      >
-        {text}
-      </ReactMarkdown>
+      {toJsxRuntime(tree, {
+        Fragment,
+        jsx,
+        jsxs,
+        components: markdownComponents,
+        ignoreInvalidStyle: true,
+        passKeys: true,
+        passNode: true,
+      })}
     </div>
   );
 });

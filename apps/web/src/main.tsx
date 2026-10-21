@@ -13,6 +13,7 @@ import "./workspace.css";
 import "./product.css";
 import "./styles/shell.css";
 import "./styles/components.css";
+import "./styles/glass.css";
 import "./styles/utilities.css";
 
 const root = document.getElementById("root");
@@ -26,3 +27,13 @@ createRoot(root).render(
     </I18nextProvider>
   </StrictMode>,
 );
+if (import.meta.env.PROD && "serviceWorker" in navigator && !runtime.native) {
+  void navigator.serviceWorker
+    .register("/offline-shell.js")
+    .catch((error: unknown) => {
+      console.warn(
+        "Offline application shell registration failed",
+        error instanceof Error ? error.name : "unknown",
+      );
+    });
+}

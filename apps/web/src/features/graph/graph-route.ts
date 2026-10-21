@@ -1,7 +1,10 @@
+export type GraphDirection = "LR" | "TB";
 export interface GraphRoute {
   taskScope?: import("./graph-scope").ProjectTaskScope;
   includeExternal?: boolean;
   view?: "tree" | "graph";
+  /** Layout rank direction: left-to-right (default) or top-to-bottom. */
+  direction?: GraphDirection;
   kind: "project" | "document";
   id: string;
   mode: "structure" | "dependencies" | "knowledge";
@@ -48,6 +51,9 @@ export function parseGraphRoute(hash: string): GraphRoute | null {
     return {
       ...(query.get("view") === "graph" || query.get("view") === "tree"
         ? { view: query.get("view") as "tree" | "graph" }
+        : {}),
+      ...(query.get("direction") === "LR" || query.get("direction") === "TB"
+        ? { direction: query.get("direction") as GraphDirection }
         : {}),
       kind,
       id,
@@ -96,6 +102,7 @@ export function graphHash(route: GraphRoute): string {
     "?" +
     new URLSearchParams({
       ...(route.view ? { view: route.view } : {}),
+      ...(route.direction ? { direction: route.direction } : {}),
       ...(route.viewport
         ? {
             viewport: [

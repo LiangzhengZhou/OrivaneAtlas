@@ -88,9 +88,9 @@ export function ProjectStructureTree({
                   selection.selected.id === project.id
                 }
                 onClick={() =>
-                  onSelect
-                    ? onSelect(project.id)
-                    : selection?.select({ kind: "WORK", id: project.id })
+                  // Graph tree view focuses the node (onSelect). Everywhere else a
+                  // project is a destination: single click opens it.
+                  onSelect ? onSelect(project.id) : onOpen(project.id)
                 }
                 onDoubleClick={() => onOpen(project.id)}
                 onKeyDown={(event) => {

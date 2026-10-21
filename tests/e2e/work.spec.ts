@@ -1,3 +1,78 @@
+import {
+  activeReplicaIdentity,
+  setLocalCommandFailure,
+  waitForLocalReplay,
+} from "./replica-evidence";
+
+/** Fixture ingestion is setup, outside the measured interaction budget. */
+async function waitForFixtureReplica(page: Page, projectTitle?: string) {
+  const response = await page.request.get(
+    new URL("/api/bootstrap", page.url()).href,
+  );
+  expect(response.ok()).toBe(true);
+  const manifest: { cursor: number; epoch: string } = await response.json();
+  const readiness = { ...manifest, projectTitle };
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async ({ cursor, epoch, projectTitle }) => {
+          if (
+            projectTitle &&
+            document.querySelector(".project-workspace h1")?.textContent !==
+              projectTitle
+          )
+            return false;
+          for (const database of await indexedDB.databases()) {
+            if (!database.name) continue;
+            const db = await new Promise<IDBDatabase>((resolve, reject) => {
+              const request = indexedDB.open(database.name!);
+              request.onsuccess = () => resolve(request.result);
+              request.onerror = () => reject(request.error);
+            });
+            try {
+              if (!db.objectStoreNames.contains("sync")) continue;
+              const states = await new Promise<
+                { cursor: number; epoch: string }[]
+              >((resolve, reject) => {
+                const request = db
+                  .transaction("sync")
+                  .objectStore("sync")
+                  .getAll();
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+              });
+              if (
+                states.some(
+                  (state) => state.epoch === epoch && state.cursor >= cursor,
+                )
+              )
+                return true;
+            } finally {
+              db.close();
+            }
+          }
+          return false;
+        }, readiness),
+      {
+        timeout: 120000,
+        message: "fixture canonical cursor durably ingested before measurement",
+      },
+    )
+    .toBe(true);
+}
+async function prepareOfflineShell(page: Page) {
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller)
+      await new Promise<void>((resolve) =>
+        navigator.serviceWorker.addEventListener(
+          "controllerchange",
+          () => resolve(),
+          { once: true },
+        ),
+      );
+  });
+}
 async function openCalendarJournal(page: Page, title: string) {
   const action = page
     .locator(".calendar-agenda-actions")
@@ -22,7 +97,7 @@ async function answerConfirmation(
       name: accept ? /^(确认|Confirm)$/ : /^(取消|Cancel)$/,
       exact: true,
     })
-    .click();
+    .press("Enter");
 }
 async function openProjectDependencyScope(
   page: Page,
@@ -110,6 +185,21 @@ async function chooseDate(page: Page, field: Locator, iso: string) {
   await calendar.getByRole("button", { name: iso, exact: true }).click();
 }
 
+async function openTaskAdvanced(dialog: Locator) {
+  const summary = dialog.locator(".task-advanced > summary");
+  if (!(await summary.isVisible()))
+    await dialog
+      .getByRole("button", { name: /^(\+ 更多设置|\+ More settings)$/ })
+      .click();
+  if (
+    !(await summary
+      .locator("..")
+      .evaluate((element) => element.hasAttribute("open")))
+  )
+    await summary.click();
+}
+
+import { execFile } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   mkdirSync,
@@ -118,8 +208,10 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 import {
   test as base,
   expect,
@@ -127,6 +219,7 @@ import {
   type Page,
   type Response,
 } from "@playwright/test";
+import type * as memoLocalApi from "../../apps/web/test-fixtures/local-storage";
 import type { ActorContext } from "../../packages/domain/src/index";
 import { localCalendarDay } from "../../packages/domain/src/index";
 import { v22PerformanceFixture } from "../performance/v2.2-fixture";
@@ -397,14 +490,18 @@ const test = base.extend<{
                 fingerprint: "e2e-only",
                 provider: "https://test.invalid",
                 model: "Test-only adapter",
-                maxInputChars: info.title.includes("project scope")
-                  ? 16000
-                  : 1000,
+                maxInputChars:
+                  info.title.includes("project scope") ||
+                  info.title.includes("private Memo AI approval")
+                    ? 16000
+                    : 1000,
                 maxOutputTokens: 100,
                 timeoutMs: info.title.includes("streaming") ? 6000 : 2000,
                 maxRunsPerDay: 2,
               },
               complete: async (prompt: string) => {
+                if (info.title.includes("private Memo AI approval"))
+                  return "# Reviewed result\n\n- Check the next action.";
                 if (
                   info.title.includes("model failure") &&
                   modelAttempts++ === 0
@@ -583,6 +680,7 @@ test("v2.2 1500 tasks release virtualization and scope benchmark", async ({
   }
   await page.reload();
   await nav(page, w.desk.tasks);
+  await page.getByLabel(w.desk.sort, { exact: true }).selectOption("title");
   const scroll = page.locator(".task-list .virtual-task-scroll");
   await expect(scroll).toHaveAttribute("data-task-count", "1500");
   await expect
@@ -590,6 +688,19 @@ test("v2.2 1500 tasks release virtualization and scope benchmark", async ({
     .toBeGreaterThan(0);
   const listRows = await page.locator(".task-list .task-card").count();
   expect(listRows).toBeLessThan(100);
+  await expect
+    .poll(() =>
+      page.locator(".task-list .task-card").evaluateAll((elements) => {
+        const rows = elements.map((element) => element.getBoundingClientRect());
+        return (
+          rows.length > 1 &&
+          rows
+            .slice(1)
+            .every((row, index) => row.top >= rows[index]!.bottom - 0.5)
+        );
+      }),
+    )
+    .toBe(true);
   await scroll.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
@@ -604,6 +715,19 @@ test("v2.2 1500 tasks release virtualization and scope benchmark", async ({
   await expect(page.locator(".virtual-board-scroll")).toHaveCount(1);
   const boardRows = await page.locator(".board .task-card").count();
   expect(boardRows).toBeLessThan(100);
+  await expect
+    .poll(() =>
+      page.locator(".board .task-card").evaluateAll((elements) => {
+        const rows = elements.map((element) => element.getBoundingClientRect());
+        return (
+          rows.length > 1 &&
+          rows
+            .slice(1)
+            .every((row, index) => row.top >= rows[index]!.bottom - 0.5)
+        );
+      }),
+    )
+    .toBe(true);
   const evidence = {
     tasks: 1500,
     listRows,
@@ -686,6 +810,24 @@ test("v2.2 recurrence skip is distinct from missed and version protected", async
     })
     .click();
   await expect(series).toContainText(zh ? "已跳过" : "Skipped");
+  await expect
+    .poll(async () => {
+      const remote = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      const occurrence = remote.workflows.find(
+        (record: { payload: { kind: string; definitionId?: string } }) =>
+          record.payload.kind === "OCCURRENCE" &&
+          record.payload.definitionId === definition.id,
+      );
+      return {
+        status: occurrence?.payload.status,
+        taskStatus: remote.items.find(
+          (item: { id: string }) => item.id === occurrence?.payload.taskId,
+        )?.status,
+      };
+    })
+    .toEqual({ status: "SKIPPED", taskStatus: "CANCELED" });
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -879,16 +1021,33 @@ test("v2.3 quiet shell and command palette keyboard fuzzy recent navigation", as
   });
   await page.reload();
   await nav(page, w.desk.tasks);
-  await expect(
-    page.locator(".sidebar [draggable=true],.sidebar .nav-drag-handle"),
-  ).toHaveCount(0);
-  await expect(page.locator(".topbar .mode-badge")).toHaveCount(0);
+  await expect(page.locator(".sidebar .nav-item[draggable=true]")).toHaveCount(
+    0,
+  );
+  if (info.project.name.startsWith("mobile")) {
+    await page.locator(".mobile-navigation-toggle").click();
+    const sheet = page.locator("#mobile-more-sheet");
+    await expect(sheet).toBeVisible();
+    const handle = sheet.locator(".ui-drag-handle").first();
+    await expect(handle).toBeVisible();
+    await handle.focus();
+    await expect(handle).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+  } else {
+    await page.locator(".sidebar .ui-sortable-row").first().hover();
+    await expect(
+      page.locator(".sidebar .ui-drag-handle").first(),
+    ).toBeVisible();
+  }
+  await expect(page.locator(".page-header .mode-badge")).toHaveCount(0);
   await expect(
     page
-      .locator(".topbar")
+      .locator(".page-header")
       .getByRole("button", { name: w.desk.refresh, exact: true }),
   ).toHaveCount(0);
-  await expect(page.locator(".topbar .breadcrumb")).not.toContainText(
+  // The page header must not leak the workspace name into the title.
+  await expect(page.locator(".page-header").first()).not.toContainText(
     zh ? "个人空间" : "Personal",
   );
   await page.keyboard.press("Control+k");
@@ -958,6 +1117,24 @@ test("v2.3 task rows expose completion and defer management to the menu", async 
       exact: true,
     })
     .click();
+  await expect(row).toBeVisible();
+  const armedSnapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    armedSnapshot.items.find((item: { id: string }) => item.id === task.id)
+      .status,
+  ).toBe("TODO");
+  expect(
+    armedSnapshot.items.find((item: { id: string }) => item.id === task.id)
+      .version,
+  ).toBe(task.version);
+  await row
+    .getByRole("button", {
+      name: (zh ? "确认完成：" : "Confirm completion: ") + "Quiet action",
+      exact: true,
+    })
+    .click();
   await expect(row).toHaveCount(0);
   await taskScope(page, w.desk.taskWorkspace.completed);
   await page.getByLabel(w.desk.status, { exact: true }).selectOption("DONE");
@@ -966,13 +1143,136 @@ test("v2.3 task rows expose completion and defer management to the menu", async 
       name: (zh ? "重新打开：" : "Reopen: ") + "Quiet action",
       exact: true,
     }),
-  ).toHaveAttribute("aria-pressed", "true");
+  ).toHaveAttribute("aria-pressed", "false");
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
   expect(
     snapshot.items.find((item: { id: string }) => item.id === task.id).status,
   ).toBe("DONE");
+});
+
+test("quick completion and restore arm without mutation and support cancellation and version-safe Undo", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const task = await mutation(page, "/api/work/create", {
+    title: "Confirm safely",
+    priority: "LOW",
+  });
+  await mutation(page, "/api/work/create", {
+    title: "Another confirmation",
+    priority: "LOW",
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  const row = page.locator(".task-card").filter({ hasText: "Confirm safely" });
+  const label = (zh ? "完成：" : "Complete: ") + "Confirm safely";
+  const confirmation =
+    (zh ? "确认完成：" : "Confirm completion: ") + "Confirm safely";
+  await row.getByRole("button", { name: label, exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: (zh ? "完成：" : "Complete: ") + "Another confirmation",
+      exact: true,
+    })
+    .click();
+  await expect(
+    row.getByRole("button", { name: label, exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await page.keyboard.press("Escape");
+  const syncStart = await (
+    await page.request.get(workbench.url + "/api/sync")
+  ).json();
+  const updates: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "GET" && request.url().includes("/api/work/"))
+      updates.push(request.url());
+  });
+  const read = async () => {
+    const snapshot = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    return snapshot.items.find((item: { id: string }) => item.id === task.id);
+  };
+  await row.getByRole("button", { name: label, exact: true }).click();
+  await expect(
+    row.getByRole("button", { name: confirmation, exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(await read()).toMatchObject({ status: "TODO", version: task.version });
+  expect(updates).toEqual([]);
+  let unchanged = await (
+    await page.request.get(
+      workbench.url +
+        `/api/sync?after=${syncStart.cursor}&epoch=${syncStart.epoch}`,
+    )
+  ).json();
+  expect(unchanged.cursor).toBe(syncStart.cursor);
+  expect(unchanged.records).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(
+    row.getByRole("button", { name: label, exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await row.getByRole("button", { name: label, exact: true }).click();
+  await page
+    .locator(".organization-toolbar")
+    .click({ position: { x: 2, y: 2 } });
+  await expect(
+    row.getByRole("button", { name: label, exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await row.getByRole("button", { name: label, exact: true }).click();
+  await expect(
+    row.getByRole("button", { name: label, exact: true }),
+  ).toBeVisible({ timeout: 6000 });
+  expect(await read()).toMatchObject({ status: "TODO", version: task.version });
+  expect(updates).toEqual([]);
+  await row.getByRole("button", { name: label, exact: true }).click();
+  await row.getByRole("button", { name: confirmation, exact: true }).click();
+  await expect.poll(async () => (await read()).status).toBe("DONE");
+  await page
+    .locator(".toast")
+    .filter({ hasText: zh ? "任务已完成" : "Task completed" })
+    .getByRole("button", { name: zh ? "撤销" : "Undo", exact: true })
+    .click();
+  await expect.poll(async () => (await read()).status).toBe("TODO");
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: label, exact: true }).click();
+  await row.getByRole("button", { name: confirmation, exact: true }).click();
+  await taskScope(page, w.desk.taskWorkspace.completed);
+  const reopen = (zh ? "重新打开：" : "Reopen: ") + "Confirm safely";
+  const confirmReopen =
+    (zh ? "确认重新打开：" : "Confirm reopen: ") + "Confirm safely";
+  const done = await read();
+  await row.getByRole("button", { name: reopen, exact: true }).click();
+  expect(await read()).toMatchObject({ status: "DONE", version: done.version });
+  await row.getByRole("button", { name: confirmReopen, exact: true }).click();
+  await expect.poll(async () => (await read()).status).toBe("TODO");
+  const restored = await read();
+  const newer = await mutation(page, "/api/work/update", {
+    id: task.id,
+    version: restored.version,
+    input: { title: "Newer edit stays" },
+  });
+  await page
+    .locator(".toast")
+    .filter({ hasText: zh ? "任务已重新打开" : "Task reopened" })
+    .getByRole("button", { name: zh ? "撤销" : "Undo", exact: true })
+    .click();
+  await expect(
+    page.locator(".toast").filter({
+      hasText: zh
+        ? "撤销失败，请刷新后重试"
+        : "Undo failed. Refresh and retry.",
+    }),
+  ).toBeVisible();
+  expect(await read()).toMatchObject({
+    title: "Newer edit stays",
+    status: "TODO",
+    version: newer.version,
+  });
 });
 
 test("v2.3 Project Gantt renders spans milestones unscheduled rows and restores presentation", async ({
@@ -1000,17 +1300,7 @@ test("v2.3 Project Gantt renders spans milestones unscheduled rows and restores 
   await page
     .getByRole("button", { name: "Gantt project", exact: true })
     .click();
-  await expect(page.locator(".context-pane")).toContainText("Gantt project");
-  await expect(page.locator(".project-workspace")).toHaveCount(0);
-  if (info.project.name.startsWith("mobile"))
-    await page
-      .locator(".context-pane")
-      .getByRole("button", { name: zh ? "打开" : "Open", exact: true })
-      .click();
-  else
-    await page
-      .getByRole("button", { name: "Gantt project", exact: true })
-      .press("Enter");
+  await expect(page.locator(".context-pane")).toHaveCount(0);
   await expect(page.locator(".project-workspace h1")).toHaveText(
     "Gantt project",
   );
@@ -1035,6 +1325,11 @@ test("v2.3 Project Gantt renders spans milestones unscheduled rows and restores 
     "data-task-count",
     "3",
   );
+  expect(
+    await gantt
+      .locator(".gantt-scroll")
+      .evaluate((element) => element.getBoundingClientRect().height),
+  ).toBeLessThanOrEqual(242);
   await expect(gantt.locator(".gantt-bar:not(.gantt-milestone)")).toHaveCount(
     1,
   );
@@ -1125,6 +1420,17 @@ test("v2.3 project list keeps hierarchy and category management behind explicit 
     .getByRole("button", { name: zh ? "撤销" : "Undo", exact: true })
     .click();
   await expect(row).toHaveCount(1);
+  // Undo is durable locally before its asynchronous remote replay completes.
+  await expect
+    .poll(async () => {
+      const remote = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return remote.items.find(
+        (item: { title: string }) => item.title === "Quiet project",
+      )?.deletedAt;
+    })
+    .toBeNull();
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -1172,12 +1478,129 @@ test("v2.3 Project Gantt virtualizes a real 1500 task workspace", async ({
       version: 1,
       input: { parentProjectId: project.id },
     });
+  await waitForFixtureReplica(page);
   await page.goto(
     workbench.url + `/#projects/${project.id}?tab=tasks&scope=SUBTREE`,
   );
-  await expect(page.locator(".project-workspace h1")).toHaveText(
-    "Gantt portfolio",
-  );
+  await waitForFixtureReplica(page, "Gantt portfolio");
+  try {
+    await expect(page.locator(".project-workspace h1")).toHaveText(
+      "Gantt portfolio",
+    );
+  } catch (failure) {
+    const canonical = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    const local = await page.evaluate(async (projectId) => {
+      const result: {
+        bases: {
+          collection: string;
+          id: string;
+          version: number;
+          value: Record<string, unknown>;
+        }[];
+        sync: unknown[];
+        heads: unknown[];
+      } = { bases: [], sync: [], heads: [] };
+      for (const entry of await indexedDB.databases()) {
+        if (!entry.name) continue;
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open(entry.name!);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        try {
+          for (const store of ["entities", "sync"]) {
+            if (!database.objectStoreNames.contains(store)) continue;
+            const rows = await new Promise<unknown[]>((resolve, reject) => {
+              const request = database
+                .transaction(store)
+                .objectStore(store)
+                .getAll();
+              request.onsuccess = () => resolve(request.result);
+              request.onerror = () => reject(request.error);
+            });
+            if (store === "sync") result.sync.push(...rows);
+            else
+              for (const row of rows as {
+                collection: string;
+                id: string;
+                version: number;
+                value: {
+                  collection: string;
+                  id: string;
+                  version: number;
+                  value: Record<string, unknown>;
+                };
+              }[]) {
+                if (row.collection === "$local.remoteBase")
+                  result.bases.push(row.value);
+                if (row.collection === "items" && row.id === projectId)
+                  result.heads.push({
+                    id: row.id,
+                    version: row.version,
+                    value: row.value,
+                  });
+              }
+          }
+        } finally {
+          database.close();
+        }
+      }
+      return result;
+    }, project.id);
+    const { bodyManifest } = await import(
+      "../../packages/application/src/workspace-bootstrap"
+    );
+    const mismatches = [];
+    for (const base of local.bases) {
+      const entries = canonical[base.collection];
+      const found = Array.isArray(entries)
+        ? entries.find((entry: { id: string }) => entry.id === base.id)
+        : null;
+      const remote =
+        found && ["library", "notes"].includes(base.collection)
+          ? bodyManifest(found)
+          : found;
+      if (remote && remote.version === base.version) {
+        const fields = [
+          ...new Set([
+            ...Object.keys(base.value ?? {}),
+            ...Object.keys(remote),
+          ]),
+        ].filter(
+          (field) =>
+            JSON.stringify(base.value?.[field]) !==
+            JSON.stringify(remote[field]),
+        );
+        if (fields.length)
+          mismatches.push({
+            collection: base.collection,
+            id: base.id,
+            version: base.version,
+            fields,
+          });
+      }
+    }
+    const diagnostic = JSON.stringify({
+      bases: local.bases.length,
+      url: new URL(page.url()).hash,
+      projectId: project.id,
+      heads: local.heads,
+      mismatches,
+      sync: local.sync,
+    });
+    const diagnosticPath = info.outputPath("canonical-fixture-diagnostic.json");
+    await (await import("node:fs/promises")).writeFile(
+      diagnosticPath,
+      diagnostic,
+    );
+    await info.attach("canonical-fixture-diagnostic.json", {
+      path: diagnosticPath,
+      contentType: "application/json",
+    });
+    throw failure;
+  }
   await taskScope(page, w.desk.taskWorkspace.all);
   const started = performance.now();
   await page
@@ -1268,7 +1691,7 @@ test("v2.3 task single selection Inspector Enter open and shared Atlas context p
   const row = page.locator(".task-card").filter({ has: title });
   await row.click({ position: { x: 8, y: 8 } });
   await expect(row).toHaveAttribute("tabindex", "0");
-  await expect(page.locator(".task-dialog")).toHaveCount(0);
+  await expect(page.locator(".task-editor-surface")).toHaveCount(0);
   const context = page.locator(".context-pane");
   await expect(
     context.getByRole("heading", { name: "Selected task" }),
@@ -1281,18 +1704,17 @@ test("v2.3 task single selection Inspector Enter open and shared Atlas context p
   } else {
     await row.press("Enter");
   }
-  await expect(page.locator(".task-dialog")).toBeVisible();
+  await expect(page.locator(".task-editor-surface")).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.locator(".task-dialog")).toHaveCount(0);
-  await context.getByRole("button", { name: "Atlas", exact: true }).click();
-  await expect(context.locator(".assistant-pane")).toBeVisible();
-  await expect(page.locator(".context-pane")).toHaveCount(1);
-  await context
-    .getByRole("button", { name: zh ? "详情" : "Details", exact: true })
-    .click();
+  await expect(page.locator(".task-editor-surface")).toHaveCount(0);
+  // Selection != Inspector, and Atlas is never an Inspector tab.
   await expect(
-    context.getByRole("heading", { name: "Selected task" }),
-  ).toBeVisible();
+    context.getByRole("button", { name: "Atlas", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    context.getByRole("button", { name: zh ? "详情" : "Details", exact: true }),
+  ).toHaveCount(0);
+  await expect(context.locator(".assistant-pane")).toHaveCount(0);
   await context
     .getByRole("button", {
       name: zh ? "关闭上下文" : "Close context",
@@ -1381,6 +1803,13 @@ test("project knowledge creates multiple owned spaces and links an existing spac
     }),
   ).toBeVisible();
   for (const title of ["Primary project wiki", "Architecture wiki"]) {
+    const createSpace = page.locator(".project-knowledge-list details").filter({
+      has: page.locator("summary", {
+        hasText: zh ? "新建知识空间" : "New knowledge space",
+      }),
+    });
+    if ((await createSpace.getAttribute("open")) === null)
+      await createSpace.locator("summary").click();
     await page
       .getByLabel(zh ? "知识空间名称" : "Wiki space title", { exact: true })
       .fill(title);
@@ -1469,18 +1898,18 @@ test("wiki save creates unresolved links and new pages re-resolve with backlinks
   await page
     .getByRole("button", { name: w.spaces.newSpace, exact: true })
     .click();
-  await pane(page)
-    .getByLabel(w.spaces.spaceTitle, { exact: true })
+  const spaceDialog = page.getByRole("dialog", {
+    name: zh ? "新建知识空间" : "Create knowledge space",
+    exact: true,
+  });
+  await spaceDialog
+    .getByLabel(zh ? "空间名称" : "Space name", { exact: true })
     .fill("Wiki integration");
-  await saveDocument(page, w);
-  await browseDocuments(page);
-  await page
-    .locator(".library-view")
-    .getByRole("button")
-    .filter({
-      has: page.getByRole("heading", { name: "Wiki integration", exact: true }),
-    })
-    .press("Enter");
+  await spaceDialog
+    .getByRole("button", { name: zh ? "创建" : "Create", exact: true })
+    .click();
+  await expect(spaceDialog).toHaveCount(0);
+  await expect(page.locator(".library-view h2")).toHaveText("Wiki integration");
   await page
     .getByRole("button", { name: w.spaces.newLecture, exact: true })
     .click();
@@ -1599,19 +2028,27 @@ test("project milestones are editable and appear in overview without task-count 
   workbench,
 }, info) => {
   const w = words(info.project.name);
+  const zh = info.project.name.endsWith("zh");
   await unlock(page, workbench.url, workbench.secret, w);
   const project = await mutation(page, "/api/work/create", {
     title: "Paper",
     type: "PROJECT",
     lifecycle: "ACTIVE",
   });
-  for (const title of ["Draft", "Submission", "Revision"])
-    await mutation(page, "/api/work/create", {
+  for (const title of ["Draft", "Submission", "Revision"]) {
+    const milestone = await mutation(page, "/api/work/create", {
       title,
       type: "MILESTONE",
       parentProjectId: project.id,
       dueDate: "2026-10-01",
     });
+    if (title === "Submission")
+      await mutation(page, "/api/work/update", {
+        id: milestone.id,
+        version: milestone.version,
+        input: { status: "IN_PROGRESS" },
+      });
+  }
   await page.reload();
   await page.evaluate((id) => {
     location.hash = `projects/${id}`;
@@ -1623,11 +2060,11 @@ test("project milestones are editable and appear in overview without task-count 
     .click();
   await page
     .getByRole("dialog")
-    .getByLabel(w.work.title, { exact: true })
+    .getByLabel(zh ? "里程碑名称" : "Milestone name", { exact: true })
     .fill("Accepted");
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: w.common.create, exact: true })
+    .getByRole("button", { name: zh ? "创建" : "Create", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   for (const title of ["Draft", "Submission", "Revision", "Accepted"])
@@ -1641,14 +2078,39 @@ test("project milestones are editable and appear in overview without task-count 
     .first()
     .click();
   const detail = page.getByRole("dialog");
-  await detail.getByLabel(w.work.status, { exact: true }).selectOption("DONE");
+  await detail.getByLabel(zh ? "已达成" : "Reached", { exact: true }).check();
   await detail
-    .getByRole("button", { name: w.common.save, exact: true })
+    .getByRole("button", { name: zh ? "保存" : "Save", exact: true })
     .click();
   await expect(detail).toHaveCount(0);
   await expect(
     workspace.getByRole("button", { name: /✓ Draft/ }).first(),
   ).toBeVisible();
+  await workspace
+    .getByRole("button", { name: /Submission$/ })
+    .first()
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByLabel(zh ? "成果与达成标准" : "Outcome and success criteria")
+    .fill("Reviewed outcome, retain in-progress state");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: zh ? "保存" : "Save", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const items = await page.evaluate(async () => {
+        const response = await fetch("/api/snapshot");
+        if (!response.ok) throw new Error(`Snapshot ${response.status}`);
+        return (await response.json()).items;
+      });
+      return items.find(
+        (item: { title: string }) => item.title === "Submission",
+      )?.status;
+    })
+    .toBe("IN_PROGRESS");
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: info.outputPath("milestone-overview.png"),
@@ -1885,6 +2347,7 @@ test("project workspace connects materials, children and external dependencies",
     .getByRole("button", { name: w.common.create, exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
+  await waitForLocalReplay(page);
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -2030,18 +2493,39 @@ test("project knowledge documents files and overview summaries persist", async (
   await expect(fileRow).toBeVisible();
   const downloaded = page.waitForEvent("download");
   await fileRow
-    .getByRole("button", { name: "experiment.csv", exact: true })
+    .getByRole("button", {
+      name: zh ? "文件操作：experiment.csv" : "File actions: experiment.csv",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: zh ? "下载" : "Download", exact: true })
     .click();
   expect((await downloaded).suggestedFilename()).toBe("experiment.csv");
   await fileRow
-    .getByRole("button", { name: zh ? "删除" : "Delete", exact: true })
+    .getByRole("button", {
+      name: zh ? "文件操作：experiment.csv" : "File actions: experiment.csv",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", {
+      name: zh ? "移至回收站" : "Move to Trash",
+      exact: true,
+    })
     .click();
   await expect(fileRow).toHaveCount(0);
   await page
     .getByLabel(zh ? "包含已删除资料" : "Include deleted materials")
     .check();
   await fileRow
-    .getByRole("button", { name: zh ? "恢复" : "Restore", exact: true })
+    .getByRole("button", {
+      name: zh ? "文件操作：experiment.csv" : "File actions: experiment.csv",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: zh ? "恢复" : "Restore", exact: true })
     .click();
   await expect(
     fileRow.getByRole("button", { name: "experiment.csv", exact: true }),
@@ -2068,16 +2552,225 @@ test("project knowledge documents files and overview summaries persist", async (
     path: info.outputPath("owned-project-activity.png"),
     fullPage: true,
   });
+  const fileSyncDiagnostic = await page.evaluate(async () => {
+    const result: unknown[] = [];
+    for (const database of await indexedDB.databases()) {
+      if (!database.name) continue;
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(database.name!);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        if (!db.objectStoreNames.contains("outbox")) continue;
+        const rows = await new Promise<{ entityType?: string }[]>(
+          (resolve, reject) => {
+            const request = db
+              .transaction("outbox")
+              .objectStore("outbox")
+              .getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          },
+        );
+        result.push(...rows.filter((row) => row.entityType === "files"));
+      } finally {
+        db.close();
+      }
+    }
+    return result;
+  });
+  writeFileSync(
+    info.outputPath("project-file-outbox.json"),
+    JSON.stringify(fileSyncDiagnostic, null, 2),
+  );
+  await expect
+    .poll(
+      async () => {
+        const current = await (
+          await page.request.get(workbench.url + "/api/snapshot")
+        ).json();
+        return current.files.find(
+          (entry: { name: string }) => entry.name === "experiment.csv",
+        )?.deletedAt;
+      },
+      {
+        message: "restored local File durably replayed to the bound workspace",
+      },
+    )
+    .toBe(null);
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
-  expect(snapshot.projectMaterials).toHaveLength(3);
+  expect(snapshot.projectMaterials).toHaveLength(2);
+  expect(
+    snapshot.projectMaterials.some(
+      (entry: { kind: string }) => entry.kind === "FILE",
+    ),
+  ).toBe(false);
+  const uploaded = snapshot.files.find(
+    (entry: { name: string }) => entry.name === "experiment.csv",
+  );
+  expect(uploaded).toEqual(
+    expect.objectContaining({
+      name: "experiment.csv",
+      deletedAt: null,
+      size: Buffer.byteLength("name,value\nsample,42\n"),
+    }),
+  );
+  expect(snapshot.links).toContainEqual(
+    expect.objectContaining({
+      from: { kind: "WORK", id: project.id },
+      to: { kind: "FILE", id: uploaded.id },
+      relation: "REFERENCES",
+    }),
+  );
   expect(snapshot.items).toHaveLength(2);
   expect(
     snapshot.library.find(
       (entry: { title: string }) => entry.title === "Owned research note",
     ).bodyMd,
   ).toBe("# Original\n- [ ] preserve as prose");
+});
+
+test("legacy Project original migrates once to the same first-class File identity and survives offline reload", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Legacy originals",
+  });
+  const original = Buffer.from([0, 128, 255, 10, 13, 0]);
+  const legacy = await mutation(page, "/api/projects/upload", {
+    projectId: project.id,
+    name: "Legacy original.bin",
+    mime: "application/octet-stream",
+    base64: original.toString("base64"),
+  });
+  await page.goto(workbench.url + `/#projects/${project.id}?tab=knowledge`);
+  await expect(page.locator(".project-workspace h1")).toHaveText(
+    "Legacy originals",
+  );
+  const legacyRow = page
+    .locator(".project-material")
+    .filter({ hasText: "Legacy original.bin" });
+  await expect(legacyRow).toBeVisible();
+  await prepareOfflineShell(page);
+  await page.context().setOffline(true);
+  await legacyRow
+    .getByRole("button", {
+      name: zh
+        ? "更多操作：Legacy original.bin"
+        : "More actions: Legacy original.bin",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", {
+      name: zh ? "移至回收站" : "Move to Trash",
+      exact: true,
+    })
+    .click();
+  await expect(legacyRow).toHaveCount(0);
+  await page
+    .getByLabel(zh ? "包含已删除资料" : "Include deleted materials")
+    .check();
+  await legacyRow
+    .getByRole("button", { name: zh ? "恢复" : "Restore", exact: true })
+    .click();
+  await expect(legacyRow).toBeVisible();
+  await page.reload();
+  await expect(legacyRow).toBeVisible();
+  await page.context().setOffline(false);
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.projectMaterials.find(
+        (entry: { id: string }) => entry.id === legacy.id,
+      )?.version;
+    })
+    .toBe(3);
+  const firstDownload = page.waitForEvent("download");
+  await legacyRow
+    .getByRole("button", {
+      name: zh
+        ? "更多操作：Legacy original.bin"
+        : "More actions: Legacy original.bin",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: zh ? "下载" : "Download", exact: true })
+    .click();
+  const firstDownloaded = await firstDownload;
+  expect(await readFile((await firstDownloaded.path())!)).toEqual(original);
+  const fileRow = page.locator(`.project-file[data-file-id="${legacy.id}"]`);
+  await expect(fileRow).toBeVisible();
+  await expect(legacyRow).toHaveCount(1);
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.files.find(
+        (file: { id: string }) => file.id === legacy.id,
+      )?.contentHash;
+    })
+    .toBe(createHash("sha256").update(original).digest("hex"));
+  await prepareOfflineShell(page);
+  await page.context().setOffline(true);
+  await page.reload();
+  await expect(fileRow).toBeVisible();
+  const offlineDownload = page.waitForEvent("download");
+  await fileRow
+    .getByRole("button", {
+      name: zh
+        ? "文件操作：Legacy original.bin"
+        : "File actions: Legacy original.bin",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: zh ? "下载" : "Download", exact: true })
+    .click();
+  const downloaded = await offlineDownload;
+  expect(await readFile((await downloaded.path())!)).toEqual(original);
+  await page.screenshot({
+    path: info.outputPath("legacy-file-offline.png"),
+    fullPage: true,
+  });
+  await fileRow
+    .getByRole("button", { name: "Legacy original.bin", exact: true })
+    .click();
+  await expect(page.locator(".file-detail")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`file=${legacy.id}`));
+  await page.screenshot({
+    path: info.outputPath("legacy-file-detail-offline.png"),
+    fullPage: true,
+  });
+  await page.context().setOffline(false);
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.files.filter((file: { id: string }) => file.id === legacy.id),
+  ).toHaveLength(1);
+  expect(
+    snapshot.projectMaterials.find(
+      (entry: { id: string }) => entry.id === legacy.id,
+    ),
+  ).toMatchObject({
+    ...legacy,
+    version: 3,
+    updatedAt: expect.any(String),
+    updatedBy: expect.any(String),
+  });
 });
 
 test("navigation collapses independently on desktop and mobile", async ({
@@ -2628,7 +3321,11 @@ test("2.1 Provider catalog routing Explicit Space Project Personal and Unlimited
     })
     .click();
   await atlas
-    .locator(".space-picker")
+    .locator(".space-picker .hierarchy-selected > button")
+    .last()
+    .click();
+  await page
+    .locator(".hierarchy-browser")
     .getByRole("button", { name: "Routing Space", exact: true })
     .click();
   await atlas
@@ -2716,6 +3413,7 @@ test("reviewed plan and recurrence publish real tasks without duplication", asyn
   await expect(
     plans.getByRole("button", { name: w.desk.workflows.publish, exact: true }),
   ).toHaveCount(0);
+  await waitForLocalReplay(page);
   state = await page.evaluate(async () =>
     (await fetch("/api/snapshot")).json(),
   );
@@ -2723,11 +3421,17 @@ test("reviewed plan and recurrence publish real tasks without duplication", asyn
   expect(state.edges).toHaveLength(1);
   await nav(page, w.desk.tasks);
   await expect(page.locator(".recurrence-manager")).toHaveCount(0);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   const repeatEditor = page.getByRole("dialog").first();
   await repeatEditor
     .getByLabel(w.work.title, { exact: true })
     .fill("Daily review");
+  await repeatEditor
+    .getByRole("button", {
+      name: /^(\+ 更多设置|\+ More settings)$/,
+      exact: true,
+    })
+    .click();
   await repeatEditor.locator(".task-advanced summary").click();
   await repeatEditor
     .getByLabel(info.project.name.endsWith("zh") ? "重复" : "Repeat", {
@@ -2735,10 +3439,29 @@ test("reviewed plan and recurrence publish real tasks without duplication", asyn
     })
     .selectOption("DAILY");
   await repeatEditor
-    .getByLabel(info.project.name.endsWith("zh") ? "时区" : "Timezone", {
+    .getByText(
+      info.project.name.endsWith("zh")
+        ? "高级重复设置"
+        : "Advanced recurrence settings",
+      { exact: true },
+    )
+    .click();
+  await repeatEditor
+    .getByRole("button", {
+      name: info.project.name.endsWith("zh") ? "时区" : "Timezone",
       exact: true,
     })
-    .fill("UTC");
+    .click();
+  const utcLabel = await page.evaluate(
+    () =>
+      new Intl.DateTimeFormat(document.documentElement.lang || "en-US", {
+        timeZone: "UTC",
+        timeZoneName: "longGeneric",
+      })
+        .formatToParts(new Date("2026-01-15T12:00:00Z"))
+        .find((part) => part.type === "timeZoneName")!.value,
+  );
+  await page.getByRole("option", { name: utcLabel, exact: true }).click();
   await chooseDate(
     page,
     repeatEditor.getByRole("button", {
@@ -2813,7 +3536,7 @@ test("AI context permission defaults deny and persists explicit human edits", as
     .press("Enter");
   await documentAction(page, zh ? "AI 权限" : "AI permissions");
   await pane(page)
-    .getByText(zh ? "AI 数据许可 · DENY" : "AI data permission · DENY", {
+    .getByText(zh ? "AI 数据许可 · 禁止" : "AI data permission · Denied", {
       exact: true,
     })
     .click();
@@ -2854,7 +3577,13 @@ test("AI context permission defaults deny and persists explicit human edits", as
     .filter({ hasText: "Permission test" })
     .press("Enter");
   await documentAction(page, zh ? "AI 权限" : "AI permissions");
-  await expect(pane(page).getByText(/AI.*ASK/)).toBeVisible();
+  await pane(page)
+    .getByText(
+      zh ? "AI 数据许可 · 逐次询问" : "AI data permission · Ask each time",
+      { exact: true },
+    )
+    .click();
+  await expect(access).toHaveValue("ASK");
 });
 
 test("project category management persists, filters and restores", async ({
@@ -2894,20 +3623,21 @@ test("project category management persists, filters and restores", async ({
     .fill("Research");
   await page.getByLabel(iconLabel, { exact: true }).fill("🔬");
   await page.getByLabel(colorLabel, { exact: true }).fill("#123456");
-  await page.getByLabel(positionLabel, { exact: true }).fill("9");
+  await expect(page.getByLabel(positionLabel, { exact: true })).toHaveCount(0);
   await page
     .getByRole("button", { name: w.desk.categories.save, exact: true })
     .click();
   await expect(
     page.getByLabel(w.desk.categories.name, { exact: true }),
   ).toHaveValue("");
+  await waitForLocalReplay(page);
   const snapshot = await page.evaluate(async () =>
     (await fetch("/api/snapshot")).json(),
   );
   expect(snapshot.categories[0]).toMatchObject({
     icon: "🔬",
     color: "#123456",
-    position: 9,
+    position: 0,
   });
   await mutation(page, "/api/work/update", {
     id: categorizedProject.id,
@@ -2938,7 +3668,7 @@ test("project category management persists, filters and restores", async ({
   await expect(page.getByLabel(iconLabel, { exact: true })).toHaveValue("🔬");
   await page.getByLabel(iconLabel, { exact: true }).fill("📚");
   await page.getByLabel(colorLabel, { exact: true }).fill("#abcdef");
-  await page.getByLabel(positionLabel, { exact: true }).fill("2");
+  await expect(page.getByLabel(positionLabel, { exact: true })).toHaveCount(0);
   await page
     .getByRole("button", { name: w.desk.categories.save, exact: true })
     .click();
@@ -2966,6 +3696,13 @@ test("project category management persists, filters and restores", async ({
   await page
     .getByRole("button", { name: w.desk.categories.restore, exact: true })
     .click();
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(workbench.url + "/api/snapshot");
+      return (await response.json()).categories[0];
+    })
+    .toMatchObject({ version: 4, deletedAt: null });
+  await waitForLocalReplay(page);
   await page.reload();
   const restored = await page.evaluate(async () =>
     (await fetch("/api/snapshot")).json(),
@@ -2974,7 +3711,7 @@ test("project category management persists, filters and restores", async ({
     version: 4,
     icon: "📚",
     color: "#abcdef",
-    position: 2,
+    position: 0,
     deletedAt: null,
   });
   await mutation(page, "/api/categories/save", {
@@ -2995,10 +3732,29 @@ test("project category management persists, filters and restores", async ({
   await page
     .getByRole("menuitem", { name: w.desk.categories.manage, exact: true })
     .click();
+  await page
+    .getByRole("button", {
+      name: (chinese ? "调整顺序：" : "Reorder: ") + "First category",
+      exact: true,
+    })
+    .press("Alt+ArrowUp");
   await expect(page.locator(".category-manager li").first()).toContainText(
     "First category",
   );
   await expect(page.locator(".category-manager li").nth(1)).toContainText("📚");
+  await waitForLocalReplay(page);
+  const reordered = await page.evaluate(async () =>
+    (await fetch("/api/snapshot")).json(),
+  );
+  expect(
+    reordered.categories.map((category: { name: string; position: number }) => [
+      category.name,
+      category.position,
+    ]),
+  ).toEqual([
+    ["First category", 1024],
+    ["Research", 2048],
+  ]);
   await page
     .getByRole("dialog")
     .getByRole("button", { name: w.common.close, exact: true })
@@ -3077,6 +3833,7 @@ test("multiple project task authoring persists across reload", async ({
     .getByRole("button", { name: w.common.create, exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
+  await waitForLocalReplay(page);
   await page.reload();
   const snapshot = await page.evaluate(async () =>
     (await fetch("/api/snapshot")).json(),
@@ -3099,15 +3856,7 @@ test("work planning: activation and nested project authoring", async ({
   workbench,
 }, info) => {
   const w = words(info.project.name);
-  await page.goto(workbench.url);
-  await page
-    .getByLabel(w.spaces.username, { exact: true })
-    .fill("image-editor");
-  await page
-    .getByLabel(w.spaces.password, { exact: true })
-    .fill(workbench.secret);
-  await page.getByRole("button", { name: w.desk.enter, exact: true }).click();
-  await expect(page.locator(".app-shell")).toBeVisible();
+  await unlock(page, workbench.url, workbench.secret, w);
   await page.goto(workbench.url + "/#projects");
   await page.getByRole("button", { name: w.desk.newProject }).first().click();
   const dialog = page.getByRole("dialog");
@@ -3127,6 +3876,7 @@ test("work planning: activation and nested project authoring", async ({
     .getByRole("button", { name: w.desk.createProject, exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
+  await waitForLocalReplay(page);
   const session = await request.post(workbench.url + "/api/session", {
     data: { username: "image-editor", password: workbench.secret },
     headers: { Origin: workbench.url },
@@ -3236,14 +3986,7 @@ test("account experience: revoke, switch, isolate and forget shortcuts", async (
   workbench,
 }, info) => {
   const w = words(info.project.name);
-  await page.goto(workbench.url);
-  await page
-    .getByLabel(w.spaces.username, { exact: true })
-    .fill("image-editor");
-  await page
-    .getByLabel(w.spaces.password, { exact: true })
-    .fill(workbench.secret);
-  await page.getByRole("button", { name: w.desk.enter, exact: true }).click();
+  await unlock(page, workbench.url, workbench.secret, w);
   await expect(page.locator(".app-shell")).toBeVisible();
   const external = await request.post(workbench.url + "/api/session", {
     data: { username: "image-editor", password: workbench.secret },
@@ -3291,18 +4034,23 @@ test("account experience: revoke, switch, isolate and forget shortcuts", async (
     .getByRole("button", { name: w.spaces.switchAccount, exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: w.spaces.login, exact: true }),
+    page.getByLabel(w.spaces.username, { exact: true }),
   ).toBeVisible();
   await page.getByLabel(w.spaces.username, { exact: true }).fill("second-user");
   await page
     .getByLabel(w.spaces.password, { exact: true })
     .fill(workbench.secret);
-  await page.getByRole("button", { name: w.desk.enter, exact: true }).click();
+  await page
+    .getByRole("button", {
+      name: /^(Sign in and review options|登录并查看选项)$/,
+      exact: true,
+    })
+    .click();
   await expect(
-    page.getByRole("heading", { name: "second-user", exact: true }),
+    page.getByText("second-user", { exact: true }).first(),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "image-editor", exact: true }),
+    page.locator(".account-panel").getByText("image-editor", { exact: true }),
   ).toHaveCount(0);
   const confirmation1 = answerConfirmation(page, true);
   await page
@@ -3310,7 +4058,7 @@ test("account experience: revoke, switch, isolate and forget shortcuts", async (
     .click();
   await confirmation1;
   await expect(
-    page.getByRole("heading", { name: w.spaces.login, exact: true }),
+    page.getByLabel(w.spaces.username, { exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "image-editor", exact: true }).click();
   await expect(page.getByLabel(w.spaces.username, { exact: true })).toHaveValue(
@@ -3321,7 +4069,7 @@ test("account experience: revoke, switch, isolate and forget shortcuts", async (
   );
   await page
     .getByRole("button", {
-      name: w.spaces.forgetAccount + " image-editor",
+      name: /^(Forget account|忘记账户) image-editor$/,
       exact: true,
     })
     .click();
@@ -3344,16 +4092,21 @@ test("login feedback: invalid origin, credentials, forbidden, rate limit and dea
       body: JSON.stringify({ error: "UNAUTHORIZED" }),
     });
   });
-  await page.goto(workbench.url);
+  await page.goto(workbench.url + "/#account");
   await page.getByLabel(w.spaces.username, { exact: true }).fill("test-user");
   await page
     .getByLabel(w.spaces.password, { exact: true })
     .fill("wrong-password");
-  const server = page.getByLabel(w.spaces.server, { exact: true });
-  const enter = page.getByRole("button", { name: w.desk.enter, exact: true });
+  const server = page.getByLabel(/^(Server|服务器)$/, { exact: true });
+  const enter = page.getByRole("button", {
+    name: /^(Sign in and review options|登录并查看选项)$/,
+    exact: true,
+  });
   await server.fill("https://example.com/path");
   await enter.click();
-  await expect(page.getByRole("alert")).toHaveText(w.desk.loginInvalidServer);
+  await expect(page.getByRole("alert").locator("p")).toHaveText(
+    w.desk.loginInvalidServer,
+  );
   await expect(enter).toBeEnabled();
   await server.fill(workbench.url);
   for (const [code, message] of [
@@ -3363,19 +4116,24 @@ test("login feedback: invalid origin, credentials, forbidden, rate limit and dea
   ] as const) {
     status = code;
     await enter.click();
-    await expect(page.getByRole("alert")).toHaveText(message);
+    await expect(page.getByRole("alert").locator("p")).toHaveText(message);
     await expect(enter).toBeEnabled();
   }
   status = 200;
   await enter.click();
-  await expect(page.getByRole("alert")).toHaveText(w.desk.loginInvalidResponse);
+  await expect(page.getByRole("alert").locator("p")).toHaveText(
+    w.desk.loginInvalidResponse,
+  );
   hang = true;
   await enter.click();
   await expect(page.getByRole("status")).toHaveText(w.desk.loginDeadline);
   await expect(server).toBeDisabled();
-  await expect(page.getByRole("alert")).toHaveText(w.desk.loginTimeout, {
-    timeout: 11000,
-  });
+  await expect(page.getByRole("alert").locator("p")).toHaveText(
+    w.desk.loginTimeout,
+    {
+      timeout: 11000,
+    },
+  );
   await expect(enter).toBeEnabled();
   await page.screenshot({
     path: info.outputPath("login-feedback.png"),
@@ -3404,7 +4162,8 @@ test("native session restoration after restart and expired session", async ({
             return "prompt";
           if (
             command === "notification_reconcile" ||
-            command === "notification_cancel"
+            command === "notification_cancel" ||
+            command === "notification_take_route"
           )
             return;
           if (command === "configure_server") return;
@@ -3436,14 +4195,7 @@ test("native session restoration after restart and expired session", async ({
       },
     });
   });
-  await page.goto(workbench.url);
-  await page
-    .getByLabel(w.spaces.username, { exact: true })
-    .fill("image-editor");
-  await page
-    .getByLabel(w.spaces.password, { exact: true })
-    .fill(workbench.secret);
-  await page.getByRole("button", { name: w.desk.enter, exact: true }).click();
+  await unlock(page, workbench.url, workbench.secret, w);
   await expect(page.locator(".login-form")).toHaveCount(0);
   await page.reload();
   await expect(page.locator(".login-form")).toHaveCount(0);
@@ -3454,7 +4206,13 @@ test("native session restoration after restart and expired session", async ({
   });
   await page.context().clearCookies();
   await page.reload();
-  await expect(page.locator(".login-form")).toBeVisible();
+  await page.goto(workbench.url + "/#account");
+  await expect(
+    page.getByLabel(w.spaces.username, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(w.spaces.currentSession, { exact: true }),
+  ).toHaveCount(0);
 });
 
 test("native updater UI: check, consent, progress, failure and retry", async ({
@@ -3498,7 +4256,7 @@ test("native updater UI: check, consent, progress, failure and retry", async ({
       },
     });
   });
-  await page.goto(workbench.url);
+  await page.goto(workbench.url + "/#settings");
   const panel = page.getByRole("region", { name: w.settings.updateTitle });
   await panel.getByRole("button", { name: w.settings.updateCheck }).click();
   await expect(panel.getByRole("status")).toHaveText(
@@ -3545,13 +4303,829 @@ test("native updater UI: check, consent, progress, failure and retry", async ({
 });
 
 test("web browser has no native updater", async ({ page, workbench }, info) => {
-  await page.goto(workbench.url);
+  await page.goto(workbench.url + "/#settings");
   await expect(
     page.getByRole("region", {
       name: words(info.project.name).settings.updateTitle,
     }),
   ).toHaveCount(0);
 });
+test("Delta Space and Milestone creation use their own entity fields", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Delta entity project",
+  });
+  await page.reload();
+  await nav(page, w.spaces.library);
+  await page
+    .getByRole("button", { name: w.spaces.newSpace, exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: zh ? "新建知识空间" : "Create knowledge space",
+    exact: true,
+  });
+  await expect(dialog.locator(".cm-editor")).toHaveCount(0);
+  await expect(
+    dialog.getByLabel(w.desk.noteTitle, { exact: true }),
+  ).toHaveCount(0);
+  await dialog
+    .getByLabel(zh ? "空间名称" : "Space name", { exact: true })
+    .fill("Delta compact space");
+  await dialog
+    .getByLabel(zh ? "描述（可选）" : "Description (optional)", { exact: true })
+    .fill("Container description");
+  await dialog
+    .getByRole("button", { name: zh ? "创建" : "Create", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".library-view h2")).toHaveText(
+    "Delta compact space",
+  );
+  await expect(page.locator(".document-pane:visible")).toHaveCount(0);
+  await nav(page, w.desk.projects);
+  await page
+    .getByRole("button", { name: project.title, exact: true })
+    .press("Enter");
+  await projectAction(page, w.desk.newMilestone);
+  const milestone = page.getByRole("dialog", {
+    name: zh ? "新建里程碑" : "New milestone",
+    exact: true,
+  });
+  await milestone
+    .getByLabel(zh ? "里程碑名称" : "Milestone name", { exact: true })
+    .fill("Delta distinct outcome");
+  await milestone
+    .getByLabel(zh ? "成果与达成标准" : "Outcome and success criteria", {
+      exact: true,
+    })
+    .fill("Outcome preserved");
+  await expect(milestone.locator(".task-editor-surface")).toHaveCount(0);
+  await expect(
+    milestone.getByRole("button", { name: /重复|Repeat|Activation/ }),
+  ).toHaveCount(0);
+  await milestone
+    .getByRole("button", { name: zh ? "创建" : "Create", exact: true })
+    .click();
+  await expect(milestone).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        (
+          await (await page.request.get(workbench.url + "/api/snapshot")).json()
+        ).items.find(
+          (item: { title: string }) => item.title === "Delta distinct outcome",
+        )?.type,
+    )
+    .toBe("MILESTONE");
+  await page.screenshot({
+    path: info.outputPath("delta-entity-creation.png"),
+    fullPage: true,
+  });
+  await nav(page, w.desk.journal);
+  await page.locator(".page-header .compact-create").click();
+  await expect(
+    pane(page).getByLabel(zh ? "日记标题" : "Journal title", { exact: true }),
+  ).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+  await expect(
+    pane(page).getByLabel(w.desk.noteTitle, { exact: true }),
+  ).toHaveCount(0);
+  await documentMode(page, zh ? "源码" : "Source");
+  await pane(page)
+    .getByLabel(w.desk.noteBody, { exact: true })
+    .fill("Delta date-bound journal");
+  await saveDocument(page, w);
+  await expect
+    .poll(
+      async () =>
+        (
+          await (await page.request.get(workbench.url + "/api/snapshot")).json()
+        ).notes.find(
+          (note: { bodyMd: string }) =>
+            note.bodyMd === "Delta date-bound journal",
+        )?.kind,
+    )
+    .toBe("JOURNAL");
+});
+
+test("Delta unbound device can paste and reload images without login or network", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await page.goto(workbench.url + "/#notes");
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller)
+      await new Promise<void>((resolve) =>
+        navigator.serviceWorker.addEventListener(
+          "controllerchange",
+          () => resolve(),
+          { once: true },
+        ),
+      );
+  });
+  await page.reload();
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.context().setOffline(true);
+  await page.locator(".page-header .compact-create").click();
+  await pane(page)
+    .getByLabel(w.desk.noteTitle, { exact: true })
+    .fill("Unbound image original");
+  await documentMode(page, zh ? "源码" : "Source");
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXs8AAAAASUVORK5CYII=";
+  const editor = pane(page).getByLabel(w.desk.noteBody, { exact: true });
+  await editor.focus();
+  await editor.evaluate((element, png) => {
+    const data = new DataTransfer();
+    data.items.add(
+      new File(
+        [Uint8Array.from(atob(png), (char) => char.charCodeAt(0))],
+        "unbound.png",
+        { type: "image/png" },
+      ),
+    );
+    element.dispatchEvent(
+      new ClipboardEvent("paste", {
+        clipboardData: data,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }, png);
+  await expect(editor).toContainText("/api/v1/files/bytes?id=");
+  await saveDocument(page, w);
+  await expect(pane(page).locator('[data-locally-saved="true"]')).toHaveText(
+    zh ? "已保存到本机 · 离线" : "Saved on this device · Offline",
+  );
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await page
+    .locator(".note-card")
+    .filter({ hasText: "Unbound image original" })
+    .press("Enter");
+  await documentMode(page, w.desk.read);
+  await expect(pane(page).locator(".document-reading img")).toHaveJSProperty(
+    "naturalWidth",
+    1,
+  );
+  await expect(
+    page.getByRole("textbox", { name: w.spaces.username, exact: true }),
+  ).toHaveCount(0);
+  expect(await page.evaluate(() => navigator.onLine)).toBe(false);
+  const cached = await page.evaluate(async () =>
+    (
+      await Promise.all(
+        (
+          await caches.keys()
+        ).map(async (key) =>
+          (
+            await (await caches.open(key)).keys()
+          ).map((request) => new URL(request.url).pathname),
+        ),
+      )
+    ).flat(),
+  );
+  expect(cached.some((path) => path.startsWith("/api/"))).toBe(false);
+  await page.context().setOffline(false);
+});
+
+test("Delta Save reports local durable failure and Ctrl S recovers offline without login", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await page.goto(workbench.url + "/#notes");
+  await prepareOfflineShell(page);
+  await page.context().setOffline(true);
+  await page.locator(".page-header .compact-create").click();
+  await pane(page)
+    .getByLabel(w.desk.noteTitle, { exact: true })
+    .fill("Durable save recovery");
+  await documentMode(page, zh ? "源码" : "Source");
+  const editor = pane(page).getByLabel(w.desk.noteBody, { exact: true });
+  await editor.fill("Original locally saved body");
+  await saveDocument(page, w);
+  await page.evaluate(() => {
+    const original = IDBObjectStore.prototype.put;
+    Object.assign(window, {
+      restoreDocumentPut: () => {
+        IDBObjectStore.prototype.put = original;
+      },
+    });
+    IDBObjectStore.prototype.put = function () {
+      throw new DOMException("Test durable device full", "QuotaExceededError");
+    };
+  });
+  await editor.fill("Edited body survives failed durable flush");
+  await editor.press("Control+s");
+  const status = pane(page).locator(".document-toolbar [role=status]");
+  await expect(status).toHaveText(zh ? "保存失败" : "Save failed");
+  await expect(status).toHaveAttribute("data-locally-saved", "false");
+  await expect(editor).toContainText(
+    "Edited body survives failed durable flush",
+  );
+  await page.evaluate(() =>
+    (window as unknown as { restoreDocumentPut(): void }).restoreDocumentPut(),
+  );
+  await saveDocument(page, w);
+  await expect(status).toHaveText(
+    zh ? "已保存到本机 · 离线" : "Saved on this device · Offline",
+  );
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await page
+    .locator(".note-card")
+    .filter({ hasText: "Durable save recovery" })
+    .press("Enter");
+  await documentMode(page, zh ? "源码" : "Source");
+  await expect(
+    pane(page).getByLabel(w.desk.noteBody, { exact: true }),
+  ).toContainText("Edited body survives failed durable flush");
+  expect(await page.evaluate(() => navigator.onLine)).toBe(false);
+  await page.context().setOffline(false);
+});
+
+test("Delta completed project visibility stays independent from archive and active children", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const parent = await mutation(page, "/api/work/create", {
+    title: "Completed branch",
+    type: "PROJECT",
+    lifecycle: "COMPLETED",
+  });
+  const child = await mutation(page, "/api/work/create", {
+    title: "Active child survives filter",
+    type: "PROJECT",
+    parentProjectId: parent.id,
+    lifecycle: "ACTIVE",
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  const options = page.getByRole("button", {
+    name: zh ? "项目列表选项" : "Project list options",
+    exact: true,
+  });
+  await expect(
+    page.locator(".project-card").filter({ hasText: parent.title }),
+  ).toBeVisible();
+  await options.click();
+  await page
+    .getByRole("menuitem", {
+      name: zh ? "隐藏已完成项目" : "Hide completed projects",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.locator(".project-card").filter({ hasText: parent.title }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(".project-card").filter({ hasText: child.title }),
+  ).toBeVisible();
+  await options.click();
+  await page
+    .getByRole("menuitem", {
+      name: zh ? "显示已完成项目" : "Show completed projects",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.locator(".project-card").filter({ hasText: parent.title }),
+  ).toBeVisible();
+  await page.evaluate((id) => {
+    location.hash = `graph/project/${id}?mode=structure&view=tree`;
+  }, parent.id);
+  await expect(page.locator(".graph-workspace")).toContainText(parent.title);
+  await expect(page.locator(".project-structure-tree")).toContainText(
+    child.title,
+  );
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.items.find((item: { id: string }) => item.id === parent.id),
+  ).toEqual(parent);
+  expect(
+    snapshot.items.find((item: { id: string }) => item.id === child.id),
+  ).toEqual(child);
+});
+
+test("Delta project overflow menu flips at the edge and separates destructive action", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Delta project menu",
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  const anchor = page.getByRole("button", {
+    name: (zh ? "项目操作：" : "Project actions: ") + "Delta project menu",
+    exact: true,
+  });
+  await anchor.click();
+  const menu = page
+    .locator(".ui-popover")
+    .filter({ has: page.getByRole("menuitem") });
+  await expect(menu).toBeVisible();
+  const bounds = await menu.boundingBox(),
+    source = await anchor.boundingBox();
+  expect(bounds!.width).toBeGreaterThanOrEqual(180);
+  expect(bounds!.x).toBeGreaterThanOrEqual(8);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(
+    page.viewportSize()!.width - 7,
+  );
+  expect(bounds!.x).toBeLessThan(source!.x);
+  expect(
+    await menu
+      .getByRole("menuitem")
+      .evaluateAll((items) =>
+        items.every((item) => getComputedStyle(item).whiteSpace === "nowrap"),
+      ),
+  ).toBe(true);
+  await expect(menu.locator(".ui-menu-item-danger")).toHaveCount(1);
+  expect(
+    await menu.locator(".ui-menu-item-danger").evaluate((item) => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--danger)";
+      item.append(probe);
+      const expected = getComputedStyle(probe).color;
+      probe.remove();
+      return getComputedStyle(item).color === expected;
+    }),
+  ).toBe(true);
+  await expect(menu.getByRole("separator")).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("delta-project-menu-edge.png"),
+    fullPage: true,
+  });
+  await menu.getByRole("menuitem").first().press("End");
+  await expect(menu.locator(".ui-menu-item-danger")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+});
+
+test("Delta workspace tab stress matrix remains a single row with reachable active tabs", async ({
+  page,
+  workbench,
+}, info) => {
+  test.setTimeout(120000);
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  for (let index = 0; index < 20; index++)
+    await mutation(page, "/api/note/save", {
+      id: null,
+      version: 0,
+      input: {
+        title:
+          index < 2
+            ? "Untitled"
+            : zh
+              ? `长标题文档用于检查工作台标签不能逐字换行 ${index} 完整内容`
+              : `Long document title for single line workspace tab truncation ${index}`,
+        kind: "NOTE",
+        day: null,
+        bodyMd: `Independent body ${index}\n中文正文使用无衬线字体。`,
+      },
+    });
+  await page.reload();
+  await nav(page, w.desk.notes);
+  for (let index = 0; index < 20; index++) {
+    const expectedTitle = await page
+      .locator(".note-card")
+      .nth(index)
+      .locator("h3")
+      .first()
+      .innerText();
+    await page.locator(".note-card").nth(index).press("Enter");
+    await expect(page.locator(".document-tabs .document-tab")).toHaveCount(
+      index + 1,
+    );
+    await expect(pane(page).locator(".document-title")).toHaveValue(
+      expectedTitle,
+    );
+    await expect(
+      page.locator('.document-tabs [role="tab"][aria-selected="true"]'),
+    ).toHaveText(expectedTitle);
+    if ([1, 5, 10, 20].includes(index + 1)) {
+      for (const width of info.project.name.startsWith("mobile")
+        ? [390, 430]
+        : [1024, 1280, 1440, 1920]) {
+        await page.setViewportSize({
+          width,
+          height:
+            width < 500
+              ? 844
+              : width === 1024
+                ? 768
+                : width === 1280
+                  ? 800
+                  : width === 1920
+                    ? 1080
+                    : 900,
+        });
+        await page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() => resolve()),
+            ),
+        );
+        const geometry = await page
+          .locator(".document-tabs")
+          .evaluate((strip) => {
+            const bounds = strip.getBoundingClientRect();
+            const tabs = [
+              ...strip.querySelectorAll<HTMLElement>(".document-tab"),
+            ];
+            const selected = strip
+              .querySelector<HTMLElement>('[aria-selected="true"]')!
+              .getBoundingClientRect();
+            return {
+              height: bounds.height,
+              tops: tabs.map((tab) => tab.offsetTop),
+              activeVisible:
+                selected.width >= 60 &&
+                selected.left >= bounds.left - 1 &&
+                selected.right <= bounds.right + 1,
+              nowrap: tabs.every(
+                (tab) => getComputedStyle(tab).whiteSpace === "nowrap",
+              ),
+              ellipsis: tabs.every((tab) => {
+                const label = tab.querySelector<HTMLElement>(
+                  ".document-tab-label",
+                )!;
+                return (
+                  getComputedStyle(label).textOverflow === "ellipsis" &&
+                  label.clientWidth <= tab.clientWidth
+                );
+              }),
+              viewportFits: document.documentElement.scrollWidth <= innerWidth,
+            };
+          });
+        expect(geometry.height).toBeLessThanOrEqual(width < 500 ? 46 : 38);
+        expect(new Set(geometry.tops).size).toBe(1);
+        expect(geometry.nowrap).toBe(true);
+        expect(geometry.ellipsis).toBe(true);
+        expect(geometry.activeVisible).toBe(true);
+        expect(geometry.viewportFits).toBe(true);
+        for (const theme of ["light", "dark"]) {
+          await page.evaluate(
+            (value) =>
+              document.documentElement.setAttribute("data-theme", value),
+            theme,
+          );
+          const beforePaint = await page
+            .locator('.document-tabs [aria-selected="true"]')
+            .evaluate((tab) => ({
+              right: tab.getBoundingClientRect().right,
+              scroll: tab.closest(".document-tabs")!.scrollLeft,
+            }));
+          await page.screenshot({
+            path: info.outputPath(
+              `delta-tabs-${index + 1}-${width}-${theme}.png`,
+            ),
+            // Preserve the specified viewport. Full-page capture temporarily
+            // changes viewport geometry and can scroll the horizontal tab strip.
+            fullPage: false,
+          });
+          const painted = await page
+            .locator('.document-tabs [role="tab"][aria-selected="true"]')
+            .evaluate((tab) => {
+              const item = tab.getBoundingClientRect();
+              const strip = tab
+                .closest(".document-tabs")!
+                .getBoundingClientRect();
+              return {
+                title: tab.textContent,
+                left: item.left,
+                right: item.right,
+                stripLeft: strip.left,
+                stripRight: strip.right,
+                width: item.width,
+                scrollLeft: tab.closest(".document-tabs")!.scrollLeft,
+                scrollWidth: tab.closest(".document-tabs")!.scrollWidth,
+                parent: {
+                  left: tab.parentElement!.getBoundingClientRect().left,
+                  right: tab.parentElement!.getBoundingClientRect().right,
+                },
+              };
+            });
+          expect(painted.title).toBe(expectedTitle);
+          expect(painted.width).toBeGreaterThanOrEqual(60);
+          expect(painted.left).toBeGreaterThanOrEqual(painted.stripLeft - 1);
+          expect(painted.right).toBeLessThanOrEqual(painted.stripRight + 1);
+          writeFileSync(
+            info.outputPath(`delta-tabs-${index + 1}-${width}-${theme}.json`),
+            JSON.stringify({ beforePaint, painted }),
+          );
+        }
+      }
+    }
+    await browseDocuments(page);
+  }
+  expect(
+    await page.getByRole("tab", { name: "Untitled", exact: true }).count(),
+  ).toBe(2);
+});
+
+test("Delta untitled documents autosave independently offline and sync without synthetic titles", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "SPACE",
+      spaceId: null,
+      title: "Delta untitled home",
+      bodyMd: "",
+    },
+  });
+  await page.reload();
+  await nav(page, w.spaces.library);
+  await page
+    .locator(".space-card")
+    .filter({ hasText: "Delta untitled home" })
+    .click();
+  await prepareOfflineShell(page);
+  await page.context().setOffline(true);
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  for (const text of ["Untitled original first", "Untitled original second"]) {
+    await page
+      .getByRole("button", { name: w.spaces.newLecture, exact: true })
+      .click();
+    await expect(
+      pane(page).getByLabel(w.spaces.title, { exact: true }),
+    ).toHaveValue("");
+    await documentMode(page, zh ? "源码" : "Source");
+    await pane(page).getByLabel(w.spaces.body, { exact: true }).fill(text);
+    // Let autosave, rather than the keyboard shortcut, establish the durable entity.
+    await expect(
+      pane(page).locator(".document-toolbar [role=status]"),
+    ).toHaveAttribute("data-locally-saved", "true");
+    await saveDocument(page, w);
+    await browseDocuments(page);
+  }
+  await expect(page.locator(".library-document-row")).toHaveCount(2);
+  await page.reload();
+  await nav(page, w.spaces.library);
+  await page
+    .locator(".space-card")
+    .filter({ hasText: "Delta untitled home" })
+    .click();
+  await expect(page.locator(".library-document-row")).toHaveCount(2);
+  const bodies: string[] = [];
+  for (let index = 0; index < 2; index++) {
+    await page.locator(".library-document-row").nth(index).click();
+    await expect(
+      pane(page).getByLabel(w.spaces.title, { exact: true }),
+    ).toHaveValue("");
+    await documentMode(page, zh ? "源码" : "Source");
+    bodies.push(
+      (
+        await pane(page)
+          .getByLabel(w.spaces.body, { exact: true })
+          .locator(".cm-line")
+          .allTextContents()
+      ).join("\n"),
+    );
+    await browseDocuments(page);
+  }
+  expect(bodies.sort()).toEqual([
+    "Untitled original first",
+    "Untitled original second",
+  ]);
+  await page.context().setOffline(false);
+  await page.unroute("**/api/**");
+  await page.reload();
+  await expect
+    .poll(
+      async () =>
+        (
+          await (await page.request.get(workbench.url + "/api/snapshot")).json()
+        ).library.filter(
+          (entry: { kind: string; spaceId: string }) =>
+            entry.kind === "DOCUMENT" && entry.spaceId === space.id,
+        ).length,
+    )
+    .toBe(2);
+  const documents = (
+    await (await page.request.get(workbench.url + "/api/snapshot")).json()
+  ).library.filter(
+    (entry: { kind: string; spaceId: string }) =>
+      entry.kind === "DOCUMENT" && entry.spaceId === space.id,
+  );
+  expect(new Set(documents.map((entry: { id: string }) => entry.id)).size).toBe(
+    2,
+  );
+  expect(documents.map((entry: { title: string }) => entry.title)).toEqual([
+    "",
+    "",
+  ]);
+  expect(documents.map((entry: { version: number }) => entry.version)).toEqual([
+    1, 1,
+  ]);
+  expect(
+    documents.map((entry: { bodyMd: string }) => entry.bodyMd).sort(),
+  ).toEqual(bodies);
+});
+
+test("Delta image paste is durable offline and reconnects with original bytes without mode fetch loops", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const note = await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      title: "Delta offline image",
+      kind: "NOTE",
+      day: null,
+      bodyMd: "Original text",
+    },
+  });
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await page
+    .locator(".note-card")
+    .filter({ hasText: "Delta offline image" })
+    .press("Enter");
+  await documentMode(page, zh ? "源码" : "Source");
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXs8AAAAASUVORK5CYII=";
+  let downloads = 0;
+  page.on("request", (request) => {
+    if (/\/api\/(library\/asset|v1\/files\/bytes)\?/.test(request.url()))
+      downloads++;
+  });
+  await prepareOfflineShell(page);
+  await page.context().setOffline(true);
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  const editor = pane(page).getByLabel(w.desk.noteBody, { exact: true });
+  await editor.focus();
+  await page.keyboard.press("Control+End");
+  await editor.evaluate((element, png) => {
+    const clipboard = new DataTransfer();
+    clipboard.items.add(
+      new File(
+        [Uint8Array.from(atob(png), (c) => c.charCodeAt(0))],
+        "offline-original.png",
+        { type: "image/png" },
+      ),
+    );
+    element.dispatchEvent(
+      new ClipboardEvent("paste", {
+        clipboardData: clipboard,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }, png);
+  await expect(editor).toContainText("/api/v1/files/bytes?id=");
+  await saveDocument(page, w);
+  const source = await editor
+    .locator(".cm-line")
+    .allTextContents()
+    .then((lines) => lines.join("\n"));
+  const id = /\/api\/v1\/files\/bytes\?id=([a-zA-Z0-9-]+)/.exec(source)![1]!;
+  for (let index = 0; index < 2; index++) {
+    await documentMode(page, w.desk.read);
+    const image = pane(page).locator(".document-reading img");
+    await expect(image).toHaveJSProperty("naturalWidth", 1);
+    await image.click();
+    await expect(page.locator(".image-viewer img")).toHaveJSProperty(
+      "naturalWidth",
+      1,
+    );
+    await page.keyboard.press("Escape");
+    await documentMode(page, zh ? "源码" : "Source");
+    await expect
+      .poll(async () =>
+        (await editor.locator(".cm-line").allTextContents()).join("\n"),
+      )
+      .toBe(source);
+  }
+  expect(downloads).toBe(0);
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await page
+    .locator(".note-card")
+    .filter({ hasText: "Delta offline image" })
+    .press("Enter");
+  await documentMode(page, w.desk.read);
+  await expect(pane(page).locator(".document-reading img")).toHaveJSProperty(
+    "naturalWidth",
+    1,
+  );
+  expect(downloads).toBe(0);
+  await page.screenshot({
+    path: info.outputPath("delta-offline-image.png"),
+    fullPage: true,
+  });
+  await page.context().setOffline(false);
+  await page.unroute("**/api/**");
+  await page.reload();
+  await expect
+    .poll(async () =>
+      (
+        await page.request.get(
+          workbench.url + "/api/v1/files/metadata?id=" + id,
+        )
+      ).status(),
+    )
+    .toBe(200);
+  const downloaded = await page.request.get(
+    workbench.url + "/api/v1/files/bytes?id=" + id,
+  );
+  expect(await downloaded.body()).toEqual(Buffer.from(png, "base64"));
+  const metadata = await (
+    await page.request.get(workbench.url + "/api/v1/files/metadata?id=" + id)
+  ).json();
+  expect(metadata.contentHash).toBe(
+    createHash("sha256").update(Buffer.from(png, "base64")).digest("hex"),
+  );
+  await expect
+    .poll(
+      async () =>
+        (
+          await (
+            await page.request.get(
+              workbench.url + "/api/document/body?kind=NOTE&id=" + note.id,
+            )
+          ).json()
+        ).bodyMd,
+    )
+    .toBe(source);
+  const secondInstallation = await page.context().browser()!.newContext();
+  try {
+    const second = await secondInstallation.newPage();
+    await unlock(second, workbench.url, workbench.secret, w);
+    let secondDownloads = 0;
+    second.on("request", (request) => {
+      if (request.url().includes("/api/v1/files/bytes?id=" + id))
+        secondDownloads++;
+    });
+    await nav(second, w.desk.notes);
+    await second
+      .locator(".note-card")
+      .filter({ hasText: "Delta offline image" })
+      .press("Enter");
+    await documentMode(second, w.desk.read);
+    await expect(
+      pane(second).locator(".document-reading img"),
+    ).toHaveJSProperty("naturalWidth", 1);
+    expect(secondDownloads).toBe(1);
+    await documentMode(second, zh ? "源码" : "Source");
+    await documentMode(second, w.desk.read);
+    await expect(
+      pane(second).locator(".document-reading img"),
+    ).toHaveJSProperty("naturalWidth", 1);
+    expect(secondDownloads).toBe(1);
+    await prepareOfflineShell(second);
+    await secondInstallation.setOffline(true);
+    await second.route("**/api/**", (route) =>
+      route.abort("internetdisconnected"),
+    );
+    await second.reload();
+    await nav(second, w.desk.notes);
+    await second
+      .locator(".note-card")
+      .filter({ hasText: "Delta offline image" })
+      .press("Enter");
+    await documentMode(second, w.desk.read);
+    await expect(
+      pane(second).locator(".document-reading img"),
+    ).toHaveJSProperty("naturalWidth", 1);
+    expect(secondDownloads).toBe(1);
+  } finally {
+    await secondInstallation.close();
+  }
+});
+
 test("private image editing: modern picker, clipboard, concurrent typing and retry", async ({
   page,
   workbench,
@@ -3559,16 +5133,9 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
   const w = words(info.project.name);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(workbench.url);
-  await page
-    .getByLabel(w.spaces.username, { exact: true })
-    .fill("image-editor");
-  await page
-    .getByLabel(w.spaces.password, { exact: true })
-    .fill(workbench.secret);
-  await page.getByRole("button", { name: w.desk.enter, exact: true }).click();
+  await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.notes);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   await documentMode(page, /^(Source|源码)$/);
   await documentTools(page);
   await pane(page)
@@ -3601,7 +5168,7 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
   });
   const png =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXs8AAAAASUVORK5CYII=";
-  async function paste(mime = "image/png") {
+  async function paste(mime = "image/png", unique = false) {
     await editor.evaluate(
       (element, data) => {
         const clipboard = new DataTransfer();
@@ -3620,7 +5187,15 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
           }),
         );
       },
-      { png, mime },
+      {
+        png: unique
+          ? Buffer.concat([
+              Buffer.from(png, "base64"),
+              Buffer.from("unique"),
+            ]).toString("base64")
+          : png,
+        mime,
+      },
     );
   }
   await editor.focus();
@@ -3630,9 +5205,9 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
     release = resolve;
   });
   let uploadStarted = false;
-  await page.route("**/api/library/upload-chunk", async (route) => {
+  await page.route("**/api/v1/files/binary/begin", async (route) => {
     uploadStarted = true;
-    expect(route.request().postDataJSON().spaceId).toBeNull();
+    expect(route.request().postDataJSON()).not.toHaveProperty("base64");
     await held;
     await route.continue();
   });
@@ -3642,19 +5217,36 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
   await nav(page, w.desk.tasks);
   release();
   await page.getByRole("tab", { name: /Image notebook/ }).click();
-  await expect(editor).toContainText(/api\/library\/asset/);
+  await expect(editor).toContainText(/api\/v1\/files\/bytes/);
   await expect(editor).toContainText("kept while uploading");
-  await page.unroute("**/api/library/upload-chunk");
+  await page.unroute("**/api/v1/files/binary/begin");
   await saveDocument(page, w);
   await paste("image/svg+xml");
   await expect(pane(page).getByRole("alert")).toContainText("PNG");
-  await page.route("**/api/library/upload-chunk", (route) => route.abort());
-  await paste();
+  await page.evaluate(() => {
+    const original = IDBObjectStore.prototype.put;
+    Object.assign(window, {
+      restoreImageBlobPut: () => {
+        IDBObjectStore.prototype.put = original;
+      },
+    });
+    IDBObjectStore.prototype.put = function (value, key) {
+      if (this.name === "blobs" && value instanceof Blob)
+        throw new DOMException("Test device full", "QuotaExceededError");
+      return original.call(this, value, key);
+    };
+  });
+  await paste("image/png", true);
   await expect(pane(page).getByRole("alert").last()).toContainText(
-    /上传失败|upload failed/,
+    /未能保存到本机|save the image on this device/,
+  );
+  await page.evaluate(() =>
+    (
+      window as unknown as { restoreImageBlobPut(): void }
+    ).restoreImageBlobPut(),
   );
   await expect(editor).toContainText("kept while uploading");
-  await page.unroute("**/api/library/upload-chunk");
+  await page.unroute("**/api/v1/files/binary/begin");
   await documentTools(page);
   await pane(page)
     .getByLabel(w.spaces.image, { exact: true })
@@ -3666,7 +5258,7 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
   await expect
     .poll(
       async () =>
-        ((await editor.textContent())?.match(/api\/library\/asset/g) ?? [])
+        ((await editor.textContent())?.match(/api\/v1\/files\/bytes/g) ?? [])
           .length,
     )
     .toBe(2);
@@ -3695,7 +5287,7 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
   ).json();
   expect(snapshot.notes[0].bodyMd).toContain("kept while uploading");
   expect(snapshot.notes[0].bodyMd).toContain("plain paste");
-  expect(snapshot.notes[0].bodyMd.match(/api\/library\/asset/g)).toHaveLength(
+  expect(snapshot.notes[0].bodyMd.match(/api\/v1\/files\/bytes/g)).toHaveLength(
     2,
   );
   expect(errors).toEqual([]);
@@ -3815,7 +5407,7 @@ test("inline and block math render while editing without changing source", async
   page.on("pageerror", (e) => errors.push(e.message));
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.notes);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   await pane(page).getByLabel(w.desk.noteTitle).fill("Math live");
   const body = pane(page).getByLabel(w.desk.noteBody);
   const tick = String.fromCharCode(96);
@@ -3858,7 +5450,7 @@ test("brand stays transparent and compact on login and sidebar", async ({
   await expect(logo).toBeVisible();
   await expect(logo).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(logo).toHaveCSS("border-radius", "0px");
-  await expect(logo).toHaveCSS("filter", "brightness(0) invert(0.93)");
+  await expect(logo).toHaveCSS("filter", "brightness(0)");
   expect((await logo.boundingBox())?.width).toBeLessThanOrEqual(260);
   // Verify that the shipped image itself retains transparency, not just CSS.
   expect(
@@ -3901,6 +5493,7 @@ for (const nativeImages of [false, true]) {
     workbench,
   }, info) => {
     test.setTimeout(90_000);
+    const zh = info.project.name.endsWith("zh");
     const w = words(info.project.name),
       a = w.spaces;
     const imageResponses: {
@@ -3910,7 +5503,12 @@ for (const nativeImages of [false, true]) {
     }[] = [];
     const imageReads: Promise<void>[] = [];
     const captureImageResponse = (response: Response) => {
-      if (new URL(response.url()).pathname !== "/api/library/asset") return;
+      if (
+        !["/api/library/asset", "/api/v1/files/bytes"].includes(
+          new URL(response.url()).pathname,
+        )
+      )
+        return;
       imageReads.push(
         response.body().then((body) => {
           imageResponses.push({
@@ -3966,13 +5564,62 @@ for (const nativeImages of [false, true]) {
           __TAURI_INTERNALS__: {
             invoke: async (
               command: string,
-              args: {
-                path: string;
-                payload?: string;
-                csrf?: string;
-                idempotencyKey?: string;
-              },
+              args:
+                | {
+                    path: string;
+                    payload?: string;
+                    csrf?: string;
+                    idempotencyKey?: string;
+                    workspaceId?: string;
+                    workspacePrecondition?: string;
+                  }
+                | Uint8Array,
+              options?: { headers?: Record<string, string> },
             ) => {
+              if (command === "server_upload_chunk") {
+                if (!(args instanceof Uint8Array))
+                  throw new Error("Expected raw native chunk bytes");
+                const headers = options?.headers ?? {};
+                const response = await fetch(headers["X-Atlas-Path"]!, {
+                  method: "POST",
+                  body: new Uint8Array(args),
+                  credentials: "same-origin",
+                  headers: {
+                    "Content-Type": "application/octet-stream",
+                    "X-File-Chunk-Hash": headers["X-Atlas-Chunk-Hash"]!,
+                    "X-CSRF-Token": headers["X-Atlas-CSRF"]!,
+                    ...(headers["X-Atlas-Workspace-Id"]
+                      ? { "X-Workspace-Id": headers["X-Atlas-Workspace-Id"]! }
+                      : {}),
+                  },
+                });
+                return {
+                  status: response.status,
+                  contentType: response.headers.get("Content-Type"),
+                  body: await response.text(),
+                  encoding: "utf8",
+                };
+              }
+              if (args instanceof Uint8Array)
+                throw new Error("Unexpected binary command");
+              if (command === "server_download_file") {
+                const response = await fetch(args.path, {
+                  credentials: "same-origin",
+                  headers: args.workspaceId
+                    ? { "X-Workspace-Id": args.workspaceId }
+                    : {},
+                });
+                if (response.status === 401) throw "UNAUTHORIZED";
+                if (response.status === 403) throw "FORBIDDEN";
+                if (response.status === 404) throw "NOT_FOUND";
+                if (
+                  response.status !== 200 ||
+                  response.headers.get("content-type") !==
+                    "application/octet-stream"
+                )
+                  throw "INVALID_RESPONSE";
+                return response.arrayBuffer();
+              }
               if (
                 command === "notification_permission" ||
                 command === "notification_request_permission"
@@ -3980,7 +5627,8 @@ for (const nativeImages of [false, true]) {
                 return "prompt";
               if (
                 command === "notification_reconcile" ||
-                command === "notification_cancel"
+                command === "notification_cancel" ||
+                command === "notification_take_route"
               )
                 return;
               if (command === "configure_server") return;
@@ -3990,6 +5638,9 @@ for (const nativeImages of [false, true]) {
               const response = await fetch(args.path, {
                 method: args.payload ? "POST" : "GET",
                 credentials: "same-origin",
+                headers: args.workspaceId
+                  ? { "X-Workspace-Id": args.workspaceId }
+                  : {},
                 ...(args.payload
                   ? {
                       body: args.payload,
@@ -3997,19 +5648,34 @@ for (const nativeImages of [false, true]) {
                         "Content-Type": "application/json",
                         "X-CSRF-Token": args.csrf ?? "",
                         "Idempotency-Key": args.idempotencyKey ?? "",
+                        ...(args.workspaceId
+                          ? { "X-Workspace-Id": args.workspaceId }
+                          : {}),
+                        ...(args.workspacePrecondition
+                          ? {
+                              "X-Workspace-Precondition":
+                                args.workspacePrecondition,
+                            }
+                          : {}),
                       },
                     }
                   : {}),
               });
               const bytes = new Uint8Array(await response.arrayBuffer());
+              const json = (
+                response.headers.get("Content-Type") ?? ""
+              ).includes("json");
               return {
                 status: response.status,
                 contentType: response.headers.get("Content-Type"),
-                body: btoa(
-                  Array.from(bytes, (byte) => String.fromCharCode(byte)).join(
-                    "",
-                  ),
-                ),
+                encoding: json ? "utf8" : "base64",
+                body: json
+                  ? new TextDecoder().decode(bytes)
+                  : btoa(
+                      Array.from(bytes, (byte) =>
+                        String.fromCharCode(byte),
+                      ).join(""),
+                    ),
               };
             },
           },
@@ -4029,9 +5695,9 @@ for (const nativeImages of [false, true]) {
     });
     await nav(page, w.desk.settings);
     await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
-    await page.getByLabel(a.username, { exact: true }).fill("image-editor");
-    await page.getByLabel(a.password, { exact: true }).fill(workbench.secret);
-    await page.getByRole("button", { name: w.desk.enter, exact: true }).click();
+    // Signing out preserves the independent local workspace; reconnect through
+    // the explicit account/binding review rather than expecting a login wall.
+    await unlock(page, workbench.url, workbench.secret, w);
     await nav(page, a.account);
     await page
       .getByLabel(a.tokenName, { exact: true })
@@ -4047,18 +5713,29 @@ for (const nativeImages of [false, true]) {
     });
     await nav(page, a.library);
     await page.getByRole("button", { name: a.newSpace, exact: true }).click();
-    await page
-      .getByLabel(a.spaceTitle, { exact: true })
+    const spaceDialog = page.getByRole("dialog", {
+      name: zh ? "新建知识空间" : "Create knowledge space",
+      exact: true,
+    });
+    await spaceDialog
+      .getByLabel(zh ? "空间名称" : "Space name", { exact: true })
       .fill("量子场论 / Quantum Field Theory");
-    await page
-      .getByLabel(a.body, { exact: true })
+    await spaceDialog
+      .getByLabel(zh ? "描述（可选）" : "Description (optional)", {
+        exact: true,
+      })
       .fill("A dedicated space for lecture notes and illustrations.");
-    await saveDocument(page, w);
-    await browseDocuments(page);
-    await page
-      .locator(".note-card, .library-document-row, .space-card")
-      .filter({ hasText: "Quantum Field Theory" })
-      .press("Enter");
+    await spaceDialog
+      .getByRole("button", { name: zh ? "创建" : "Create", exact: true })
+      .click();
+    await expect(spaceDialog).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: "量子场论 / Quantum Field Theory",
+        exact: true,
+      }),
+    ).toBeVisible();
     await page.getByRole("button", { name: a.newLecture, exact: true }).click();
     await page
       .getByLabel(a.title, { exact: true })
@@ -4070,49 +5747,50 @@ for (const nativeImages of [false, true]) {
     await page.keyboard.press("Control+a");
     await page.keyboard.insertText(markdown);
     await documentTools(page);
+    const imageUpload = {
+      name: "figure.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        await page.evaluate(() => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 941;
+          canvas.height = 900;
+          const context = canvas.getContext("2d");
+          if (!context) throw new Error("Canvas unavailable");
+          // Exercise multiple 256 KiB upload chunks and binary/native IPC,
+          // not only a tiny highly compressible PNG.
+          const pixels = context.createImageData(canvas.width, canvas.height);
+          let seed = 85;
+          for (let i = 0; i < pixels.data.length; i += 4) {
+            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+            pixels.data[i] = seed & 255;
+            pixels.data[i + 1] = (seed >>> 8) & 255;
+            pixels.data[i + 2] = (seed >>> 16) & 255;
+            pixels.data[i + 3] = 255;
+          }
+          context.putImageData(pixels, 0, 0);
+          context.fillStyle = "#177b65";
+          context.fillRect(0, 0, 240, 120);
+          context.fillStyle = "#ffffff";
+          context.font = "20px sans-serif";
+          context.fillText("Image preview", 24, 64);
+          return canvas.toDataURL("image/png").split(",")[1] ?? "";
+        }),
+        "base64",
+      ),
+    };
     await pane(page)
       .getByLabel(a.image, { exact: true })
-      .setInputFiles({
-        name: "figure.png",
-        mimeType: "image/png",
-        buffer: Buffer.from(
-          await page.evaluate(() => {
-            const canvas = document.createElement("canvas");
-            canvas.width = 941;
-            canvas.height = 900;
-            const context = canvas.getContext("2d");
-            if (!context) throw new Error("Canvas unavailable");
-            // Exercise multiple 256 KiB upload chunks and binary/native IPC,
-            // not only a tiny highly compressible PNG.
-            const pixels = context.createImageData(canvas.width, canvas.height);
-            let seed = 85;
-            for (let i = 0; i < pixels.data.length; i += 4) {
-              seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-              pixels.data[i] = seed & 255;
-              pixels.data[i + 1] = (seed >>> 8) & 255;
-              pixels.data[i + 2] = (seed >>> 16) & 255;
-              pixels.data[i + 3] = 255;
-            }
-            context.putImageData(pixels, 0, 0);
-            context.fillStyle = "#177b65";
-            context.fillRect(0, 0, 240, 120);
-            context.fillStyle = "#ffffff";
-            context.font = "20px sans-serif";
-            context.fillText("Image preview", 24, 64);
-            return canvas.toDataURL("image/png").split(",")[1] ?? "";
-          }),
-          "base64",
-        ),
-      });
+      .setInputFiles(imageUpload);
     await expect(pane(page).getByLabel(a.body, { exact: true })).toContainText(
-      /api\/library\/asset/,
+      /api\/v1\/files\/bytes\?id=/,
     );
     // Fill raw Markdown, not the live DOM containing replacement widgets.
     await documentMode(page, /^(Source|源码)$/);
     const editor = pane(page).getByLabel(a.body, { exact: true });
     const uploadedText = await editor.innerText();
     const assetPath = uploadedText.match(
-      /\/api\/library\/asset\?id=[a-zA-Z0-9-]+/,
+      /\/api\/v1\/files\/bytes\?id=[a-zA-Z0-9-]+/,
     )?.[0];
     if (!assetPath) throw new Error("Uploaded image path missing");
     // Existing documents can have empty alt text and an image in the same paragraph.
@@ -4183,13 +5861,74 @@ for (const nativeImages of [false, true]) {
       body: diagnostic,
       contentType: "application/json",
     });
-    expect(imageResponses.length).toBeGreaterThan(0);
+    expect(imageResponses.length).toBe(0);
     expect(
       imageResponses.every(
         (r) => r.status === 200 && r.contentType === "image/png" && r.bytes > 0,
       ),
     ).toBe(true);
-    expect(imageResponses[0]?.bytes).toBeGreaterThan(1895651);
+    expect(imageUpload.buffer.length).toBeGreaterThan(1895651);
+    const renderedHash = await page.evaluate(async (path) => {
+      const fileId = new URL(path, location.origin).searchParams.get("id");
+      const open = (name: string) =>
+        new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open(name);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      let original: Blob | null = null;
+      for (const database of await indexedDB.databases()) {
+        if (!database.name || database.name.endsWith(".blobs")) continue;
+        const db = await open(database.name);
+        try {
+          if (!db.objectStoreNames.contains("entities")) continue;
+          const rows = await new Promise<
+            {
+              collection: string;
+              id: string;
+              workspaceId: string;
+              value: { contentHash: string };
+            }[]
+          >((resolve, reject) => {
+            const request = db
+              .transaction("entities")
+              .objectStore("entities")
+              .getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          const file = rows.find(
+            (row) => row.collection === "files" && row.id === fileId,
+          );
+          if (!file) continue;
+          const binary = await open(database.name + ".blobs");
+          try {
+            original = await new Promise<Blob>((resolve, reject) => {
+              const request = binary
+                .transaction("blobs")
+                .objectStore("blobs")
+                .get([file.workspaceId, file.value.contentHash]);
+              request.onsuccess = () => resolve(request.result);
+              request.onerror = () => reject(request.error);
+            });
+          } finally {
+            binary.close();
+          }
+          break;
+        } finally {
+          db.close();
+        }
+      }
+      if (!(original instanceof Blob))
+        throw new Error("Original local image Blob missing");
+      const bytes = await original.arrayBuffer();
+      return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+        .map((value) => value.toString(16).padStart(2, "0"))
+        .join("");
+    }, assetPath);
+    expect(renderedHash).toBe(
+      createHash("sha256").update(imageUpload.buffer).digest("hex"),
+    );
     await page.screenshot({
       path: info.outputPath("image-live.png"),
       fullPage: true,
@@ -4220,12 +5959,28 @@ for (const nativeImages of [false, true]) {
       "retained",
     );
     await documentMode(page, /^(Source|源码)$/);
+    await expect
+      .poll(async () => {
+        const snapshot = await (
+          await page.request.get(workbench.url + "/api/snapshot")
+        ).json();
+        return snapshot.library.find(
+          (entry: { title: string }) =>
+            entry.title === "第一讲：场与对称性 / Fields and symmetry",
+        )?.id;
+      })
+      .toEqual(expect.any(String));
     const persistedBody = await page.evaluate(async () => {
       const snapshot = await (await fetch("/api/snapshot")).json();
-      return snapshot.library.find(
+      const entry = snapshot.library.find(
         (entry: { title: string; bodyMd: string }) =>
           entry.title === "第一讲：场与对称性 / Fields and symmetry",
-      )?.bodyMd as string;
+      );
+      return (
+        await (
+          await fetch("/api/document/body?kind=LIBRARY&id=" + entry.id)
+        ).json()
+      ).bodyMd as string;
     });
     expect(persistedBody.trim()).toBe(savedMarkdown.trim());
     await documentMode(page, w.desk.read);
@@ -4248,6 +6003,18 @@ for (const nativeImages of [false, true]) {
       expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
     }
     // Both renderers must show a bilingual, retryable error, including empty-alt images.
+    const fileId = new URL(assetPath, workbench.url).searchParams.get("id")!;
+    const expectedHash = createHash("sha256")
+      .update(imageUpload.buffer)
+      .digest("hex");
+    await expect
+      .poll(async () =>
+        (await page.request.get(workbench.url + assetPath)).status(),
+      )
+      .toBe(200);
+    expect(
+      await (await page.request.get(workbench.url + assetPath)).body(),
+    ).toEqual(imageUpload.buffer);
     for (const fault of ["denied", "html", "empty", "corrupt"] as const) {
       const assetRoute = `**${assetPath}`;
       await page.route(assetRoute, (route) =>
@@ -4257,8 +6024,40 @@ for (const nativeImages of [false, true]) {
           body: fault === "empty" ? "" : "not an image",
         }),
       );
-      // Read and live panes stay mounted when changing modes. Reopen the saved
-      // document so this fault tests a new load, not an already decoded image.
+      // Simulate a missing local original in this isolated test installation.
+      // Reload resets the resolver; the original must then hydrate from the host.
+      const evicted = await page.evaluate(async (hash) => {
+        let removed = 0;
+        for (const database of await indexedDB.databases()) {
+          if (!database.name?.endsWith(".blobs")) continue;
+          const db = await new Promise<IDBDatabase>((resolve, reject) => {
+            const request = indexedDB.open(database.name!);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const tx = db.transaction("blobs", "readwrite");
+              tx.oncomplete = () => resolve();
+              tx.onabort = () => reject(tx.error);
+              const store = tx.objectStore("blobs"),
+                keys = store.getAllKeys();
+              keys.onsuccess = () => {
+                for (const key of keys.result)
+                  if (Array.isArray(key) && key[1] === hash) {
+                    store.delete(key);
+                    removed++;
+                  }
+              };
+            });
+          } finally {
+            db.close();
+          }
+        }
+        return removed;
+      }, expectedHash);
+      expect(evicted).toBeGreaterThan(0);
+      expect(fileId).toMatch(/^[a-zA-Z0-9-]+$/);
       await nav(page, a.library);
       await page.reload();
       await page
@@ -4274,9 +6073,7 @@ for (const nativeImages of [false, true]) {
       await expect(
         pane(page).locator(".md-live-widget .private-image-error"),
       ).toContainText(
-        nativeImages && fault === "denied"
-          ? a.imageAccessFailed
-          : a.imageLoadFailed,
+        fault === "denied" ? a.imageAccessFailed : a.imageLoadFailed,
       );
       await documentMode(page, w.desk.read);
       await expect(
@@ -4417,6 +6214,98 @@ test("knowledge references and AI approval preserve private content and never au
   ).toBe(true);
 });
 
+test("opening an account replica preserves original local work and switching back works offline", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh"),
+    w = words(info.project.name);
+  await page.goto(workbench.url + "/#tasks");
+  await page
+    .getByRole("button", { name: zh ? "新建任务" : "New task", exact: true })
+    .first()
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByLabel(zh ? "标题" : "Title", { exact: true })
+    .fill("Preserved device task");
+  await dialog
+    .getByRole("button", { name: zh ? "新建任务" : "Create task", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.locator(".task-title", { hasText: "Preserved device task" }),
+  ).toBeVisible();
+  await page.goto(workbench.url + "/#library");
+  const bytes = Buffer.from("Original local bytes\n保留本机内容", "utf8");
+  await page
+    .getByLabel(zh ? "上传文件" : "Upload file", { exact: true })
+    .setInputFiles({
+      name: "preserved-device.txt",
+      mimeType: "text/plain",
+      buffer: bytes,
+    });
+  await expect(page.locator(".file-text-preview")).toHaveText(
+    bytes.toString("utf8"),
+  );
+  await unlock(page, workbench.url, workbench.secret, w, true);
+  await page.goto(workbench.url + "/#tasks");
+  await expect(
+    page.locator(".task-title", { hasText: "Preserved device task" }),
+  ).toHaveCount(0);
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.goto(workbench.url + "/#account");
+  const navigation = page.getByRole("navigation", {
+    name: /^(Device workspaces|本机工作区)$/,
+  });
+  await Promise.all([
+    page.waitForEvent("load"),
+    navigation
+      .getByRole("button", {
+        name: /^(Original device workspace|本机原工作区)$/,
+      })
+      .click(),
+  ]);
+  const backups = page.getByRole("region", {
+    name: zh ? "合并前备份" : "Backups before merging",
+    exact: true,
+  });
+  const backupDownload = page.waitForEvent("download");
+  await backups
+    .getByRole("button", {
+      name: zh ? "下载原始备份" : "Download original backup",
+      exact: true,
+    })
+    .click();
+  const backupPath = await (await backupDownload).path();
+  if (!backupPath) throw new Error("MISSING_MERGE_BACKUP_DOWNLOAD");
+  const archived = await readFile(backupPath);
+  expect(archived.subarray(0, 8).toString()).toBe("ORIVANE1");
+  expect(archived.includes(bytes)).toBe(true);
+  expect(archived.includes(Buffer.from("Preserved device task"))).toBe(true);
+  await page.goto(workbench.url + "/#tasks");
+  await expect(
+    page.locator(".task-title", { hasText: "Preserved device task" }),
+  ).toBeVisible();
+  await page.goto(workbench.url + "/#library");
+  await page
+    .locator(".library-file-row", { hasText: "preserved-device.txt" })
+    .click();
+  await expect(page.locator(".file-text-preview")).toHaveText(
+    bytes.toString("utf8"),
+  );
+  const download = page.waitForEvent("download");
+  await page
+    .getByRole("button", {
+      name: zh ? "下载原始文件" : "Download original",
+      exact: true,
+    })
+    .click();
+  const path = await (await download).path();
+  if (!path) throw new Error("MISSING_ORIGINAL_DOWNLOAD");
+  expect(await readFile(path)).toEqual(bytes);
+});
+
 test("Agent Harness uses real evidence, reviews a write and keeps structured activity after refresh", async ({
   page,
   workbench,
@@ -4496,6 +6385,10 @@ test("Agent Harness uses real evidence, reviews a write and keeps structured act
   await expect(
     assistant.getByRole("region", { name: zh ? "来源" : "Sources" }),
   ).toContainText("Atlas evidence");
+  await expect(
+    assistant.getByRole("button", { name: "Atlas evidence", exact: true }),
+  ).not.toBeVisible();
+  await assistant.locator(".answer-sources summary").click();
   await assistant
     .getByRole("button", { name: "Atlas evidence", exact: true })
     .click();
@@ -4740,6 +6633,21 @@ test("document knowledge graph preserves wiki neighbors and hides work and isola
   const documents = graph.locator(
     '.react-flow__node:not([data-id^="space-cluster:"])',
   );
+  // Select the intended document explicitly; default focus may be an isolated page.
+  await graph
+    .getByRole("button", {
+      name: zh ? "工作区" : "Entire workspace",
+      exact: true,
+    })
+    .click();
+  await graph.getByLabel(zh ? "图谱搜索" : "Graph search").fill("Symmetry");
+  await graph.getByRole("option", { name: /Symmetry lecture/ }).click();
+  await graph
+    .getByRole("button", {
+      name: zh ? "局部" : "Connected documents",
+      exact: true,
+    })
+    .click();
   await expect(documents).toHaveCount(2);
   await expect(
     graph.getByRole("button", {
@@ -4930,7 +6838,10 @@ test("AI approval project scope is shared by search, Wiki autocomplete, graph an
   await page.keyboard.press("Escape");
   await page.keyboard.press("Control+z");
   await page.keyboard.press("Control+s");
-  await expect(pane(page).getByRole("status")).toContainText(/Saved|已保存/);
+  await expect(pane(page).getByRole("status")).toContainText(
+    /^(Saved on this device(?: · (?:Syncing|Offline))?|Synced|已保存到本机(?: · (?:正在同步|离线))?|已同步)$/,
+  );
+  await browseDocuments(page);
   await page.keyboard.press("Control+j");
   const assistant = page.getByRole("complementary", {
     name: "Atlas Assistant",
@@ -5016,7 +6927,7 @@ test("persistent document hierarchy is visible and can be moved through the know
           .parentDocumentId,
     )
     .toBe(null);
-  await chooseProject(parentPicker, ["Backend"]);
+  await chooseProject(parentPicker, ["Backend"], "DOCUMENT");
   await expect
     .poll(
       async () =>
@@ -5075,14 +6986,17 @@ test("two independent sessions sync updates without replacing an open draft", as
       .click();
     await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
     await expect(title).toHaveValue("My unsaved draft");
-    await page.route("**/api/sync?*", (route) => route.abort("failed"));
+    await page.route("**/api/v1/sync?*", (route) => route.abort("failed"));
     // A committed external change invalidates the snapshot; idle SSE does not poll.
     await mutation(second, "/api/work/create", {
       title: "Trigger offline snapshot pull",
     });
-    await expect(page.locator(".topbar")).toContainText(w.connected.offline, {
-      timeout: 10000,
-    });
+    await expect(page.locator(".page-header")).toContainText(
+      w.connected.offline,
+      {
+        timeout: 10000,
+      },
+    );
     await expect(title).toHaveValue("My unsaved draft");
   } finally {
     await other.close();
@@ -5096,7 +7010,7 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
   const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.projects);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   await page
     .getByRole("dialog")
     .getByLabel(w.work.title, { exact: true })
@@ -5108,7 +7022,7 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await expect(page.locator(".project-card")).toHaveCount(1);
   await nav(page, w.desk.tasks);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel(w.work.title, { exact: true }).fill("Ship planning");
   await chooseProject(
@@ -5169,7 +7083,7 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
     ),
   ).toBe(true);
   await nav(page, w.desk.notes);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   const markdown = "# 原始 Markdown\r\n\r\n- [ ] 仅是正文，不是任务\r\n";
   // Wait for the new tab, not the calendar tab briefly visible during navigation.
   await expect(pane(page).getByLabel(w.desk.noteTitle)).toHaveValue("");
@@ -5185,6 +7099,7 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
     "仅是正文，不是任务",
   );
   await saveDocument(page, w);
+  await waitForLocalReplay(page);
   const after = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -5192,13 +7107,27 @@ test("projects, dates, calendar, Markdown import and full backup are real", asyn
   expect(after.notes[0].bodyMd).toBe(markdown);
   await nav(page, w.desk.settings);
   const downloaded = page.waitForEvent("download");
-  await page.getByRole("button", { name: w.desk.backupDatabase }).click();
+  await page.getByRole("button", { name: w.desk.localBackup }).click();
   const file = await downloaded;
-  const target = info.outputPath("database.sqlite");
+  const target = info.outputPath("workspace.oab");
   await file.saveAs(target);
-  expect(readFileSync(target).subarray(0, 16).toString()).toBe(
-    "SQLite format 3\0",
+  const bytes = readFileSync(target);
+  expect(bytes.subarray(0, 8).toString()).toBe("ORIVANE1");
+  const manifest = JSON.parse(
+    bytes.subarray(16, 16 + bytes.readUInt32BE(8)).toString(),
   );
+  expect(manifest.credentialVault).toBe("EXCLUDED");
+  expect(
+    manifest.archive.entities
+      .filter(
+        (entry: { collection: string }) =>
+          entry.collection === "$local.noteBody",
+      )
+      .some(
+        (entry: { value: { bodyMd?: string } }) =>
+          entry.value.bodyMd === markdown,
+      ),
+  ).toBe(true);
 });
 
 test("uncertain network retry is idempotent and committed saves close after refresh failure", async ({
@@ -5208,61 +7137,144 @@ test("uncertain network retry is idempotent and committed saves close after refr
   const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.tasks);
+  const attempts: { key: string | undefined; stableId: string }[] = [];
   let first = true;
-  await page.route("**/api/work/create", async (route) => {
+  await page.route("**/api/v1/work/create", async (route) => {
+    attempts.push({
+      key: route.request().headers()["idempotency-key"],
+      stableId: route.request().postDataJSON().stableId,
+    });
     if (first) {
       first = false;
-      await route.fetch();
+      const committed = await route.fetch();
+      expect(committed.status()).toBe(200);
       await route.abort("failed");
     } else await route.continue();
   });
-  await page.locator(".topbar .compact-create").click();
-  await page
-    .getByRole("dialog")
-    .getByLabel(w.work.title, { exact: true })
-    .fill("Uncertain save");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: w.common.create, exact: true })
-    .click();
-  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: w.common.create, exact: true })
-    .click();
-  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await createTask(page, w, "Uncertain save");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator("article.task-card")).toHaveCount(1);
-  await page.route("**/api/sync?*", (route) => route.abort("failed"));
-  await page.locator(".topbar .compact-create").click();
-  await page
-    .getByRole("dialog")
-    .getByLabel(w.work.title, { exact: true })
-    .fill("Committed without refresh");
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: w.common.create, exact: true })
-    .click();
-  await expect(page.getByRole("dialog")).not.toBeVisible();
-  await expect(page.getByRole("alert")).toBeVisible();
-  await page.unroute("**/api/sync?*");
-  await page
-    .locator(".sync-status")
-    .getByRole("button", { name: /^(重试|Retry)$/ })
-    .click();
+  await expect.poll(() => attempts.length).toBeGreaterThan(0);
+  await page.reload();
+  await waitForLocalReplay(page);
+  const firstState = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(firstState.items).toHaveLength(1);
+  expect(firstState.items[0]).toMatchObject({
+    title: "Uncertain save",
+    id: attempts[0]!.stableId,
+    version: 1,
+  });
+  expect(new Set(attempts.map((row) => row.key)).size).toBe(1);
+  expect(attempts[0]!.key).toBeTruthy();
+  await page.route("**/api/v1/sync?*", (route) => route.abort("failed"));
+  await createTask(page, w, "Committed without refresh");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator("article.task-card")).toHaveCount(2);
+  await page.reload();
+  await expect(page.locator("article.task-card")).toHaveCount(2);
+  await page.unroute("**/api/v1/sync?*");
+  await page.reload();
+  await waitForLocalReplay(page);
+  const canonical = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(canonical.items).toHaveLength(2);
+  expect(
+    canonical.items.map((item: { title: string }) => item.title).sort(),
+  ).toEqual(["Committed without refresh", "Uncertain save"]);
+  expect(
+    canonical.items.every((item: { version: number }) => item.version === 1),
+  ).toBe(true);
+  await info.attach("receipt-recovery-attempts", {
+    body: JSON.stringify(attempts),
+    contentType: "application/json",
+  });
 });
+
 async function unlock(
   page: Page,
   url: string,
   secret: string,
   w: ReturnType<typeof words>,
+  reviewMerge: boolean | "prepare" = false,
+  username = "image-editor",
 ) {
-  await page.goto(url);
-  await page
+  await page.goto(url + "/#account");
+  const connection = page.getByRole("region", {
+    name: /^(Account and workspace connection|连接账户与工作区)$/,
+  });
+  await connection
     .getByLabel(w.spaces.username, { exact: true })
-    .fill("image-editor");
-  await page.getByLabel(w.spaces.password, { exact: true }).fill(secret);
-  await page.getByRole("button", { name: w.desk.enter, exact: true }).click();
+    .fill(username);
+  await connection.getByLabel(w.spaces.password, { exact: true }).fill(secret);
+  await connection
+    .getByRole("button", {
+      name: /^(Sign in and review options|登录并查看选项)$/,
+    })
+    .click();
+  const preview = connection.getByRole("region", {
+    name: /^(Workspace connection preview|工作区连接预览)$/,
+  });
+  await expect(preview).toBeVisible();
+  if (reviewMerge) {
+    await preview
+      .getByRole("button", { name: /^(Review merge preview|查看合并预览)$/ })
+      .click();
+    const report = preview.getByRole("region", {
+      name: /^(Merge preview|合并预览)$/,
+    });
+    await expect(report).toBeVisible();
+    await expect(report.locator("dt")).toHaveText(
+      w.spaces.username === "用户名"
+        ? [
+            "完全相同的内容",
+            "可能重复的内容",
+            "标识冲突",
+            "项目层级冲突",
+            "任务所属项目冲突",
+            "文档标题或别名冲突",
+            "相同的原始文件",
+          ]
+        : [
+            "Exact duplicates",
+            "Possible duplicates",
+            "ID collisions",
+            "Project hierarchy conflicts",
+            "Task membership conflicts",
+            "Document title or alias collisions",
+            "Duplicate original files",
+          ],
+    );
+    await report
+      .getByRole("button", {
+        name: /^(Save a backup before merging|保存合并前备份)$/,
+      })
+      .click();
+    await expect(report.getByRole("status")).toHaveText(
+      /^(Original content and files are backed up on this device.|原始内容与文件已备份在本机。)$/,
+    );
+  }
+  if (reviewMerge === "prepare") return;
+  await Promise.all([
+    page.waitForEvent("load"),
+    preview
+      .getByRole("button", {
+        name: /^(Open account workspace|打开账户工作区)$/,
+      })
+      .click(),
+  ]);
+  await expect(
+    page
+      .getByRole("navigation", { name: /^(Device workspaces|本机工作区)$/ })
+      .getByRole("button", {
+        name: /^(Account workspace|账户工作区)$/,
+        exact: true,
+      })
+      .and(page.locator('[aria-current="page"]')),
+  ).toHaveAttribute("aria-current", "page");
+  await page.goto(url);
   await expect(page.locator(".app-shell")).toBeVisible();
 }
 async function mutation(page: Page, path: string, value: unknown) {
@@ -5403,7 +7415,12 @@ export async function documentTools(page: Page) {
   )
     await tools.locator(":scope > button").click();
 }
-async function chooseProject(picker: Locator, path: string[]) {
+async function chooseProject(
+  picker: Locator,
+  path: string[],
+  kind: "PROJECT" | "DOCUMENT" = "PROJECT",
+) {
+  picker = picker.and(picker.page().locator(`[data-picker-kind="${kind}"]`));
   const trigger = picker.locator(".hierarchy-selected > button").last();
   if ((await trigger.getAttribute("aria-expanded")) !== "true")
     await trigger.click();
@@ -5417,8 +7434,14 @@ async function chooseProject(picker: Locator, path: string[]) {
       }),
     });
     if (index === path.length - 1)
-      await row.locator(".ui-button-toggle").click();
-    else await row.locator(".parent-tree-choice").click();
+      await row.locator(".ui-entity-picker-choice").click();
+    else await row.locator(".ui-icon-button").click();
+  }
+  if (await browser.isVisible()) {
+    await browser
+      .getByRole("button", { name: /^(完成|Done)$/, exact: true })
+      .click();
+    await expect(browser).toBeHidden();
   }
 }
 function pane(page: Page) {
@@ -5468,18 +7491,27 @@ async function saveDocument(page: Page, w: ReturnType<typeof words>) {
   await page.keyboard.press("Control+s");
   await expect(
     pane(page).locator(".document-toolbar [role=status]"),
-  ).toHaveText(/^(Saved|已保存)$/);
+  ).toHaveAttribute("data-locally-saved", "true");
+  await expect(
+    pane(page).locator(".document-toolbar [role=status]"),
+  ).toHaveText(
+    /^(Saved on this device(?: · (?:Syncing|Offline))?|Synced|已保存到本机(?: · (?:正在同步|离线))?|已同步)$/,
+  );
 }
 async function createTask(
   page: Page,
   w: ReturnType<typeof words>,
   title: string,
 ) {
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   await page
     .getByRole("dialog")
     .getByLabel(w.work.title, { exact: true })
     .fill(title);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: w.common.addDescription, exact: true })
+    .click();
   await page
     .getByLabel(w.work.description, { exact: true })
     .fill("# 原文\n\n- [ ] Keep Markdown");
@@ -5489,6 +7521,360 @@ async function createTask(
     .click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
 }
+
+test("project task ordering remains independent across parent child and shared memberships", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const parent = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Order parent",
+  });
+  const other = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Order other",
+  });
+  const child = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Order child",
+    parentProjectId: parent.id,
+  });
+  for (const [title, projectIds] of [
+    ["Scoped Alpha", [parent.id, other.id]],
+    ["Scoped Bravo", [child.id]],
+    ["Scoped Charlie", [parent.id, other.id]],
+  ] as const)
+    await mutation(page, "/api/work/create", { title, projectIds });
+  const openTasks = async (id: string) => {
+    await page.goto(
+      `${workbench.url}#projects/${encodeURIComponent(id)}?tab=tasks&scope=SUBTREE`,
+    );
+    await page
+      .getByRole("combobox", {
+        name: zh ? "任务排序" : "Task sort",
+        exact: true,
+      })
+      .selectOption("manual");
+  };
+  const titles = page.locator(".project-workspace .task-list .task-title");
+  await openTasks(parent.id);
+  await expect(titles).toHaveText([
+    "Scoped Alpha",
+    "Scoped Bravo",
+    "Scoped Charlie",
+  ]);
+  await page
+    .getByRole("button", {
+      name: (zh ? "调整顺序：" : "Reorder: ") + "Scoped Charlie",
+      exact: true,
+    })
+    .press("Alt+ArrowUp");
+  await expect(titles).toHaveText([
+    "Scoped Alpha",
+    "Scoped Charlie",
+    "Scoped Bravo",
+  ]);
+  await openTasks(other.id);
+  await expect(titles).toHaveText(["Scoped Alpha", "Scoped Charlie"]);
+  await page
+    .getByRole("button", {
+      name: (zh ? "调整顺序：" : "Reorder: ") + "Scoped Charlie",
+      exact: true,
+    })
+    .press("Alt+ArrowUp");
+  await expect(titles).toHaveText(["Scoped Charlie", "Scoped Alpha"]);
+  await openTasks(child.id);
+  await expect(titles).toHaveText(["Scoped Bravo"]);
+  await openTasks(parent.id);
+  await expect(titles).toHaveText([
+    "Scoped Alpha",
+    "Scoped Charlie",
+    "Scoped Bravo",
+  ]);
+});
+
+test("manual task order survives scope switches and reload with keyboard and desktop insertion", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.tasks);
+  for (const title of ["Order Alpha", "Order Bravo", "Order Charlie"])
+    await createTask(page, w, title);
+  const sort = page.locator(".sort-control select");
+  await sort.selectOption("title");
+  await expect(page.locator(".task-list .ui-drag-handle")).toHaveCount(0);
+  await sort.selectOption("manual");
+  const titles = page.locator(".task-list article.task-card .task-title");
+  await expect(titles).toHaveText([
+    "Order Alpha",
+    "Order Bravo",
+    "Order Charlie",
+  ]);
+  const zh = info.project.name !== "desktop-en";
+  await page
+    .getByRole("button", {
+      name: (zh ? "调整顺序：" : "Reorder: ") + "Order Charlie",
+      exact: true,
+    })
+    .press("Alt+ArrowUp");
+  await expect(titles).toHaveText([
+    "Order Alpha",
+    "Order Charlie",
+    "Order Bravo",
+  ]);
+  await page
+    .getByRole("tab", { name: w.desk.taskWorkspace.later, exact: true })
+    .click();
+  await expect(titles).toHaveCount(0);
+  await page
+    .getByRole("tab", { name: w.desk.taskWorkspace.now, exact: true })
+    .click();
+  await expect(titles).toHaveText([
+    "Order Alpha",
+    "Order Charlie",
+    "Order Bravo",
+  ]);
+  if (!info.project.name.startsWith("mobile")) {
+    const moving = page.getByRole("button", {
+      name: (zh ? "调整顺序：" : "Reorder: ") + "Order Bravo",
+      exact: true,
+    });
+    const target = page
+      .locator(".ui-sortable-row")
+      .filter({ has: page.locator(".task-title", { hasText: "Order Alpha" }) });
+    await moving.focus();
+    await moving.dragTo(target, { targetPosition: { x: 8, y: 3 } });
+    await expect(titles).toHaveText([
+      "Order Bravo",
+      "Order Alpha",
+      "Order Charlie",
+    ]);
+  }
+  const expected = await titles.allTextContents();
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await sort.selectOption("manual");
+  await expect(titles).toHaveText(expected);
+  await sort.selectOption("due");
+  await expect(page.locator(".task-list .ui-drag-handle")).toHaveCount(0);
+});
+
+test("natural recurrence editor persists weekly monthly and completion end choices", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.tasks);
+  await page
+    .getByRole("button", { name: w.desk.newTask, exact: true })
+    .first()
+    .click();
+  const editor = page.locator(".task-editor-surface");
+  await editor
+    .getByLabel(w.work.title, { exact: true })
+    .fill("Natural monthly series");
+  await editor
+    .getByRole("button", {
+      name: zh ? "+ 更多设置" : "+ More settings",
+      exact: true,
+    })
+    .click();
+  await editor.locator(".task-advanced > summary").click();
+  const repeat = editor.locator(".repeat-fields");
+  await repeat
+    .getByLabel(zh ? "重复" : "Repeat", { exact: true })
+    .selectOption("WEEKLY");
+  await repeat.getByLabel(zh ? "星期一" : "Monday", { exact: true }).check();
+  await repeat.getByLabel(zh ? "星期五" : "Friday", { exact: true }).check();
+  await expect(
+    repeat.getByRole("button", { name: zh ? "时区" : "Timezone", exact: true }),
+  ).toBeHidden();
+  await repeat
+    .getByLabel(zh ? "结束" : "Ends", { exact: true })
+    .selectOption("COUNT");
+  await repeat
+    .getByLabel(zh ? "完成次数" : "Completion count", { exact: true })
+    .fill("3");
+  await expect(
+    repeat.getByRole("button", {
+      name: zh ? "结束日期" : "End date",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await repeat
+    .getByLabel(zh ? "重复" : "Repeat", { exact: true })
+    .selectOption("MONTHLY");
+  await expect(
+    repeat.getByRole("checkbox", {
+      name: zh ? "星期一" : "Monday",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await repeat
+    .getByLabel(zh ? "每月安排" : "Monthly schedule", { exact: true })
+    .selectOption("ORDINAL_WEEKDAY");
+  await repeat
+    .getByLabel(zh ? "第几个" : "Ordinal", { exact: true })
+    .selectOption("2");
+  await repeat
+    .getByLabel(zh ? "星期" : "Weekday", { exact: true })
+    .selectOption("1");
+  await expect(repeat.locator(".recurrence-rule-summary")).toContainText(
+    zh ? "完成 3 次后结束" : "3 completions",
+  );
+  await page.screenshot({
+    path: info.outputPath("natural-recurrence-editor.png"),
+    fullPage: true,
+  });
+  await editor
+    .getByRole("button", { name: w.common.create, exact: true })
+    .click();
+  await expect(editor).toHaveCount(0);
+  await expect
+    .poll(
+      async () => {
+        const synced = await (
+          await page.request.get(workbench.url + "/api/snapshot")
+        ).json();
+        return synced.workflows.find(
+          (entry: { payload: { title?: string } }) =>
+            entry.payload.title === "Natural monthly series",
+        )?.payload;
+      },
+      {
+        message:
+          "locally saved recurrence definition is replayed with its complete original rule",
+      },
+    )
+    .toMatchObject({
+      frequency: "MONTHLY",
+      monthlyRule: { kind: "ORDINAL_WEEKDAY", ordinal: 2, weekday: 1 },
+      endAfterCompleted: 3,
+      endDate: null,
+    });
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  const definition = snapshot.workflows.find(
+    (entry: { payload: { title?: string } }) =>
+      entry.payload.title === "Natural monthly series",
+  );
+  expect(definition.payload).toMatchObject({
+    frequency: "MONTHLY",
+    monthlyRule: { kind: "ORDINAL_WEEKDAY", ordinal: 2, weekday: 1 },
+    endAfterCompleted: 3,
+    endDate: null,
+  });
+  expect(definition.payload).not.toHaveProperty("weekdays");
+});
+
+test("quick task create keeps advanced fields unmounted and full editor has stable shared actions", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.tasks);
+  await page
+    .getByRole("button", { name: w.desk.newTask, exact: true })
+    .first()
+    .click();
+  const editor = page.locator(".task-editor-surface");
+  await expect(editor).toHaveClass(/task-quick-create/);
+  await expect(editor.locator("textarea, .task-advanced")).toHaveCount(0);
+  await expect(
+    editor.getByLabel(w.desk.activationPolicy, { exact: true }),
+  ).toHaveCount(0);
+  await editor.getByLabel(w.work.title, { exact: true }).fill("Concise draft");
+  const more = editor.getByRole("button", {
+    name: zh ? "+ 更多设置" : "+ More settings",
+    exact: true,
+  });
+  await more.click();
+  await expect(
+    editor.getByRole("region", {
+      name: zh ? "工作关系" : "Work relationships",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await editor
+    .getByRole("button", {
+      name: zh ? "收起更多设置" : "Hide extra settings",
+      exact: true,
+    })
+    .click();
+  await expect(editor.locator(".task-advanced")).toHaveCount(0);
+  await expect(editor.getByLabel(w.work.title, { exact: true })).toHaveValue(
+    "Concise draft",
+  );
+  await editor
+    .getByRole("button", {
+      name: zh ? "+ 添加描述" : "+ Add description",
+      exact: true,
+    })
+    .click();
+  await editor
+    .getByLabel(w.work.description, { exact: true })
+    .fill("Original Markdown\nSecond line");
+  await editor
+    .locator(".ui-editor-body")
+    .evaluate((element) => (element.scrollTop = element.scrollHeight));
+  await expect(editor.locator(".ui-editor-footer")).toBeInViewport();
+  await expect(
+    editor.locator(".ui-editor-footer .ui-button-primary"),
+  ).toHaveCount(1);
+  await page.screenshot({
+    path: info.outputPath("quick-task-create.png"),
+    fullPage: true,
+  });
+  await editor
+    .getByRole("button", { name: w.common.create, exact: true })
+    .click();
+  await expect(editor).toBeHidden();
+  await page
+    .locator(".task-card")
+    .filter({ hasText: "Concise draft" })
+    .locator(".task-title")
+    .press("Enter");
+  await expect(editor).toHaveClass(/task-full-editor/);
+  for (const label of zh
+    ? ["任务是什么", "属于哪里", "什么时候", "工作关系"]
+    : ["What is the task?", "Where it belongs", "When", "Work relationships"])
+    await expect(
+      editor.getByRole("region", { name: label, exact: true }),
+    ).toBeVisible();
+  await expect(
+    editor.getByLabel(w.work.description, { exact: true }),
+  ).toHaveValue("Original Markdown\nSecond line");
+  await expect(
+    editor
+      .locator(".ui-editor-footer")
+      .getByRole("button", { name: w.common.delete, exact: true }),
+  ).toHaveCount(0);
+  await editor
+    .getByRole("button", {
+      name: zh ? "更多操作" : "More actions",
+      exact: true,
+    })
+    .click();
+  await expect(
+    editor.getByRole("menuitem", { name: w.common.delete, exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(editor).toBeVisible();
+  await editor
+    .getByRole("button", { name: w.common.close, exact: true })
+    .click();
+  await expect(editor).toBeHidden();
+});
 
 test("task edits, persistence, language, trash and recovery", async ({
   page,
@@ -5533,7 +7919,11 @@ test("task edits, persistence, language, trash and recovery", async ({
     .getByRole("button", { name: "Open task: Edited 中文 task", exact: true })
     .press("Enter");
   await page
-    .getByRole("button", { name: "Move to trash", exact: true })
+    .getByRole("dialog")
+    .getByRole("button", { name: "More actions", exact: true })
+    .click();
+  await page
+    .getByRole("menuitem", { name: "Move to trash", exact: true })
     .click();
   await nav(page, "Trash");
   await page.getByRole("button", { name: "Restore", exact: true }).click();
@@ -5646,7 +8036,7 @@ test("notes, safe reading, revision restore, journal and export", async ({
   const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.notes);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   await page
     .getByLabel(w.desk.noteTitle, { exact: true })
     .fill("Original note");
@@ -5715,7 +8105,7 @@ test("notes, safe reading, revision restore, journal and export", async ({
   expect((await download).suggestedFilename()).toBe("Original note.md");
   const deleted = page.waitForResponse(
     (response) =>
-      response.url().endsWith("/api/note/delete") &&
+      /\/api\/(?:v1\/)?note\/delete$/.test(response.url()) &&
       response.request().method() === "POST",
   );
   await documentAction(page, w.common.delete);
@@ -5726,13 +8116,13 @@ test("notes, safe reading, revision restore, journal and export", async ({
     .getByRole("button", { name: w.common.restore, exact: true })
     .click();
   await nav(page, w.desk.journal);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   await page
     .getByLabel(w.desk.noteBody, { exact: true })
     .fill("Today's reflection");
   await saveDocument(page, w);
   await browseDocuments(page);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   await expect(
     pane(page).getByLabel(w.desk.noteBody, { exact: true }),
   ).toHaveText("Today's reflection");
@@ -5774,9 +8164,7 @@ test("v2.3 Library searches bodies on the host and retains hierarchy query and s
     .locator(".space-card")
     .filter({ hasText: "Search collection" });
   await row.click();
-  await expect(row).toHaveAttribute("data-selected", "true");
-  await expect(page.locator(".library-document-row")).toHaveCount(0);
-  await row.press("Enter");
+  // Spaces open on a single click; selection is not an inspector state.
   await expect(page.locator(".library-document-row")).toHaveCount(2);
   await page.keyboard.press("Escape");
   const results = page.waitForResponse(
@@ -5793,8 +8181,7 @@ test("v2.3 Library searches bodies on the host and retains hierarchy query and s
     .locator(".library-document-row")
     .filter({ hasText: "Opaque result" });
   await document.click();
-  await expect(pane(page)).toHaveCount(0);
-  await document.press("Enter");
+  // Documents also open on a single click.
   await expect(pane(page).getByLabel(w.spaces.body)).toContainText(
     "needlephrase",
   );
@@ -5816,7 +8203,7 @@ test("v2.3 closing a document flushes latest text and retains an offline draft",
   const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.notes);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   await pane(page).getByLabel(w.desk.noteTitle).fill("Close flush note");
   await pane(page)
     .getByLabel(w.desk.noteBody)
@@ -5826,6 +8213,7 @@ test("v2.3 closing a document flushes latest text and retains an offline draft",
     .getByRole("button", { name: /^(Close|关闭) / })
     .click();
   await expect(pane(page)).toHaveCount(0);
+  await waitForLocalReplay(page);
   const saved = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -5838,7 +8226,7 @@ test("v2.3 closing a document flushes latest text and retains an offline draft",
     .locator(".note-card, .library-document-row, .space-card")
     .filter({ hasText: "Close flush note" })
     .press("Enter");
-  await page.route("**/api/note/save", (route) => route.abort("failed"));
+  await setLocalCommandFailure(page, true);
   await pane(page).getByLabel(w.desk.noteBody).fill("Offline final text");
   await page
     .locator(".document-tab")
@@ -5859,8 +8247,9 @@ test("v2.3 closing a document flushes latest text and retains an offline draft",
   await expect(pane(page).getByLabel(w.desk.noteBody)).toHaveText(
     "Offline final text",
   );
-  await page.unroute("**/api/note/save");
+  await setLocalCommandFailure(page, false);
   await saveDocument(page, w);
+  await waitForLocalReplay(page);
   const restored = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -5880,7 +8269,7 @@ test("live blocks autosave IME tabs and calendar journal recovery", async ({
     await (await page.request.get(workbench.url + "/api/snapshot")).json();
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.notes);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   const title = pane(page).getByLabel(w.desk.noteTitle);
   const body = pane(page).getByLabel(w.desk.noteBody);
   await title.fill("Live lecture");
@@ -5922,9 +8311,11 @@ test("live blocks autosave IME tabs and calendar journal recovery", async ({
   await page.locator(".calendar-day.is-today").click();
   await expect(page.locator(".document-pane:not([hidden])")).toHaveCount(0);
   await openCalendarJournal(page, w.desk.journal);
-  await expect(pane(page).getByLabel(w.desk.noteTitle)).not.toHaveValue(
-    "输入中的讲义",
-  );
+  await expect(
+    pane(page).getByLabel(
+      info.project.name.endsWith("zh") ? "日记标题" : "Journal title",
+    ),
+  ).not.toHaveValue("输入中的讲义");
   await page.waitForTimeout(1100);
   expect((await snapshot()).notes).toHaveLength(1);
   await body.fill("Today's unique journal");
@@ -5966,7 +8357,7 @@ test("localized product layouts, unsaved draft guard and lock", async ({
   await page.goto(workbench.url);
   await page.screenshot({ path: info.outputPath("login.png"), fullPage: true });
   await unlock(page, workbench.url, workbench.secret, w);
-  const primary = page.locator(".topbar .compact-create");
+  const primary = page.locator(".page-header .compact-create");
   const contrast = await primary.evaluate((element) => {
     const style = getComputedStyle(element);
     const luminance = (color: string) => {
@@ -6049,7 +8440,7 @@ test("localized product layouts, unsaved draft guard and lock", async ({
   });
   for (const view of ["tasks", "board", "notes", "settings"] as const) {
     await nav(page, w.desk[view]);
-    await expect(page.locator(".topbar .breadcrumb strong")).toBeVisible();
+    await expect(page.locator(".page-header h1")).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -6069,7 +8460,7 @@ test("localized product layouts, unsaved draft guard and lock", async ({
     path: info.outputPath("note-editor.png"),
     fullPage: true,
   });
-  await page.route("**/api/note/save", (route) => route.abort("failed"));
+  await setLocalCommandFailure(page, true);
   // Select through CodeMirror's keymap: DOM fill can race live decorations
   // and replace only the visible DOM selection on mobile.
   const draftBody = pane(page).getByLabel(w.desk.noteBody, { exact: true });
@@ -6094,8 +8485,10 @@ test("localized product layouts, unsaved draft guard and lock", async ({
   await confirmation6;
   await nav(page, w.desk.settings);
   await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
+  await page.goto(workbench.url + "/#account");
   await expect(page.getByLabel(w.spaces.username)).toBeVisible();
   await page.reload();
+  await page.goto(workbench.url + "/#account");
   await expect(page.getByLabel(w.spaces.username)).toBeVisible();
 });
 
@@ -6168,6 +8561,7 @@ test("project settings preserve brief and task fields; canvas saves Markdown wit
   });
   await page.getByRole("button", { name: w.common.save, exact: true }).click();
   await expect(brief).toHaveCount(0);
+  await waitForLocalReplay(page);
   snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -6213,13 +8607,11 @@ for (const legacy of [false, true])
         day: null,
       },
     });
-    const session = await (
-      await page.request.get(workbench.url + "/api/session")
-    ).json();
+    const own = await activeReplicaIdentity(page);
     const key = JSON.stringify([
       workbench.url,
-      session.context.workspaceId,
-      session.context.principalId,
+      own.workspaceId,
+      own.principalId,
       note.id,
     ]);
     await page.evaluate(
@@ -6375,6 +8767,86 @@ test("equal membership scope counts shared work and canceled outcomes", async ({
   });
 });
 
+test("Delta project milestone completion is explicit and offline reopen preserves descendants", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "Delta milestone parent",
+    type: "PROJECT",
+  });
+  const milestone = await mutation(page, "/api/work/create", {
+    title: "Unreached milestone",
+    type: "MILESTONE",
+    parentProjectId: project.id,
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await page
+    .getByRole("button", { name: project.title, exact: true })
+    .press("Enter");
+  const settings = () =>
+    projectAction(
+      page,
+      info.project.name.endsWith("zh")
+        ? "更改项目状态"
+        : "Change project status",
+    );
+  const dialog = page.getByRole("dialog");
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await settings();
+  await dialog
+    .getByLabel(w.desk.projectLifecycle, { exact: true })
+    .selectOption("COMPLETED");
+  const resolution = dialog.getByRole("group", {
+    name: w.desk.completionResolution.title,
+  });
+  await expect(resolution).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: w.common.save, exact: true }),
+  ).toBeDisabled();
+  await resolution.getByRole("combobox").selectOption("KEEP");
+  await dialog
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".project-workspace")).toContainText(
+    w.desk.projectLifecycles.COMPLETED,
+  );
+  await settings();
+  await dialog
+    .getByLabel(w.desk.projectLifecycle, { exact: true })
+    .selectOption("ACTIVE");
+  await dialog
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".project-workspace")).toContainText(
+    w.desk.projectLifecycles.ACTIVE,
+  );
+  await page.unroute("**/api/**");
+  await page.reload();
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.items.find(
+        (item: { id: string }) => item.id === project.id,
+      )?.lifecycle;
+    })
+    .toBe("ACTIVE");
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.items.find((item: { id: string }) => item.id === milestone.id),
+  ).toEqual(milestone);
+});
+
 test("project lifecycle completion and explicit atomic reopen are usable", async ({
   page,
   workbench,
@@ -6394,7 +8866,13 @@ test("project lifecycle completion and explicit atomic reopen are usable", async
   await page
     .getByRole("button", { name: "Lifecycle project", exact: true })
     .press("Enter");
-  const settings = () => projectAction(page, w.desk.projectSettings);
+  const settings = () =>
+    projectAction(
+      page,
+      info.project.name.endsWith("zh")
+        ? "更改项目状态"
+        : "Change project status",
+    );
   const dialog = page.getByRole("dialog");
   await settings();
   await dialog
@@ -6450,14 +8928,16 @@ test("project lifecycle completion and explicit atomic reopen are usable", async
   await expect(page.locator(".project-workspace")).toContainText(
     w.desk.projectLifecycles.COMPLETED,
   );
-  const snapshot = await (
-    await page.request.get(workbench.url + "/api/snapshot")
-  ).json();
-  expect(
-    snapshot.items.filter(
-      (i: { title: string }) => i.title === "After explicit reopen",
-    ),
-  ).toHaveLength(1);
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.items.filter(
+        (i: { title: string }) => i.title === "After explicit reopen",
+      ).length;
+    })
+    .toBe(1);
 });
 
 test("project hierarchy and URL preserve scope tabs and browser history", async ({
@@ -6491,7 +8971,7 @@ test("project hierarchy and URL preserve scope tabs and browser history", async 
     .press("Enter");
   await expect(page).toHaveURL(new RegExp("projects/" + child.id));
   await page
-    .locator(".topbar")
+    .locator(".page-header")
     .getByRole("navigation")
     .getByRole("button", { name: "Navigation root", exact: true })
     .press("Enter");
@@ -6572,12 +9052,12 @@ test("inline prerequisites save atomically with availability and reject stale gr
   });
   await page.reload();
   await nav(page, w.desk.tasks);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   const dialog = page.getByRole("dialog");
   await dialog
     .getByLabel(w.work.title, { exact: true })
     .fill("Inline dependent");
-  await dialog.locator(".task-advanced > summary").click();
+  await openTaskAdvanced(dialog);
   const prerequisites = dialog.getByRole("group", {
     name: w.work.prerequisites,
     exact: true,
@@ -6590,13 +9070,15 @@ test("inline prerequisites save atomically with availability and reject stale gr
     .click();
   await page
     .locator(".hierarchy-browser")
-    .getByRole("button", { name: /^Prerequisite source / })
+    .getByRole("button", { name: "Prerequisite source", exact: true })
     .click();
   await expect(prerequisites.locator("p")).toContainText(w.work.blocked);
+  await page.keyboard.press("Escape");
   await dialog
     .getByRole("button", { name: w.common.create, exact: true })
     .click();
   await expect(dialog).toBeHidden();
+  await waitForLocalReplay(page);
   const read = async () =>
     (await page.request.get(workbench.url + "/api/snapshot")).json();
   const initial = await read();
@@ -6616,7 +9098,7 @@ test("inline prerequisites save atomically with availability and reject stale gr
       })
       .press("Enter");
   await openTask();
-  await dialog.locator(".task-advanced > summary").click();
+  await openTaskAdvanced(dialog);
   await expect(
     prerequisites.getByRole("button", {
       name: "Prerequisite source ×",
@@ -6663,7 +9145,7 @@ test("inline prerequisites save atomically with availability and reject stale gr
     .click();
   await page.reload();
   await openTask();
-  await dialog.locator(".task-advanced > summary").click();
+  await openTaskAdvanced(dialog);
   await prerequisites
     .getByRole("button", { name: "Concurrent source ×", exact: true })
     .click();
@@ -6671,6 +9153,7 @@ test("inline prerequisites save atomically with availability and reject stale gr
     .getByRole("button", { name: w.common.save, exact: true })
     .click();
   await expect(dialog).toBeHidden();
+  await waitForLocalReplay(page);
   expect((await read()).edges).toHaveLength(1);
   const history = await (
     await page.request.get(workbench.url + "/api/activity")
@@ -6801,30 +9284,31 @@ test("parent picker excludes descendants and dependency nodes open task inspecto
     browser
       .locator("li")
       .filter({ hasText: "Tree root" })
-      .locator(".ui-button-toggle"),
+      .locator(".ui-entity-picker-choice"),
   ).toBeDisabled();
   await browser
     .locator("li")
     .filter({ hasText: "Tree root" })
-    .locator(".parent-tree-choice")
+    .locator(".ui-icon-button")
     .click();
   await expect(
     browser
       .locator("li")
       .filter({ hasText: "Tree child" })
-      .locator(".ui-button-toggle"),
+      .locator(".ui-entity-picker-choice"),
   ).toBeDisabled();
   await browser.locator("nav > button").click();
   await browser.getByRole("searchbox").fill("target");
   await browser
     .locator("li")
     .filter({ hasText: "Tree target" })
-    .locator(".ui-button-toggle")
+    .locator(".ui-entity-picker-choice")
     .click();
   await dialog
     .getByRole("button", { name: w.common.save, exact: true })
     .click();
   await expect(dialog).toBeHidden();
+  await waitForLocalReplay(page);
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -6865,6 +9349,346 @@ test("parent picker excludes descendants and dependency nodes open task inspecto
   ).toBe(true);
   await page.screenshot({
     path: info.outputPath("canvas-inspector.png"),
+    fullPage: true,
+  });
+});
+
+test("project sibling ordering persists independently from task membership", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const a = await mutation(page, "/api/work/create", {
+    title: "Order root A",
+    type: "PROJECT",
+  });
+  const b = await mutation(page, "/api/work/create", {
+    title: "Order root B",
+    type: "PROJECT",
+  });
+  const child = await mutation(page, "/api/work/create", {
+    title: "Order child",
+    type: "PROJECT",
+    parentProjectId: a.id,
+  });
+  const task = await mutation(page, "/api/work/create", {
+    title: "Order task",
+    projectIds: [a.id, b.id],
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  const second = page.locator(
+    `.project-tree-list [data-order-entity="${b.id}"]`,
+  );
+  await second.locator(".ui-drag-handle").focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect
+    .poll(async () =>
+      (
+        await (await page.request.get(workbench.url + "/api/snapshot")).json()
+      ).manualOrders
+        .find(
+          (order: { scope: { kind: string } }) =>
+            order.scope.kind === "PROJECT_CHILDREN",
+        )
+        ?.entries.map((entry: { entityId: string }) => entry.entityId),
+    )
+    .toEqual([b.id, a.id]);
+  await page.reload();
+  await expect(
+    page
+      .locator(".project-tree-list")
+      .first()
+      .locator(":scope > .ui-sortable-row")
+      .first(),
+  ).toHaveAttribute("data-order-entity", b.id);
+  const saved = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    saved.items.find((item: { id: string }) => item.id === child.id)
+      .parentProjectId,
+  ).toBe(a.id);
+  expect(
+    saved.items.find((item: { id: string }) => item.id === task.id).projectIds,
+  ).toEqual([a.id, b.id]);
+});
+
+test("project body and category drops preserve cycle safety and task ownership", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const a = await mutation(page, "/api/work/create", {
+    title: "Drop parent",
+    type: "PROJECT",
+  });
+  const b = await mutation(page, "/api/work/create", {
+    title: "Drop child",
+    type: "PROJECT",
+  });
+  const task = await mutation(page, "/api/work/create", {
+    title: "Drop task",
+    projectIds: [b.id],
+  });
+  const category = await mutation(page, "/api/categories/save", {
+    name: "Empty drop category",
+    version: 0,
+    deleted: false,
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  const parent = page.locator(
+    `[data-order-entity="${a.id}"] > .project-sortable-content`,
+  );
+  const child = page.locator(
+    `[data-order-entity="${b.id}"] > .project-sortable-content`,
+  );
+  const session = await page.context().newCDPSession(page);
+  await session.send("Emulation.setTouchEmulationEnabled", {
+    enabled: true,
+    maxTouchPoints: 1,
+  });
+  const sourceBounds = (await child.locator(".project-title").boundingBox())!;
+  const targetBounds = (await parent
+    .locator(".ui-hierarchy-drop-target")
+    .boundingBox())!;
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [
+      {
+        x: sourceBounds.x + sourceBounds.width / 2,
+        y: sourceBounds.y + sourceBounds.height / 2,
+      },
+    ],
+  });
+  await expect(page.locator(`[data-order-entity="${b.id}"]`)).toHaveAttribute(
+    "data-reordering",
+    "true",
+  );
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [
+      {
+        x: targetBounds.x + targetBounds.width / 2,
+        y: targetBounds.y + targetBounds.height / 2,
+      },
+    ],
+  });
+  await expect(parent.locator(".ui-hierarchy-drop-target")).toHaveAttribute(
+    "data-hierarchy-over",
+    "true",
+  );
+  expect(
+    (
+      await (await page.request.get(workbench.url + "/api/snapshot")).json()
+    ).items.find((item: { id: string }) => item.id === b.id).parentProjectId,
+  ).toBeNull();
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await session.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await session.detach();
+  await expect
+    .poll(
+      async () =>
+        (
+          await (await page.request.get(workbench.url + "/api/snapshot")).json()
+        ).items.find((item: { id: string }) => item.id === b.id)
+          .parentProjectId,
+    )
+    .toBe(a.id);
+  await parent.locator("button.project-tree-toggle").click();
+  await expect(child).toBeVisible();
+  const beforeCycle = (
+    await (await page.request.get(workbench.url + "/api/snapshot")).json()
+  ).items.find((item: { id: string }) => item.id === a.id);
+  await parent.dragTo(child.locator(".ui-hierarchy-drop-target"));
+  expect(
+    (
+      await (await page.request.get(workbench.url + "/api/snapshot")).json()
+    ).items.find((item: { id: string }) => item.id === a.id),
+  ).toEqual(beforeCycle);
+  await parent.dragTo(
+    page.locator(".ui-hierarchy-drop-target").filter({
+      has: page.getByRole("heading", {
+        name: "Empty drop category",
+        exact: true,
+      }),
+    }),
+  );
+  await expect
+    .poll(
+      async () =>
+        (
+          await (await page.request.get(workbench.url + "/api/snapshot")).json()
+        ).items.find((item: { id: string }) => item.id === a.id).categoryId,
+    )
+    .toBe(category.id);
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.items.find((item: { id: string }) => item.id === task.id)
+      .projectIds,
+  ).toEqual([b.id]);
+  expect(
+    snapshot.items.find((item: { id: string }) => item.id === a.id).type,
+  ).toBe("PROJECT");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: info.outputPath("project-hierarchy-drop.png"),
+    fullPage: true,
+  });
+});
+
+test("Sidebar keyboard movement persists within its navigation group", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const sidebar = page.locator(".sidebar");
+  const mobile = info.project.name.includes("mobile");
+  if (mobile) await page.locator(".mobile-navigation-toggle").click();
+  const surface = mobile ? page.locator(".mobile-more-sheet") : sidebar;
+  const calendar = surface.locator(
+    `[data-order-entity="${mobile ? "focus" : "calendar"}"]`,
+  );
+  await calendar.locator("button[data-reorder-surface]").focus();
+  await calendar.locator(".ui-drag-handle").focus();
+  await expect(calendar.locator(".ui-drag-handle")).toBeFocused();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.navigationPreference.desktop.order.slice(0, 5);
+    })
+    .toEqual(
+      mobile
+        ? ["focus", "overview", "tasks", "projects", "calendar"]
+        : ["overview", "tasks", "projects", "calendar", "focus"],
+    );
+  await page.reload();
+  if (mobile) {
+    await page.locator(".mobile-navigation-toggle").click();
+    await expect(
+      surface.locator('[data-order-scope="NAV:workspace:ordinary"]').first(),
+    ).toHaveAttribute("data-order-entity", "focus");
+  } else
+    await expect(
+      sidebar.locator("section").first().locator(".nav-item"),
+    ).toHaveText([
+      new RegExp(w.desk.overview),
+      new RegExp(w.desk.tasks),
+      new RegExp(w.desk.projects),
+      new RegExp(w.desk.calendar),
+      new RegExp(w.desk.focus),
+    ]);
+  const before = (
+    await (await page.request.get(workbench.url + "/api/snapshot")).json()
+  ).navigationPreference;
+  await surface
+    .locator(`[data-order-entity="${mobile ? "journal" : "notes"}"]`)
+    .evaluate((element) => {
+      const transfer = new DataTransfer();
+      transfer.setData(
+        "application/x-orivane-drag+json",
+        JSON.stringify({
+          version: 1,
+          intent: "NAV_REORDER",
+          entityId: "tasks",
+          scopeKey: "NAV:workspace:ordinary",
+        }),
+      );
+      element.dispatchEvent(
+        new DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: transfer,
+        }),
+      );
+    });
+  expect(
+    (await (await page.request.get(workbench.url + "/api/snapshot")).json())
+      .navigationPreference,
+  ).toEqual(before);
+});
+
+test("navigation long press uses a real touch gesture and commits only on release", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const mobile = info.project.name.includes("mobile");
+  if (mobile) await page.locator(".mobile-navigation-toggle").click();
+  const surface = mobile
+    ? page.locator(".mobile-more-sheet")
+    : page.locator(".sidebar");
+  const moving = mobile ? "focus" : "calendar";
+  const anchor = mobile ? "overview" : "focus";
+  const source = surface.locator(`[data-order-entity="${moving}"]`);
+  const target = surface.locator(`[data-order-entity="${anchor}"]`);
+  const sourceBounds = (await source.boundingBox())!;
+  const targetBounds = (await target.boundingBox())!;
+  const before = (
+    await (await page.request.get(workbench.url + "/api/snapshot")).json()
+  ).navigationPreference;
+  const session = await page.context().newCDPSession(page);
+  await session.send("Emulation.setTouchEmulationEnabled", {
+    enabled: true,
+    maxTouchPoints: 1,
+  });
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [
+      {
+        x: sourceBounds.x + sourceBounds.width / 2,
+        y: sourceBounds.y + sourceBounds.height / 2,
+      },
+    ],
+  });
+  await expect(source).toHaveAttribute("data-reordering", "true");
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [
+      { x: targetBounds.x + targetBounds.width / 2, y: targetBounds.y + 4 },
+    ],
+  });
+  await expect(target).toHaveAttribute("data-touch-drop", "BEFORE");
+  expect(
+    (await (await page.request.get(workbench.url + "/api/snapshot")).json())
+      .navigationPreference,
+  ).toEqual(before);
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await expect
+    .poll(async () =>
+      (
+        await (await page.request.get(workbench.url + "/api/snapshot")).json()
+      ).navigationPreference.desktop.order.slice(0, 5),
+    )
+    .toEqual(
+      mobile
+        ? ["focus", "overview", "tasks", "projects", "calendar"]
+        : ["overview", "tasks", "projects", "calendar", "focus"],
+    );
+  await expect(surface).toBeVisible();
+  await session.detach();
+  await page.screenshot({
+    path: info.outputPath("navigation-touch-order.png"),
     fullPage: true,
   });
 });
@@ -7034,9 +9858,17 @@ test.describe("host calendar authority", () => {
     const initial = await (
       await page.request.get(workbench.url + "/api/snapshot")
     ).json();
-    expect(initial.calendarTimezone).toBe("America/Adak");
+    expect(initial.calendarTimezone).toBe("Pacific/Kiritimati");
     await mutation(page, "/api/work/calendar-settings", {
       version: initial.calendarSettings.version,
+      timezone: "America/Adak",
+    });
+    const changed = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(changed.calendarTimezone).toBe("America/Adak");
+    await mutation(page, "/api/work/calendar-settings", {
+      version: changed.calendarSettings.version,
       timezone: "Pacific/Kiritimati",
     });
     expect(localCalendarDay(instant, "America/Adak")).not.toBe(day);
@@ -7160,8 +9992,10 @@ test("AI approval follows the active document tab and excludes hidden document c
     state.runs[0].context.map((item: { ref: { id: string } }) => item.ref.id),
   ).toEqual([documents[0].id]);
   await assistant.getByRole("button", { name: /^(Reject|拒绝)$/ }).click();
-  await assistant
-    .getByRole("button", { name: zh ? "关闭助手" : "Close assistant" })
+  // Atlas is a floating surface now; its own header owns the close control.
+  await page
+    .getByRole("dialog", { name: zh ? "Atlas 助手" : "Atlas assistant" })
+    .getByRole("button", { name: zh ? "关闭 Atlas" : "Close Atlas" })
     .click();
   await page
     .getByRole("tablist")
@@ -7177,6 +10011,203 @@ test("AI approval follows the active document tab and excludes hidden document c
   ).toBeVisible();
   state = await (await page.request.get(workbench.url + "/api/ai")).json();
   expect(state.runs[0].context).toEqual([]);
+});
+
+test("Delta document organization moves its home while links preserve identity and body", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const source = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "SPACE",
+      spaceId: null,
+      title: "Delta source home",
+      bodyMd: "",
+    },
+  });
+  const target = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "SPACE",
+      spaceId: null,
+      title: "Delta target home",
+      bodyMd: "",
+    },
+  });
+  const document = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: source.id,
+      title: "Delta stable document",
+      bodyMd: "Original 中文正文\nsecond line",
+    },
+  });
+  await page.reload();
+  await nav(page, w.spaces.library);
+  await page.locator(".space-card").filter({ hasText: source.title }).click();
+  await page
+    .locator(".library-document-row")
+    .filter({ hasText: document.title })
+    .click();
+  const editFont = await pane(page)
+    .locator(".cm-scroller")
+    .evaluate((element) => getComputedStyle(element).fontFamily);
+  expect(editFont).toContain("sans-serif");
+  expect(editFont).not.toMatch(/SimSun|宋体/);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("DOM.enable");
+  await cdp.send("CSS.enable");
+  const { root } = await cdp.send("DOM.getDocument");
+  const { nodeId } = await cdp.send("DOM.querySelector", {
+    nodeId: root.nodeId,
+    selector: ".document-pane .cm-line",
+  });
+  const { fonts } = await cdp.send("CSS.getPlatformFontsForNode", { nodeId });
+  writeFileSync(
+    info.outputPath("delta-edit-platform-fonts.json"),
+    JSON.stringify(fonts, null, 2),
+  );
+  await info.attach("actual-document-fonts", {
+    body: JSON.stringify(fonts, null, 2),
+    contentType: "application/json",
+  });
+  expect(
+    fonts.some((font) => /SimSun|Song|Serif|宋体/i.test(font.familyName)),
+  ).toBe(false);
+  const titleTop = (await pane(page).locator(".document-title").boundingBox())!
+    .y;
+  await documentMode(page, zh ? "源码" : "Source");
+  expect(
+    await pane(page)
+      .locator(".cm-scroller")
+      .evaluate((element) => getComputedStyle(element).fontFamily),
+  ).toContain("monospace");
+  await documentMode(page, w.desk.read);
+  expect(
+    Math.abs(
+      (await pane(page).locator(".document-title").boundingBox())!.y - titleTop,
+    ),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    await pane(page)
+      .locator(".document-reading .markdown")
+      .evaluate((element) => getComputedStyle(element).fontFamily),
+  ).toContain("sans-serif");
+  const readingNode = await cdp.send("DOM.querySelector", {
+    nodeId: root.nodeId,
+    selector: ".document-reading .markdown p",
+  });
+  const readingFonts = await cdp.send("CSS.getPlatformFontsForNode", {
+    nodeId: readingNode.nodeId,
+  });
+  writeFileSync(
+    info.outputPath("delta-read-platform-fonts.json"),
+    JSON.stringify(readingFonts.fonts, null, 2),
+  );
+  expect(
+    readingFonts.fonts.some((font) =>
+      /SimSun|Song|Serif|宋体/i.test(font.familyName),
+    ),
+  ).toBe(false);
+  await cdp.detach();
+  await page.screenshot({
+    path: info.outputPath("delta-document-sans-reading.png"),
+    fullPage: true,
+  });
+  const actions = pane(page).locator(".note-knowledge-actions");
+  await actions
+    .getByRole("button", {
+      name: zh ? "关联到知识空间" : "Link to knowledge space",
+      exact: true,
+    })
+    .click();
+  await actions.locator(".space-picker button[aria-expanded]").click();
+  await page
+    .locator(".hierarchy-browser")
+    .getByRole("button", { name: target.title, exact: true })
+    .click();
+  await actions
+    .getByRole("button", { name: zh ? "确认" : "Confirm", exact: true })
+    .click();
+  await expect
+    .poll(async () =>
+      (
+        await (await page.request.get(workbench.url + "/api/snapshot")).json()
+      ).links.some(
+        (link: { from: { id: string }; to: { id: string } }) =>
+          link.from.id === document.id && link.to.id === target.id,
+      ),
+    )
+    .toBe(true);
+  let canonical = await (
+    await page.request.get(
+      workbench.url + "/api/document/body?kind=LIBRARY&id=" + document.id,
+    )
+  ).json();
+  expect(canonical.spaceId).toBe(source.id);
+  expect(canonical.bodyMd).toBe(document.bodyMd);
+  expect(canonical.version).toBe(document.version);
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await actions
+    .getByRole("button", {
+      name: zh ? "整理到知识空间" : "Organize into knowledge space",
+      exact: true,
+    })
+    .click();
+  await actions.locator(".space-picker button[aria-expanded]").click();
+  await page
+    .locator(".hierarchy-browser")
+    .getByRole("button", { name: target.title, exact: true })
+    .click();
+  await actions
+    .getByRole("button", { name: zh ? "确认" : "Confirm", exact: true })
+    .click();
+  await expect(
+    actions.getByRole("button", { name: zh ? "确认" : "Confirm", exact: true }),
+  ).toHaveCount(0);
+  await page.reload();
+  await nav(page, w.spaces.library);
+  await page.locator(".space-card").filter({ hasText: target.title }).click();
+  await page
+    .locator(".library-document-row")
+    .filter({ hasText: document.title })
+    .click();
+  await documentMode(page, w.desk.read);
+  await expect(pane(page).locator(".document-reading")).toContainText(
+    "Original 中文正文",
+  );
+  await page.unroute("**/api/**");
+  await page.reload();
+  await expect
+    .poll(
+      async () =>
+        (
+          await (
+            await page.request.get(
+              workbench.url +
+                "/api/document/body?kind=LIBRARY&id=" +
+                document.id,
+            )
+          ).json()
+        ).spaceId,
+    )
+    .toBe(target.id);
+  canonical = await (
+    await page.request.get(
+      workbench.url + "/api/document/body?kind=LIBRARY&id=" + document.id,
+    )
+  ).json();
+  expect(canonical.id).toBe(document.id);
+  expect(canonical.bodyMd).toBe(document.bodyMd);
+  expect(canonical.version).toBe(document.version + 1);
 });
 
 test("capture links to Space and promotes to Wiki with Journal backlinks", async ({
@@ -7232,11 +10263,13 @@ test("capture links to Space and promotes to Wiki with Journal backlinks", async
   );
   await actions
     .getByRole("button", {
-      name: zh ? "链接到知识空间" : "Link to knowledge space",
+      name: zh ? "关联到知识空间" : "Link to knowledge space",
       exact: true,
     })
     .click();
-  await actions
+  await actions.locator(".space-picker button[aria-expanded]").click();
+  await page
+    .locator(".hierarchy-browser")
     .getByRole("button", { name: "Capture Wiki", exact: true })
     .click();
   await actions
@@ -7253,11 +10286,13 @@ test("capture links to Space and promotes to Wiki with Journal backlinks", async
   ).toHaveLength(1);
   await actions
     .getByRole("button", {
-      name: zh ? "整理到知识库" : "Organize in Library",
+      name: zh ? "创建知识文档" : "Create knowledge document",
       exact: true,
     })
     .click();
-  await actions
+  await actions.locator(".space-picker button[aria-expanded]").click();
+  await page
+    .locator(".hierarchy-browser")
     .getByRole("button", { name: "Capture Wiki", exact: true })
     .click();
   await actions
@@ -7266,6 +10301,17 @@ test("capture links to Space and promotes to Wiki with Journal backlinks", async
   await expect(
     page.getByRole("tab", { name: "Capture source", exact: true }),
   ).toHaveCount(2);
+  await expect
+    .poll(async () => {
+      const current = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return current.library.some(
+        (entry: { kind: string; title: string }) =>
+          entry.kind === "DOCUMENT" && entry.title === "Capture source",
+      );
+    })
+    .toBe(true);
   snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -7310,6 +10356,77 @@ test("capture links to Space and promotes to Wiki with Journal backlinks", async
   });
 });
 
+test("shared project picker separates select from explore and restores keyboard focus in mobile sheet", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const root = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Picker parent",
+  });
+  await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Picker child",
+    parentProjectId: root.id,
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await page
+    .getByRole("button", { name: w.desk.newTask, exact: true })
+    .first()
+    .click();
+  const dialog = page.getByRole("dialog"),
+    picker = dialog.locator(".project-memberships .hierarchy-picker");
+  const trigger = picker.locator(".hierarchy-selected > button").last();
+  await trigger.click();
+  const browser = page.locator(".hierarchy-browser");
+  const parent = browser.getByRole("button", {
+    name: "Picker parent",
+    exact: true,
+  });
+  await parent.click();
+  await expect(parent).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    browser.getByRole("button", { name: "Picker child", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    browser.getByRole("button", { name: /^(选择|Select)$/ }),
+  ).toHaveCount(0);
+  await parent.press("ArrowRight");
+  const child = browser.getByRole("button", {
+    name: "Picker child",
+    exact: true,
+  });
+  await expect(child).toBeVisible();
+  await browser.getByRole("searchbox").focus();
+  await browser.getByRole("searchbox").press("ArrowDown");
+  await expect(child).toBeFocused();
+  await child.press("Enter");
+  await expect(child).toHaveAttribute("aria-pressed", "true");
+  await child.press("ArrowLeft");
+  await expect(parent).toBeVisible();
+  await expect(picker.locator(".hierarchy-selected")).toContainText(
+    "Picker child",
+  );
+  if (info.project.name.startsWith("mobile")) {
+    const rect = await browser.boundingBox();
+    expect(rect).not.toBeNull();
+    expect(
+      Math.abs(rect!.y + rect!.height - page.viewportSize()!.height),
+    ).toBeLessThanOrEqual(1);
+    expect(rect!.x).toBe(0);
+  }
+  await page.screenshot({
+    path: info.outputPath("entity-picker-sheet.png"),
+    fullPage: true,
+  });
+  await page.keyboard.press("Escape");
+  await expect(browser).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
 test("current level hierarchy search is shared by Task filters and AI scope", async ({
   page,
   workbench,
@@ -7340,11 +10457,14 @@ test("current level hierarchy search is shared by Task filters and AI scope", as
   await expect(browser.locator("li")).toHaveCount(0);
   await browser.getByRole("searchbox").fill("");
   await browser
-    .getByRole("button", { name: "Hierarchy root ›", exact: true })
+    .getByRole("button", {
+      name: zh ? "浏览子项：Hierarchy root" : "Browse children: Hierarchy root",
+      exact: true,
+    })
     .click();
   await browser.getByRole("searchbox").fill("Deep target");
   await expect(browser.locator("li")).toHaveCount(1);
-  await browser.locator("li .ui-button-toggle").click();
+  await browser.locator("li .ui-entity-picker-choice").click();
   await expect(page.locator(".task-card")).toHaveCount(1);
   await expect(page.locator(".task-card")).toContainText("Scoped child task");
   await nav(page, w.desk.settings);
@@ -7383,6 +10503,17 @@ test("Atlas main workspace is conversation with explicit context and no provider
   await nav(page, w.desk.ai);
   const atlas = page.locator(".atlas-conversation");
   await expect(atlas).toBeVisible();
+  await expect(page.locator(".page-header:visible")).toHaveCount(0);
+  await expect(
+    atlas.getByRole("button", {
+      name: zh ? "通知" : "Notifications",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("workspace-atlas.png"),
+    animations: "disabled",
+  });
   await expect(atlas.locator(".ui-button-primary:visible")).toHaveCount(1);
   await expect(atlas.locator(".personal-ai-settings, .ai-run")).toHaveCount(0);
   const sidebar = await atlas.locator(".conversation-sidebar").boundingBox();
@@ -7428,9 +10559,9 @@ test("Atlas main workspace is conversation with explicit context and no provider
   });
   await expect(contextTrigger).toHaveAttribute("aria-expanded", "false");
   await contextTrigger.click();
-  await expect(atlas.locator(".hierarchy-selected")).not.toContainText(
-    "Context project ×",
-  );
+  await expect(
+    atlas.locator('[data-picker-kind="PROJECT"] .hierarchy-selected'),
+  ).not.toContainText("Context project ×");
   await contextTrigger.click();
   if (info.project.name.startsWith("mobile")) {
     const send = await atlas
@@ -7666,28 +10797,25 @@ test("action pending permits another Task inspector and rolls back optimistic fa
   await mutation(page, "/api/work/create", { title: "Independent B" });
   await page.reload();
   await nav(page, w.desk.tasks);
-  let release!: () => void;
+  let release!: () => void, observed!: () => void;
   const hold = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route("**/api/work/update", async (route) => {
-    if (route.request().postDataJSON().id !== first.id) {
-      await route.continue();
-      return;
-    }
-    await hold;
-    await route.fulfill({
-      status: 409,
-      contentType: "application/json",
-      body: JSON.stringify({ error: "VERSION_CONFLICT" }),
-    });
+  const reached = new Promise<void>((resolve) => {
+    observed = resolve;
   });
-  const row = page.locator(".task-card").filter({ hasText: "Pending A" });
-  const menu = await taskMenu(page, "Pending A");
-  const status = menu.getByRole("combobox");
-  await status.selectOption("IN_PROGRESS");
-  await expect(status).toHaveValue("IN_PROGRESS");
-  await expect(status).toBeDisabled();
+  await page.route("**/api/v1/work/update", async (route) => {
+    if (route.request().postDataJSON().id === first.id) {
+      observed();
+      await hold;
+    }
+    await route.continue();
+  });
+  await (await taskMenu(page, "Pending A"))
+    .getByRole("combobox")
+    .selectOption("IN_PROGRESS");
+  await reached;
+  await page.keyboard.press("Escape");
   await page
     .locator(".task-card")
     .filter({ hasText: "Independent B" })
@@ -7704,13 +10832,24 @@ test("action pending permits another Task inspector and rolls back optimistic fa
     .getByRole("button", { name: w.common.close, exact: true })
     .click();
   release();
-  await expect(
-    row.getByRole("button", { name: /More actions: |更多操作：/ }),
-  ).toBeEnabled();
-  await taskMenu(page, "Pending A");
-  await expect(status).toHaveValue("TODO");
+  await waitForLocalReplay(page);
+  const read = async () =>
+    (await page.request.get(workbench.url + "/api/snapshot")).json();
+  expect(
+    (await read()).items.find((item: { id: string }) => item.id === first.id),
+  ).toMatchObject({ status: "IN_PROGRESS", version: 2 });
+  // A failed local transaction, unlike a network outage, must roll back optimism.
+  await setLocalCommandFailure(page, true);
+  const status = (await taskMenu(page, "Pending A")).getByRole("combobox");
+  await status.selectOption("TODO");
+  await expect(status).toHaveValue("IN_PROGRESS");
   await expect(status).toBeEnabled();
-  await expect(page.locator(".toast")).toBeVisible();
+  await expect(page.locator(".toast").last()).toBeVisible();
+  await setLocalCommandFailure(page, false);
+  await waitForLocalReplay(page);
+  expect(
+    (await read()).items.find((item: { id: string }) => item.id === first.id),
+  ).toMatchObject({ status: "IN_PROGRESS", version: 2 });
   await page.screenshot({
     path: info.outputPath("pending-rollback.png"),
     fullPage: true,
@@ -7777,7 +10916,7 @@ test("hardening root-only lazy hierarchy dialog guards floating menu and graph e
     await page
       .getByRole("button", { name: w.desk.workspaceMenu, exact: true })
       .click();
-    await page.locator(".topbar").click({ position: { x: 400, y: 10 } });
+    await page.locator(".page-header").click({ position: { x: 400, y: 10 } });
     await expect(menu).toHaveCount(0);
   }
   await page.screenshot({
@@ -7793,18 +10932,26 @@ test("hardening editors outside click retain dirty drafts settings borders and e
   const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.projects);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   const project = page.locator(".project-settings-dialog");
   await expect(
     project.getByRole("button", { name: w.desk.createProject, exact: true }),
   ).toBeVisible();
-  await page.mouse.click(2, 2);
+  if (info.project.name.startsWith("mobile"))
+    await project
+      .getByRole("button", { name: w.common.close, exact: true })
+      .click();
+  else await page.mouse.click(2, 2);
   await expect(project).toHaveCount(0);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   await project
     .getByLabel(w.work.title, { exact: true })
     .fill("Unsaved project");
-  await page.mouse.click(2, 2);
+  if (info.project.name.startsWith("mobile"))
+    await project
+      .getByRole("button", { name: w.common.close, exact: true })
+      .click();
+  else await page.mouse.click(2, 2);
   await expect(project).toBeVisible();
   await expect(project.locator(".error")).toBeVisible();
   await expect(project.getByLabel(w.work.title, { exact: true })).toHaveValue(
@@ -7814,13 +10961,21 @@ test("hardening editors outside click retain dirty drafts settings borders and e
     .getByRole("button", { name: w.desk.discard, exact: true })
     .click();
   await nav(page, w.desk.tasks);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   const task = page.locator(".task-inspector");
-  await page.mouse.click(2, 2);
+  if (info.project.name.startsWith("mobile"))
+    await task
+      .getByRole("button", { name: w.common.close, exact: true })
+      .click();
+  else await page.mouse.click(2, 2);
   await expect(task).toHaveCount(0);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   await task.getByLabel(w.work.title, { exact: true }).fill("Unsaved task");
-  await page.mouse.click(2, 2);
+  if (info.project.name.startsWith("mobile"))
+    await task
+      .getByRole("button", { name: w.common.close, exact: true })
+      .click();
+  else await page.mouse.click(2, 2);
   await expect(task).toBeVisible();
   await expect(task.locator(".error")).toBeVisible();
   await expect(task.getByLabel(w.work.title, { exact: true })).toHaveValue(
@@ -8149,6 +11304,7 @@ test("hardening Trash soft delete Undo restore and permanent purge across entity
     await confirmation11;
     await expect(entry).toHaveCount(0);
   }
+  await waitForLocalReplay(page);
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -8236,13 +11392,7 @@ test("account experience: picker recent survives refresh and isolates workspace 
   ).toBe(true);
   await nav(page, w.desk.settings);
   await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
-  await expect(page.locator(".login-form")).toBeVisible();
-  await page.getByLabel(w.spaces.username, { exact: true }).fill("second-user");
-  await page
-    .getByLabel(w.spaces.password, { exact: true })
-    .fill(workbench.secret);
-  await page.getByRole("button", { name: w.desk.enter, exact: true }).click();
-  await expect(page.locator(".app-shell")).toBeVisible();
+  await unlock(page, workbench.url, workbench.secret, w, false, "second-user");
   await nav(page, w.desk.tasks);
   await page
     .locator(".project-filter-picker .hierarchy-selected > button")
@@ -8410,7 +11560,7 @@ test("2.1 Sidebar cleanup and localized DateField keyboard clear ISO persistence
   await nav(page, "Atlas");
   await expect(page.locator(".atlas-conversation")).toBeVisible();
   await nav(page, w.desk.tasks);
-  await page.locator(".topbar .compact-create").click();
+  await page.locator(".page-header .compact-create").click();
   const actualEditor = page.getByRole("dialog").first();
   await actualEditor
     .getByLabel(w.work.title, { exact: true })
@@ -8447,6 +11597,22 @@ test("2.1 Sidebar cleanup and localized DateField keyboard clear ISO persistence
     .getByRole("button", { name: w.common.create, exact: true })
     .click();
   await expect(actualEditor).not.toBeVisible();
+  await expect
+    .poll(
+      async () => {
+        const synced = await (
+          await page.request.get(workbench.url + "/api/snapshot")
+        ).json();
+        return synced.items.find(
+          (item: { title: string }) => item.title === "Localized calendar task",
+        )?.startDate;
+      },
+      {
+        message:
+          "local ISO date reaches the bound workspace through asynchronous replay",
+      },
+    )
+    .toBe("2026-10-03");
   const snapshot = await page.request.get(workbench.url + "/api/snapshot");
   expect(snapshot.ok()).toBeTruthy();
   const data = await snapshot.json();
@@ -8471,18 +11637,39 @@ test("2.1 Repeat draft conversion and occurrence versus series editing preserve 
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.tasks);
   await expect(page.locator(".recurrence-manager")).toHaveCount(0);
-  await page.locator(".topbar .compact-create").click();
-  let editor = page.locator(".task-dialog");
+  await page.locator(".page-header .compact-create").click();
+  let editor = page.locator(".task-editor-surface");
   await editor
     .getByLabel(w.work.title, { exact: true })
     .fill("First repeating task");
+  await editor
+    .getByRole("button", {
+      name: /^(\+ 更多设置|\+ More settings)$/,
+      exact: true,
+    })
+    .click();
   await editor.locator(".task-advanced summary").click();
   const repeat = editor.getByLabel(text("重复", "Repeat"), { exact: true });
   await expect(repeat).toHaveValue("NONE");
   await repeat.selectOption("DAILY");
   await editor
-    .getByLabel(text("时区", "Timezone"), { exact: true })
-    .fill("UTC");
+    .getByText(text("高级重复设置", "Advanced recurrence settings"), {
+      exact: true,
+    })
+    .click();
+  await editor
+    .getByRole("button", { name: text("时区", "Timezone"), exact: true })
+    .click();
+  const utcLabel = await page.evaluate(
+    () =>
+      new Intl.DateTimeFormat(document.documentElement.lang || "en-US", {
+        timeZone: "UTC",
+        timeZoneName: "longGeneric",
+      })
+        .formatToParts(new Date("2026-01-15T12:00:00Z"))
+        .find((part) => part.type === "timeZoneName")!.value,
+  );
+  await page.getByRole("option", { name: utcLabel, exact: true }).click();
   await chooseDate(
     page,
     editor.getByRole("button", {
@@ -8495,6 +11682,7 @@ test("2.1 Repeat draft conversion and occurrence versus series editing preserve 
     .getByRole("button", { name: w.common.create, exact: true })
     .click();
   await expect(editor).not.toBeVisible();
+  await waitForLocalReplay(page);
   const load = async () =>
     (await page.request.get(workbench.url + "/api/snapshot")).json();
   let state = await load();
@@ -8518,7 +11706,7 @@ test("2.1 Repeat draft conversion and occurrence versus series editing preserve 
     .filter({ hasText: "First repeating task" })
     .locator(".task-title")
     .press("Enter");
-  editor = page.locator(".task-dialog");
+  editor = page.locator(".task-editor-surface");
   await editor.locator(".task-advanced summary").click();
   await editor
     .getByRole("button", {
@@ -8533,6 +11721,7 @@ test("2.1 Repeat draft conversion and occurrence versus series editing preserve 
     .getByRole("button", { name: w.common.save, exact: true })
     .click();
   await expect(editor).not.toBeVisible();
+  await waitForLocalReplay(page);
   state = await load();
   expect(
     state.workflows.find((r: { id: string }) => r.id === definition.id).payload
@@ -8557,6 +11746,7 @@ test("2.1 Repeat draft conversion and occurrence versus series editing preserve 
     .getByRole("button", { name: w.common.save, exact: true })
     .click();
   await expect(editor).not.toBeVisible();
+  await waitForLocalReplay(page);
   state = await load();
   expect(state.items.find((r: { id: string }) => r.id === task.id).title).toBe(
     "Only this occurrence",
@@ -8586,6 +11776,7 @@ test("2.1 Repeat draft conversion and occurrence versus series editing preserve 
     .getByRole("button", { name: w.common.save, exact: true })
     .click();
   await expect(editor).not.toBeVisible();
+  await waitForLocalReplay(page);
   state = await load();
   expect(
     state.items.filter(
@@ -8661,6 +11852,22 @@ test("2.1 Graph Workspace directed depth dependency hops URL refresh Back and In
   ).toHaveCount(0);
   await workspace
     .getByRole("button", {
+      name: text("展开选项", "Expansion options"),
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("menuitem", {
+      name: text("展开两层", "Expand two levels"),
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("graph-expansion.png"),
+    animations: "disabled",
+  });
+  await page
+    .getByRole("menuitem", {
       name: text("展开两层", "Expand two levels"),
       exact: true,
     })
@@ -8742,6 +11949,19 @@ test("2.1 Graph Workspace directed depth dependency hops URL refresh Back and In
   await expect(workspace.locator(".react-flow__node")).toHaveCount(4);
   await expect(page).toHaveURL(/hops=2/);
   await workspace
+    .getByRole("button", { name: text("适应视图", "Fit View"), exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      workspace
+        .locator(".react-flow__viewport")
+        .evaluate(
+          (element) =>
+            new DOMMatrixReadOnly(getComputedStyle(element).transform).a,
+        ),
+    )
+    .toBeGreaterThanOrEqual(0.59);
+  await workspace
     .locator(".react-flow__node")
     .filter({ hasText: "Hop task 2" })
     .click();
@@ -8793,32 +12013,28 @@ test("2.1 Graph Workspace directed depth dependency hops URL refresh Back and In
     }),
   ).toContainText("Hop task 1");
   await expect(page).toHaveURL(/hops=2/);
-  await workspace
-    .getByRole("complementary", {
-      name: text("检查器", "Inspector"),
-      exact: true,
-    })
-    .getByRole("button", { name: "Atlas", exact: true })
-    .click();
-  await expect(workspace.locator(".context-pane")).toHaveCount(0);
-  const atlasContext = page.getByRole("complementary", {
-    name: text("上下文", "Context"),
+  // Atlas is not an Inspector tab; it opens as its own floating surface.
+  const inspector = workspace.getByRole("complementary", {
+    name: text("检查器", "Inspector"),
     exact: true,
   });
-  await expect(atlasContext).toBeVisible();
-  await atlasContext
+  await expect(
+    inspector.getByRole("button", { name: "Atlas", exact: true }),
+  ).toHaveCount(0);
+  await workspace.getByRole("button", { name: "Atlas", exact: true }).click();
+  const atlasFloat = page.getByRole("dialog", {
+    name: text("Atlas 助手", "Atlas assistant"),
+    exact: true,
+  });
+  await expect(atlasFloat).toBeVisible();
+  await atlasFloat
     .getByRole("button", {
-      name: text("详情", "Details"),
+      name: text("关闭 Atlas", "Close Atlas"),
       exact: true,
     })
     .click();
-  await expect(atlasContext).toHaveCount(0);
-  await expect(
-    workspace.getByRole("complementary", {
-      name: text("检查器", "Inspector"),
-      exact: true,
-    }),
-  ).toContainText("Hop task 1");
+  await expect(atlasFloat).toHaveCount(0);
+  await expect(inspector).toContainText("Hop task 1");
   await workspace
     .getByRole("button", { name: text("适应视图", "Fit View"), exact: true })
     .click();
@@ -9059,6 +12275,196 @@ test("Agent Harness safety boundaries reject unknown invalid tools, enforce step
   );
 });
 
+test("Calendar dense Agenda keeps 1500 rows bounded and long titles readable", async ({
+  page,
+  workbench,
+}, info) => {
+  test.setTimeout(180000);
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const identity = await (
+    await page.request.get(workbench.url + "/api/session")
+  ).json();
+  await workbench.seedPerformance(identity.context);
+  const title = "A long Calendar task title with readable full context "
+    .repeat(3)
+    .trim();
+  await mutation(page, "/api/work/update", {
+    id: "perf-task-1",
+    version: 1,
+    input: { title },
+  });
+  await page.reload();
+  await waitForFixtureReplica(page);
+  await nav(page, w.desk.calendar);
+  // Seeded dates are UTC dates; explicitly inspect that day even across midnight.
+  const fixtureDay = new Date().toISOString().slice(0, 10);
+  await page.getByRole("button", { name: fixtureDay, exact: true }).click();
+  const due = page.locator('.calendar-agenda-section[data-kind="◇"]');
+  const scroll = due.locator(".virtual-task-scroll");
+  const dueToday = v22PerformanceFixture(
+    identity.context,
+    new Date().toISOString().slice(0, 10),
+  ).tasks.filter(
+    (task) => task.dueDate === new Date().toISOString().slice(0, 10),
+  );
+  expect(dueToday).toHaveLength(1200);
+  await expect(scroll).toHaveAttribute(
+    "data-task-count",
+    String(dueToday.length),
+  );
+  await expect(scroll).toHaveAttribute("data-row-height", "fixed");
+  await expect(due.locator(".calendar-event-row").first()).toBeVisible();
+  expect(await due.locator(".calendar-event-row").count()).toBeLessThan(40);
+  await expect
+    .poll(() =>
+      due.locator(".calendar-event-row").evaluateAll((elements) => {
+        const rows = elements.map((element) => element.getBoundingClientRect());
+        return {
+          multipleRows: rows.length > 1,
+          minHeight: Math.round(Math.min(...rows.map((row) => row.height))),
+          maxHeight: Math.round(Math.max(...rows.map((row) => row.height))),
+          noOverlap: rows
+            .slice(1)
+            .every((row, index) => row.top >= rows[index]!.bottom - 0.5),
+        };
+      }),
+    )
+    .toEqual({
+      multipleRows: true,
+      minHeight: 44,
+      maxHeight: 44,
+      noOverlap: true,
+    });
+  const fullTitle = due
+    .locator(".calendar-event-row")
+    .filter({ hasText: title });
+  await expect(fullTitle).toHaveAttribute("title", title);
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  const lastTask = snapshot.items
+    .filter((item: { type: string }) => item.type === "TASK")
+    .at(-1);
+  expect(lastTask).toBeDefined();
+  await scroll.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(due.getByText(lastTask.title, { exact: true })).toBeVisible();
+});
+
+test("Calendar collapsed secondary tasks do not mount virtual rows", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  for (let index = 0; index < 110; index++)
+    await mutation(page, "/api/work/create", {
+      title: `Collapsed overdue ${index}`,
+      priority: "LOW",
+      dueDate: "1999-01-01",
+    });
+  await page.reload();
+  await nav(page, w.desk.calendar);
+  const secondary = page.locator(".calendar-secondary");
+  await expect(secondary).toBeVisible();
+  await expect(secondary.locator(".virtual-task-scroll")).toHaveCount(0);
+  await expect(secondary.locator(".calendar-event-row")).toHaveCount(0);
+  await secondary.locator(":scope > summary").click();
+  const group = secondary.locator("details").first();
+  await expect(group).toBeVisible();
+  await expect(group.locator(".virtual-task-scroll")).toHaveCount(0);
+  await group.locator(":scope > summary").click();
+  await expect(group.locator(".virtual-task-scroll")).toHaveAttribute(
+    "data-task-count",
+    "110",
+  );
+  await expect(group.locator(".calendar-event-row").first()).toBeVisible();
+  expect(await group.locator(".calendar-event-row").count()).toBeLessThan(40);
+  await group.locator(":scope > summary").click();
+  await expect(group.locator(".calendar-event-row")).toHaveCount(0);
+  await secondary.locator(":scope > summary").click();
+  await expect(secondary.locator("details")).toHaveCount(0);
+});
+
+test("Reminder editor shows concise defaults and guards its local body draft", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.calendar);
+  await page
+    .getByRole("button", {
+      name: zh ? "添加提醒" : "Add reminder",
+      exact: true,
+    })
+    .click();
+  const editor = page.getByRole("dialog", {
+    name: zh ? "提醒" : "Reminder",
+    exact: true,
+  });
+  await expect(editor.locator("textarea,.hierarchy-picker")).toHaveCount(0);
+  await expect(
+    editor.locator(".ui-editor-footer .ui-button-primary"),
+  ).toHaveCount(1);
+  await editor
+    .getByLabel(zh ? "标题" : "Title", { exact: true })
+    .fill("Safe reminder draft");
+  await editor
+    .getByRole("button", {
+      name: zh ? "+ 添加内容" : "+ Add body",
+      exact: true,
+    })
+    .click();
+  await editor
+    .getByLabel(zh ? "内容" : "Body", { exact: true })
+    .fill("Keep this Markdown\nSecond line");
+  await editor
+    .getByRole("button", { name: zh ? "关闭" : "Close", exact: true })
+    .click();
+  const confirmation = page.getByRole("dialog", {
+    name: zh ? "保留未保存的提醒？" : "Keep the unsaved reminder?",
+    exact: true,
+  });
+  await expect(confirmation).toBeVisible();
+  await confirmation
+    .getByRole("button", {
+      name: zh ? "继续编辑" : "Keep editing",
+      exact: true,
+    })
+    .click();
+  await expect(
+    editor.getByLabel(zh ? "内容" : "Body", { exact: true }),
+  ).toHaveValue("Keep this Markdown\nSecond line");
+  const before = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    before.reminders.some(
+      (entry: { title: string }) => entry.title === "Safe reminder draft",
+    ),
+  ).toBe(false);
+  await editor
+    .getByRole("button", { name: zh ? "保存" : "Save", exact: true })
+    .click();
+  await expect(editor).toBeHidden();
+  await waitForLocalReplay(page);
+  const saved = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    saved.reminders.find(
+      (entry: { title: string }) => entry.title === "Safe reminder draft",
+    ),
+  ).toMatchObject({
+    bodyMd: "Keep this Markdown\nSecond line",
+    notifyMode: "NONE",
+  });
+});
+
 test("2.2 Calendar selects day independently and formal reminders create edit complete dismiss", async ({
   page,
   workbench,
@@ -9117,6 +12523,7 @@ test("2.2 Calendar selects day independently and formal reminders create edit co
   await expect(dialog).toHaveCount(0);
   const panel = page.locator(".calendar-reminders");
   await expect(panel).toContainText("Dentist reminder");
+  await waitForLocalReplay(page);
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -9128,7 +12535,9 @@ test("2.2 Calendar selects day independently and formal reminders create edit co
     time: "14:30",
     state: "ACTIVE",
   });
-  await panel.getByRole("button", { name: /Dentist reminder/ }).click();
+  await panel
+    .getByRole("button", { name: "14:30 Dentist reminder", exact: true })
+    .click();
   await dialog
     .getByLabel(zh ? "标题" : "Title", { exact: true })
     .fill("Updated reminder");
@@ -9140,6 +12549,7 @@ test("2.2 Calendar selects day independently and formal reminders create edit co
     .getByRole("button", { name: zh ? "完成" : "Complete", exact: true })
     .click();
   await expect(panel).toContainText(zh ? "已完成" : "Done");
+  await waitForLocalReplay(page);
   const entry = (
     await (await page.request.get(workbench.url + "/api/snapshot")).json()
   ).reminders[0];
@@ -9180,19 +12590,26 @@ test("2.2 Calendar selects day independently and formal reminders create edit co
   await expect(panel).toContainText(zh ? "已忽略" : "Dismissed");
   await panel
     .getByRole("button", {
+      name: (zh ? "更多操作：" : "More actions: ") + "Updated reminder",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", {
       name: zh ? "删除提醒" : "Delete reminder",
       exact: true,
     })
     .click();
   await expect(
-    panel.getByRole("button", { name: /Updated reminder/ }),
+    panel.getByRole("button", { name: "14:30 Updated reminder", exact: true }),
   ).toHaveCount(0);
   await panel
     .getByRole("button", { name: zh ? "撤销" : "Undo", exact: true })
     .click();
   await expect(
-    panel.getByRole("button", { name: /Updated reminder/ }),
+    panel.getByRole("button", { name: "14:30 Updated reminder", exact: true }),
   ).toBeVisible();
+  await waitForLocalReplay(page);
   const restoredReminder = (
     await (await page.request.get(workbench.url + "/api/snapshot")).json()
   ).reminders[0];
@@ -9229,13 +12646,10 @@ for (const [width, height] of [
       ).json();
       await workbench.seedPerformance(identity.context);
       await page.reload();
+      await waitForFixtureReplica(page);
       await expect(page.locator(".app-shell")).toBeVisible();
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      const directory = resolve(
-        ".artifacts/v24-visual",
-        info.project.name,
-        `${width}x${height}-${theme}`,
-      );
+      const directory = info.outputPath(`visual-${width}x${height}-${theme}`);
       mkdirSync(directory, { recursive: true });
       const capture = async (name: string) => {
         await page.evaluate(() => document.fonts.ready);
@@ -9256,7 +12670,7 @@ for (const [width, height] of [
       await expect(page.locator(".overview-grid")).toBeVisible();
       await capture("01-home");
       await go("#focus");
-      await expect(page.locator(".topbar strong")).toHaveText(w.desk.focus);
+      await expect(page.locator(".page-header h1")).toHaveText(w.desk.focus);
       await capture("02-focus");
       await go("#tasks?tab=all&view=list");
       await expect(
@@ -9291,7 +12705,7 @@ for (const [width, height] of [
       await capture("09-calendar");
       await go("#tasks?tab=all&view=list");
       await page
-        .locator(".topbar")
+        .locator(".page-header")
         .getByRole("button", { name: w.desk.newTask, exact: true })
         .click();
       await expect(page.getByRole("dialog")).toBeVisible();
@@ -9332,7 +12746,7 @@ for (const [width, height] of [
       await page.locator(".model-settings").scrollIntoViewIfNeeded();
       await capture("15-ai-settings");
       await go("#trash");
-      await expect(page.locator(".topbar strong")).toHaveText(w.desk.trash);
+      await expect(page.locator(".page-header h1")).toHaveText(w.desk.trash);
       await capture("17-trash");
       await info.attach("visual-matrix-directory.txt", {
         body: directory,
@@ -9380,6 +12794,7 @@ test("v2.3 note right click opens shared actions and trash undo preserves Markdo
   await expect(row).toHaveCount(0);
   await page.getByRole("button", { name: /^(Undo|撤销)$/ }).click();
   await expect(row).toHaveCount(1);
+  await waitForLocalReplay(page);
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -9457,20 +12872,12 @@ test("v2.3 local shell paints while session network is blocked", async ({
   });
   try {
     await page.goto(workbench.url, { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("startup-shell")).toBeVisible();
-    await expect.poll(() => waiting).toBe(true);
+    await expect(page.locator(".app-shell")).toBeVisible();
     await expect(
-      page
-        .getByTestId("startup-shell")
-        .getByRole("img", { name: "Orivane Atlas" }),
+      page.getByRole("img", { name: "Orivane Atlas", exact: true }),
     ).toBeVisible();
-    await expect(
-      page.getByTestId("startup-shell").getByRole("status"),
-    ).toHaveText(
-      info.project.name.endsWith("zh")
-        ? "正在连接工作空间…"
-        : "Connecting to your workspace…",
-    );
+    // FINAL starts a usable local workspace without requesting a session at all.
+    expect(waiting).toBe(false);
     await expect
       .poll(() =>
         page.evaluate(() =>
@@ -9488,7 +12895,7 @@ test("v2.3 local shell paints while session network is blocked", async ({
     }));
     expect(networkReleased).toBe(false);
     writeFileSync(
-      resolve(".artifacts", `session116-shell-${info.project.name}.json`),
+      info.outputPath("final-acceptance-shell.json"),
       JSON.stringify(
         { ...paint, sessionRequestPending: waiting, networkReleased },
         null,
@@ -9511,7 +12918,7 @@ test("v2.3 local shell paints while session network is blocked", async ({
 });
 
 for (const latencyMs of [200, 800]) {
-  test(`v2.3 cold metadata readiness with ${latencyMs}ms request latency`, async ({
+  test(`FINAL durable restart metadata readiness with ${latencyMs}ms request latency`, async ({
     page,
     workbench,
   }, info) => {
@@ -9522,6 +12929,7 @@ for (const latencyMs of [200, 800]) {
       await page.request.get(workbench.url + "/api/session")
     ).json();
     await workbench.seedPerformance(identity.context);
+    await waitForFixtureReplica(page);
     const requestedPaths: string[] = [];
     await page.route("**/api/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
@@ -9530,25 +12938,14 @@ for (const latencyMs of [200, 800]) {
       await new Promise((resolve) => setTimeout(resolve, latencyMs));
       await route.continue();
     });
-    const bootstrapResponse = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === "/api/bootstrap" && response.ok(),
-    );
     await page.reload({ waitUntil: "domcontentloaded" });
-    const response = await bootstrapResponse;
-    const bootstrap = await response.json();
-    expect(
-      bootstrap.library.filter(
-        (entry: { kind: string }) => entry.kind === "DOCUMENT",
-      ),
-    ).toHaveLength(2000);
-    for (const entry of [...bootstrap.library, ...bootstrap.notes]) {
-      expect(entry).not.toHaveProperty("bodyMd");
-      expect(entry.bodyState).toBe("UNLOADED");
-    }
     await nav(page, w.desk.tasks);
     await expect(page.locator(".tasks-workspace")).toBeVisible();
     await expect(page.locator(".virtual-task-scroll").first()).toBeVisible();
+    await taskScope(page, w.desk.taskWorkspace.all);
+    await expect(
+      page.locator(".task-list .virtual-task-scroll"),
+    ).toHaveAttribute("data-task-count", "1500");
     const evidence = await page.evaluate(() => ({
       firstContentfulPaintMs: performance
         .getEntriesByType("paint")
@@ -9559,20 +12956,19 @@ for (const latencyMs of [200, 800]) {
     expect(requestedPaths).not.toContain("/api/snapshot");
     expect(
       requestedPaths.filter((path) => path === "/api/bootstrap"),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(requestedPaths).not.toContain("/api/document/body");
     const report = {
       ...evidence,
       artificialRequestLatencyMs: latencyMs,
       documents: 2000,
-      decodedBootstrapBytes: (await response.body()).length,
+      measurement:
+        "durable local replica restart; remote full bootstrap forbidden",
+      decodedBootstrapBytes: 0,
       requestedPaths,
     };
     writeFileSync(
-      resolve(
-        ".artifacts",
-        `session117-cold-${latencyMs}-${info.project.name}.json`,
-      ),
+      info.outputPath(`final-acceptance-local-restart-${latencyMs}.json`),
       JSON.stringify(report, null, 2),
     );
     await info.attach("cold-metadata-readiness.json", {
@@ -9638,7 +13034,7 @@ test("v2.3 Calendar sheet shares day context counts and preserves its month", as
     await cell.evaluate((element) =>
       Number.parseFloat(getComputedStyle(element).minHeight),
     ),
-  ).toBeGreaterThanOrEqual(mobile ? 96 : 120);
+  ).toBeGreaterThanOrEqual(mobile ? 56 : 120);
   expect(
     await page
       .locator(".calendar-grid")
@@ -9719,7 +13115,7 @@ test("v2.3 Calendar sheet shares day context counts and preserves its month", as
     .poll(() =>
       page.evaluate(() => {
         const header = document
-          .querySelector(".topbar")
+          .querySelector(".page-header")
           ?.getBoundingClientRect();
         const grid = document
           .querySelector(".calendar-grid")
@@ -9766,13 +13162,23 @@ test("Atlas conversation summaries support rename archive restore delete undo an
   expect(
     summaries.find((entry: { id: string }) => entry.id === first.id).projectId,
   ).toBe(project.id);
+  const messageRequests: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/ai/sessions/messages")
+      messageRequests.push(request.url());
+  });
   await page.keyboard.press("Control+j");
   const assistant = page.getByRole("complementary", {
     name: "Atlas Assistant",
   });
+  await expect(
+    assistant.getByRole("button", { name: "Second conversation", exact: true }),
+  ).toBeVisible();
+  expect(messageRequests).toHaveLength(0);
   await assistant
     .getByRole("button", { name: "Second conversation", exact: true })
     .click();
+  await expect.poll(() => messageRequests.length).toBe(1);
   await assistant
     .getByRole("button", {
       name: zh ? "对话筛选" : "Conversation filters",
@@ -9882,6 +13288,87 @@ test("Atlas conversation summaries support rename archive restore delete undo an
     fullPage: true,
   });
 });
+async function chooseBenchmarkProject(picker: Locator, path: string[]) {
+  const trigger = picker.locator(".hierarchy-selected > button").last();
+  if ((await trigger.getAttribute("aria-expanded")) !== "true")
+    await trigger.click();
+  const browser = picker.page().locator(".hierarchy-browser");
+  await browser.locator("nav > button").click();
+  for (const [index, title] of path.entries()) {
+    const row = browser
+      .locator(".ui-entity-picker-choice,.parent-tree-choice")
+      .filter({ hasText: new RegExp("^" + title + "(?:\\s*›)?$") })
+      .locator("..");
+    await expect(row).toHaveCount(1);
+    await row
+      .locator(
+        index === path.length - 1
+          ? ".ui-entity-picker-choice,.ui-button-toggle"
+          : ".ui-icon-button,.parent-tree-choice",
+      )
+      .click();
+  }
+  await expect(browser).toBeHidden();
+}
+
+test("Atlas paged history renders visible Markdown and preserves reading position when loading earlier messages", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const identity = await (
+    await page.request.get(workbench.url + "/api/session")
+  ).json();
+  await workbench.seedPerformance(identity.context);
+  await page.reload();
+  await nav(page, "Atlas");
+  const list = page.locator(".conversation-list .virtual-task-scroll");
+  await expect(list).toHaveAttribute("data-task-count", "100");
+  await list.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await page
+    .locator(".conversation-list")
+    .getByRole("button", { name: /Perf conversation 001/ })
+    .click();
+  const messages = page.locator(".conversation-messages");
+  const rows = messages.locator("[data-message-kind]");
+  await expect(rows).toHaveCount(50);
+  await expect(rows.last().locator(".markdown strong")).toHaveText("emphasis");
+  expect(
+    await messages.locator('[data-markdown-ready="true"]').count(),
+  ).toBeLessThan(25);
+  expect(
+    await messages.locator('[data-markdown-ready="false"]').count(),
+  ).toBeGreaterThan(0);
+  await messages.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(rows.first()).toContainText("Conversation 1, message 950.");
+  await expect(rows.first().locator(".markdown strong")).toHaveText("emphasis");
+  await expect
+    .poll(() => messages.evaluate((element) => element.scrollTop))
+    .toBeLessThan(80);
+  await messages
+    .getByRole("button", {
+      name: zh ? "加载更早消息" : "Load earlier messages",
+      exact: true,
+    })
+    .click();
+  await expect(rows).toHaveCount(100);
+  await expect(rows.first()).toContainText("Conversation 1, message 900.");
+  await expect(rows.first().locator(".markdown strong")).toHaveText("emphasis");
+  await expect
+    .poll(() => messages.evaluate((element) => element.scrollTop))
+    .toBeLessThan(80);
+  await page.screenshot({
+    path: info.outputPath("atlas-paged-history.png"),
+    fullPage: true,
+  });
+});
+
 test("v2.2 complete release fixture interaction and editor benchmark", async ({
   page,
   workbench,
@@ -9895,6 +13382,7 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
   ).json();
   await workbench.seedPerformance(identity.context);
   await page.reload();
+  await waitForFixtureReplica(page);
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -9924,6 +13412,84 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
   expect((await sessionsResponse.body()).length).toBeLessThan(40000);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Performance.enable");
+  const profileProjection = process.env.ATLAS_PROFILE_PROJECTIONS === "1";
+  if (profileProjection) {
+    await page.evaluate(() => {
+      Object.assign(globalThis, { atlasProjectionDiagnostics: [] });
+      const diagnostics: {
+        collection: string;
+        characters: number;
+        rows: number;
+      }[] = [];
+      Object.assign(globalThis, { atlasWorkerMessageDiagnostics: diagnostics });
+      const requests = new WeakMap<Worker, Map<number, string>>();
+      const original = Worker.prototype.postMessage;
+      Worker.prototype.postMessage = function (
+        this: Worker,
+        message: unknown,
+        options?: StructuredSerializeOptions | Transferable[],
+      ) {
+        let pending = requests.get(this);
+        if (!pending) {
+          pending = new Map();
+          requests.set(this, pending);
+          this.addEventListener("message", (event) => {
+            const response = event.data as {
+              id?: number;
+              json?: string;
+              rows?: unknown[];
+              page?: boolean;
+            };
+            if (typeof response.id !== "number") return;
+            diagnostics.push({
+              collection: pending!.get(response.id) ?? "unknown",
+              characters: response.json?.length ?? 0,
+              rows: response.rows?.length ?? 0,
+            });
+            if (!response.page) pending!.delete(response.id);
+          });
+        }
+        const request = message as {
+          id?: number;
+          collection?: string;
+          libraryBodyChecks?: unknown;
+        };
+        if (typeof request.id === "number")
+          pending.set(
+            request.id,
+            (request.collection ?? "unknown") +
+              (request.libraryBodyChecks ? ":validated" : ""),
+          );
+        Reflect.apply(original, this, [message, options]);
+      };
+    });
+    const scripts: { scriptId: string; url: string }[] = [];
+    cdp.on("Debugger.scriptParsed", (script) => {
+      if (script.url.includes("/assets/src-")) scripts.push(script);
+    });
+    await cdp.send("Debugger.enable");
+    for (const script of scripts) {
+      const { scriptSource } = await cdp.send("Debugger.getScriptSource", {
+        scriptId: script.scriptId,
+      });
+      const method = scriptSource.indexOf("detachResult(");
+      if (method < 0) continue;
+      const position = scriptSource.indexOf("{", method) + 1;
+      const prefix = scriptSource.slice(0, position);
+      await cdp.send("Debugger.setBreakpoint", {
+        location: {
+          scriptId: script.scriptId,
+          lineNumber: prefix.split("\n").length - 1,
+          columnNumber: position - prefix.lastIndexOf("\n") - 1,
+        },
+        condition: `(function(){const store=this.store;if(!store.atlasReadsWrapped){store.atlasReadsWrapped=true;for(const method of ["list","getMany"]){const read=store[method];if(!read)continue;store[method]=async function(...args){const started=performance.now();const rows=await read.apply(this,args);globalThis.atlasProjectionDiagnostics.push({method,collection:method==="list"?args[1]:args[1]?.[0]?.collection,count:rows.length,startedMs:started,durationMs:performance.now()-started});return rows}}}const prototype=Object.getPrototypeOf(this);if(prototype.atlasProjectionWrapped)return false;const original=prototype.detachResult;prototype.atlasProjectionWrapped=true;prototype.detachResult=function(value){const metadata={projection:this.readProjection,detached:this.store.detachedReads===true,writes:this.writes.size,records:Array.from(this.records.values(),row=>row.entity.collection),sizes:Object.fromEntries(Object.entries(value??{}).map(([key,field])=>[key,Array.isArray(field)?field.length:typeof field==="string"?field.length:typeof field]))};const started=performance.now();try{return original.call(this,value)}finally{globalThis.atlasProjectionDiagnostics.push({...metadata,startedMs:started,durationMs:performance.now()-started})}};return false}).call(this)`,
+      });
+    }
+  }
+  if (process.env.ATLAS_PROFILE_WHOLE_GRAPH === "1") {
+    await cdp.send("Profiler.enable");
+    await cdp.send("Profiler.start");
+  }
   const metrics = async () => {
     const result = await cdp.send("Performance.getMetrics");
     return new Map(
@@ -9944,6 +13510,7 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
       messagesPerSession: 1000,
     },
     build: "Vite production release",
+    metadataReadWorkers: page.workers().map((worker) => worker.url()),
     measurement:
       "CDP ScriptDuration and TaskDuration deltas; Playwright settled-DOM wall separately",
     sessionSummaryBytes: (await sessionsResponse.body()).length,
@@ -9965,6 +13532,12 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
     const after = await metrics();
     evidence[name] = {
       wallMs: performance.now() - started,
+      ...(process.env.ATLAS_PROFILE_WHOLE_GRAPH === "1"
+        ? {
+            profileStartUs: (before.get("Timestamp") ?? 0) * 1000000,
+            profileEndUs: (after.get("Timestamp") ?? 0) * 1000000,
+          }
+        : {}),
       scriptMs:
         ((after.get("ScriptDuration") ?? 0) -
           (before.get("ScriptDuration") ?? 0)) *
@@ -10017,7 +13590,10 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
   await measure(
     "Project filter",
     () =>
-      chooseProject(projectPicker, ["Perf project 001", "Perf project 016"]),
+      chooseBenchmarkProject(projectPicker, [
+        "Perf project 001",
+        "Perf project 016",
+      ]),
     () => expect(page.locator(".task-list .task-card")).toHaveCount(10),
   );
   await projectPicker
@@ -10116,6 +13692,13 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
     ["perf-document-0", 50],
     ["perf-document-1", 100],
   ] as const) {
+    if (kb === 50 && process.env.ATLAS_PROFILE_WHOLE_GRAPH === "1") {
+      const { profile } = await cdp.send("Profiler.stop");
+      writeFileSync(
+        info.outputPath("whole-graph.cpuprofile"),
+        JSON.stringify(profile),
+      );
+    }
     await page.evaluate((documentId) => {
       location.hash = "#graph/document/" + documentId + "?view=graph&hops=1";
     }, id);
@@ -10134,7 +13717,10 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
     const samples: number[] = [];
     for (let index = 0; index < 30; index++) {
       const before = await metrics();
-      await page.keyboard.insertText("x");
+      // This is the trusted browser input used by Playwright's keyboard API.
+      // Calling CDP directly keeps per-action trace DOM snapshots outside the
+      // CPU sample. Saved Markdown below still verifies all thirty inputs.
+      await cdp.send("Input.insertText", { text: "x" });
       const after = await metrics();
       samples.push(
         ((after.get("TaskDuration") ?? 0) - (before.get("TaskDuration") ?? 0)) *
@@ -10202,10 +13788,20 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
         .getByRole("button", { name: /Perf conversation 001/ })
         .click();
     },
-    () =>
-      expect(
+    async () => {
+      await expect(
         page.locator(".conversation-messages [data-message-kind]"),
-      ).toHaveCount(50),
+      ).toHaveCount(50);
+      await expect(
+        page.locator(".conversation-messages [data-message-kind]").last(),
+      ).toContainText("Conversation 1, message 999.");
+      await expect(
+        page
+          .locator(".conversation-messages [data-message-kind]")
+          .last()
+          .locator(".markdown strong"),
+      ).toHaveText("emphasis");
+    },
   );
   await page
     .getByRole("button", {
@@ -10216,6 +13812,27 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
   await expect(
     page.locator(".conversation-messages [data-message-kind]"),
   ).toHaveCount(100);
+  evidence.metadataReadWorkersAtEnd = page
+    .workers()
+    .map((worker) => worker.url());
+  if (profileProjection)
+    evidence.projectionCopies = await page.evaluate(
+      () =>
+        (
+          globalThis as typeof globalThis & {
+            atlasProjectionDiagnostics?: unknown;
+          }
+        ).atlasProjectionDiagnostics,
+    );
+  if (profileProjection)
+    evidence.workerMessages = await page.evaluate(
+      () =>
+        (
+          globalThis as typeof globalThis & {
+            atlasWorkerMessageDiagnostics?: unknown;
+          }
+        ).atlasWorkerMessageDiagnostics,
+    );
   writeFileSync(
     resolve(
       ".artifacts",
@@ -10324,9 +13941,10 @@ async function openProjectTaskFilters(page: Page) {
     await button.click();
 }
 
-// Identical probe also runs against the isolated 389 release archive.
+// Local restart plus an explicit metadata-service transfer probe. A local
+// restart must not be mistaken for a server-first bootstrap request.
 for (const latencyMs of [150, 200, 800]) {
-  test(`v2.3 cold shared release comparison with ${latencyMs}ms request latency`, async ({
+  test(`FINAL local restart and metadata service transfer with ${latencyMs}ms request latency`, async ({
     page,
     workbench,
   }, info) => {
@@ -10337,6 +13955,7 @@ for (const latencyMs of [150, 200, 800]) {
       await page.request.get(workbench.url + "/api/session")
     ).json();
     await workbench.seedPerformance(identity.context);
+    await waitForFixtureReplica(page);
     const throttled = latencyMs === 150;
     const network = throttled ? await page.context().newCDPSession(page) : null;
     if (network) {
@@ -10373,6 +13992,17 @@ for (const latencyMs of [150, 200, 800]) {
         ).includes(new URL(response.url()).pathname) && response.ok(),
     );
     await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.locator(".app-shell")).toBeVisible();
+    await nav(page, w.desk.tasks);
+    await expect(page.locator(".virtual-task-scroll").first()).toBeVisible();
+    const localMetadataUsableMs = await page.evaluate(() => performance.now());
+    expect(requestedPaths).not.toContain("/api/bootstrap");
+    expect(requestedPaths).not.toContain("/api/snapshot");
+    await page.evaluate(async () => {
+      const response = await fetch("/api/bootstrap");
+      if (!response.ok) throw new Error("Explicit metadata probe failed");
+      await response.arrayBuffer();
+    });
     const response = await initialResponse;
     const payload = await response.json();
     const library = payload.library ?? payload.snapshot?.library;
@@ -10410,6 +14040,9 @@ for (const latencyMs of [150, 200, 800]) {
     expect(timing.firstContentfulPaintMs).toBeGreaterThan(0);
     const evidence = {
       ...timing,
+      localMetadataUsableMs,
+      measurement:
+        "local durable restart followed by explicit metadata transfer probe",
       artificialRequestLatencyMs: latencyMs,
       latencyMethod: throttled
         ? "CDP network latency"
@@ -10508,3 +14141,2885 @@ for (const latencyMs of [150, 200, 800]) {
     await network?.detach();
   });
 }
+
+test("private Memo product autosave remains durable offline through reload", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await page.goto(workbench.url + "/#tasks");
+  await page
+    .getByRole("button", { name: zh ? "新建任务" : "New task", exact: true })
+    .first()
+    .click();
+  const editor = page.getByRole("dialog");
+  await editor
+    .getByLabel(zh ? "标题" : "Title", { exact: true })
+    .fill("Memo durable product target");
+  await editor
+    .getByRole("button", { name: zh ? "新建任务" : "Create task", exact: true })
+    .click();
+  await expect(editor).toHaveCount(0);
+  await page
+    .locator(".task-title")
+    .filter({ hasText: "Memo durable product target" })
+    .press("Enter");
+  const memo = editor.getByRole("region", {
+    name: zh ? "私人备忘" : "Private memo",
+  });
+  // Section has a named region; no remote endpoint is required for this local save.
+  await memo
+    .getByRole("button", {
+      name: zh ? "+ 添加备忘" : "+ Add memo",
+      exact: true,
+    })
+    .click();
+  await page.context().setOffline(true);
+  const body = "  本机私人备忘\nsecond line **unchanged**\n";
+  await memo.getByRole("textbox").fill(body);
+  await memo.getByRole("textbox").press("Control+s");
+  await expect(memo.getByRole("status")).toHaveText(
+    zh ? "已保存到本机" : "Saved locally",
+  );
+  await page.screenshot({
+    path: info.outputPath("private-memo-offline.png"),
+    fullPage: true,
+  });
+  await page.context().setOffline(false);
+  await page.reload();
+  await page
+    .locator(".task-title")
+    .filter({ hasText: "Memo durable product target" })
+    .press("Enter");
+  const recovered = page
+    .getByRole("dialog")
+    .getByRole("region", { name: zh ? "私人备忘" : "Private memo" });
+  await recovered
+    .getByRole("button", { name: zh ? "编辑私人备忘" : "Edit private memo" })
+    .click();
+  await expect(recovered.getByRole("textbox")).toHaveValue(body);
+  const fixtureId = String(5000 + info.workerIndex);
+  await promisify(execFile)(
+    process.execPath,
+    ["scripts/build-local-storage-fixture.mjs", fixtureId],
+    { timeout: 30000 },
+  );
+  const fixtureCode = await readFile(
+    `.artifacts/local-storage-fixture-${fixtureId}/storage.js`,
+    "utf8",
+  );
+  await page.route("**/__test/memo-product-storage.js", (route) =>
+    route.fulfill({ contentType: "text/javascript", body: fixtureCode }),
+  );
+  await page.addScriptTag({
+    url: workbench.url + "/__test/memo-product-storage.js",
+  });
+  async function secondWriter(bodyMd: string) {
+    return page.evaluate(async (bodyMd) => {
+      const api = (
+        window as unknown as { OrivaneLocalStorageFixture: typeof memoLocalApi }
+      ).OrivaneLocalStorageFixture;
+      const db = await api.IndexedDbLocalStore.open(
+        "orivane-atlas.local-workspace",
+      );
+      const blobs = await api.IndexedDbLocalBlobStore.open(
+        "orivane-atlas.local-workspace",
+      );
+      try {
+        const owner = await db.identity.get();
+        if (!owner) throw new Error("MISSING_LOCAL_OWNER");
+        const task = (await db.metadata.list(owner.workspaceId, "items")).find(
+          (row) =>
+            (row.value as { title?: string }).title ===
+            "Memo durable product target",
+        );
+        if (!task) throw new Error("MISSING_LOCAL_TARGET");
+        const runtime = new api.LocalRuntime(
+          new api.LocalWorkspace(
+            db.metadata,
+            blobs,
+            owner,
+            { extract: () => [], resolve: (links) => [...links] },
+            { now: () => new Date().toISOString() },
+            { next: () => crypto.randomUUID() },
+          ),
+          {
+            forTarget: api.deriveEntityMemoId,
+            nextChangeId: () => crypto.randomUUID(),
+          },
+        );
+        if (
+          !(await db.metadata.list(owner.workspaceId, "library")).some(
+            (row) =>
+              (row.value as { title?: string }).title ===
+              "Memo destination space",
+          )
+        ) {
+          const space = await runtime.saveLibrary(null, 0, {
+            kind: "SPACE",
+            spaceId: null,
+            title: "Memo destination space",
+            bodyMd: "",
+          });
+          await runtime.saveLibrary(null, 0, {
+            kind: "DOCUMENT",
+            spaceId: space.id,
+            title: "Memo append destination",
+            bodyMd: "Original destination bytes",
+          });
+        }
+        const target = { targetKind: "TASK" as const, targetId: task.id };
+        const memo = await runtime.getEntityMemo(target);
+        if (!memo) throw new Error("MISSING_LOCAL_MEMO");
+        return await runtime.saveEntityMemo(
+          { ...target, bodyMd },
+          memo.version,
+        );
+      } finally {
+        db.close();
+        blobs.close();
+      }
+    }, bodyMd);
+  }
+  expect((await secondWriter("Concurrent saved version"))?.version).toBe(2);
+  await recovered.getByRole("textbox").fill("My reviewed local revision");
+  await recovered.getByRole("textbox").press("Control+s");
+  await recovered
+    .getByRole("button", {
+      name: zh ? "审核版本" : "Review versions",
+      exact: true,
+    })
+    .click();
+  const review = page.getByRole("dialog", {
+    name: zh ? "审核备忘版本" : "Review memo versions",
+    exact: true,
+  });
+  await expect(review).toContainText("Concurrent saved version");
+  expect((await secondWriter("Changed while reviewing"))?.version).toBe(3);
+  await review
+    .getByRole("button", {
+      name: zh ? "保留本机草稿" : "Keep local draft",
+      exact: true,
+    })
+    .click();
+  await expect(review).toContainText("Changed while reviewing");
+  await page.screenshot({
+    path: info.outputPath("private-memo-stale-review.png"),
+    fullPage: true,
+  });
+  await review
+    .getByRole("button", {
+      name: zh ? "保留本机草稿" : "Keep local draft",
+      exact: true,
+    })
+    .click();
+  await expect(review).toHaveCount(0);
+  await expect(recovered.getByRole("textbox")).toHaveValue(
+    "My reviewed local revision",
+  );
+  await expect(recovered.getByRole("status")).toHaveText(
+    zh ? "已保存到本机" : "Saved locally",
+  );
+  await recovered
+    .getByRole("button", {
+      name: zh ? "整理备忘…" : "Organize memo…",
+      exact: true,
+    })
+    .click();
+  const organization = page.getByRole("dialog", {
+    name: zh ? "审核备忘整理" : "Review memo organization",
+    exact: true,
+  });
+  const formalTitle = "Reviewed private memo action";
+  await organization
+    .getByLabel(zh ? "标题" : "Title", { exact: true })
+    .fill(formalTitle);
+  const apply = organization.getByRole("button", {
+    name: zh ? "应用" : "Apply",
+    exact: true,
+  });
+  await expect(apply).toBeDisabled();
+  await organization
+    .getByRole("button", { name: zh ? "预览" : "Preview", exact: true })
+    .click();
+  await expect(
+    organization.getByRole("region", {
+      name: zh ? "整理预览" : "Organization preview",
+    }),
+  ).toContainText("My reviewed local revision");
+  await expect(
+    page.locator(".task-title").filter({ hasText: formalTitle }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: info.outputPath("memo-organization-preview.png"),
+    fullPage: false,
+  });
+  const geometry = await organization.evaluate((node) => ({
+    viewport: { width: innerWidth, height: innerHeight },
+    dialog: node.getBoundingClientRect().toJSON(),
+    children: Array.from(node.children).map((child) => {
+      const style = getComputedStyle(child);
+      return {
+        tag: child.tagName,
+        className: child.className,
+        rect: child.getBoundingClientRect().toJSON(),
+        height: style.height,
+        minHeight: style.minHeight,
+        flex: style.flex,
+        display: style.display,
+      };
+    }),
+  }));
+  await info.attach("memo-organization-geometry", {
+    body: JSON.stringify(geometry),
+    contentType: "application/json",
+  });
+  writeFileSync(
+    info.outputPath("memo-organization-geometry.json"),
+    JSON.stringify(geometry, null, 2),
+  );
+  expect(geometry.dialog.left).toBeGreaterThanOrEqual(0);
+  expect(geometry.dialog.right).toBeLessThanOrEqual(geometry.viewport.width);
+  expect(geometry.dialog.top).toBeGreaterThanOrEqual(0);
+  expect(geometry.dialog.bottom).toBeLessThanOrEqual(geometry.viewport.height);
+  const previewBounds = await organization
+    .getByRole("region", { name: zh ? "整理预览" : "Organization preview" })
+    .boundingBox();
+  expect(previewBounds?.height).toBeLessThan(140);
+  await page.context().setOffline(true);
+  await apply.click();
+  await expect(organization).toHaveCount(0);
+  await expect(recovered.getByRole("textbox")).toHaveValue(
+    "My reviewed local revision",
+  );
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: zh ? "关闭" : "Close", exact: true })
+    .click();
+  await expect(
+    page.locator(".task-title").filter({ hasText: formalTitle }),
+  ).toHaveCount(1);
+  await page
+    .locator(".task-title")
+    .filter({ hasText: "Memo durable product target" })
+    .press("Enter");
+  for (const kind of ["CREATE_DOCUMENT", "APPEND_DOCUMENT"] as const) {
+    await recovered
+      .getByRole("button", {
+        name: zh ? "整理备忘…" : "Organize memo…",
+        exact: true,
+      })
+      .click();
+    await organization
+      .getByLabel(zh ? "整理方式" : "Organization action")
+      .selectOption(kind);
+    if (kind === "CREATE_DOCUMENT")
+      await organization
+        .getByLabel(zh ? "标题" : "Title", { exact: true })
+        .fill("Memo reviewed document");
+    await organization
+      .getByRole("button", {
+        name: zh ? "选择知识空间" : "Choose knowledge space",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("button", { name: "Memo destination space", exact: true })
+      .click();
+    if (kind === "APPEND_DOCUMENT") {
+      await organization
+        .getByRole("button", {
+          name: zh ? "目标文档" : "Destination document",
+          exact: true,
+        })
+        .click();
+      await page
+        .getByRole("button", { name: "Memo append destination", exact: true })
+        .click();
+    }
+    await expect(apply).toBeDisabled();
+    await organization
+      .getByRole("button", { name: zh ? "预览" : "Preview", exact: true })
+      .click();
+    await expect(apply).toBeEnabled();
+    await page.context().setOffline(true);
+    await apply.click();
+    await expect(organization).toHaveCount(0);
+    await expect(recovered.locator(".markdown")).toContainText(
+      "My reviewed local revision",
+    );
+    await page.context().setOffline(false);
+  }
+  await page.reload();
+  await page.addScriptTag({
+    url: workbench.url + "/__test/memo-product-storage.js",
+  });
+  const documents = await page.evaluate(async () => {
+    const api = (
+      window as unknown as { OrivaneLocalStorageFixture: typeof memoLocalApi }
+    ).OrivaneLocalStorageFixture;
+    const db = await api.IndexedDbLocalStore.open(
+      "orivane-atlas.local-workspace",
+    );
+    const blobs = await api.IndexedDbLocalBlobStore.open(
+      "orivane-atlas.local-workspace",
+    );
+    try {
+      const owner = await db.identity.get();
+      if (!owner) throw new Error("MISSING_LOCAL_OWNER");
+      const workspace = new api.LocalWorkspace(
+        db.metadata,
+        blobs,
+        owner,
+        { extract: () => [], resolve: (links) => [...links] },
+        { now: () => new Date().toISOString() },
+        { next: () => crypto.randomUUID() },
+      );
+      const rows = await db.metadata.list(owner.workspaceId, "library");
+      return await workspace.run(async (services) => {
+        const result = [];
+        for (const row of rows)
+          result.push(await services.library.read(owner, row.id));
+        return result;
+      });
+    } finally {
+      db.close();
+      blobs.close();
+    }
+  });
+  expect(
+    documents.filter((row) => row.title === "Memo reviewed document"),
+  ).toEqual([
+    expect.objectContaining({ bodyMd: "My reviewed local revision" }),
+  ]);
+  expect(
+    documents.find((row) => row.title === "Memo append destination")?.bodyMd,
+  ).toBe("Original destination bytes\n\nMy reviewed local revision");
+  await page.screenshot({
+    path: info.outputPath("private-memo-reviewed-apply.png"),
+    fullPage: true,
+  });
+  await page.context().setOffline(false);
+  await page.reload();
+  await expect(
+    page.locator(".task-title").filter({ hasText: formalTitle }),
+  ).toHaveCount(1);
+  let modelRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/api/ai/propose")) modelRequests++;
+  });
+  await page.addScriptTag({
+    url: workbench.url + "/__test/memo-product-storage.js",
+  });
+  await page
+    .locator(".task-title")
+    .filter({ hasText: "Memo durable product target" })
+    .press("Enter");
+  const permission = page.getByRole("dialog", {
+    name: zh ? "备忘 AI 数据许可" : "Memo AI data permission",
+    exact: true,
+  });
+  async function openPermission() {
+    await recovered
+      .getByRole("button", {
+        name: zh ? "备忘 AI 许可…" : "Memo AI permission…",
+        exact: true,
+      })
+      .click();
+    await permission.locator("summary").click();
+  }
+  await openPermission();
+  const access = permission.getByRole("combobox", {
+    name: zh ? "AI 访问" : "AI access",
+    exact: true,
+  });
+  const boundary = permission.getByRole("combobox", {
+    name: zh ? "处理位置" : "Processing boundary",
+    exact: true,
+  });
+  await expect(access).toHaveValue("DENY");
+  await expect(boundary).toHaveValue("LOCAL_ONLY");
+  await access.selectOption("ASK");
+  await boundary.selectOption("ANY");
+  // Same text, newer version: granting permission must still obey source CAS.
+  await secondWriter("My reviewed local revision");
+  await permission
+    .getByRole("button", {
+      name: zh ? "保存许可" : "Save permission",
+      exact: true,
+    })
+    .click();
+  await expect(permission.getByRole("alert")).toBeVisible();
+  await permission
+    .getByRole("button", { name: zh ? "取消" : "Cancel", exact: true })
+    .click();
+  await openPermission();
+  await expect(access).toHaveValue("DENY");
+  await access.selectOption("ASK");
+  await boundary.selectOption("ANY");
+  await page.context().setOffline(true);
+  await permission
+    .getByRole("button", {
+      name: zh ? "保存许可" : "Save permission",
+      exact: true,
+    })
+    .click();
+  await expect(permission).toHaveCount(0);
+  await page.context().setOffline(false);
+  await page.reload();
+  await page
+    .locator(".task-title")
+    .filter({ hasText: "Memo durable product target" })
+    .press("Enter");
+  await openPermission();
+  await expect(access).toHaveValue("ASK");
+  await expect(boundary).toHaveValue("ANY");
+  await page.screenshot({
+    path: info.outputPath("memo-private-ai-permission.png"),
+    fullPage: false,
+  });
+  expect(modelRequests).toBe(0);
+});
+
+test("private Memo AI approval keeps temporary results behind local preview and Apply", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const task = await mutation(page, "/api/work/create", {
+    title: "Memo Atlas reviewed target",
+  });
+  const bodyMd = "Private Memo source for Atlas review";
+  await mutation(page, "/api/memo/save", {
+    version: 0,
+    input: {
+      targetKind: "TASK",
+      targetId: task.id,
+      bodyMd,
+      aiPolicy: {
+        classification: "PRIVATE",
+        processingBoundary: "ANY",
+        aiAccess: "ASK",
+      },
+    },
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await page
+    .locator(".task-title")
+    .filter({ hasText: "Memo Atlas reviewed target" })
+    .press("Enter");
+  const memo = page
+    .getByRole("dialog")
+    .getByRole("region", { name: zh ? "私人备忘" : "Private memo" });
+  await memo
+    .getByRole("button", {
+      name: zh ? "Atlas 整理备忘…" : "Organize memo with Atlas…",
+      exact: true,
+    })
+    .click();
+  const atlas = page.getByRole("dialog", {
+    name: zh ? "备忘 Atlas" : "Memo Atlas",
+    exact: true,
+  });
+  await expect(
+    atlas.getByRole("region", { name: zh ? "发送审核" : "Send review" }),
+  ).toHaveCount(0);
+  await atlas
+    .getByRole("button", {
+      name: zh ? "准备请求" : "Prepare request",
+      exact: true,
+    })
+    .click();
+  await expect(
+    atlas.getByRole("region", { name: zh ? "发送审核" : "Send review" }),
+  ).toBeVisible();
+  await expect(
+    atlas.getByRole("region", { name: zh ? "Atlas 草案" : "Atlas draft" }),
+  ).toHaveCount(0);
+  await atlas
+    .getByRole("button", {
+      name: zh ? "批准并发送" : "Approve and send",
+      exact: true,
+    })
+    .click();
+  await expect(
+    atlas.getByRole("region", { name: zh ? "Atlas 草案" : "Atlas draft" }),
+  ).toContainText("Reviewed result");
+  expect(
+    await page.evaluate(async () => (await fetch("/api/ai/sessions")).json()),
+  ).toEqual([]);
+  await atlas
+    .getByRole("textbox", {
+      name: zh ? "补充要求" : "Additional instructions",
+      exact: true,
+    })
+    .fill("Make the proposed action concise");
+  await atlas
+    .getByRole("button", {
+      name: zh ? "准备请求" : "Prepare request",
+      exact: true,
+    })
+    .click();
+  await atlas
+    .getByRole("button", {
+      name: zh ? "批准并发送" : "Approve and send",
+      exact: true,
+    })
+    .click();
+  await expect(
+    atlas.getByRole("button", {
+      name: zh ? "审核整理草案" : "Review organization draft",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await atlas
+    .getByRole("button", {
+      name: zh ? "保存为对话" : "Save as conversation",
+      exact: true,
+    })
+    .click();
+  await expect(
+    atlas.getByRole("button", {
+      name: zh ? "已保存对话" : "Conversation saved",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await expect(
+    atlas.getByRole("button", {
+      name: zh ? "准备请求" : "Prepare request",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await page.screenshot({
+    path: info.outputPath("memo-atlas-temporary-draft.png"),
+    fullPage: false,
+  });
+  await atlas
+    .getByRole("button", {
+      name: zh ? "审核整理草案" : "Review organization draft",
+      exact: true,
+    })
+    .click();
+  const organization = page.getByRole("dialog", {
+    name: zh ? "审核备忘整理" : "Review memo organization",
+    exact: true,
+  });
+  await organization
+    .getByLabel(zh ? "标题" : "Title", { exact: true })
+    .fill("Memo Atlas explicitly reviewed action");
+  const apply = organization.getByRole("button", {
+    name: zh ? "应用" : "Apply",
+    exact: true,
+  });
+  await expect(apply).toBeDisabled();
+  await organization
+    .getByRole("button", { name: zh ? "预览" : "Preview", exact: true })
+    .click();
+  await expect(
+    page
+      .locator(".task-title")
+      .filter({ hasText: "Memo Atlas explicitly reviewed action" }),
+  ).toHaveCount(0);
+  await apply.click();
+  await expect(organization).toHaveCount(0);
+  await expect(memo.locator(".markdown")).toHaveText(bodyMd);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: zh ? "关闭" : "Close", exact: true })
+    .click();
+  await expect(
+    page
+      .locator(".task-title")
+      .filter({ hasText: "Memo Atlas explicitly reviewed action" }),
+  ).toHaveCount(1);
+  const summaries = await page.evaluate(async () =>
+    (await fetch("/api/ai/sessions")).json(),
+  );
+  expect(summaries).toHaveLength(1);
+  const conversation = await page.evaluate(
+    async (id: string) =>
+      (
+        await fetch("/api/ai/sessions/messages?id=" + encodeURIComponent(id))
+      ).json(),
+    summaries[0].id,
+  );
+  expect(conversation.session.messages).toHaveLength(4);
+  expect(conversation.session.messages[3].evidence[0].ref).toMatchObject({
+    kind: "MEMO",
+    target: { targetKind: "TASK", targetId: task.id },
+  });
+});
+
+test("private Memo target purge requires explicit review and retains device evidence", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const task = await mutation(page, "/api/work/create", {
+    title: "Memo purged target",
+  });
+  await mutation(page, "/api/memo/save", {
+    version: 0,
+    input: {
+      targetKind: "TASK",
+      targetId: task.id,
+      bodyMd: "Original private text",
+    },
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await page
+    .locator(".task-title")
+    .filter({ hasText: "Memo purged target" })
+    .press("Enter");
+  const memo = page
+    .getByRole("dialog")
+    .getByRole("region", { name: zh ? "私人备忘" : "Private memo" });
+  await memo
+    .getByRole("button", { name: zh ? "编辑私人备忘" : "Edit private memo" })
+    .click();
+  let release!: () => void, observed!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const intercepted = new Promise<void>((resolve) => {
+    observed = resolve;
+  });
+  let first = true;
+  await page.route("**/api/v1/memo/save", async (route) => {
+    if (first) {
+      first = false;
+      observed();
+      await gate;
+    }
+    await route.continue();
+  });
+  const local = "Device intent before permanent purge";
+  await memo.getByRole("textbox").fill(local);
+  await memo.getByRole("textbox").press("Control+s");
+  await intercepted;
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: zh ? "关闭" : "Close", exact: true })
+    .click();
+  try {
+    await mutation(page, "/api/work/delete", {
+      id: task.id,
+      version: 1,
+      deleted: true,
+    });
+    await mutation(page, "/api/work/purge", { id: task.id, version: 2 });
+  } finally {
+    release();
+  }
+  await page.goto(workbench.url + "/#account");
+  await page
+    .getByRole("button", { name: /Compare changes|比较修改/ })
+    .first()
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: zh ? "比较同步修改" : "Compare synced changes",
+  });
+  await expect(dialog).toContainText(local);
+  await expect(dialog).toContainText(
+    zh ? "远端已永久删除" : "permanently removed remotely",
+  );
+  await expect(
+    dialog.getByRole("radio", {
+      name: zh ? "保留本机修改" : "Keep device changes",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await dialog
+    .getByRole("radio", {
+      name: zh ? "接受远端删除" : "Accept remote deletion",
+      exact: true,
+    })
+    .check();
+  await page.screenshot({
+    path: info.outputPath("memo-purge-review.png"),
+    fullPage: true,
+  });
+  await dialog
+    .getByRole("button", {
+      name: zh ? "应用选择" : "Apply choice",
+      exact: true,
+    })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /Compare changes|比较修改/ }),
+  ).toHaveCount(0);
+});
+
+for (const choice of ["LOCAL", "REMOTE"] as const) {
+  test(`private Memo import re-review preserves owner and original Markdown with ${choice}`, async ({
+    page,
+    workbench,
+  }, info) => {
+    const zh = info.project.name.endsWith("zh"),
+      body = "  原始私人备忘\nTODO\n[[literal source]]\n";
+    await page.goto(workbench.url + "/#tasks");
+    await page
+      .getByRole("button", { name: zh ? "新建任务" : "New task", exact: true })
+      .first()
+      .click();
+    const editor = page.getByRole("dialog");
+    await editor
+      .getByLabel(zh ? "标题" : "Title", { exact: true })
+      .fill("Memo import target");
+    await editor
+      .getByRole("button", {
+        name: zh ? "新建任务" : "Create task",
+        exact: true,
+      })
+      .click();
+    await expect(editor).toHaveCount(0);
+    const fixtureId = String(4000 + info.workerIndex);
+    await promisify(execFile)(
+      process.execPath,
+      ["scripts/build-local-storage-fixture.mjs", fixtureId],
+      { timeout: 30000 },
+    );
+    const fixtureCode = await readFile(
+      `.artifacts/local-storage-fixture-${fixtureId}/storage.js`,
+      "utf8",
+    );
+    await page.route("**/__test/private-memo-storage.js", (route) =>
+      route.fulfill({ contentType: "text/javascript", body: fixtureCode }),
+    );
+    await page.addScriptTag({
+      url: workbench.url + "/__test/private-memo-storage.js",
+    });
+    const original = await page.evaluate(async (bodyMd) => {
+      const api = (
+        window as unknown as { OrivaneLocalStorageFixture: typeof memoLocalApi }
+      ).OrivaneLocalStorageFixture;
+      const db = await api.IndexedDbLocalStore.open(
+          "orivane-atlas.local-workspace",
+        ),
+        blobs = await api.IndexedDbLocalBlobStore.open(
+          "orivane-atlas.local-workspace",
+        );
+      try {
+        const own = await db.identity.get();
+        if (!own) throw new Error("MISSING_LOCAL_OWNER");
+        const task = (await db.metadata.list(own.workspaceId, "items")).find(
+          (row) =>
+            (row.value as { title?: string }).title === "Memo import target",
+        );
+        if (!task) throw new Error("MISSING_LOCAL_TARGET");
+        const runtime = new api.LocalRuntime(
+          new api.LocalWorkspace(
+            db.metadata,
+            blobs,
+            own,
+            { extract: () => [], resolve: (links) => [...links] },
+            { now: () => new Date().toISOString() },
+            { next: () => crypto.randomUUID() },
+          ),
+          {
+            forTarget: api.deriveEntityMemoId,
+            nextChangeId: () => crypto.randomUUID(),
+          },
+        );
+        const memo = await runtime.saveEntityMemo(
+          { targetKind: "TASK", targetId: task.id, bodyMd },
+          0,
+        );
+        if (!memo) throw new Error("MISSING_SAVED_MEMO");
+        return memo;
+      } finally {
+        db.close();
+        blobs.close();
+      }
+    }, body);
+    await page.reload();
+    await unlock(
+      page,
+      workbench.url,
+      workbench.secret,
+      words(info.project.name),
+      "prepare",
+    );
+    const choices = page.getByRole("region", {
+      name: zh ? "选择合并内容" : "Choose content to merge",
+      exact: true,
+    });
+    await expect(choices).toContainText(zh ? "私人备忘" : "Private memos");
+    await choices
+      .getByRole("button", {
+        name: zh ? "全部选择复制" : "Choose copy for all",
+        exact: true,
+      })
+      .click();
+    await choices
+      .getByRole("button", {
+        name: zh ? "生成导入预览" : "Prepare import preview",
+        exact: true,
+      })
+      .click();
+    let attempted = 0;
+    await page.route("**/api/memo/save", (route) => {
+      attempted++;
+      return route.abort("connectionreset");
+    });
+    await choices
+      .getByRole("button", {
+        name: zh ? "确认并导入" : "Confirm and import",
+        exact: true,
+      })
+      .click();
+    await expect(choices.getByRole("alert")).toBeVisible();
+    expect(attempted).toBe(1);
+    const snapshot = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(snapshot.items).toHaveLength(1);
+    const target = snapshot.items[0];
+    await mutation(page, "/api/memo/save", {
+      version: 0,
+      deleted: false,
+      input: {
+        targetKind: "TASK",
+        targetId: target.id,
+        bodyMd: "Remote private text\n",
+      },
+    });
+    await page.unroute("**/api/memo/save");
+    await page.reload();
+    const recovery = page.getByRole("region", {
+      name: zh ? "导入恢复" : "Import recovery",
+      exact: true,
+    });
+    await recovery
+      .getByRole("button", {
+        name: zh ? "检查目标变化" : "Review destination changes",
+        exact: true,
+      })
+      .click();
+    const review = recovery.getByRole("region", {
+      name: zh ? "重新审查导入" : "Review import changes",
+      exact: true,
+    });
+    await expect(review.getByRole("alert")).toBeVisible();
+    await expect(
+      review.getByRole("heading", {
+        name: zh ? "备忘正文" : "Memo text",
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(await review.locator("dd").first().textContent()).toBe(body);
+    await page.screenshot({
+      path: info.outputPath("private-memo-import-review.png"),
+      fullPage: true,
+    });
+    await review
+      .getByRole("button", {
+        name:
+          choice === "LOCAL"
+            ? zh
+              ? "保留本机正文"
+              : "Keep device text"
+            : zh
+              ? "保留目标正文"
+              : "Keep destination text",
+        exact: true,
+      })
+      .click();
+    await review
+      .getByRole("button", {
+        name: zh
+          ? "确认新预览并准备剩余操作"
+          : "Accept review and prepare remaining operations",
+        exact: true,
+      })
+      .click();
+    await expect(review).toHaveCount(0);
+    await recovery
+      .getByRole("button", {
+        name: zh ? "继续此导入" : "Resume this import",
+        exact: true,
+      })
+      .last()
+      .click();
+    await expect
+      .poll(
+        async () =>
+          (
+            await (
+              await page.request.get(
+                workbench.url +
+                  `/api/memo?targetKind=TASK&targetId=${target.id}`,
+              )
+            ).json()
+          )?.version,
+      )
+      .toBe(2);
+    const remote = await (
+      await page.request.get(
+        workbench.url + `/api/memo?targetKind=TASK&targetId=${target.id}`,
+      )
+    ).json();
+    expect(remote).toMatchObject({
+      targetId: target.id,
+      ownerPrincipalId: target.createdBy,
+      version: 2,
+      bodyMd: choice === "LOCAL" ? body : "Remote private text\n",
+    });
+    expect(remote.id).not.toBe(original.id);
+    await page.addScriptTag({
+      url: workbench.url + "/__test/private-memo-storage.js",
+    });
+    expect(
+      await page.evaluate(async ({ id, workspaceId }) => {
+        const api = (
+          window as unknown as {
+            OrivaneLocalStorageFixture: typeof memoLocalApi;
+          }
+        ).OrivaneLocalStorageFixture;
+        const db = await api.IndexedDbLocalStore.open(
+          "orivane-atlas.local-workspace",
+        );
+        try {
+          return await db.metadata.get(workspaceId, "entityMemos", id);
+        } finally {
+          db.close();
+        }
+      }, original),
+    ).toMatchObject({ value: original });
+  });
+}
+
+for (const resolution of ["LOCAL", "REMOTE"] as const) {
+  test(`explicit Work conflict review preserves both originals and applies the chosen canonical values ${resolution}`, async ({
+    page,
+    workbench,
+  }, info) => {
+    const w = words(info.project.name),
+      zh = info.project.name.endsWith("zh");
+    await unlock(page, workbench.url, workbench.secret, w);
+    const task = await mutation(page, "/api/work/create", {
+      title: "Conflict review base",
+    });
+    await page.goto(workbench.url + "/#tasks");
+    const row = page.locator(".task-title", {
+      hasText: "Conflict review base",
+    });
+    await expect(row).toBeVisible();
+    let release: () => void = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let observed: () => void = () => {};
+    const intercepted = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    let first = true;
+    await page.route("**/api/v1/work/update", async (route) => {
+      if (first) {
+        first = false;
+        observed();
+        await blocked;
+      }
+      await route.continue();
+    });
+    await row.press("Enter");
+    await page
+      .getByRole("dialog")
+      .getByLabel(w.work.title, { exact: true })
+      .fill("Device reviewed title");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: w.common.save, exact: true })
+      .click();
+    await intercepted;
+    try {
+      await mutation(page, "/api/work/update", {
+        id: task.id,
+        version: 1,
+        input: { title: "Remote reviewed title" },
+      });
+    } finally {
+      release();
+    }
+    await page.goto(workbench.url + "/#account");
+    const compare = page.getByRole("button", {
+      name: /Device reviewed title.*(Compare changes|比较修改)/,
+    });
+    await expect(compare).toBeVisible();
+    await compare.click();
+    let dialog = page.getByRole("dialog", {
+      name: zh ? "比较同步修改" : "Compare synced changes",
+    });
+    await expect(dialog).toContainText("Conflict review base");
+    await expect(dialog).toContainText("Device reviewed title");
+    await expect(dialog).toContainText("Remote reviewed title");
+    const apply = dialog.getByRole("button", {
+      name: zh ? "应用选择" : "Apply choice",
+      exact: true,
+    });
+    await expect(apply).toBeDisabled();
+    await dialog.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await compare.click();
+    dialog = page.getByRole("dialog", {
+      name: zh ? "比较同步修改" : "Compare synced changes",
+    });
+    await dialog
+      .getByRole("radio", {
+        name:
+          resolution === "LOCAL"
+            ? zh
+              ? "保留本机修改"
+              : "Keep device changes"
+            : zh
+              ? "使用远端内容"
+              : "Use remote values",
+      })
+      .check();
+    await page.screenshot({
+      path: info.outputPath("work-conflict-review.png"),
+      fullPage: true,
+    });
+    await dialog
+      .getByRole("button", {
+        name: zh ? "应用选择" : "Apply choice",
+        exact: true,
+      })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        const snapshot = await (
+          await page.request.get(workbench.url + "/api/snapshot")
+        ).json();
+        return snapshot.items.find(
+          (item: { id: string }) => item.id === task.id,
+        );
+      })
+      .toMatchObject({
+        version: 3,
+        title:
+          resolution === "LOCAL"
+            ? "Device reviewed title"
+            : "Remote reviewed title",
+      });
+    await page.reload();
+    await expect(
+      page.getByRole("button", {
+        name: /Device reviewed title.*(Compare changes|比较修改)/,
+      }),
+    ).toHaveCount(0);
+    await page.screenshot({
+      path: info.outputPath("resolved-work-conflict.png"),
+      fullPage: true,
+    });
+  });
+}
+
+test("owned workspace selection hydrates a separate replica without redirecting another tab", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh"),
+    w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const defaultIdentity = await (
+    await page.request.get(workbench.url + "/api/session")
+  ).json();
+  await page.goto(workbench.url + "/#account");
+  await page.locator(".workspace-connection > details > summary").click();
+  await page
+    .getByLabel(zh ? "新工作区名称" : "New workspace name", { exact: true })
+    .fill("Separate owned workspace");
+  const createKeys: string[] = [];
+  let interrupted = false;
+  await page.route("**/api/v1/workspaces/create", async (route) => {
+    createKeys.push(route.request().headers()["idempotency-key"]!);
+    if (!interrupted) {
+      interrupted = true;
+      const committed = await route.fetch();
+      expect(committed.status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await page
+    .getByRole("button", {
+      name: zh ? "创建空工作区" : "Create empty workspace",
+      exact: true,
+    })
+    .click();
+  const retry = page.getByRole("button", {
+    name: zh ? "重试创建" : "Retry creation",
+    exact: true,
+  });
+  await expect(retry).toBeEnabled();
+  const creationResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/v1/workspaces/create") &&
+      response.status() === 200,
+  );
+  await retry.click();
+  const created = await (await creationResponse).json();
+  expect(createKeys).toHaveLength(2);
+  expect(createKeys[0]).toBe(createKeys[1]);
+  expect(
+    await (await page.request.get(workbench.url + "/api/v1/workspaces")).json(),
+  ).toHaveLength(2);
+  expect(
+    (await (await page.request.get(workbench.url + "/api/session")).json())
+      .context.workspaceId,
+  ).toBe(defaultIdentity.context.workspaceId);
+  const response = await page.request.post(workbench.url + "/api/work/create", {
+    data: { title: "Only selected workspace task" },
+    headers: {
+      Origin: workbench.url,
+      "X-CSRF-Token": defaultIdentity.csrf,
+      "Idempotency-Key": randomUUID(),
+      "X-Workspace-Id": created.id,
+    },
+  });
+  expect(response.status()).toBe(200);
+  const other = await page.context().newPage();
+  await other.goto(workbench.url + "/#tasks");
+  await page.goto(workbench.url + "/#account");
+  await page
+    .getByRole("button", {
+      name: zh ? "查看同步选项" : "Review sync options",
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("navigation", {
+      name: zh ? "账户中的工作区" : "Workspaces in this account",
+    })
+    .getByRole("button", { name: created.name, exact: true })
+    .click();
+  const preview = page.getByRole("region", {
+    name: zh ? "工作区连接预览" : "Workspace connection preview",
+  });
+  await expect(preview).toContainText(zh ? "任务 1" : "Tasks 1");
+  await Promise.all([
+    page.waitForEvent("load"),
+    preview
+      .getByRole("button", {
+        name: zh ? "打开账户工作区" : "Open account workspace",
+        exact: true,
+      })
+      .click(),
+  ]);
+  await page.goto(workbench.url + "/#tasks");
+  await expect(
+    page.locator(".task-title", { hasText: "Only selected workspace task" }),
+  ).toBeVisible();
+  await expect(
+    other.locator(".task-title", { hasText: "Only selected workspace task" }),
+  ).toHaveCount(0);
+  const defaultSnapshot = await (
+    await other.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(defaultSnapshot.items).toHaveLength(0);
+  expect(
+    (await (await other.request.get(workbench.url + "/api/session")).json())
+      .context.workspaceId,
+  ).toBe(defaultIdentity.context.workspaceId);
+  await page.reload();
+  await expect(
+    page.locator(".task-title", { hasText: "Only selected workspace task" }),
+  ).toBeVisible();
+  await other.close();
+});
+
+for (const choice of ["LOCAL", "REMOTE"] as const)
+  test(`File rename conflict review keeps original bytes and applies explicit ${choice} choice`, async ({
+    page,
+    workbench,
+  }, info) => {
+    const zh = info.project.name.endsWith("zh");
+    await unlock(
+      page,
+      workbench.url,
+      workbench.secret,
+      words(info.project.name),
+    );
+    await page.goto(workbench.url + "/#library");
+    const bytes = Buffer.from("Immutable conflict original\n原始字节");
+    await page
+      .getByLabel(zh ? "上传文件" : "Upload file", { exact: true })
+      .setInputFiles({
+        name: "conflict-original.txt",
+        mimeType: "text/plain",
+        buffer: bytes,
+      });
+    let file: { id: string; version: number; contentHash: string } | undefined;
+    await expect
+      .poll(async () => {
+        const snapshot = await (
+          await page.request.get(workbench.url + "/api/snapshot")
+        ).json();
+        file = snapshot.files.find(
+          (entry: { name: string }) => entry.name === "conflict-original.txt",
+        );
+        return file?.version;
+      })
+      .toBe(1);
+    if (!file) throw new Error("MISSING_CANONICAL_FILE");
+    const original = file;
+    let release: () => void = () => {},
+      observed: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+      intercepted = new Promise<void>((resolve) => {
+        observed = resolve;
+      });
+    let first = true;
+    await page.route("**/api/v1/files/rename", async (route) => {
+      if (first) {
+        first = false;
+        observed();
+        await held;
+      }
+      await route.continue();
+    });
+    const detail = page.getByRole("region", {
+      name: "conflict-original.txt",
+      exact: true,
+    });
+    await detail
+      .getByLabel(zh ? "文件名称" : "File name", { exact: true })
+      .fill("device-conflict.txt");
+    await detail
+      .getByRole("button", { name: zh ? "保存名称" : "Save name", exact: true })
+      .click();
+    await intercepted;
+    try {
+      await mutation(page, "/api/v1/files/rename", {
+        id: original.id,
+        version: 1,
+        name: "remote-conflict.txt",
+      });
+    } finally {
+      release();
+    }
+    await page.goto(workbench.url + "/#account");
+    const compare = page.getByRole("button", {
+      name: /device-conflict.txt.*(Compare changes|比较修改)/,
+    });
+    await compare.click();
+    const dialog = page.getByRole("dialog", {
+      name: zh ? "比较同步修改" : "Compare synced changes",
+    });
+    for (const name of [
+      "conflict-original.txt",
+      "device-conflict.txt",
+      "remote-conflict.txt",
+    ])
+      await expect(dialog).toContainText(name);
+    const apply = dialog.getByRole("button", {
+      name: zh ? "应用选择" : "Apply choice",
+      exact: true,
+    });
+    await expect(apply).toBeDisabled();
+    await dialog
+      .getByRole("radio", {
+        name:
+          choice === "LOCAL"
+            ? zh
+              ? "保留本机修改"
+              : "Keep device changes"
+            : zh
+              ? "使用远端内容"
+              : "Use remote values",
+        exact: true,
+      })
+      .check();
+    await apply.click();
+    await expect(dialog).toHaveCount(0);
+    await expect
+      .poll(
+        async () =>
+          await (
+            await page.request.get(
+              workbench.url + "/api/v1/files/metadata?id=" + original.id,
+            )
+          ).json(),
+      )
+      .toMatchObject({
+        version: 3,
+        name:
+          choice === "LOCAL" ? "device-conflict.txt" : "remote-conflict.txt",
+        originalName: "conflict-original.txt",
+        contentHash: original.contentHash,
+      });
+    const downloaded = await page.request.get(
+      workbench.url + "/api/v1/files/bytes?id=" + original.id,
+    );
+    expect(downloaded.status()).toBe(200);
+    expect(await downloaded.body()).toEqual(bytes);
+    await page.reload();
+    await expect(compare).toHaveCount(0);
+  });
+
+for (const recoveryMode of ["RETRY", "REVIEW"] as const) {
+  test(`explicit merge imports original File bytes and resumes a lost accepted response after reload without switching the source ${recoveryMode}`, async ({
+    page,
+    workbench,
+  }, info) => {
+    const zh = info.project.name.endsWith("zh");
+    await page.goto(workbench.url + "/#tasks");
+    await page
+      .getByRole("button", { name: zh ? "新建任务" : "New task", exact: true })
+      .first()
+      .click();
+    const editor = page.getByRole("dialog");
+    await editor
+      .getByLabel(zh ? "标题" : "Title", { exact: true })
+      .fill("Merge original task");
+    await editor
+      .getByRole("button", {
+        name: zh ? "新建任务" : "Create task",
+        exact: true,
+      })
+      .click();
+    await expect(editor).toHaveCount(0);
+    await page
+      .getByRole("button", { name: zh ? "新建任务" : "New task", exact: true })
+      .first()
+      .click();
+    await editor
+      .getByLabel(zh ? "标题" : "Title", { exact: true })
+      .fill("Merge ordered second");
+    await editor
+      .getByRole("button", {
+        name: zh ? "新建任务" : "Create task",
+        exact: true,
+      })
+      .click();
+    await expect(editor).toHaveCount(0);
+    await page
+      .getByRole("combobox", { name: zh ? "排序" : "Sort", exact: true })
+      .selectOption("manual");
+    await page
+      .getByRole("button", {
+        name: (zh ? "调整顺序：" : "Reorder: ") + "Merge ordered second",
+        exact: true,
+      })
+      .press("Alt+ArrowUp");
+    await expect(page.locator(".task-list .task-title")).toHaveText([
+      "Merge ordered second",
+      "Merge original task",
+    ]);
+    await page.goto(workbench.url + "/#library");
+    const bytes = Buffer.from("Merge original binary\n完整原件", "utf8");
+    await page
+      .getByLabel(zh ? "上传文件" : "Upload file", { exact: true })
+      .setInputFiles({
+        name: "merge-original.txt",
+        mimeType: "text/plain",
+        buffer: bytes,
+      });
+    await expect(page.locator(".file-text-preview")).toHaveText(
+      bytes.toString("utf8"),
+    );
+    await unlock(
+      page,
+      workbench.url,
+      workbench.secret,
+      words(info.project.name),
+      "prepare",
+    );
+    const choices = page.getByRole("region", {
+      name: zh ? "选择合并内容" : "Choose content to merge",
+      exact: true,
+    });
+    const prepare = choices.getByRole("button", {
+      name: zh ? "生成导入预览" : "Prepare import preview",
+      exact: true,
+    });
+    await expect(prepare).toBeDisabled();
+    await choices
+      .getByRole("button", {
+        name: zh ? "全部选择复制" : "Choose copy for all",
+        exact: true,
+      })
+      .click();
+    await prepare.click();
+    const apply = choices.getByRole("button", {
+      name: zh ? "确认并导入" : "Confirm and import",
+      exact: true,
+    });
+    await expect(apply).toBeVisible();
+    await page.screenshot({
+      path: info.outputPath("merge-command-preview.png"),
+      fullPage: true,
+    });
+    const before = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(before.files).toHaveLength(0);
+    expect(
+      before.items.some(
+        (item: { title: string }) => item.title === "Merge original task",
+      ),
+    ).toBe(false);
+    let dropped = false;
+    const requestIds: string[] = [];
+    await page.route("**/api/files/register", async (route) => {
+      requestIds.push(route.request().headers()["idempotency-key"]!);
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      if (!dropped) {
+        dropped = true;
+        await route.abort("connectionreset");
+      } else await route.fulfill({ response });
+    });
+    await apply.click();
+    await expect(choices.getByRole("alert")).toBeVisible();
+    expect(dropped).toBe(true);
+    if (recoveryMode === "REVIEW")
+      await mutation(page, "/api/work/create", {
+        title: "Independent change during import",
+      });
+    await page.reload();
+    const recovery = page.getByRole("region", {
+      name: zh ? "导入恢复" : "Import recovery",
+      exact: true,
+    });
+    if (recoveryMode === "REVIEW") {
+      const reviewButton = recovery.getByRole("button", {
+        name: zh ? "检查目标变化" : "Review destination changes",
+        exact: true,
+      });
+      await reviewButton.click();
+      const changes = recovery.getByRole("region", {
+        name: zh ? "重新审查导入" : "Review import changes",
+        exact: true,
+      });
+      const accept = changes.getByRole("button", {
+        name: zh
+          ? "确认新预览并准备剩余操作"
+          : "Accept review and prepare remaining operations",
+        exact: true,
+      });
+      await expect(accept).toBeEnabled();
+      expect(requestIds).toHaveLength(1);
+      await mutation(page, "/api/work/create", { title: "Race after review" });
+      await accept.click();
+      await expect(recovery.getByRole("alert").first()).toBeVisible();
+      expect(requestIds).toHaveLength(1);
+      await reviewButton.click();
+      await expect(accept).toBeEnabled();
+      await accept.click();
+      await expect(recovery).toContainText(
+        zh ? "已由新的审查记录继续" : "Continued by a new review",
+      );
+    }
+    await recovery
+      .getByRole("button", {
+        name: zh ? "继续此导入" : "Resume this import",
+        exact: true,
+      })
+      .click();
+    await expect(recovery).toContainText(
+      zh ? "内容已导入" : "Content imported",
+    );
+    expect(requestIds).toHaveLength(recoveryMode === "RETRY" ? 2 : 1);
+    expect(new Set(requestIds).size).toBe(1);
+    const after = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(
+      after.items.filter(
+        (item: { title: string }) => item.title === "Merge original task",
+      ),
+    ).toHaveLength(1);
+    expect(after.manualOrders).toHaveLength(1);
+    expect(
+      after.manualOrders[0].entries.map(
+        (entry: { entityId: string }) =>
+          after.items.find((item: { id: string }) => item.id === entry.entityId)
+            .title,
+      ),
+    ).toEqual([
+      ...(recoveryMode === "REVIEW"
+        ? ["Independent change during import", "Race after review"]
+        : []),
+      "Merge ordered second",
+      "Merge original task",
+    ]);
+    expect(after.files).toHaveLength(1);
+    const file = after.files[0];
+    const downloaded = await page.request.get(
+      workbench.url + "/api/v1/files/bytes?id=" + file.id,
+    );
+    expect(downloaded.status()).toBe(200);
+    expect(await downloaded.body()).toEqual(bytes);
+    await page.goto(workbench.url + "/#tasks");
+    await expect(
+      page.locator(".task-title", { hasText: "Merge original task" }),
+    ).toBeVisible();
+    await mutation(page, "/api/work/create", {
+      title: "Later destination update",
+    });
+    await page.goto(workbench.url + "/#account");
+    await recovery
+      .getByRole("button", {
+        name: zh ? "查看导入后的工作区" : "Review imported workspace",
+        exact: true,
+      })
+      .click();
+    const completion = recovery.getByRole("region", {
+      name: zh ? "导入后工作区预览" : "Imported workspace preview",
+      exact: true,
+    });
+    await expect(completion).toContainText(
+      zh ? "导入完成后目标还有更新" : "The destination changed after import",
+    );
+    await Promise.all([
+      page.waitForEvent("load"),
+      completion
+        .getByRole("button", {
+          name: zh ? "打开导入后的工作区" : "Open imported workspace",
+          exact: true,
+        })
+        .click(),
+    ]);
+    await page.goto(workbench.url + "/#tasks");
+    await expect(
+      page.locator(".task-title", { hasText: "Later destination update" }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".task-title", { hasText: "Merge original task" }),
+    ).toBeVisible();
+    await page.route("**/api/**", (route) =>
+      route.abort("internetdisconnected"),
+    );
+    await page.goto(workbench.url + "/#account");
+    const devices = page.getByRole("navigation", {
+      name: zh ? "本机工作区" : "Device workspaces",
+      exact: true,
+    });
+    await Promise.all([
+      page.waitForEvent("load"),
+      devices
+        .getByRole("button", {
+          name: zh ? "本机原工作区" : "Original device workspace",
+          exact: true,
+        })
+        .click(),
+    ]);
+    await page.goto(workbench.url + "/#tasks");
+    await expect(
+      page.locator(".task-title", { hasText: "Later destination update" }),
+    ).toHaveCount(0);
+    await page.reload();
+    await expect(
+      page.locator(".task-title", { hasText: "Merge original task" }),
+    ).toBeVisible();
+    await page.goto(workbench.url + "/#library");
+    await page
+      .locator(".library-file-row", { hasText: "merge-original.txt" })
+      .click();
+    await expect(page.locator(".file-text-preview")).toHaveText(
+      bytes.toString("utf8"),
+    );
+    await page.screenshot({
+      path: info.outputPath("merge-source-offline.png"),
+      fullPage: true,
+    });
+  });
+}
+
+test("local content imports into a newly created owned workspace before explicit replica activation", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await page.goto(workbench.url + "/#tasks");
+  await page
+    .getByRole("button", { name: zh ? "新建任务" : "New task", exact: true })
+    .first()
+    .click();
+  const editor = page.getByRole("dialog");
+  await editor
+    .getByLabel(zh ? "标题" : "Title", { exact: true })
+    .fill("New workspace original");
+  await editor
+    .getByRole("button", { name: zh ? "新建任务" : "Create task", exact: true })
+    .click();
+  await expect(editor).toHaveCount(0);
+  await unlock(
+    page,
+    workbench.url,
+    workbench.secret,
+    words(info.project.name),
+    "prepare",
+  );
+  await page
+    .getByText(zh ? "新建空的远程工作区" : "Create an empty remote workspace", {
+      exact: true,
+    })
+    .click();
+  await page
+    .getByLabel(zh ? "新工作区名称" : "New workspace name", { exact: true })
+    .fill("Imported device workspace");
+  await page
+    .getByRole("button", {
+      name: zh ? "创建空工作区" : "Create empty workspace",
+      exact: true,
+    })
+    .click();
+  const response = await page.request.get(workbench.url + "/api/v1/workspaces");
+  const owned: { id: string; name: string }[] = await response.json();
+  const destination = owned.find(
+    (entry) => entry.name === "Imported device workspace",
+  );
+  expect(destination).toBeDefined();
+  if (!destination) throw new Error("MISSING_OWNED_DESTINATION");
+  const defaultBefore = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(defaultBefore.items).toHaveLength(0);
+  const preview = page.getByRole("region", {
+    name: zh ? "工作区连接预览" : "Workspace connection preview",
+    exact: true,
+  });
+  await preview
+    .getByRole("button", {
+      name: zh ? "查看合并预览" : "Review merge preview",
+      exact: true,
+    })
+    .click();
+  const report = preview.getByRole("region", {
+    name: zh ? "合并预览" : "Merge preview",
+    exact: true,
+  });
+  await report
+    .getByRole("button", {
+      name: zh ? "保存合并前备份" : "Save a backup before merging",
+      exact: true,
+    })
+    .click();
+  const choices = report.getByRole("region", {
+    name: zh ? "选择合并内容" : "Choose content to merge",
+    exact: true,
+  });
+  await choices
+    .getByRole("button", {
+      name: zh ? "全部选择复制" : "Choose copy for all",
+      exact: true,
+    })
+    .click();
+  await choices
+    .getByRole("button", {
+      name: zh ? "生成导入预览" : "Prepare import preview",
+      exact: true,
+    })
+    .click();
+  await choices
+    .getByRole("button", {
+      name: zh ? "确认并导入" : "Confirm and import",
+      exact: true,
+    })
+    .click();
+  await expect(choices.getByRole("status")).toContainText(
+    zh ? "所选内容已导入" : "Selected content imported",
+  );
+  const target = await (
+    await page.request.get(workbench.url + "/api/snapshot", {
+      headers: { "X-Workspace-Id": destination.id },
+    })
+  ).json();
+  expect(target.items.map((item: { title: string }) => item.title)).toEqual([
+    "New workspace original",
+  ]);
+  expect(
+    (await (await page.request.get(workbench.url + "/api/snapshot")).json())
+      .items,
+  ).toHaveLength(0);
+  const recovery = page.getByRole("region", {
+    name: zh ? "导入恢复" : "Import recovery",
+    exact: true,
+  });
+  await recovery
+    .getByRole("button", {
+      name: zh ? "查看导入后的工作区" : "Review imported workspace",
+      exact: true,
+    })
+    .click();
+  await Promise.all([
+    page.waitForEvent("load"),
+    recovery
+      .getByRole("button", {
+        name: zh ? "打开导入后的工作区" : "Open imported workspace",
+        exact: true,
+      })
+      .click(),
+  ]);
+  await page.goto(workbench.url + "/#tasks");
+  await expect(
+    page.locator(".task-title", { hasText: "New workspace original" }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.locator(".task-title", { hasText: "New workspace original" }),
+  ).toBeVisible();
+  await page.goto(workbench.url + "/#account");
+  await expect(
+    page
+      .getByRole("navigation", {
+        name: zh ? "本机工作区" : "Device workspaces",
+        exact: true,
+      })
+      .getByRole("button", {
+        name: zh ? "账户工作区" : "Account workspace",
+        exact: true,
+      }),
+  ).toHaveAttribute("aria-current", "page");
+});
+
+for (const resolution of ["LOCAL", "REMOTE"] as const) {
+  test(`import re-review resolves changed task settings explicitly with ${resolution}`, async ({
+    page,
+    workbench,
+  }, info) => {
+    const zh = info.project.name.endsWith("zh");
+    await page.goto(workbench.url + "/#tasks");
+    await page
+      .getByRole("button", { name: zh ? "新建任务" : "New task", exact: true })
+      .first()
+      .click();
+    const editor = page.getByRole("dialog");
+    await editor
+      .getByLabel(zh ? "标题" : "Title", { exact: true })
+      .fill("Source stays intact");
+    await editor
+      .getByRole("button", {
+        name: zh ? "新建任务" : "Create task",
+        exact: true,
+      })
+      .click();
+    await expect(editor).toHaveCount(0);
+    await unlock(
+      page,
+      workbench.url,
+      workbench.secret,
+      words(info.project.name),
+      "prepare",
+    );
+    const choices = page.getByRole("region", {
+      name: zh ? "选择合并内容" : "Choose content to merge",
+      exact: true,
+    });
+    await choices
+      .getByRole("button", {
+        name: zh ? "全部选择复制" : "Choose copy for all",
+        exact: true,
+      })
+      .click();
+    await choices
+      .getByRole("button", {
+        name: zh ? "生成导入预览" : "Prepare import preview",
+        exact: true,
+      })
+      .click();
+    let attempted = 0;
+    await page.route("**/api/work/update", (route) => {
+      attempted++;
+      return route.abort("connectionreset");
+    });
+    await choices
+      .getByRole("button", {
+        name: zh ? "确认并导入" : "Confirm and import",
+        exact: true,
+      })
+      .click();
+    await expect(choices.getByRole("alert")).toBeVisible();
+    expect(attempted).toBe(1);
+    const target = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(target.items).toHaveLength(1);
+    const current = target.items[0];
+    await mutation(page, "/api/work/update", {
+      id: current.id,
+      version: current.version,
+      input: {
+        title: "Remote keeps its edit",
+        activationState: "ACTIVE",
+        status: "IN_PROGRESS",
+      },
+    });
+    await page.reload();
+    const recovery = page.getByRole("region", {
+      name: zh ? "导入恢复" : "Import recovery",
+      exact: true,
+    });
+    await recovery
+      .getByRole("button", {
+        name: zh ? "检查目标变化" : "Review destination changes",
+        exact: true,
+      })
+      .click();
+    const review = recovery.getByRole("region", {
+      name: zh ? "重新审查导入" : "Review import changes",
+      exact: true,
+    });
+    await expect(review.getByRole("alert")).toContainText(
+      zh ? "相关内容也有修改" : "Related content also changed",
+    );
+    await expect(
+      review.getByRole("button", {
+        name: zh
+          ? "确认新预览并准备剩余操作"
+          : "Accept review and prepare remaining operations",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    expect(attempted).toBe(1);
+    const unchanged = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(unchanged.items).toHaveLength(1);
+    expect(unchanged.items[0]).toMatchObject({
+      id: current.id,
+      title: "Remote keeps its edit",
+      status: "IN_PROGRESS",
+      version: 2,
+    });
+    await page.screenshot({
+      path: info.outputPath("work-import-resolution.png"),
+      fullPage: true,
+    });
+    await review
+      .getByRole("button", {
+        name:
+          resolution === "LOCAL"
+            ? zh
+              ? "使用本机设置"
+              : "Use local settings"
+            : zh
+              ? "保留目标设置"
+              : "Keep destination settings",
+        exact: true,
+      })
+      .click();
+    await expect(
+      review.getByRole("button", {
+        name: zh
+          ? "确认新预览并准备剩余操作"
+          : "Accept review and prepare remaining operations",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await review
+      .getByRole("button", {
+        name: zh
+          ? "确认新预览并准备剩余操作"
+          : "Accept review and prepare remaining operations",
+        exact: true,
+      })
+      .click();
+    await expect(review).toHaveCount(0);
+    await expect(
+      recovery.getByText(
+        zh
+          ? "已由新的审查记录继续，原记录仍保留。"
+          : "Continued by a new review; this original record is retained.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    // Preparing the reviewed fork must not apply it or clear the original local task.
+    const prepared = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(prepared.items[0].version).toBe(2);
+    await page.unroute("**/api/work/update");
+    await recovery
+      .getByRole("button", {
+        name: zh ? "继续此导入" : "Resume this import",
+        exact: true,
+      })
+      .click();
+    await expect(
+      recovery.getByText(zh ? "内容已导入" : "Content imported", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    const finished = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(finished.items).toHaveLength(1);
+    expect(finished.items[0]).toMatchObject({
+      id: current.id,
+      title: "Remote keeps its edit",
+      status: resolution === "LOCAL" ? "TODO" : "IN_PROGRESS",
+      version: 3,
+    });
+    await page.route("**/api/**", (route) =>
+      route.abort("internetdisconnected"),
+    );
+    await page.goto(workbench.url + "/#tasks");
+    await expect(
+      page.locator(".task-title", { hasText: "Source stays intact" }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".task-title", { hasText: "Remote keeps its edit" }),
+    ).toHaveCount(0);
+  });
+}
+for (const choice of ["LOCAL", "REMOTE"] as const) {
+  test(`import File rename re-review preserves original bytes with ${choice}`, async ({
+    page,
+    workbench,
+  }, info) => {
+    const zh = info.project.name.endsWith("zh");
+    const bytes = Buffer.from("Original import conflict bytes\n不可变原件");
+    await page.goto(workbench.url + "/#library");
+    await page
+      .getByLabel(zh ? "上传文件" : "Upload file", { exact: true })
+      .setInputFiles({
+        name: "import-conflict-original.txt",
+        mimeType: "text/plain",
+        buffer: bytes,
+      });
+    await expect(page.locator(".file-text-preview")).toHaveText(
+      bytes.toString("utf8"),
+    );
+    const detail = page.getByRole("region", {
+      name: "import-conflict-original.txt",
+      exact: true,
+    });
+    await detail
+      .getByLabel(zh ? "文件名称" : "File name", { exact: true })
+      .fill("local-import-name.txt");
+    await detail
+      .getByRole("button", { name: zh ? "保存名称" : "Save name", exact: true })
+      .click();
+    await expect(
+      page.getByRole("region", { name: "local-import-name.txt", exact: true }),
+    ).toBeVisible();
+    await unlock(
+      page,
+      workbench.url,
+      workbench.secret,
+      words(info.project.name),
+      "prepare",
+    );
+    const choices = page.getByRole("region", {
+      name: zh ? "选择合并内容" : "Choose content to merge",
+      exact: true,
+    });
+    await choices
+      .getByRole("button", {
+        name: zh ? "全部选择复制" : "Choose copy for all",
+        exact: true,
+      })
+      .click();
+    await choices
+      .getByRole("button", {
+        name: zh ? "生成导入预览" : "Prepare import preview",
+        exact: true,
+      })
+      .click();
+    let renameAttempts = 0;
+    await page.route("**/api/files/rename", (route) => {
+      renameAttempts++;
+      return route.abort("connectionreset");
+    });
+    await choices
+      .getByRole("button", {
+        name: zh ? "确认并导入" : "Confirm and import",
+        exact: true,
+      })
+      .click();
+    await expect(choices.getByRole("alert")).toBeVisible();
+    expect(renameAttempts).toBe(1);
+    const target = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(target.files).toHaveLength(1);
+    const original = target.files[0];
+    expect(original).toMatchObject({
+      name: "import-conflict-original.txt",
+      version: 1,
+    });
+    await mutation(page, "/api/v1/files/rename", {
+      id: original.id,
+      version: 1,
+      name: "remote-import-name.txt",
+    });
+    await page.reload();
+    const recovery = page.getByRole("region", {
+      name: zh ? "导入恢复" : "Import recovery",
+      exact: true,
+    });
+    await recovery
+      .getByRole("button", {
+        name: zh ? "检查目标变化" : "Review destination changes",
+        exact: true,
+      })
+      .click();
+    const review = recovery.getByRole("region", {
+      name: zh ? "重新审查导入" : "Review import changes",
+      exact: true,
+    });
+    await expect(review).toContainText("local-import-name.txt");
+    await expect(review).toContainText("remote-import-name.txt");
+    const accept = review.getByRole("button", {
+      name: zh
+        ? "确认新预览并准备剩余操作"
+        : "Accept review and prepare remaining operations",
+      exact: true,
+    });
+    await expect(accept).toBeDisabled();
+    await review
+      .getByRole("button", {
+        name:
+          choice === "LOCAL"
+            ? zh
+              ? "使用本机设置"
+              : "Use local settings"
+            : zh
+              ? "保留目标设置"
+              : "Keep destination settings",
+        exact: true,
+      })
+      .click();
+    await page.screenshot({
+      path: info.outputPath("file-import-resolution.png"),
+      fullPage: true,
+    });
+    await accept.click();
+    await expect(review).toHaveCount(0);
+    // Restore the app: the selected decision must survive reload without executing itself.
+    await page.reload();
+    expect(
+      (await (await page.request.get(workbench.url + "/api/snapshot")).json())
+        .files[0].version,
+    ).toBe(2);
+    await page.unroute("**/api/files/rename");
+    await recovery
+      .getByRole("button", {
+        name: zh ? "继续此导入" : "Resume this import",
+        exact: true,
+      })
+      .click();
+    await expect(
+      recovery.getByText(zh ? "内容已导入" : "Content imported", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    const imported = await (
+      await page.request.get(
+        workbench.url + "/api/v1/files/metadata?id=" + original.id,
+      )
+    ).json();
+    expect(imported).toMatchObject({
+      name:
+        choice === "LOCAL" ? "local-import-name.txt" : "remote-import-name.txt",
+      originalName: "import-conflict-original.txt",
+      contentHash: original.contentHash,
+      version: 3,
+    });
+    const downloaded = await page.request.get(
+      workbench.url + "/api/v1/files/bytes?id=" + original.id,
+    );
+    expect(downloaded.status()).toBe(200);
+    expect(await downloaded.body()).toEqual(bytes);
+    await page.route("**/api/**", (route) =>
+      route.abort("internetdisconnected"),
+    );
+    await page.goto(workbench.url + "/#library");
+    await expect(
+      page.getByText("local-import-name.txt", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByText("remote-import-name.txt", { exact: true }),
+    ).toHaveCount(0);
+  });
+}
+for (const choice of ["LOCAL", "REMOTE"] as const) {
+  test(`import manual order review respects explicit ${choice} sequence`, async ({
+    page,
+    workbench,
+  }, info) => {
+    const zh = info.project.name.endsWith("zh");
+    await page.goto(workbench.url + "/#tasks");
+    for (const title of ["Import order first", "Import order second"]) {
+      await page
+        .getByRole("button", {
+          name: zh ? "新建任务" : "New task",
+          exact: true,
+        })
+        .first()
+        .click();
+      const editor = page.getByRole("dialog");
+      await editor
+        .getByLabel(zh ? "标题" : "Title", { exact: true })
+        .fill(title);
+      await editor
+        .getByRole("button", {
+          name: zh ? "新建任务" : "Create task",
+          exact: true,
+        })
+        .click();
+      await expect(editor).toHaveCount(0);
+    }
+    await page
+      .getByRole("combobox", { name: zh ? "排序" : "Sort", exact: true })
+      .selectOption("manual");
+    await page
+      .getByRole("button", {
+        name: (zh ? "调整顺序：" : "Reorder: ") + "Import order second",
+        exact: true,
+      })
+      .press("Alt+ArrowUp");
+    await expect(page.locator(".task-list .task-title")).toHaveText([
+      "Import order second",
+      "Import order first",
+    ]);
+    await unlock(
+      page,
+      workbench.url,
+      workbench.secret,
+      words(info.project.name),
+      "prepare",
+    );
+    const choices = page.getByRole("region", {
+      name: zh ? "选择合并内容" : "Choose content to merge",
+      exact: true,
+    });
+    await choices
+      .getByRole("button", {
+        name: zh ? "全部选择复制" : "Choose copy for all",
+        exact: true,
+      })
+      .click();
+    await choices
+      .getByRole("button", {
+        name: zh ? "生成导入预览" : "Prepare import preview",
+        exact: true,
+      })
+      .click();
+    await page.route("**/api/manual-orders/sequence", (route) =>
+      route.abort("connectionreset"),
+    );
+    await choices
+      .getByRole("button", {
+        name: zh ? "确认并导入" : "Confirm and import",
+        exact: true,
+      })
+      .click();
+    await expect(choices.getByRole("alert")).toBeVisible();
+    const target = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(target.items).toHaveLength(2);
+    expect(target.manualOrders).toHaveLength(0);
+    const first = target.items.find(
+      (item: { title: string }) => item.title === "Import order first",
+    );
+    const second = target.items.find(
+      (item: { title: string }) => item.title === "Import order second",
+    );
+    await mutation(page, "/api/manual-orders/sequence", {
+      scope: { kind: "WORKSPACE_TASKS" },
+      version: 0,
+      orderedEntityIds: [first.id, second.id],
+    });
+    await page.reload();
+    const recovery = page.getByRole("region", {
+      name: zh ? "导入恢复" : "Import recovery",
+      exact: true,
+    });
+    await recovery
+      .getByRole("button", {
+        name: zh ? "检查目标变化" : "Review destination changes",
+        exact: true,
+      })
+      .click();
+    const review = recovery.getByRole("region", {
+      name: zh ? "重新审查导入" : "Review import changes",
+      exact: true,
+    });
+    await expect(review).toContainText(zh ? "手动排序" : "Manual order");
+    await expect(review).toContainText(
+      "Import order first → Import order second",
+    );
+    await expect(review).toContainText(
+      "Import order second → Import order first",
+    );
+    const prepare = review.getByRole("button", {
+      name: zh
+        ? "确认新预览并准备剩余操作"
+        : "Accept review and prepare remaining operations",
+      exact: true,
+    });
+    await expect(prepare).toBeDisabled();
+    await review
+      .getByRole("button", {
+        name:
+          choice === "LOCAL"
+            ? zh
+              ? "使用本机设置"
+              : "Use local settings"
+            : zh
+              ? "保留目标设置"
+              : "Keep destination settings",
+        exact: true,
+      })
+      .click();
+    await page.screenshot({
+      path: info.outputPath("order-import-resolution.png"),
+      fullPage: true,
+    });
+    await prepare.click();
+    await expect(review).toHaveCount(0);
+    await page.unroute("**/api/manual-orders/sequence");
+    await recovery
+      .getByRole("button", {
+        name: zh ? "继续此导入" : "Resume this import",
+        exact: true,
+      })
+      .click();
+    await expect(
+      recovery.getByText(zh ? "内容已导入" : "Content imported", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    const snapshot = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    expect(snapshot.items).toHaveLength(2);
+    expect(snapshot.manualOrders).toHaveLength(1);
+    const order = [...snapshot.manualOrders[0].entries]
+      .sort(
+        (a: { position: number }, b: { position: number }) =>
+          a.position - b.position,
+      )
+      .map((entry: { entityId: string }) => entry.entityId);
+    expect(order).toEqual(
+      choice === "LOCAL" ? [second.id, first.id] : [first.id, second.id],
+    );
+    await page.route("**/api/**", (route) =>
+      route.abort("internetdisconnected"),
+    );
+    await page.goto(workbench.url + "/#tasks");
+    await page
+      .getByRole("combobox", { name: zh ? "排序" : "Sort", exact: true })
+      .selectOption("manual");
+    await expect(page.locator(".task-list .task-title")).toHaveText([
+      "Import order second",
+      "Import order first",
+    ]);
+  });
+}
+test("local owned project knowledge imports ownership and original Markdown before replica activation", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh"),
+    w = words(info.project.name);
+  await page.goto(workbench.url + "/#projects");
+  await page
+    .getByRole("button", { name: w.desk.newProject, exact: true })
+    .first()
+    .click();
+  const editor = page.getByRole("dialog");
+  await editor
+    .getByLabel(w.work.title, { exact: true })
+    .fill("Local owned import project");
+  await editor
+    .getByRole("button", { name: w.desk.createProject, exact: true })
+    .click();
+  await expect(editor).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Local owned import project", exact: true })
+    .press("Enter");
+  await page
+    .getByRole("tab", { name: w.desk.projectHub.knowledge, exact: true })
+    .click();
+  await page
+    .getByLabel(zh ? "知识空间名称" : "Wiki space title", { exact: true })
+    .fill("Local owned import space");
+  await page.getByRole("button", { name: /创建 Wiki|Create Wiki/ }).click();
+  await expect(
+    page.getByRole("button", { name: /★ Local owned import space/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: zh ? "新建页面" : "Create page", exact: true })
+    .click();
+  await pane(page)
+    .getByLabel(w.spaces.title, { exact: true })
+    .fill("Local owned import document");
+  await documentMode(page, zh ? "源码" : "Source");
+  const original =
+    "# Original owned document\n第一行\n第二行\n- [ ] remains prose";
+  await pane(page).getByLabel(w.spaces.body, { exact: true }).fill(original);
+  await saveDocument(page, w);
+  await browseDocuments(page);
+  await unlock(page, workbench.url, workbench.secret, w, "prepare");
+  const choices = page.getByRole("region", {
+    name: zh ? "选择合并内容" : "Choose content to merge",
+    exact: true,
+  });
+  await choices
+    .getByRole("button", {
+      name: zh ? "全部选择复制" : "Choose copy for all",
+      exact: true,
+    })
+    .click();
+  await choices
+    .getByRole("button", {
+      name: zh ? "生成导入预览" : "Prepare import preview",
+      exact: true,
+    })
+    .click();
+  await choices
+    .getByRole("button", {
+      name: zh ? "确认并导入" : "Confirm and import",
+      exact: true,
+    })
+    .click();
+  const recovery = page.getByRole("region", {
+    name: zh ? "导入恢复" : "Import recovery",
+    exact: true,
+  });
+  await expect(
+    recovery.getByText(zh ? "内容已导入" : "Content imported", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(snapshot.items).toHaveLength(1);
+  const project = snapshot.items[0];
+  expect(project).toMatchObject({
+    title: "Local owned import project",
+    type: "PROJECT",
+    lifecycle: "PLANNED",
+  });
+  expect(snapshot.projectMaterials).toHaveLength(2);
+  expect(
+    snapshot.projectMaterials.every(
+      (entry: { projectId: string; ownership: string }) =>
+        entry.projectId === project.id && entry.ownership === "OWNED",
+    ),
+  ).toBe(true);
+  const library = await (
+    await page.request.get(workbench.url + "/api/library")
+  ).json();
+  const space = library.find(
+    (entry: { title: string }) => entry.title === "Local owned import space",
+  );
+  const doc = library.find(
+    (entry: { title: string }) => entry.title === "Local owned import document",
+  );
+  expect(doc).toMatchObject({
+    bodyMd: original,
+    spaceId: space.id,
+    version: 2,
+  });
+  expect(snapshot.projectMaterials).toContainEqual(
+    expect.objectContaining({ kind: "SPACE", targetId: space.id }),
+  );
+  expect(snapshot.projectMaterials).toContainEqual(
+    expect.objectContaining({ kind: "DOCUMENT", targetId: doc.id }),
+  );
+  // Import completion has not activated another replica or erased the source project.
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.goto(workbench.url + "/#projects");
+  await page
+    .getByRole("button", { name: "Local owned import project", exact: true })
+    .press("Enter");
+  await page
+    .getByRole("tab", { name: w.desk.projectHub.knowledge, exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: /★ Local owned import space/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Local owned import document", exact: true })
+    .first()
+    .click();
+  await documentMode(page, zh ? "源码" : "Source");
+  await expect(
+    pane(page).getByLabel(w.spaces.body, { exact: true }),
+  ).toHaveJSProperty("innerText", original);
+});
+
+for (const choice of ["LOCAL", "REMOTE"] as const) {
+  test(`Markdown conflict review preserves original text and applies explicit ${choice} choice`, async ({
+    page,
+    workbench,
+  }, info) => {
+    const w = words(info.project.name),
+      zh = info.project.name.endsWith("zh");
+    await unlock(page, workbench.url, workbench.secret, w);
+    const original = "original first\nunchanged middle\noriginal last";
+    const local = "device first\nunchanged middle\noriginal last";
+    const remote = "server first\nunchanged middle\noriginal last";
+    const note = await mutation(page, "/api/note/save", {
+      id: null,
+      version: 0,
+      input: {
+        title: "Markdown conflict note",
+        kind: "NOTE",
+        day: null,
+        bodyMd: original,
+      },
+    });
+    await page.reload();
+    await nav(page, w.desk.notes);
+    await page
+      .locator(".note-card")
+      .filter({ hasText: "Markdown conflict note" })
+      .press("Enter");
+    await documentMode(page, zh ? "源码" : "Source");
+    let release: () => void = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let observed: () => void = () => {};
+    const intercepted = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    let first = true;
+    await page.route("**/api/v1/note/save", async (route) => {
+      if (first) {
+        first = false;
+        observed();
+        await blocked;
+      }
+      await route.continue();
+    });
+    const bodyEditor = pane(page).getByLabel(w.desk.noteBody, { exact: true });
+    await bodyEditor.click();
+    await bodyEditor.press("ControlOrMeta+A");
+    await bodyEditor.press("Backspace");
+    await bodyEditor.fill(local);
+    await saveDocument(page, w);
+    await intercepted;
+    try {
+      await mutation(page, "/api/note/save", {
+        id: note.id,
+        version: 1,
+        input: {
+          title: "Markdown conflict note",
+          kind: "NOTE",
+          day: null,
+          bodyMd: remote,
+        },
+      });
+    } finally {
+      release();
+    }
+    await browseDocuments(page);
+    await page.goto(workbench.url + "/#account");
+    await page
+      .getByRole("button", {
+        name: /Markdown conflict note.*(Compare changes|比较修改)/,
+      })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: zh ? "比较同步修改" : "Compare synced changes",
+    });
+    await expect(dialog).toContainText(original);
+    await expect(dialog).toContainText(local);
+    await expect(dialog).toContainText(remote);
+    await dialog
+      .getByRole("radio", {
+        name:
+          choice === "LOCAL"
+            ? zh
+              ? "保留本机修改"
+              : "Keep device changes"
+            : zh
+              ? "使用远端内容"
+              : "Use remote values",
+      })
+      .check();
+    await dialog
+      .getByRole("button", {
+        name: zh ? "应用选择" : "Apply choice",
+        exact: true,
+      })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    const expected = choice === "LOCAL" ? local : remote;
+    await expect
+      .poll(
+        async () =>
+          await (
+            await page.request.get(
+              workbench.url + "/api/document/body?kind=NOTE&id=" + note.id,
+            )
+          ).json(),
+      )
+      .toMatchObject({ version: 3, bodyMd: expected });
+    await page.reload();
+    await page.route("**/api/**", (route) =>
+      route.abort("internetdisconnected"),
+    );
+    await nav(page, w.desk.notes);
+    await page
+      .locator(".note-card")
+      .filter({ hasText: "Markdown conflict note" })
+      .press("Enter");
+    await documentMode(page, zh ? "源码" : "Source");
+    await expect(
+      pane(page).getByLabel(w.desk.noteBody, { exact: true }),
+    ).toHaveJSProperty("innerText", expected);
+  });
+}
+
+for (const choice of ["RESTORE", "REMOTE", "COPY"] as const) {
+  test(`remote deleted Markdown review preserves device evidence and applies ${choice}`, async ({
+    page,
+    workbench,
+  }, info) => {
+    const w = words(info.project.name),
+      zh = info.project.name.endsWith("zh");
+    await unlock(page, workbench.url, workbench.secret, w);
+    const original = "original body";
+    const local = "device edit that must survive review";
+    const note = await mutation(page, "/api/note/save", {
+      id: null,
+      version: 0,
+      input: {
+        title: "Remote deleted Markdown",
+        kind: "NOTE",
+        day: null,
+        bodyMd: original,
+      },
+    });
+    await page.reload();
+    await nav(page, w.desk.notes);
+    await page
+      .locator(".note-card")
+      .filter({ hasText: "Remote deleted Markdown" })
+      .press("Enter");
+    await documentMode(page, zh ? "源码" : "Source");
+    let release: () => void = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let observed: () => void = () => {};
+    const intercepted = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    let first = true;
+    await page.route("**/api/v1/note/save", async (route) => {
+      if (first) {
+        first = false;
+        observed();
+        await blocked;
+      }
+      await route.continue();
+    });
+    const bodyEditor = pane(page).getByLabel(w.desk.noteBody, { exact: true });
+    await bodyEditor.click();
+    await bodyEditor.press("ControlOrMeta+A");
+    await bodyEditor.press("Backspace");
+    await bodyEditor.fill(local);
+    await saveDocument(page, w);
+    await browseDocuments(page);
+    await intercepted;
+    try {
+      await mutation(page, "/api/note/delete", {
+        id: note.id,
+        version: 1,
+        deleted: true,
+      });
+    } finally {
+      release();
+    }
+    await page.goto(workbench.url + "/#account");
+    const reviewButton = page.getByRole("button", {
+      name: /Remote deleted Markdown.*(Compare changes|比较修改)/,
+    });
+    await expect(reviewButton).toBeVisible();
+    await reviewButton.click();
+    const dialog = page.getByRole("dialog", {
+      name: zh ? "比较同步修改" : "Compare synced changes",
+    });
+    await expect(dialog).toContainText(local);
+    await expect(dialog).toContainText(zh ? "远端已删除" : "deleted remotely");
+    await dialog
+      .getByRole("radio", {
+        name:
+          choice === "RESTORE"
+            ? zh
+              ? "恢复并保留本机版本"
+              : "Restore and keep device version"
+            : choice === "REMOTE"
+              ? zh
+                ? "接受远端删除"
+                : "Accept remote deletion"
+              : zh
+                ? "另存为新文档"
+                : "Save as a new document",
+      })
+      .check();
+    await dialog
+      .getByRole("button", {
+        name: zh ? "应用选择" : "Apply choice",
+        exact: true,
+      })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    if (choice === "RESTORE") {
+      await expect
+        .poll(
+          async () =>
+            (
+              await (
+                await page.request.get(
+                  workbench.url + "/api/document/body?kind=NOTE&id=" + note.id,
+                )
+              ).json()
+            ).bodyMd,
+        )
+        .toBe(local);
+    }
+    await page.reload();
+    await page.route("**/api/**", (route) =>
+      route.abort("internetdisconnected"),
+    );
+    await page.goto(workbench.url + "#account");
+    await expect(
+      page.getByText(zh ? "原始修改仍保留" : "Original records are retained"),
+    ).toHaveCount(0);
+  });
+}
+
+test("Markdown reconnect automatically merges disjoint lines without discarding the local draft", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const note = await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      title: "Disjoint Markdown",
+      kind: "NOTE",
+      day: null,
+      bodyMd: "first\nmiddle\nlast",
+    },
+  });
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await page
+    .locator(".note-card")
+    .filter({ hasText: "Disjoint Markdown" })
+    .press("Enter");
+  await documentMode(page, zh ? "源码" : "Source");
+  await expect(
+    pane(page).getByLabel(w.desk.noteBody, { exact: true }),
+  ).toHaveJSProperty("innerText", "first\nmiddle\nlast");
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await pane(page)
+    .getByLabel(w.desk.noteBody, { exact: true })
+    .fill("device first\nmiddle\nlast");
+  await expect(
+    pane(page).getByLabel(w.desk.noteBody, { exact: true }),
+  ).toHaveJSProperty("innerText", "device first\nmiddle\nlast");
+  await saveDocument(page, w);
+  await browseDocuments(page);
+  await mutation(page, "/api/note/save", {
+    id: note.id,
+    version: 1,
+    input: {
+      title: "Remote disjoint title",
+      kind: "NOTE",
+      day: null,
+      bodyMd: "first\nmiddle\nserver last",
+    },
+  });
+  await page.unroute("**/api/**");
+  await page.reload();
+  const expected = "device first\nmiddle\nserver last";
+  await expect
+    .poll(
+      async () =>
+        await (
+          await page.request.get(
+            workbench.url + "/api/document/body?kind=NOTE&id=" + note.id,
+          )
+        ).json(),
+    )
+    .toMatchObject({
+      version: 3,
+      title: "Remote disjoint title",
+      bodyMd: expected,
+    });
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await nav(page, w.desk.notes);
+  await page
+    .locator(".note-card")
+    .filter({ hasText: "Remote disjoint title" })
+    .press("Enter");
+  await documentMode(page, zh ? "源码" : "Source");
+  await expect(
+    pane(page).getByLabel(w.desk.noteBody, { exact: true }),
+  ).toHaveJSProperty("innerText", expected);
+});
+
+test("conflicting predecessor keeps later local edits unsent while unrelated tasks continue", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const task = await mutation(page, "/api/work/create", {
+    title: "Predecessor original",
+  });
+  await page.goto(workbench.url + "/#tasks");
+  let release: () => void = () => {};
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let observed: () => void = () => {};
+  const intercepted = new Promise<void>((resolve) => {
+    observed = resolve;
+  });
+  const sent: string[] = [];
+  await page.route("**/api/v1/work/update", async (route) => {
+    sent.push(route.request().postDataJSON().input.title);
+    if (sent.length === 1) {
+      observed();
+      await blocked;
+    }
+    await route.continue();
+  });
+  const edit = async (from: string, to: string) => {
+    await page.locator(".task-title").filter({ hasText: from }).press("Enter");
+    const editor = page.getByRole("dialog");
+    await editor.getByLabel(w.work.title, { exact: true }).fill(to);
+    await editor
+      .getByRole("button", { name: w.common.save, exact: true })
+      .click();
+    await expect(editor).toHaveCount(0);
+  };
+  await edit("Predecessor original", "Device first pending");
+  await intercepted;
+  try {
+    await mutation(page, "/api/work/update", {
+      id: task.id,
+      version: 1,
+      input: { title: "Remote canonical title" },
+    });
+  } finally {
+    release();
+  }
+  await page.goto(workbench.url + "/#account");
+  await expect(
+    page.getByRole("button", {
+      name: /Device first pending.*(Compare changes|比较修改)/,
+    }),
+  ).toBeVisible();
+  await page.goto(workbench.url + "/#tasks");
+  await edit("Device first pending", "Device second pending");
+  await page
+    .getByRole("button", { name: w.desk.newTask, exact: true })
+    .first()
+    .click();
+  const editor = page.getByRole("dialog");
+  await editor
+    .getByLabel(w.work.title, { exact: true })
+    .fill("Unrelated synchronized task");
+  await editor
+    .getByRole("button", { name: w.common.create, exact: true })
+    .click();
+  await expect(editor).toHaveCount(0);
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(workbench.url + "/api/snapshot")).json())
+          .items,
+    )
+    .toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: task.id,
+          version: 2,
+          title: "Remote canonical title",
+        }),
+        expect.objectContaining({ title: "Unrelated synchronized task" }),
+      ]),
+    );
+  expect(sent).toEqual(["Device first pending"]);
+  await page.reload();
+  await expect(
+    page.locator(".task-title").filter({ hasText: "Device second pending" }),
+  ).toBeVisible();
+  expect(sent).toEqual(["Device first pending"]);
+  const zh = info.project.name.endsWith("zh");
+  await page.goto(workbench.url + "/#account");
+  const compare = page.getByRole("button", {
+    name: /Device second pending.*(Compare changes|比较修改)/,
+  });
+  await compare.click();
+  let review = page.getByRole("dialog", {
+    name: zh ? "比较同步修改" : "Compare synced changes",
+  });
+  await expect(review).toContainText("Device first pending");
+  await expect(review).toContainText(
+    zh ? "先处理较早的冲突" : "Resolve the earlier conflict first",
+  );
+  await review
+    .getByRole("radio", { name: zh ? "保留本机修改" : "Keep device changes" })
+    .check();
+  await review
+    .getByRole("button", {
+      name: zh ? "应用选择" : "Apply choice",
+      exact: true,
+    })
+    .click();
+  await expect(review).toHaveCount(0);
+  await expect
+    .poll(async () =>
+      (
+        await (await page.request.get(workbench.url + "/api/snapshot")).json()
+      ).items.find((item: { id: string }) => item.id === task.id),
+    )
+    .toMatchObject({ title: "Device second pending", version: 4 });
+  await expect(compare).toHaveCount(0);
+  expect(sent).toEqual([
+    "Device first pending",
+    "Device first pending",
+    "Device second pending",
+  ]);
+});
+
+test("FINAL project destination single click opens without an intermediate Inspector", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "FINAL direct destination",
+    type: "PROJECT",
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  const row = page.locator(".project-card").filter({ hasText: project.title });
+  await expect(row).toBeVisible();
+  await row.locator(".project-title").click();
+  await expect(page.locator(".project-workspace h1")).toHaveText(project.title);
+  await expect(page.locator(".context-pane")).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp("#projects/" + project.id));
+});

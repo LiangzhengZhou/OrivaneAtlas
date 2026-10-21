@@ -1,0 +1,26 @@
+.markdown-command-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding-block: 4px;
+}
+.markdown-command-menu .document-popover-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(340px, calc(100vw - 32px));
+  max-height: 55dvh;
+  overflow-y: auto;
+}
+.markdown-command-menu .document-popover-panel .ui-button {
+  justify-content: flex-start;
+}
+@media (max-width: 640px) {
+  .markdown-command-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .markdown-command-toolbar > * {
+    flex-shrink: 0;
+  }
+}

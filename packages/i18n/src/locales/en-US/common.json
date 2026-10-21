@@ -23,5 +23,20 @@
   "restore": "Restore",
   "remove": "Remove",
   "openTask": "Open task: {{title}}",
-  "statusLabel": "Status for {{title}}"
+  "statusLabel": "Status for {{title}}",
+  "completeTask": "Complete: {{title}}",
+  "reopenTask": "Reopen: {{title}}",
+  "confirmCompleteTask": "Confirm completion: {{title}}",
+  "confirmReopenTask": "Confirm reopen: {{title}}",
+  "taskCompleted": "Task completed",
+  "taskReopened": "Task reopened",
+  "addDescription": "+ Add description",
+  "moreSettings": "+ More settings",
+  "hideMoreSettings": "Hide extra settings",
+  "taskRelationships": "Work relationships",
+  "taskIdentity": "What is the task?",
+  "taskPlacement": "Where it belongs",
+  "taskTiming": "When",
+  "taskBehavior": "Advanced behavior",
+  "moreActions": "More actions"
 }

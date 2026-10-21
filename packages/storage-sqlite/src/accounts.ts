@@ -7,12 +7,14 @@ import type {
   ApiCredential,
   LoginSession,
 } from "@arclattice/application";
+import { requireApiScopes } from "@arclattice/application";
 import { DomainError } from "@arclattice/domain";
+import { ownedWorkspaceDirectory } from "./owned-workspaces";
 
 const accountFields =
   "id,username,workspace_id AS workspaceId,principal_id AS principalId,role,status,version,created_at AS createdAt";
 const tokenFields =
-  "id,account_id AS accountId,principal_id AS principalId,name,scope,expires_at AS expiresAt,revoked_at AS revokedAt";
+  "id,account_id AS accountId,principal_id AS principalId,name,scope,grants_json AS grantsJson,expires_at AS expiresAt,revoked_at AS revokedAt";
 const sessionFields =
   "id,account_id AS accountId,account_version AS accountVersion,created_at AS createdAt,expires_at AS expiresAt";
 export function accountStore(
@@ -28,6 +30,18 @@ export function accountStore(
     );
   };
   return {
+    workspaces(accountId) {
+      guard();
+      const account = get(accountId);
+      if (account?.status !== "ACTIVE") throw new DomainError("FORBIDDEN");
+      return ownedWorkspaceDirectory(db, account, guard).list();
+    },
+    createWorkspace(accountId, input) {
+      guard();
+      const account = get(accountId);
+      if (account?.status !== "ACTIVE") throw new DomainError("FORBIDDEN");
+      return ownedWorkspaceDirectory(db, account, guard).create(input);
+    },
     session(hash, now) {
       guard();
       const session = db
@@ -159,7 +173,11 @@ export function accountStore(
         claim ? "ACTIVE" : "PENDING",
         new Date().toISOString(),
       );
-      return get(id)!;
+      const created = get(id)!;
+      db.prepare(
+        "INSERT INTO workspace_owner(workspace_id,principal_id,version,created_at) VALUES (?,?,1,?)",
+      ).run(workspaceId, principalId, created.createdAt);
+      return created;
     },
     status(id, version, status) {
       guard();
@@ -196,9 +214,19 @@ export function accountStore(
             tokenFields +
             " FROM api_credential WHERE account_id=? ORDER BY expires_at DESC",
         )
-        .all(accountId) as unknown as ApiCredential[];
+        .all(accountId)
+        .map((value) => ({
+          ...(value as Record<string, unknown>),
+          grants:
+            value.grantsJson === null
+              ? undefined
+              : requireApiScopes(JSON.parse(String(value.grantsJson))),
+          grantsJson: undefined,
+        })) as unknown as ApiCredential[];
     },
-    issue(accountId, name, scope, hash, days = 30) {
+    issue(accountId, name, scope, hash, days = 30, inputGrants) {
+      const grants =
+        inputGrants === undefined ? undefined : requireApiScopes(inputGrants);
       if (days !== null && ![30, 90, 365].includes(days))
         throw new DomainError("VALIDATION_ERROR");
       const account = get(accountId);
@@ -228,7 +256,9 @@ export function accountStore(
         account.workspaceId,
         principalId,
       );
-      db.prepare("INSERT INTO api_credential VALUES (?,?,?,?,?,?,?,NULL)").run(
+      db.prepare(
+        "INSERT INTO api_credential VALUES (?,?,?,?,?,?,?,NULL,?)",
+      ).run(
         id,
         accountId,
         principalId,
@@ -236,6 +266,7 @@ export function accountStore(
         scope,
         hash,
         expiresAt,
+        grants === undefined ? null : JSON.stringify(grants),
       );
       return {
         id,
@@ -245,6 +276,7 @@ export function accountStore(
         scope,
         expiresAt,
         revokedAt: null,
+        ...(grants === undefined ? {} : { grants }),
       };
     },
     resolve(hash) {
@@ -260,7 +292,25 @@ export function accountStore(
         | undefined;
       if (!credential) return null;
       const account = get(credential.accountId);
-      return account?.status === "ACTIVE" ? { account, credential } : null;
+      if (account?.status !== "ACTIVE") return null;
+      return {
+        account,
+        credential: {
+          ...credential,
+          grants:
+            (credential as unknown as Record<string, unknown>).grantsJson ===
+            null
+              ? undefined
+              : requireApiScopes(
+                  JSON.parse(
+                    String(
+                      (credential as unknown as Record<string, unknown>)
+                        .grantsJson,
+                    ),
+                  ),
+                ),
+        },
+      } as { account: Account; credential: ApiCredential };
     },
     revoke(accountId, id) {
       guard();

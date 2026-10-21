@@ -36,6 +36,9 @@ export function projectCompletion(
     completed: tasks.filter((i) => i.status === "DONE").length,
     canceled: tasks.filter((i) => i.status === "CANCELED").length,
     unfinished: tasks.filter((i) => !isTerminalWork(i)).length,
+    unfinishedMilestones: descendants.filter(
+      (i) => i.type === "MILESTONE" && !isTerminalWork(i),
+    ).length,
     unfinishedProjects: descendants.filter(
       (i) => i.type === "PROJECT" && !isTerminalWork(i),
     ).length,

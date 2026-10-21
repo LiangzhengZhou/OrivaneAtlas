@@ -40,6 +40,14 @@ export function TrashRoute({
       .filter((entry) => entry.deletedAt)
       .map((entry) => ({ ...entry, kind: "NOTE" as const })),
     ...snapshot.library.filter((entry) => entry.deletedAt),
+    ...(snapshot.files ?? [])
+      .filter((entry) => entry.deletedAt)
+      .map((entry) => ({
+        ...entry,
+        kind: "FILE" as const,
+        title: entry.name,
+        bodyMd: "",
+      })),
   ]
     .filter(
       (entry) =>
@@ -48,7 +56,9 @@ export function TrashRoute({
           ? entry.kind === "WORK"
           : filter === "note"
             ? entry.kind === "NOTE"
-            : entry.kind === "SPACE" || entry.kind === "DOCUMENT"),
+            : entry.kind === "SPACE" ||
+              entry.kind === "DOCUMENT" ||
+              entry.kind === "FILE"),
     )
     .filter((entry) =>
       (
@@ -96,37 +106,41 @@ export function TrashRoute({
                     )
                   : entry.kind === "NOTE"
                     ? runtime.deleteNote(entry.id, entry.version, false)
-                    : runtime.deleteLibrary(entry.id, entry.version, false),
+                    : entry.kind === "FILE"
+                      ? runtime.deleteFile(entry.id, entry.version, false)
+                      : runtime.deleteLibrary(entry.id, entry.version, false),
               )
             }
           >
             {t("common:restore")}
           </Button>
-          <Button
-            type="button"
-            variant="danger"
-            disabled={busy}
-            onClick={async () => {
-              if (
-                await confirmAction(
-                  t("permanentDeleteConfirm", { title: entry.title }),
+          {entry.kind !== "FILE" && (
+            <Button
+              type="button"
+              variant="danger"
+              disabled={busy}
+              onClick={async () => {
+                if (
+                  await confirmAction(
+                    t("permanentDeleteConfirm", { title: entry.title }),
+                  )
                 )
-              )
-                void run(() =>
-                  entry.kind === "WORK"
-                    ? runtime.service.purge(
-                        runtime.context!,
-                        entry.id,
-                        entry.version,
-                      )
-                    : entry.kind === "NOTE"
-                      ? runtime.purgeNote(entry.id, entry.version)
-                      : runtime.purgeLibrary(entry.id, entry.version),
-                );
-            }}
-          >
-            {t("permanentDelete")}
-          </Button>
+                  void run(() =>
+                    entry.kind === "WORK"
+                      ? runtime.service.purge(
+                          runtime.context!,
+                          entry.id,
+                          entry.version,
+                        )
+                      : entry.kind === "NOTE"
+                        ? runtime.purgeNote(entry.id, entry.version)
+                        : runtime.purgeLibrary(entry.id, entry.version),
+                  );
+              }}
+            >
+              {t("permanentDelete")}
+            </Button>
+          )}
         </div>
       ))}
       {entries.length === 0 && (

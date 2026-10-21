@@ -55,6 +55,7 @@ export const mcpTools = [
     name: capability.name,
     description: capability.description,
     inputSchema: capability.inputSchema,
+    _meta: { requiredScopes: capability.requiredScopes },
     annotations: {
       readOnlyHint: capability.risk === "READ",
       destructiveHint: capability.risk === "DESTRUCTIVE",

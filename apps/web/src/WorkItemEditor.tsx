@@ -5,9 +5,13 @@ import type {
   WorkflowService,
 } from "@arclattice/application";
 import type { WorkEdge, WorkItem } from "@arclattice/domain";
+import type { ReactNode } from "react";
+import { MilestoneEditor } from "./MilestoneEditor";
 import { ProjectEditor } from "./ProjectEditor";
 import { TaskEditor } from "./TaskEditor";
 export interface WorkEditorProps {
+  memo?: ReactNode;
+  intent?: "EDIT" | "LIFECYCLE";
   item: WorkItem | null;
   projects: WorkItem[];
   categories?: readonly ProjectCategory[];
@@ -31,6 +35,8 @@ export interface WorkEditorProps {
   onDelete: (() => Promise<void>) | null;
 }
 export function WorkItemEditor(props: WorkEditorProps) {
+  if ((props.item?.type ?? props.createType) === "MILESTONE")
+    return <MilestoneEditor {...props} />;
   return (props.item?.type ?? props.createType) === "PROJECT" ? (
     <ProjectEditor {...props} />
   ) : (

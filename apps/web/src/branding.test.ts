@@ -1,11 +1,39 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { inflateSync } from "node:zlib";
 import { expect, test } from "vitest";
 
 const bytes = (file: string) => readFileSync(resolve(file));
 const hash = (file: string) =>
   createHash("sha256").update(bytes(file)).digest("hex").toUpperCase();
+
+function generatedAlpha(png: Buffer) {
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  const chunks: Buffer[] = [];
+  for (let offset = 8; offset < png.length; ) {
+    const length = png.readUInt32BE(offset);
+    if (png.toString("ascii", offset + 4, offset + 8) === "IDAT")
+      chunks.push(png.subarray(offset + 8, offset + 8 + length));
+    offset += length + 12;
+  }
+  const pixels = inflateSync(Buffer.concat(chunks));
+  expect(pixels.length).toBe(height * (width * 4 + 1));
+  let transparent = 0;
+  let visible = 0;
+  for (let row = 0; row < height; row++) {
+    const start = row * (width * 4 + 1);
+    expect(pixels[start]).toBe(0);
+    for (let column = 0; column < width; column++) {
+      const alpha = pixels[start + 1 + column * 4 + 3]!;
+      if (alpha === 0) transparent++;
+      else visible++;
+    }
+  }
+  expect(transparent).toBeGreaterThan(0);
+  expect(visible).toBeGreaterThan(0);
+}
 
 test("Sidebar brand logo remains byte-identical and keeps its independent application reference", () => {
   expect(hash("apps/web/public/orivane-atlas.png")).toBe(
@@ -21,11 +49,11 @@ test("Sidebar brand logo remains byte-identical and keeps its independent applic
 
 test("all application platforms derive their packaged icons from the canonical repository source", () => {
   expect(hash("branding/application-icon-source.png")).toBe(
-    "CB8711F35456A3DED810C8658FE303AAFB95DF35978B88F81046BE8DF33412DC",
+    "A9C57AD8206C14995C7E2E078D53DD222685CA02E793DFE07BC124BB3BC835A0",
   );
   const source = bytes("branding/application-icon-source.png");
-  expect(source.readUInt32BE(16)).toBe(1320);
-  expect(source.readUInt32BE(20)).toBe(1191);
+  expect(source.readUInt32BE(16)).toBe(1007);
+  expect(source.readUInt32BE(20)).toBe(1111);
   expect(source[25]).toBe(6);
   const generator = bytes("scripts/make-native-icons.mjs").toString();
   expect(generator).toContain("branding/application-icon-source.png");
@@ -43,6 +71,13 @@ test("all application platforms derive their packaged icons from the canonical r
     (_, index) => ico[6 + index * 16] || 256,
   );
   expect(sizes).toEqual(expect.arrayContaining([16, 24, 32, 48, 64, 128, 256]));
+  for (let index = 0; index < sizes.length; index++) {
+    const entry = 6 + index * 16;
+    expect(ico.readUInt16LE(entry + 6)).toBe(32);
+    const size = ico.readUInt32LE(entry + 8);
+    const offset = ico.readUInt32LE(entry + 12);
+    generatedAlpha(ico.subarray(offset, offset + size));
+  }
   for (const density of ["mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi"]) {
     for (const name of [
       "ic_launcher",
@@ -63,6 +98,11 @@ test("all application platforms derive their packaged icons from the canonical r
       "src-tauri/gen/android/app/src/main/res/values/ic_launcher_background.xml",
     ),
   );
+  expect(
+    bytes(
+      "src-tauri/icons/android/values/ic_launcher_background.xml",
+    ).toString(),
+  ).toContain("#F3F4F6");
   for (const file of [
     "src-tauri/icons/icon.png",
     "apps/web/public/favicon.png",
@@ -72,5 +112,6 @@ test("all application platforms derive their packaged icons from the canonical r
     const png = bytes(file);
     expect(png.subarray(1, 4).toString()).toBe("PNG");
     expect(png[25]).toBe(6);
+    generatedAlpha(png);
   }
 });

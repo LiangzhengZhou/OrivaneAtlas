@@ -23,6 +23,7 @@ export function buildWorkspaceWorkIndex<
   const childrenByProjectId = new Map<string, string[]>();
   const ancestorIdsByProjectId = new Map<string, string[]>();
   const projectPathById = new Map<string, string>();
+  const categoryIdByProjectId = new Map<string, string | null>();
   const archiveSourceByProjectId = new Map<string, WorkItem>();
   const archiveSourceByTaskId = new Map<string, WorkItem>();
   const tasksByProjectId = new Map<string, string[]>();
@@ -53,6 +54,12 @@ export function buildWorkspaceWorkIndex<
       parent = parentProjectById.get(parent);
     }
     ancestorIdsByProjectId.set(project.id, ancestors);
+    categoryIdByProjectId.set(
+      project.id,
+      [project.id, ...ancestors]
+        .map((id) => projectsById.get(id)?.categoryId)
+        .find(Boolean) ?? null,
+    );
     projectPathById.set(
       project.id,
       [...ancestors]
@@ -110,6 +117,7 @@ export function buildWorkspaceWorkIndex<
     archiveSourceByProjectId,
     archiveSourceByTaskId,
     projectPathById,
+    categoryIdByProjectId,
     projectTitleByTaskId,
     archiveSource,
     isArchived,

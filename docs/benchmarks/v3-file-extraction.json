@@ -1,0 +1,65 @@
+{
+  "scope": "Targeted production build File extraction/index/body-search; not whole FINAL acceptance",
+  "measurements": [
+    {
+      "project": "desktop-en",
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 333.7350000000001,
+          "searchMilliseconds": 278.3445999999999,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 237.4713999999999,
+          "searchMilliseconds": 336.68650000000025,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted release-build File extraction/index/search; not full FINAL editor or performance acceptance"
+    },
+    {
+      "project": "desktop-zh",
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 354.24260000000004,
+          "searchMilliseconds": 252.8043,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 242.7581,
+          "searchMilliseconds": 246.1343999999999,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted release-build File extraction/index/search; not full FINAL editor or performance acceptance"
+    },
+    {
+      "project": "mobile-zh",
+      "measurements": [
+        {
+          "bytes": 51200,
+          "extractionMilliseconds": 352.79219999999987,
+          "searchMilliseconds": 250.9764,
+          "liveChunks": 4,
+          "totalChunks": 13
+        },
+        {
+          "bytes": 102400,
+          "extractionMilliseconds": 241.65750000000025,
+          "searchMilliseconds": 234.80010000000038,
+          "liveChunks": 4,
+          "totalChunks": 26
+        }
+      ],
+      "scope": "Targeted release-build File extraction/index/search; not full FINAL editor or performance acceptance"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "limitations": [
+    "Synthetic 2000-document search fixture; full source-body/retrieval acceptance pending",
+    "No whole-product paired regression claim"
+  ],
+  "status": "Targeted indexed search evidence; not full v3 performance acceptance",
+  "method": "Actual IndexedDB + Application Library port; full search/body collection list forbidden; one bounded query per browser",
+  "schema": 3,
+  "samples": [
+    {
+      "project": "desktop-en",
+      "candidateCount": 1,
+      "documentCount": 2000,
+      "writeMs": 1721.2999999970198,
+      "foreignCount": 0,
+      "queryMs": 2.7000000029802322
+    },
+    {
+      "project": "desktop-zh",
+      "candidateCount": 1,
+      "documentCount": 2000,
+      "writeMs": 1413.7000000029802,
+      "foreignCount": 0,
+      "queryMs": 3
+    },
+    {
+      "project": "mobile-zh",
+      "candidateCount": 1,
+      "documentCount": 2000,
+      "writeMs": 1724.2000000029802,
+      "foreignCount": 0,
+      "queryMs": 5.5999999940395355
+    }
+  ]
+}

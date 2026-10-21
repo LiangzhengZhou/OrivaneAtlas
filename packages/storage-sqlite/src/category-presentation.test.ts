@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { CategoryService } from "@arclattice/application";
 import { expect, test } from "vitest";
+import { categoryReplayScenario } from "../../../tests/contracts/category-replay";
 import { categoryPort } from "./categories";
 import { snapshotToNewFile } from "./database";
 import { restoreDatabase } from "./index";
@@ -9,6 +10,12 @@ import { migrate, migrations } from "./migrations";
 import { context, service, sqliteHarness } from "./testing";
 
 const harness = sqliteHarness();
+test("stable category original replay and complete reorder rollback on SQLite", async () => {
+  const db = await harness.create();
+  await categoryReplayScenario((actor, operation) =>
+    db.request(actor, null, (uow) => operation(uow)),
+  );
+});
 test("registered SQLite categories retain memberships through edits, reorder and restore", async () => {
   const db = await harness.create();
   const project = await service(db).create(context, {

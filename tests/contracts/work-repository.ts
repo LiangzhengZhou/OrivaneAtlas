@@ -6,6 +6,7 @@ import type {
 import {
   CategoryService,
   WorkflowService,
+  WorkReplayUnitOfWork,
   WorkService,
 } from "../../packages/application/src/index";
 import {
@@ -31,6 +32,194 @@ export function repositoryContract(
       };
     }
     const context = { workspaceId: "workspace-a", principalId: "human" };
+    it("replay effect guards roll back unexpected project cascades and preserve original versions", async () => {
+      const uow = await create();
+      let sequence = 0;
+      const ids = { next: () => `guard-${++sequence}` };
+      const make = (unit: UnitOfWork) =>
+        new WorkService(
+          unit,
+          { require: async () => {} },
+          { now: () => "2026-09-17T00:00:00.000Z" },
+          ids,
+        );
+      const api = make(uow);
+      const project = await api.create(context, {
+        title: "Project",
+        type: "PROJECT",
+        lifecycle: "ACTIVE",
+      });
+      const task = await api.create(context, {
+        title: "Original task",
+        projectIds: [project.id],
+      });
+      const extra = await api.create(context, {
+        title: "New remote task",
+        projectIds: [project.id],
+      });
+      const expected = [
+        {
+          collection: "items" as const,
+          id: project.id,
+          op: "UPSERT" as const,
+          baseVersion: project.version,
+        },
+        {
+          collection: "items" as const,
+          id: task.id,
+          op: "UPSERT" as const,
+          baseVersion: task.version,
+        },
+      ];
+      const baseline = await api.snapshot(context, true);
+      const baselineChanges = await uow.run(context.workspaceId, (tx) =>
+        tx.workspaceChanges(0),
+      );
+      await expect(
+        make(
+          new WorkReplayUnitOfWork(uow, context.workspaceId, expected),
+        ).update(context, project.id, project.version, {
+          projectLifecycle: "COMPLETED",
+          completionResolution: { action: "INBOX" },
+        }),
+      ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+      expect(await api.snapshot(context, true)).toEqual(baseline);
+      expect(
+        await uow.run(context.workspaceId, (tx) => tx.workspaceChanges(0)),
+      ).toEqual(baselineChanges);
+      const complete = [
+        ...expected,
+        {
+          collection: "items" as const,
+          id: extra.id,
+          op: "UPSERT" as const,
+          baseVersion: extra.version,
+        },
+      ];
+      const replayUnit = new WorkReplayUnitOfWork(
+        uow,
+        context.workspaceId,
+        complete,
+      );
+      const guarded = make(replayUnit);
+      await guarded.update(context, project.id, project.version, {
+        projectLifecycle: "COMPLETED",
+        completionResolution: { action: "INBOX" },
+      });
+      const after = await api.snapshot(context, true);
+      expect(replayUnit.acceptedEffects).toHaveLength(3);
+      expect(replayUnit.acceptedEffects).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            collection: "items",
+            id: project.id,
+            version: 2,
+            value: expect.objectContaining({
+              lifecycle: "COMPLETED",
+              workspaceId: context.workspaceId,
+            }),
+          }),
+          expect.objectContaining({
+            collection: "items",
+            id: task.id,
+            version: 2,
+            value: expect.objectContaining({ projectIds: [] }),
+          }),
+          expect.objectContaining({
+            collection: "items",
+            id: extra.id,
+            version: 2,
+            value: expect.objectContaining({ projectIds: [] }),
+          }),
+        ]),
+      );
+      const acceptedChanges = await uow.run(context.workspaceId, (tx) =>
+        tx.workspaceChanges(0),
+      );
+      expect(
+        after.items.find((item) => item.id === task.id)?.projectIds,
+      ).toEqual([]);
+      expect(
+        after.items.find((item) => item.id === extra.id)?.projectIds,
+      ).toEqual([]);
+      await expect(
+        guarded.update(context, project.id, project.version, {
+          projectLifecycle: "COMPLETED",
+          completionResolution: { action: "INBOX" },
+        }),
+      ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+      expect(await api.snapshot(context, true)).toEqual(after);
+      expect(
+        await uow.run(context.workspaceId, (tx) => tx.workspaceChanges(0)),
+      ).toEqual(acceptedChanges);
+    });
+    it("preserves stable offline UUIDs without bypassing Work rules or overwriting duplicates", async () => {
+      const uow = await create();
+      const { api } = service(uow);
+      const projectId = "11111111-1111-4111-8111-111111111111";
+      const taskId = "22222222-2222-7222-8222-222222222222";
+      await api.createWithStableId(context, projectId, {
+        type: "PROJECT",
+        title: "Offline project",
+        lifecycle: "ACTIVE",
+      });
+      const task = await api.createWithStableId(context, taskId, {
+        title: "Offline task",
+        projectIds: [projectId],
+        descriptionMd: "原文\n第二行",
+      });
+      expect(task).toMatchObject({
+        id: taskId,
+        workspaceId: context.workspaceId,
+        createdBy: context.principalId,
+        projectIds: [projectId],
+        descriptionMd: "原文\n第二行",
+        version: 1,
+      });
+      const before = await api.snapshot(context);
+      await expect(
+        api.createWithStableId(context, taskId, { title: "Collision" }),
+      ).rejects.toThrow("VERSION_CONFLICT");
+      expect(await api.snapshot(context)).toEqual(before);
+    });
+    it("preserves stable dependency edge IDs with ordinary cycle and collision protection", async () => {
+      const uow = await create();
+      const { api } = service(uow);
+      const a = await api.create(context, { title: "A" });
+      const b = await api.create(context, { title: "B" });
+      const c = await api.create(context, { title: "C" });
+      const firstId = "33333333-3333-4333-8333-333333333333";
+      const secondId = "44444444-4444-7444-8444-444444444444";
+      const first = await api.addEdgeWithStableId(context, firstId, a.id, b.id);
+      expect(first).toMatchObject({
+        id: firstId,
+        workspaceId: context.workspaceId,
+        createdBy: context.principalId,
+        fromId: a.id,
+        toId: b.id,
+      });
+      const before = await api.snapshot(context);
+      await expect(
+        api.addEdgeWithStableId(context, firstId, a.id, c.id),
+      ).rejects.toThrow("DUPLICATE_EDGE");
+      expect(await api.snapshot(context)).toEqual(before);
+      await api.addEdgeWithStableId(context, secondId, b.id, c.id);
+      const chained = await api.snapshot(context);
+      await expect(
+        api.addEdgeWithStableId(
+          context,
+          "55555555-5555-4555-8555-555555555555",
+          c.id,
+          a.id,
+        ),
+      ).rejects.toThrow("WORK_GRAPH_CYCLE_DETECTED");
+      expect(await api.snapshot(context)).toEqual(chained);
+      await expect(
+        api.addEdgeWithStableId(context, "invalid", a.id, c.id),
+      ).rejects.toThrow("VALIDATION_ERROR");
+      expect(await api.snapshot(context)).toEqual(chained);
+    });
+
     it("persists navigation per principal and workspace with optimistic concurrency", async () => {
       const uow = await create();
       const { api } = service(uow);
@@ -575,6 +764,55 @@ export function repositoryContract(
             : action === "MOVE"
               ? [shared.id, target.id]
               : [shared.id],
+        );
+      },
+    );
+    it.each(["KEEP", "CANCEL", "INBOX", "MOVE"] as const)(
+      "requires explicit resolution for milestones and applies %s atomically",
+      async (action) => {
+        const { api } = service(await create());
+        const project = await api.create(context, {
+          title: "Milestone parent",
+          type: "PROJECT",
+        });
+        const target = await api.create(context, {
+          title: "Destination",
+          type: "PROJECT",
+        });
+        const milestone = await api.create(context, {
+          title: "Unreached",
+          type: "MILESTONE",
+          parentProjectId: project.id,
+        });
+        await expect(
+          api.update(context, project.id, project.version, {
+            projectLifecycle: "COMPLETED",
+          }),
+        ).rejects.toThrow("PROJECT_HAS_UNFINISHED_WORK");
+        const completed = await api.update(
+          context,
+          project.id,
+          project.version,
+          {
+            projectLifecycle: "COMPLETED",
+            completionResolution: { action, projectId: target.id },
+          },
+        );
+        expect(completed.lifecycle).toBe("COMPLETED");
+        expect(completed.deletedAt).toBeNull();
+        const after = (await api.snapshot(context)).items.find(
+          (entry) => entry.id === milestone.id,
+        )!;
+        expect(after.status).toBe(action === "CANCEL" ? "CANCELED" : "TODO");
+        expect(after.parentProjectId).toBe(
+          action === "MOVE"
+            ? target.id
+            : action === "INBOX"
+              ? null
+              : project.id,
+        );
+        expect(after.version).toBe(
+          action === "KEEP" ? milestone.version : milestone.version + 1,
         );
       },
     );

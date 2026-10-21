@@ -123,7 +123,7 @@ export async function exportHtml(
     ...new Set(
       [
         ...body.matchAll(
-          /!\[[^\]]*\]\((\/api\/library\/asset\?id=[A-Za-z0-9-]+)\)/g,
+          /!\[[^\]]*\]\((\/api\/(?:library\/asset|v1\/files\/bytes)\?id=[A-Za-z0-9-]+)\)/g,
         ),
       ]
         .map((match) => match[1])
@@ -159,7 +159,7 @@ export async function exportMarkdownZip(
     ...new Set(
       [
         ...body.matchAll(
-          /!\[[^\]]*\]\((\/api\/library\/asset\?id=[A-Za-z0-9-]+)\)/g,
+          /!\[[^\]]*\]\((\/api\/(?:library\/asset|v1\/files\/bytes)\?id=[A-Za-z0-9-]+)\)/g,
         ),
       ]
         .map((match) => match[1])

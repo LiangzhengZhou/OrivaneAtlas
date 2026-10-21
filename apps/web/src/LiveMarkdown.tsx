@@ -1,11 +1,13 @@
 import {
   autocompletion,
+  type Completion,
   type CompletionContext,
 } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import {
   defaultHighlightStyle,
+  language,
   syntaxHighlighting,
   syntaxTree,
 } from "@codemirror/language";
@@ -26,12 +28,26 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import katex from "katex";
-import { useContext, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useTranslation } from "react-i18next";
+import { Button } from "./components/ui/Button";
+import { Menu, Select } from "./components/ui/Surfaces";
+import { DocumentPopover } from "./features/documents/DocumentPopover";
 import { largeMarkdownLanguage } from "./features/documents/large-markdown-language";
+import {
+  MarkdownCommandRegistry,
+  runMarkdownCommand,
+} from "./features/documents/markdown-commands";
 import { externalValue, pendingImage } from "./imageInsertion";
 import { Markdown, PrivateImageContext } from "./Markdown";
+import "./features/documents/markdown-commands.css";
 
 const imageLoader = Facet.define<((path: string) => Promise<Blob>) | null>();
 
@@ -123,7 +139,11 @@ class PreviewWidget extends WidgetType {
   }
 }
 function blockPreviews(state: EditorState): DecorationSet {
-  if (state.doc.length > 50000) return Decoration.none;
+  if (
+    state.facet(language) === largeMarkdownLanguage ||
+    state.doc.length > 50000
+  )
+    return Decoration.none;
   const ranges: ReturnType<Decoration["range"]>[] = [];
   syntaxTree(state).iterate({
     enter(node) {
@@ -162,7 +182,7 @@ function blockPreviews(state: EditorState): DecorationSet {
       }
       const preview =
         node.name === "Table" ||
-        /^!\[[^\]\n]*\]\(\/api\/library\/asset\?id=[a-zA-Z0-9-]+\)$/m.test(
+        /^!\[[^\]\n]*\]\(\/api\/(?:library\/asset|v1\/files\/bytes)\?id=[a-zA-Z0-9-]+\)$/m.test(
           text.trim(),
         ) ||
         /^\|?.+\|.+\n\|?\s*:?-{3,}/.test(text);
@@ -200,6 +220,10 @@ const blockPreview = StateField.define<DecorationSet>({
 });
 // Decorations never alter Markdown or undo history. Reveal syntax on selected lines.
 function decorate(view: EditorView): DecorationSet {
+  // The incremental language supplies its own highlighting and has no rich
+  // Markdown AST nodes. Walking it on every selection/input cannot decorate.
+  if (view.state.facet(language) === largeMarkdownLanguage)
+    return Decoration.none;
   const builder = new RangeSetBuilder<Decoration>();
   const ranges: { from: number; to: number; decoration: Decoration }[] = [];
   syntaxTree(view.state).iterate({
@@ -263,6 +287,8 @@ export function LiveMarkdown({
   editorRef,
   onImages,
   onPendingChange,
+  onAtlas,
+  onAttachFile,
   wikiPages = [],
 }: {
   value: string;
@@ -274,6 +300,8 @@ export function LiveMarkdown({
   editorRef: { current: EditorView | null };
   onImages?: (files: File[]) => void;
   onPendingChange?: (pending: boolean) => void;
+  onAtlas?: () => void;
+  onAttachFile?: () => void;
   wikiPages?: readonly {
     id: string;
     title: string;
@@ -281,6 +309,20 @@ export function LiveMarkdown({
   }[];
 }) {
   const parent = useRef<HTMLDivElement>(null);
+  const surface = useRef<HTMLDivElement>(null);
+  const [toolbarPreference, setToolbarPreference] = useState<
+    "AUTO" | "PINNED" | "HIDDEN"
+  >(() => {
+    try {
+      const value = localStorage.getItem("orivane.atlas.markdown-toolbar");
+      return value === "PINNED" || value === "HIDDEN" ? value : "AUTO";
+    } catch {
+      return "AUTO";
+    }
+  });
+  const [hasSelection, setHasSelection] = useState(false),
+    [focused, setFocused] = useState(false),
+    [contextOpen, setContextOpen] = useState(false);
   const { i18n } = useTranslation();
   const language = useRef(i18n.language);
   language.current = i18n.language;
@@ -293,6 +335,8 @@ export function LiveMarkdown({
     onComposition,
     onImages,
     onPendingChange,
+    onAtlas,
+    onAttachFile,
   });
   callbacks.current = {
     onChange,
@@ -300,6 +344,8 @@ export function LiveMarkdown({
     onComposition,
     onImages,
     onPendingChange,
+    onAtlas,
+    onAttachFile,
   };
   const mode = useRef(new Compartment());
   const syntaxMode = useRef(new Compartment());
@@ -356,38 +402,23 @@ export function LiveMarkdown({
                 const from = slash.from + (slash.text.startsWith("/") ? 0 : 1);
                 return {
                   from,
-                  options: [
-                    { label: "Heading", apply: "## " },
-                    { label: "Task", apply: "- [ ] " },
-                    { label: "Quote", apply: "> " },
-                    { label: "Code", apply: "```\n\n```" },
-                    {
-                      label: "Table",
-                      apply: "| Column | Column |\n| --- | --- |\n|  |  |",
-                    },
-                    { label: "Image", apply: "![Description](path)" },
-                    { label: "Link document", apply: "[[" },
-                    {
-                      label: "Ask Atlas",
-                      apply: () =>
-                        window.dispatchEvent(new CustomEvent("atlas:open")),
-                    },
-                  ].map((option) => ({
-                    ...option,
+                  options: MarkdownCommandRegistry.map((command) => ({
+                    label: command.en,
                     displayLabel: language.current.startsWith("zh")
-                      ? ((
-                          {
-                            Heading: "标题",
-                            Task: "任务",
-                            Quote: "引用",
-                            Code: "代码块",
-                            Table: "表格",
-                            Image: "图片",
-                            "Link document": "链接文档",
-                            "Ask Atlas": "询问 Atlas",
-                          } as Record<string, string>
-                        )[option.label] ?? option.label)
-                      : option.label,
+                      ? command.zh
+                      : command.en,
+                    apply: (
+                      view: EditorView,
+                      _completion: Completion,
+                      from: number,
+                      to: number,
+                    ) => {
+                      runMarkdownCommand(view, command.id, {
+                        range: { from, to },
+                        askAtlas: callbacks.current.onAtlas,
+                        attachFile: callbacks.current.onAttachFile,
+                      });
+                    },
                   })),
                 };
               },
@@ -406,6 +437,20 @@ export function LiveMarkdown({
             tr.newDoc.length > 200000 ? [] : tr,
           ),
           keymap.of([
+            ...MarkdownCommandRegistry.flatMap((command) =>
+              "key" in command
+                ? [
+                    {
+                      key: command.key,
+                      run: (view: EditorView) =>
+                        runMarkdownCommand(view, command.id, {
+                          askAtlas: callbacks.current.onAtlas,
+                          attachFile: callbacks.current.onAttachFile,
+                        }),
+                    },
+                  ]
+                : [],
+            ),
             {
               key: "Mod-s",
               run: () => {
@@ -418,7 +463,15 @@ export function LiveMarkdown({
             ...historyKeymap,
           ]),
           EditorView.domEventHandlers({
-            blur: () => {
+            focus: () => {
+              setFocused(true);
+            },
+            blur: (event) => {
+              setFocused(
+                !!event.relatedTarget &&
+                  surface.current?.contains(event.relatedTarget as Node) ===
+                    true,
+              );
               flush();
             },
             paste: (event) => {
@@ -438,6 +491,8 @@ export function LiveMarkdown({
             },
           }),
           EditorView.updateListener.of((update) => {
+            if (update.selectionSet)
+              setHasSelection(!update.state.selection.main.empty);
             if (
               update.docChanged &&
               !update.transactions.every((tr) => tr.annotation(externalValue))
@@ -445,7 +500,9 @@ export function LiveMarkdown({
               if (!changed) callbacks.current.onPendingChange?.(true);
               changed = true;
               clearTimeout(syncTimer);
-              syncTimer = setTimeout(flush, 120);
+              // Keep the CodeMirror document authoritative during a typing
+              // burst. Save, blur and unmount still flush synchronously.
+              syncTimer = setTimeout(flush, 250);
             }
           }),
           mode.current.of(
@@ -503,5 +560,130 @@ export function LiveMarkdown({
       }
     }
   }, [value, editorRef]);
-  return <div className="live-markdown" ref={parent} />;
+  const zh = i18n.language.startsWith("zh");
+  const visibleCommands = MarkdownCommandRegistry.filter(
+    (command) => command.id !== "file" || onAttachFile,
+  );
+  function invoke(command: (typeof MarkdownCommandRegistry)[number]) {
+    const view = editorRef.current;
+    if (view)
+      runMarkdownCommand(view, command.id, {
+        askAtlas: onAtlas,
+        attachFile: onAttachFile,
+      });
+    setContextOpen(false);
+  }
+  function controls(selection: boolean) {
+    return (
+      <div
+        role="toolbar"
+        aria-label={
+          selection
+            ? zh
+              ? "选区工具栏"
+              : "Selection toolbar"
+            : zh
+              ? "Markdown 工具栏"
+              : "Markdown toolbar"
+        }
+        className="markdown-command-toolbar"
+      >
+        {visibleCommands
+          .filter((command) =>
+            ["bold", "italic", "link", "atlas"].includes(command.id),
+          )
+          .map((command) => (
+            <Button
+              key={command.id}
+              variant="ghost"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => invoke(command)}
+            >
+              {zh ? command.zh : command.en}
+            </Button>
+          ))}
+        <DocumentPopover
+          className="markdown-command-menu"
+          label={zh ? "更多格式" : "More formatting"}
+        >
+          {visibleCommands.map((command) => (
+            <Button
+              key={command.id}
+              variant="ghost"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => invoke(command)}
+            >
+              {zh ? command.zh : command.en}
+            </Button>
+          ))}
+        </DocumentPopover>
+      </div>
+    );
+  }
+  return (
+    <div className="markdown-editor-surface" ref={surface}>
+      <Select
+        label={zh ? "编辑器工具栏" : "Editor toolbar"}
+        value={toolbarPreference}
+        onChange={(event) => {
+          const next =
+            event.target.value === "PINNED"
+              ? "PINNED"
+              : event.target.value === "HIDDEN"
+                ? "HIDDEN"
+                : "AUTO";
+          setToolbarPreference(next);
+          try {
+            localStorage.setItem("orivane.atlas.markdown-toolbar", next);
+          } catch {
+            /* Device UI preference only. */
+          }
+        }}
+      >
+        <option value="AUTO">{zh ? "自动工具栏" : "Automatic toolbar"}</option>
+        <option value="PINNED">
+          {zh ? "始终显示工具栏" : "Always show toolbar"}
+        </option>
+        <option value="HIDDEN">{zh ? "隐藏工具栏" : "Hide toolbar"}</option>
+      </Select>
+      {(toolbarPreference === "PINNED" ||
+        (toolbarPreference === "AUTO" && focused && hasSelection)) &&
+        controls(hasSelection)}
+      <div
+        className={`live-markdown${source ? " markdown-source" : ""}`}
+        ref={parent}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setContextOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (
+            event.key === "ContextMenu" ||
+            (event.shiftKey && event.key === "F10")
+          ) {
+            event.preventDefault();
+            setContextOpen(true);
+          }
+        }}
+      />
+      {contextOpen && (
+        <Menu
+          anchorRef={parent}
+          label={zh ? "Markdown 命令" : "Markdown commands"}
+          onDismiss={() => setContextOpen(false)}
+        >
+          {visibleCommands.map((command) => (
+            <Button
+              key={command.id}
+              role="menuitem"
+              variant="ghost"
+              onClick={() => invoke(command)}
+            >
+              {zh ? command.zh : command.en}
+            </Button>
+          ))}
+        </Menu>
+      )}
+    </div>
+  );
 }

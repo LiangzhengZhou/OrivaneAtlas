@@ -37,6 +37,7 @@ export function ProjectDependencyGraph({
   scopeProjectId,
   initialViewport,
   onViewportChange,
+  direction = "LR",
 }: {
   snapshot: Snapshot;
   fullSnapshot?: Snapshot;
@@ -199,11 +200,12 @@ export function ProjectDependencyGraph({
         ]
       : [];
   });
-  const layoutKey = `${collectionRevision(all.items)}:${collectionRevision(all.edges)}:${scope}:${focus}:${hops}:${includeExternal}:${[...scopedIds].join(",")}`;
+  const layoutKey = `${direction}:${collectionRevision(all.items)}:${collectionRevision(all.edges)}:${scope}:${focus}:${hops}:${includeExternal}:${[...scopedIds].join(",")}`;
   const positions = useStructuralLayout(
     [...ids],
     edges,
-    dependencyDagreLayout,
+    (layoutIds, layoutEdges) =>
+      dependencyDagreLayout(layoutIds, layoutEdges, direction),
     layoutKey,
   );
   const byId = new Map(positions.map((p) => [p.id, p.position]));

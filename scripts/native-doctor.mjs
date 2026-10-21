@@ -25,6 +25,14 @@ assert.deepEqual(capability.permissions, [
   "allow-forget-account",
   "allow-detach-account",
   "allow-server-request",
+  "allow-server-upload-chunk",
+  "allow-server-download-file",
+  "allow-notification-permission",
+  "allow-notification-request-permission",
+  "allow-notification-reconcile",
+  "allow-notification-cancel",
+  "allow-notification-present",
+  "allow-notification-take-route",
 ]);
 assert.equal(capability.remote, undefined);
 console.log(

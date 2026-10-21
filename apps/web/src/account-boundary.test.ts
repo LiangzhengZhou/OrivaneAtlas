@@ -1,7 +1,22 @@
-import { bodyManifest, type LibraryEntry } from "@arclattice/application";
+import {
+  bodyManifest,
+  type LibraryEntry,
+  type Note,
+  planLocalCommands,
+  prepareLocalWorkPull,
+} from "@arclattice/application";
+import { IndexedDbLocalStore } from "@arclattice/storage-local";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { work } from "../../../tests/fixtures";
 import { bootstrap } from "./bootstrap";
+
+const localWorkspaces: {
+  runtime: Awaited<ReturnType<typeof bootstrap>>;
+  workspaceId: string;
+  noteId: string;
+}[] = [];
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: vi.fn(() => false),
@@ -21,6 +36,10 @@ const identity = (id = "a") => ({
   account: { id, username: id },
 });
 beforeEach(() => {
+  localWorkspaces.length = 0;
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  vi.stubGlobal("IDBKeyRange", IDBKeyRange);
+  vi.stubGlobal("BroadcastChannel", undefined);
   metadata.clear();
   vi.mocked(isTauri).mockReturnValue(false);
   vi.mocked(invoke).mockReset();
@@ -35,12 +54,380 @@ beforeEach(() => {
     setItem: (key: string, value: string) => metadata.set(key, value),
   });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(async () => {
+  try {
+    for (const { runtime, workspaceId, noteId } of localWorkspaces) {
+      expect(runtime.context.workspaceId).toBe(workspaceId);
+      const note = (await runtime.loadWorkspace()).notes.find(
+        (entry) => entry.id === noteId,
+      );
+      expect(note).toBeDefined();
+      if (!note) throw new Error("LOCAL_NOTE_LOST_AT_ACCOUNT_BOUNDARY");
+      expect((await runtime.readDocumentBody(note)).bodyMd).toBe(
+        "Protected local Markdown",
+      );
+    }
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
 async function authenticatedRuntime() {
   const runtime = await bootstrap();
-  await runtime.initialize();
+  const localContext = runtime.context;
+  const note = await runtime.saveNote(null, 0, {
+    kind: "NOTE",
+    day: null,
+    title: "Local ownership",
+    bodyMd: "Protected local Markdown",
+  });
+  localWorkspaces.push({
+    runtime,
+    workspaceId: localContext.workspaceId,
+    noteId: note.id,
+  });
+  await runtime.initializeRemoteAccount();
+  expect(runtime.context).toEqual(localContext);
+  expect(() => {
+    runtime.context = runtime.remoteContext;
+  }).toThrow("FORBIDDEN");
+  expect(runtime.context).toEqual(localContext);
   return runtime;
 }
+it.each(["ROUNDTRIP", "STALE_VERSION", "ACCOUNT_CHANGED"])(
+  "lazy Note lifecycle preserves body/version/account scope: %s",
+  async (mode) => {
+    const runtime = await authenticatedRuntime();
+    const store = await IndexedDbLocalStore.open(
+      "orivane-atlas.local-workspace",
+    );
+    const binding = {
+      workspaceId: runtime.context.workspaceId,
+      remoteWorkspaceId: "a",
+      remotePrincipalId: "a",
+      serverOrigin: origin,
+      epoch: "epoch",
+      cursor: 0,
+      version: 1,
+    };
+    const remote: Note = {
+      id: crypto.randomUUID(),
+      workspaceId: "a",
+      title: "Lazy lifecycle",
+      bodyMd: "Private Markdown\r\n\n- [ ] Original only",
+      kind: "NOTE",
+      day: null,
+      version: 1,
+      createdAt: "2026-10-20T00:00:00Z",
+      updatedAt: "2026-10-20T00:00:00Z",
+      createdBy: "a",
+      updatedBy: "a",
+      deletedAt: null,
+      provenance: "HUMAN",
+      classification: "PRIVATE",
+      boundary: "REMOTE",
+      aiAccess: "DENY",
+    };
+    try {
+      await store.syncState.save(binding, null);
+      const pull = await prepareLocalWorkPull(
+        runtime.context,
+        binding,
+        {
+          epoch: "epoch",
+          cursor: 1,
+          snapshot: null,
+          recovery: false,
+          hasMore: false,
+          records: [
+            {
+              seq: 1,
+              workspaceId: "a",
+              collection: "notes",
+              entityId: remote.id,
+              op: "UPSERT",
+              version: 1,
+            },
+          ],
+          changes: {
+            values: {},
+            collections: {
+              notes: { upserts: [bodyManifest(remote)], removed: [] },
+            },
+          },
+        },
+        await store.outbox.list(binding.workspaceId),
+        store.metadata,
+      );
+      if (!pull) throw new Error("Missing Note projection");
+      await store.replica.commit(pull);
+      let resolveBody!: (response: Response) => void, entered!: () => void;
+      const bodyPending = new Promise<Response>((resolve) => {
+        resolveBody = resolve;
+      });
+      const requested = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      fetcher.mockClear();
+      fetcher.mockImplementation(async (url) => {
+        if (String(url).includes("/api/document/body")) {
+          entered();
+          return mode === "ACCOUNT_CHANGED"
+            ? bodyPending
+            : Response.json(remote);
+        }
+        return Response.json(identity());
+      });
+      if (mode === "STALE_VERSION") {
+        await expect(runtime.deleteNote(remote.id, 2, true)).rejects.toThrow(
+          "VERSION_CONFLICT",
+        );
+        expect(fetcher).not.toHaveBeenCalled();
+      } else if (mode === "ACCOUNT_CHANGED") {
+        const pending = runtime.deleteNote(remote.id, 1, true);
+        const rejected = expect(pending).rejects.toThrow(
+          /SERVER_CHANGED|FORBIDDEN/,
+        );
+        await requested;
+        await runtime.logout();
+        resolveBody(Response.json(remote));
+        await rejected;
+        expect(
+          await store.metadata.get(binding.workspaceId, "notes", remote.id),
+        ).toMatchObject({ version: 1, value: { deletedAt: null } });
+        expect(
+          await store.metadata.get(
+            binding.workspaceId,
+            "$local.noteBody",
+            remote.id,
+          ),
+        ).toBeNull();
+      } else {
+        const deleted = await runtime.deleteNote(remote.id, 1, true);
+        expect(deleted).toMatchObject({ version: 2, bodyMd: remote.bodyMd });
+        expect(deleted.deletedAt).not.toBeNull();
+        const restored = await runtime.deleteNote(remote.id, 2, false);
+        expect(restored).toMatchObject({
+          version: 3,
+          deletedAt: null,
+          bodyMd: remote.bodyMd,
+        });
+        expect(
+          fetcher.mock.calls.filter(([url]) =>
+            String(url).includes("/api/document/body"),
+          ),
+        ).toHaveLength(1);
+      }
+    } finally {
+      store.close();
+    }
+  },
+);
+
+it("background synchronization leaves an unbound local workspace entirely offline", async () => {
+  const runtime = await bootstrap();
+  expect(await runtime.synchronizeConnectedWorkspace()).toBeNull();
+  expect(fetcher).not.toHaveBeenCalled();
+  await runtime.initializeRemoteAccount();
+  fetcher.mockClear();
+  expect(await runtime.synchronizeConnectedWorkspace()).toBeNull();
+  expect(fetcher).not.toHaveBeenCalled();
+});
+it("first remote Atlas operation initializes the session without blocking local bootstrap", async () => {
+  const runtime = await bootstrap();
+  const localActor = runtime.context;
+  expect(fetcher).not.toHaveBeenCalled();
+  fetcher.mockImplementation(async (input, init) => {
+    if (String(input).endsWith("/api/session"))
+      return Response.json(identity());
+    expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("csrf-a");
+    return Response.json({ id: "run", status: "WAITING_APPROVAL", version: 1 });
+  });
+  const run = await runtime.propose("Explicit question", "personal", []);
+  expect(run.status).toBe("WAITING_APPROVAL");
+  expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+    origin + "/api/session",
+    origin + "/api/ai/propose",
+  ]);
+  expect(runtime.context).toEqual(localActor);
+});
+it("receipt recovery requires explicit binding and never sends local content merely after login", async () => {
+  const runtime = await authenticatedRuntime();
+  fetcher.mockClear();
+  await expect(runtime.recoverLocalReceipts()).rejects.toThrow("FORBIDDEN");
+  await expect(runtime.pullLocalWorkChanges()).rejects.toThrow("FORBIDDEN");
+  await expect(runtime.syncLocalWork()).rejects.toThrow("FORBIDDEN");
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+it("private Work delta transport commits canonical data and cursor locally, while empty polls make no durable change", async () => {
+  const runtime = await authenticatedRuntime();
+  const store = await IndexedDbLocalStore.open("orivane-atlas.local-workspace");
+  try {
+    const binding = {
+      workspaceId: runtime.context.workspaceId,
+      remoteWorkspaceId: "a",
+      remotePrincipalId: "a",
+      serverOrigin: origin,
+      epoch: "epoch",
+      cursor: 0,
+      version: 1,
+    };
+    await store.syncState.save(binding, null);
+    const canonical = {
+      ...work(crypto.randomUUID(), "a"),
+      title: "Remote canonical",
+      createdBy: "a",
+      updatedBy: "a",
+    };
+    const page = {
+      epoch: "epoch",
+      cursor: 1,
+      recovery: false,
+      hasMore: false,
+      snapshot: null,
+      records: [
+        {
+          seq: 1,
+          workspaceId: "a",
+          collection: "items",
+          entityId: canonical.id,
+          op: "UPSERT",
+          version: 1,
+        },
+      ],
+      changes: {
+        collections: { items: { upserts: [canonical], removed: [] } },
+        values: {},
+      },
+    };
+    fetcher.mockClear();
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        ...page,
+        records: [],
+        changes: { collections: {}, values: {} },
+      }),
+    );
+    fetcher.mockResolvedValueOnce(Response.json(page));
+    expect(await runtime.pullLocalWorkChanges()).toEqual({
+      changed: true,
+      cursor: 1,
+      hasMore: false,
+    });
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain(
+      "/api/v1/sync?after=0&epoch=epoch&bodyMode=metadata&privateMemos=only",
+    );
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain(
+      "/api/v1/sync?after=0&epoch=epoch&bodyMode=metadata&relationMode=canonical&privateMemos=include",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(await store.syncState.get(runtime.context.workspaceId)).toEqual({
+      ...binding,
+      cursor: 1,
+      // Private-history initialization and the public delta each commit through CAS.
+      version: 3,
+    });
+    expect(
+      await store.metadata.get(
+        runtime.context.workspaceId,
+        "items",
+        canonical.id,
+      ),
+    ).toMatchObject({
+      version: 1,
+      value: { ...canonical, workspaceId: runtime.context.workspaceId },
+    });
+    const before = await store.metadata.exportWorkspace!(
+      runtime.context.workspaceId,
+    );
+    fetcher.mockResolvedValueOnce(
+      Response.json({
+        ...page,
+        records: [],
+        changes: { collections: {}, values: {} },
+      }),
+    );
+    expect(await runtime.pullLocalWorkChanges()).toEqual({
+      changed: false,
+      cursor: 1,
+      hasMore: false,
+    });
+    expect(
+      await store.metadata.exportWorkspace!(runtime.context.workspaceId),
+    ).toEqual(before);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(await store.syncState.get(runtime.context.workspaceId)).toEqual({
+      ...binding,
+      cursor: 1,
+      version: 3,
+    });
+  } finally {
+    store.close();
+  }
+});
+
+it("an in-flight private receipt lookup cannot acknowledge local changes after logout", async () => {
+  const runtime = await authenticatedRuntime();
+  const store = await IndexedDbLocalStore.open("orivane-atlas.local-workspace");
+  try {
+    await runtime.service.create(runtime.context, {
+      title: "Uncertain local task",
+    });
+    const binding = {
+      workspaceId: runtime.context.workspaceId,
+      remoteWorkspaceId: "a",
+      remotePrincipalId: "a",
+      serverOrigin: origin,
+      epoch: "epoch",
+      cursor: 0,
+      version: 1,
+    };
+    await store.syncState.save(binding, null);
+    const plan = (
+      await planLocalCommands(
+        runtime.context,
+        store.metadata,
+        await store.outbox.list(runtime.context.workspaceId),
+      )
+    ).find((plan) => plan.command?.name === "work.create");
+    if (!plan) throw new Error("MISSING_LOCAL_COMMAND");
+    await store.outbox.transitionMany(
+      plan.mutations.map((mutation) => ({
+        workspaceId: runtime.context.workspaceId,
+        mutationId: mutation.id,
+        binding,
+        expectedState: "PENDING",
+        expectedAttemptCount: 0,
+        expectedLastAttemptAt: null,
+        nextState: "SENDING",
+        at: "2026-10-13T00:01:00Z",
+      })),
+    );
+    const before = await store.metadata.exportWorkspace!(
+      runtime.context.workspaceId,
+    );
+    let finish!: (response: Response) => void;
+    fetcher.mockImplementation(async (url) =>
+      String(url).includes("/api/v1/sync/receipt")
+        ? new Promise<Response>((resolve) => {
+            finish = resolve;
+          })
+        : Response.json({}),
+    );
+    const pending = runtime.recoverLocalReceipts();
+    const rejected = expect(pending).rejects.toThrow("SERVER_CHANGED");
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    await runtime.logout();
+    finish(Response.json({ commandId: plan.id, effects: [] }));
+    await rejected;
+    expect(
+      await store.metadata.exportWorkspace!(runtime.context.workspaceId),
+    ).toEqual(before);
+  } finally {
+    store.close();
+  }
+});
+
 it("document body caches are versioned and cannot cross authenticated identities", async () => {
   const runtime = await authenticatedRuntime();
   const document: LibraryEntry = {
@@ -59,27 +446,29 @@ it("document body caches are versioned and cannot cross authenticated identities
     provenance: "HUMAN",
   };
   fetcher.mockResolvedValueOnce(Response.json(document));
-  expect(await runtime.readDocumentBody(bodyManifest(document))).toEqual(
+  expect(await runtime.readRemoteDocumentBody(bodyManifest(document))).toEqual(
     document,
   );
   const calls = fetcher.mock.calls.length;
-  expect(await runtime.readDocumentBody(bodyManifest(document))).toEqual(
+  expect(await runtime.readRemoteDocumentBody(bodyManifest(document))).toEqual(
     document,
   );
   expect(fetcher).toHaveBeenCalledTimes(calls);
   const updated = { ...document, version: 2, bodyMd: "updated-body" };
   fetcher.mockResolvedValueOnce(Response.json(updated));
-  expect(await runtime.readDocumentBody(bodyManifest(updated))).toEqual(
+  expect(await runtime.readRemoteDocumentBody(bodyManifest(updated))).toEqual(
     updated,
   );
   expect(fetcher).toHaveBeenCalledTimes(calls + 1);
   fetcher.mockResolvedValueOnce(Response.json(identity("b")));
   await runtime.session({ username: "b", password: "not-persisted" });
   const authenticatedCalls = fetcher.mock.calls.length;
-  await expect(runtime.readDocumentBody(bodyManifest(updated))).rejects.toThrow(
+  await expect(
+    runtime.readRemoteDocumentBody(bodyManifest(updated)),
+  ).rejects.toThrow("NOT_FOUND");
+  await expect(runtime.readRemoteDocumentBody(updated)).rejects.toThrow(
     "NOT_FOUND",
   );
-  await expect(runtime.readDocumentBody(updated)).rejects.toThrow("NOT_FOUND");
   expect(fetcher).toHaveBeenCalledTimes(authenticatedCalls);
 });
 
@@ -108,7 +497,7 @@ it("an in-flight document body cannot survive logout", async () => {
         })
       : Response.json({}),
   );
-  const pending = runtime.readDocumentBody(bodyManifest(document));
+  const pending = runtime.readRemoteDocumentBody(bodyManifest(document));
   const assertion = expect(pending).rejects.toThrow("SERVER_CHANGED");
   await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
   await runtime.logout();
@@ -118,11 +507,14 @@ it("an in-flight document body cannot survive logout", async () => {
 it("runtime construction does not await session and initialization is shared", async () => {
   const runtime = await bootstrap();
   expect(fetcher).not.toHaveBeenCalled();
-  expect(runtime.initialized).toBe(false);
-  await Promise.all([runtime.initialize(), runtime.initialize()]);
+  expect(runtime.remoteInitialized).toBe(false);
+  await Promise.all([
+    runtime.initializeRemoteAccount(),
+    runtime.initializeRemoteAccount(),
+  ]);
   expect(fetcher).toHaveBeenCalledTimes(1);
-  expect(runtime.initialized).toBe(true);
-  expect(runtime.context?.workspaceId).toBe("a");
+  expect(runtime.remoteInitialized).toBe(true);
+  expect(runtime.remoteContext?.workspaceId).toBe("a");
 });
 
 it("native JSON is consumed as UTF-8 without a Base64 decoder", async () => {
@@ -141,14 +533,14 @@ it("native JSON is consumed as UTF-8 without a Base64 decoder", async () => {
   const decoder = vi.spyOn(globalThis, "atob");
   try {
     const runtime = await authenticatedRuntime();
-    expect(runtime.context?.workspaceId).toBe("a");
+    expect(runtime.remoteContext?.workspaceId).toBe("a");
     expect(decoder).not.toHaveBeenCalled();
   } finally {
     decoder.mockRestore();
   }
 });
 
-it("native offline logout clears local identity and reports unconfirmed remote revocation", async () => {
+it("native offline logout clears remote identity while preserving the local workspace and reports unconfirmed remote revocation", async () => {
   vi.mocked(isTauri).mockReturnValue(true);
   metadata.set("orivane.atlas.server-origin", origin);
   vi.mocked(invoke).mockImplementation(async (command) => {
@@ -165,7 +557,7 @@ it("native offline logout clears local identity and reports unconfirmed remote r
   vi.mocked(invoke).mockRejectedValueOnce("NETWORK_ERROR");
   await runtime.logout();
   expect(runtime.account).toBeNull();
-  expect(runtime.context).toBeNull();
+  expect(runtime.remoteContext).toBeNull();
   expect(runtime.logoutWarning).toBe(true);
 });
 
@@ -174,7 +566,7 @@ it("successful password change clears the revoked current identity", async () =>
   fetcher.mockResolvedValueOnce(Response.json({}));
   await runtime.changePassword("old-password", "new-password");
   expect(runtime.account).toBeNull();
-  expect(runtime.context).toBeNull();
+  expect(runtime.remoteContext).toBeNull();
 });
 
 it("rejects a response whose JSON parsing finishes after logout", async () => {
@@ -199,7 +591,7 @@ it("rejects a response whose JSON parsing finishes after logout", async () => {
   finish([{ id: "private-old-account" }]);
   await rejected;
   expect(runtime.account).toBeNull();
-  expect(runtime.context).toBeNull();
+  expect(runtime.remoteContext).toBeNull();
 });
 
 it("rejects both an in-flight sync and a queued sync at the identity boundary", async () => {
@@ -215,8 +607,8 @@ it("rejects both an in-flight sync and a queued sync at the identity boundary", 
     }
     return Response.json({});
   });
-  const first = runtime.loadWorkspace();
-  const queued = runtime.loadWorkspace();
+  const first = runtime.loadRemoteWorkspace();
+  const queued = runtime.loadRemoteWorkspace();
   const assertions = [
     expect(first).rejects.toThrow("SERVER_CHANGED"),
     expect(queued).rejects.toThrow("SERVER_CHANGED"),
@@ -232,7 +624,7 @@ it("successful reauthentication replaces identity and clears old snapshot cursor
   const runtime = await authenticatedRuntime();
   fetcher.mockResolvedValueOnce(Response.json(identity("b")));
   await runtime.session({ username: "b", password: "not-persisted" });
-  expect(runtime.context?.workspaceId).toBe("b");
+  expect(runtime.remoteContext?.workspaceId).toBe("b");
   expect(runtime.account?.id).toBe("b");
   expect(JSON.stringify([...metadata.values()])).not.toContain("not-persisted");
   fetcher.mockResolvedValueOnce(
@@ -251,8 +643,10 @@ it("successful reauthentication replaces identity and clears old snapshot cursor
       library: [],
     }),
   );
-  await runtime.loadWorkspace();
-  expect(String(fetcher.mock.lastCall?.[0])).toBe(origin + "/api/bootstrap");
+  await runtime.loadRemoteWorkspace();
+  expect(String(fetcher.mock.lastCall?.[0])).toBe(
+    origin + "/api/bootstrap?relationMode=canonical",
+  );
 });
 
 it("does not claim successful remote logout on a network failure; retry can complete", async () => {
@@ -318,7 +712,8 @@ it("native saved-account switch clears old requests and restores through verifie
     return {
       status: 200,
       contentType: "application/json",
-      body: btoa(JSON.stringify(identity(selected))),
+      body: JSON.stringify(identity(selected)),
+      encoding: "utf8",
     } as never;
   });
   const runtime = await authenticatedRuntime();
@@ -326,13 +721,14 @@ it("native saved-account switch clears old requests and restores through verifie
   const rejected = expect(stale).rejects.toThrow("SERVER_CHANGED");
   await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
   await runtime.beginAccountSwitch();
-  expect(runtime.context).toBeNull();
+  expect(runtime.remoteContext).toBeNull();
   await runtime.switchAccount(saved[1]!.id);
   expect(runtime.account?.id).toBe("b");
   finish({
     status: 200,
     contentType: "application/json",
-    body: btoa(JSON.stringify([{ id: "private-a" }])),
+    body: JSON.stringify([{ id: "private-a" }]),
+    encoding: "utf8",
   });
   await rejected;
   await runtime.switchAccount(saved[0]!.id);
@@ -382,7 +778,7 @@ it("native forget deletes the vault reference and clears the selected runtime id
   expect(invoke).toHaveBeenCalledWith("forget_account", {
     reference: "native-ref",
   });
-  expect(runtime.context).toBeNull();
+  expect(runtime.remoteContext).toBeNull();
   expect(runtime.savedAccounts()).toEqual([]);
 });
 
@@ -393,5 +789,5 @@ it("web ignores saved cross-origin server and rejects switching its cookie bound
   await expect(
     runtime.setServerOrigin("https://untrusted.example"),
   ).rejects.toThrow("INVALID_SERVER");
-  expect(runtime.context?.principalId).toBe("a");
+  expect(runtime.remoteContext?.principalId).toBe("a");
 });

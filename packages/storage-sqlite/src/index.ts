@@ -7,13 +7,24 @@ import type {
   ActivityEvent,
   AgentSessionStore,
   ConnectedStore,
+  EntityMemoTransaction,
+  LibraryFileStore,
   LibraryStore,
+  LocalChunkBlobStore,
+  MutationReceipt,
   NotebookStore,
   OrganizationStore,
   OutboxEvent,
   ProjectStore,
   UnitOfWork,
   WorkTransaction,
+} from "@arclattice/application";
+import {
+  assertWorkspaceMutationPrecondition,
+  mutationReceiptDigest,
+  requireMutationReceipt,
+  requireReviewedMutationReceiptProof,
+  requireStableUuid,
 } from "@arclattice/application";
 import type {
   ActorContext,
@@ -38,7 +49,11 @@ import {
   sqliteCode,
   validateIntegrity,
 } from "./database";
+import { entityMemoStore } from "./entity-memos";
+import { binaryStore } from "./file-binary";
+import { fileStore } from "./files";
 import { libraryStore } from "./library";
+import { manualOrderPort } from "./manual-order";
 import { inspectSchema, migrate } from "./migrations";
 import { notebookStore } from "./notebook";
 import { organizationStore } from "./organization";
@@ -323,7 +338,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
           if (receipt) {
             const cached = this.db
               .prepare(
-                "SELECT digest,result FROM request_receipt WHERE workspace_id=? AND principal_id=? AND key=?",
+                "SELECT digest,result,device_id FROM request_receipt WHERE workspace_id=? AND principal_id=? AND key=?",
               )
               .get(
                 receipt.context.workspaceId,
@@ -331,7 +346,11 @@ export class SqliteUnitOfWork implements UnitOfWork {
                 receipt.key,
               );
             if (cached) {
-              if (receipt.once || cached.digest !== receipt.digest)
+              if (
+                receipt.once ||
+                cached.digest !== receipt.digest ||
+                cached.device_id !== null
+              )
                 throw new DomainError("VERSION_CONFLICT");
               return JSON.parse(String(cached.result)) as T;
             }
@@ -339,7 +358,9 @@ export class SqliteUnitOfWork implements UnitOfWork {
           const result = operation(store);
           if (receipt)
             this.db
-              .prepare("INSERT INTO request_receipt VALUES (?,?,?,?,?,?)")
+              .prepare(
+                "INSERT INTO request_receipt (workspace_id,principal_id,key,digest,result,created_at) VALUES (?,?,?,?,?,?)",
+              )
               .run(
                 receipt.context.workspaceId,
                 receipt.context.principalId,
@@ -619,6 +640,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
         if (result.changes !== 1) throw new DomainError("VERSION_CONFLICT");
       },
       ...categoryPort(this.db, workspaceId, guard),
+      ...manualOrderPort(this.db, workspaceId, guard),
       ...workflowPort(this.db, workspaceId, guard),
       get: async (id) => get(id),
       list: async (includeDeleted = false) => {
@@ -763,9 +785,56 @@ export class SqliteUnitOfWork implements UnitOfWork {
   }
 
   /** Host-only atomic request boundary. Call exactly one application mutation. */
+  lookupReviewedMutationReceipt(
+    actorInput: ActorContext,
+    commandId: string,
+    proof: string,
+    authorize?: (store: AccountStore) => void,
+  ): Promise<unknown | null> {
+    requireStableUuid(commandId, "commandId");
+    requireReviewedMutationReceiptProof(proof);
+    const actor = Object.freeze({ ...actorInput });
+    return this.request(
+      actor,
+      null,
+      async () => {
+        const row = this.db
+          .prepare(
+            "SELECT result FROM request_receipt WHERE workspace_id=? AND principal_id=? AND key=? AND digest=?",
+          )
+          .get(actor.workspaceId, actor.principalId, commandId, proof);
+        return row ? (JSON.parse(String(row.result)) as unknown) : null;
+      },
+      authorize,
+    );
+  }
+  lookupMutationReceipt(
+    actor: ActorContext,
+    commandId: string,
+    deviceId: string,
+    authorize?: (store: AccountStore) => void,
+  ): Promise<unknown | null> {
+    requireStableUuid(commandId, "commandId");
+    requireStableUuid(deviceId, "deviceId");
+    const context = Object.freeze({ ...actor });
+    return this.request(
+      context,
+      null,
+      async () => {
+        const row = this.db
+          .prepare(
+            "SELECT result FROM request_receipt WHERE workspace_id=? AND principal_id=? AND key=? AND device_id=?",
+          )
+          .get(context.workspaceId, context.principalId, commandId, deviceId);
+        return row ? (JSON.parse(String(row.result)) as unknown) : null;
+      },
+      authorize,
+    );
+  }
+
   request<T>(
-    context: ActorContext,
-    receipt: { key: string; digest: string } | null,
+    contextInput: ActorContext,
+    receiptInput: MutationReceipt | null,
     operation: (
       uow: UnitOfWork,
       notes: NotebookStore,
@@ -774,9 +843,16 @@ export class SqliteUnitOfWork implements UnitOfWork {
       organization: OrganizationStore,
       projects: ProjectStore,
       sessions: AgentSessionStore,
+      files: LibraryFileStore,
+      fileBlobs: LocalChunkBlobStore,
+      memos: EntityMemoTransaction,
     ) => Promise<T>,
     authorize?: (store: AccountStore) => void,
   ): Promise<T> {
+    const context = Object.freeze({ ...contextInput });
+    const receipt = receiptInput
+      ? Object.freeze(structuredClone(receiptInput))
+      : null;
     return this.enqueue(() =>
       this.workspaceOperation(context.workspaceId, () =>
         this.transaction(async () => {
@@ -796,17 +872,28 @@ export class SqliteUnitOfWork implements UnitOfWork {
           try {
             authorize?.(accountStore(this.db, guard));
             if (receipt) {
+              requireMutationReceipt(receipt);
               const cached = this.db
                 .prepare(
-                  "SELECT digest,result FROM request_receipt WHERE workspace_id=? AND principal_id=? AND key=?",
+                  "SELECT digest,result,device_id FROM request_receipt WHERE workspace_id=? AND principal_id=? AND key=?",
                 )
                 .get(context.workspaceId, context.principalId, receipt.key);
               if (cached) {
-                if (cached.digest !== receipt.digest)
+                if (
+                  cached.digest !== mutationReceiptDigest(receipt) ||
+                  (cached.device_id ?? null) !== (receipt.deviceId ?? null)
+                )
                   throw new DomainError("VERSION_CONFLICT");
                 return JSON.parse(String(cached.result)) as T;
               }
             }
+            if (receipt?.workspacePrecondition)
+              await this.scopedOperation(context.workspaceId, (tx) =>
+                assertWorkspaceMutationPrecondition(
+                  tx,
+                  receipt.workspacePrecondition!,
+                ),
+              );
             const result = await operation(
               {
                 run: (workspaceId, callback) => {
@@ -822,17 +909,23 @@ export class SqliteUnitOfWork implements UnitOfWork {
               organizationStore(this.db, context, guard),
               projectStore(this.db, context, guard),
               agentSessionStore(this.db, context, guard),
+              fileStore(this.db, context, guard),
+              binaryStore(this.db, context, guard),
+              entityMemoStore(this.db, context, guard),
             );
             if (receipt)
               this.db
-                .prepare("INSERT INTO request_receipt VALUES (?,?,?,?,?,?)")
+                .prepare(
+                  "INSERT INTO request_receipt (workspace_id,principal_id,key,digest,result,created_at,device_id) VALUES (?,?,?,?,?,?,?)",
+                )
                 .run(
                   context.workspaceId,
                   context.principalId,
                   receipt.key,
-                  receipt.digest,
+                  mutationReceiptDigest(receipt),
                   JSON.stringify(result ?? null),
                   new Date().toISOString(),
+                  receipt.deviceId ?? null,
                 );
             return result;
           } finally {

@@ -6,6 +6,16 @@ export async function purgeRelations(
   workspaceId: string,
   ref: EntityRef,
 ) {
+  if (ref.kind === "WORK")
+    await client.query(
+      "DELETE FROM arclattice.entity_memo WHERE workspace_id=$1 AND target_id=$2 AND target_kind IN ('PROJECT','TASK','MILESTONE')",
+      [workspaceId, ref.id],
+    );
+  else if (ref.kind === "FILE")
+    await client.query(
+      "DELETE FROM arclattice.entity_memo WHERE workspace_id=$1 AND target_id=$2 AND target_kind='FILE'",
+      [workspaceId, ref.id],
+    );
   await client.query(
     "DELETE FROM arclattice.knowledge_link WHERE workspace_id=$1 AND ((payload::jsonb->'from'->>'kind'=$2 AND payload::jsonb->'from'->>'id'=$3) OR (payload::jsonb->'to'->>'kind'=$2 AND payload::jsonb->'to'->>'id'=$3))",
     [workspaceId, ref.kind, ref.id],

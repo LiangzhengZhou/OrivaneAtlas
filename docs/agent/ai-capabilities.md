@@ -6,6 +6,7 @@ another workspace or access database adapters directly.
 
 | Capability | Risk | Authorization / approval |
 | --- | --- | --- |
+| read_file_chunks | READ | work:read; exact live File version/hash and parent policy; at most three canonical citations; external ALLOW/ANY, never SECRET; no binary download |
 | search_documents | READ | work:read; scope resolver and document/Space policy filtering |
 | read_document | READ | work:read; workspace, live document and Space checks |
 | get_project | READ | work:read; live project in the authorized snapshot |

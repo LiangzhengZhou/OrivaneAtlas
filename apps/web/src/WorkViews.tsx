@@ -24,13 +24,30 @@ import { useTranslation } from "react-i18next";
 import { useEntitySelection } from "./app/EntitySelection";
 import { Button, IconButton } from "./components/ui/Button";
 import { ListRow, MenuItem } from "./components/ui/Content";
+import { dragMime, readEntityDrag } from "./components/ui/drag-intent";
+import { InlineStateConfirm } from "./components/ui/InlineStateConfirm";
+import { PrioritySignal } from "./components/ui/PrioritySignal";
+import { DragHandle, SortableRow } from "./components/ui/Sortable";
 import { Menu, Select } from "./components/ui/Surfaces";
+import { TouchReorderScope } from "./components/ui/TouchReorder";
 import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
 import type { taskDerivedIndex } from "./features/tasks/task-index";
 import type { TaskWorkspaceIndex } from "./features/tasks/task-selectors";
 import { VirtualTaskCollection } from "./features/tasks/VirtualTaskCollection";
 
 export interface WorkProps {
+  manualOrder?:
+    | {
+        scopeKey: string;
+        pending: boolean;
+        move(
+          entityId: string,
+          anchorId: string,
+          placement: "BEFORE" | "AFTER",
+        ): void;
+      }
+    | undefined;
+  statusDragScope?: string;
   compact?: boolean;
   taskIndex: TaskWorkspaceIndex;
   derived: ReturnType<typeof taskDerivedIndex>;
@@ -58,9 +75,13 @@ function Task({
   isArchived,
   archiveSource,
   onOrganize,
+  statusDragScope,
+  manualOrder,
+  onManualStep,
 }: Omit<WorkProps, "items"> & {
   item: WorkItem;
   derived: ReturnType<typeof taskDerivedIndex>;
+  onManualStep?(direction: "UP" | "DOWN"): void;
 }) {
   const { t, i18n } = useTranslation(["common", "work"]);
   const busy = workspaceBusy || !!isPending?.(item);
@@ -79,9 +100,21 @@ function Task({
       role="article"
       onSelect={() => selection?.select({ kind: "WORK", id: item.id })}
       onOpen={() => onOpen(item)}
-      draggable={!busy}
+      draggable={!busy && !!statusDragScope}
       onDragStart={(event) => {
-        event.dataTransfer.setData("text/plain", item.id);
+        if (busy || !statusDragScope) {
+          event.preventDefault();
+          return;
+        }
+        event.dataTransfer.setData(
+          dragMime,
+          JSON.stringify({
+            version: 1,
+            intent: "MOVE_STATUS",
+            entityId: item.id,
+            scopeKey: statusDragScope,
+          }),
+        );
         event.dataTransfer.effectAllowed = "move";
       }}
       className={`task-card ${compact ? "task-action-row" : ""} ${item.status === "DONE" ? "completed" : ""}`}
@@ -101,20 +134,37 @@ function Task({
       }
     >
       <div className="task-main">
-        <IconButton
-          label={
-            (i18n.language.startsWith("zh")
-              ? item.status === "DONE"
-                ? "重新打开："
-                : "完成："
-              : item.status === "DONE"
-                ? "Reopen: "
-                : "Complete: ") + item.title
-          }
+        {manualOrder && onManualStep && (
+          <DragHandle
+            input={{
+              version: 1,
+              intent: "REORDER",
+              entityId: item.id,
+              scopeKey: manualOrder.scopeKey,
+            }}
+            label={
+              (i18n.language.startsWith("zh") ? "调整顺序：" : "Reorder: ") +
+              item.title
+            }
+            disabled={busy || manualOrder.pending}
+            onMove={onManualStep}
+          />
+        )}
+        <InlineStateConfirm
+          entityId={item.id}
+          revisionKey={item.version}
+          intent={item.status === "DONE" ? "RESTORE" : "COMPLETE"}
+          label={t(item.status === "DONE" ? "reopenTask" : "completeTask", {
+            title: item.title,
+          })}
+          confirmLabel={t(
+            item.status === "DONE"
+              ? "confirmReopenTask"
+              : "confirmCompleteTask",
+            { title: item.title },
+          )}
           disabled={busy}
-          aria-pressed={item.status === "DONE"}
-          onClick={(event) => {
-            event.stopPropagation();
+          onConfirm={() => {
             void onStatus(item, item.status === "DONE" ? "TODO" : "DONE");
           }}
         >
@@ -123,17 +173,18 @@ function Task({
           ) : (
             <Circle className={`status-dot status-${item.status}`} />
           )}
-        </IconButton>
+        </InlineStateConfirm>
         <Button
           variant="ghost"
           type="button"
           className="task-title"
+          data-reorder-surface={manualOrder ? true : undefined}
           aria-label={t("openTask", { title: item.title })}
           onClick={(event) => {
             event.stopPropagation();
-            selection
-              ? selection.select({ kind: "WORK", id: item.id })
-              : onOpen(item);
+            // Single click only inspects; opening is Enter or double click. Without
+            // a selection context (standalone render) the click does nothing.
+            selection?.select({ kind: "WORK", id: item.id });
           }}
           onDoubleClick={(event) => {
             event.stopPropagation();
@@ -184,9 +235,10 @@ function Task({
         )}
         {!compact &&
           (item.priority === "HIGH" || item.priority === "URGENT") && (
-            <span className="task-priority-signal">
-              {t(`work:priorities.${item.priority}`)}
-            </span>
+            <PrioritySignal
+              priority={item.priority}
+              label={t(`work:priorities.${item.priority}`)}
+            />
           )}
         <IconButton
           ref={menuAnchor}
@@ -261,17 +313,58 @@ function Task({
 export function TaskList({ items, ...props }: WorkProps) {
   const derived = props.derived;
   return (
-    <div className="task-list">
-      <VirtualTaskCollection
-        items={items}
-        render={(item) => <Task item={item} {...props} derived={derived} />}
-      />
-    </div>
+    <TouchReorderScope>
+      <div className="task-list" role="list">
+        <VirtualTaskCollection
+          items={items}
+          render={(item) => {
+            const order = props.manualOrder;
+            if (!order)
+              return <Task item={item} {...props} derived={derived} />;
+            return (
+              <SortableRow
+                as="div"
+                entityId={item.id}
+                scopeKey={order.scopeKey}
+                disabled={
+                  props.busy || order.pending || !!props.isPending?.(item)
+                }
+                onMoveBefore={(movingId, targetId) =>
+                  order.move(movingId, targetId, "BEFORE")
+                }
+                onMoveAfter={(movingId, targetId) =>
+                  order.move(movingId, targetId, "AFTER")
+                }
+              >
+                <Task
+                  item={item}
+                  {...props}
+                  derived={derived}
+                  onManualStep={(direction) => {
+                    const index = items.findIndex(
+                      (entry) => entry.id === item.id,
+                    );
+                    const anchor = items[index + (direction === "UP" ? -1 : 1)];
+                    if (anchor)
+                      order.move(
+                        item.id,
+                        anchor.id,
+                        direction === "UP" ? "BEFORE" : "AFTER",
+                      );
+                  }}
+                />
+              </SortableRow>
+            );
+          }}
+        />
+      </div>
+    </TouchReorderScope>
   );
 }
 export function WorkBoard({ items, ...props }: WorkProps) {
   const { t, i18n } = useTranslation("work");
   const derived = props.derived;
+  const statusDragScope = `STATUS:${props.allItems[0]?.workspaceId ?? "empty"}`;
   return (
     <div className="board">
       {workStatuses.map((status) => {
@@ -281,14 +374,23 @@ export function WorkBoard({ items, ...props }: WorkProps) {
             key={status}
             className="board-column"
             onDragOver={(event) => {
+              if (props.busy || !event.dataTransfer.types.includes(dragMime))
+                return;
               event.preventDefault();
               event.dataTransfer.dropEffect = "move";
             }}
             onDrop={(event) => {
-              event.preventDefault();
-              const item = items.find(
-                (item) => item.id === event.dataTransfer.getData("text/plain"),
+              const input = readEntityDrag(
+                event.dataTransfer.getData(dragMime),
               );
+              if (
+                !input ||
+                input.intent !== "MOVE_STATUS" ||
+                input.scopeKey !== statusDragScope
+              )
+                return;
+              event.preventDefault();
+              const item = items.find((item) => item.id === input.entityId);
               if (
                 item &&
                 !props.busy &&
@@ -309,7 +411,13 @@ export function WorkBoard({ items, ...props }: WorkProps) {
               board
               items={group}
               render={(item) => (
-                <Task item={item} {...props} derived={derived} />
+                <Task
+                  item={item}
+                  {...props}
+                  statusDragScope={statusDragScope}
+                  manualOrder={undefined}
+                  derived={derived}
+                />
               )}
             />
           </section>

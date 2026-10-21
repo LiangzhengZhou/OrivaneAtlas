@@ -173,6 +173,9 @@
   "unscheduled": "Unscheduled",
   "scheduleEmpty": "Nothing here. A little room to breathe.",
   "backupDatabase": "Download database backup",
+  "localBackup": "Back up local workspace",
+  "remoteModelSettingsDisconnected": "Connect an account to manage remote model settings. Your local workspace works independently.",
+  "localBackupHint": "Includes local work, Markdown, revisions and original files. Provider credentials are excluded. No server connection is needed. Store the backup securely.",
   "backupHint": "Includes all tasks, notes, revisions and events, but not the access key. Store securely. One download per minute, up to 64 MiB; restoring requires an administrator and a new database file.",
   "importMarkdown": "Import Markdown file",
   "importHint": "UTF-8 .md / .markdown / .txt, up to 200,000 characters. Review the draft before saving; never converted into tasks.",
@@ -320,5 +323,10 @@
   "movedToTrash": "Moved to Trash",
   "selectedEntity": "Selected entity",
   "graph": "Graph",
-  "openGraphWorkspace": "Open Graph Workspace"
+  "openGraphWorkspace": "Open Graph Workspace",
+  "moveNavigationItem": "Move navigation item: {{title}}",
+  "moveProject": "Move project: {{title}}",
+  "moveIntoProject": "Move into {{title}}",
+  "moveIntoCategory": "Move to {{title}}",
+  "changeProjectLifecycle": "Change project status"
 }

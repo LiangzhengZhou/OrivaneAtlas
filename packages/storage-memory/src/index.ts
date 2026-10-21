@@ -15,6 +15,7 @@ import type {
 import { normalizeWorkflowRecords } from "@arclattice/application";
 import type {
   ActorContext,
+  ManualOrderState,
   Reminder,
   WorkEdge,
   WorkItem,
@@ -27,6 +28,7 @@ import {
 } from "@arclattice/domain";
 
 interface MemoryState {
+  manualOrders: Map<string, ManualOrderState>;
   changes: WorkspaceChange[];
   epoch: string;
   reminders: Map<string, Reminder>;
@@ -44,6 +46,7 @@ interface MemoryState {
   outbox: OutboxEvent[];
 }
 const emptyState = (): MemoryState => ({
+  manualOrders: new Map(),
   changes: [],
   epoch: crypto.randomUUID(),
   reminders: new Map(),
@@ -111,6 +114,20 @@ export class MemoryUnitOfWork implements UnitOfWork {
           op,
         });
       const tx: WorkTransaction = {
+        manualOrders: async () => {
+          assertOpen();
+          return structuredClone([...state.manualOrders.values()]);
+        },
+        saveManualOrder: async (value, expected) => {
+          assertScope(value);
+          if (
+            (state.manualOrders.get(value.id)?.version ?? 0) !== expected ||
+            value.version !== expected + 1
+          )
+            throw new DomainError("VERSION_CONFLICT");
+          state.manualOrders.set(value.id, structuredClone(value));
+          publish("manualOrders", value.id, value.version);
+        },
         workspaceRelatedLinks: async () => {
           assertOpen();
           return [];
@@ -135,23 +152,25 @@ export class MemoryUnitOfWork implements UnitOfWork {
         workspaceEntity: async (collection, id) => {
           assertOpen();
           const value =
-            collection === "items"
-              ? state.items.get(id)
-              : collection === "edges"
-                ? state.edges.get(id)
-                : collection === "categories"
-                  ? state.categories.get(id)
-                  : collection === "workflows"
-                    ? state.workflows.get(id)
-                    : collection === "organization"
-                      ? state.organizations.get(id)
-                      : collection === "reminders"
-                        ? state.reminders.get(id)
-                        : collection === "navigationPreference"
-                          ? state.navigation.get(id)
-                          : collection === "calendarSettings"
-                            ? state.calendarSettings
-                            : null;
+            collection === "manualOrders"
+              ? state.manualOrders.get(id)
+              : collection === "items"
+                ? state.items.get(id)
+                : collection === "edges"
+                  ? state.edges.get(id)
+                  : collection === "categories"
+                    ? state.categories.get(id)
+                    : collection === "workflows"
+                      ? state.workflows.get(id)
+                      : collection === "organization"
+                        ? state.organizations.get(id)
+                        : collection === "reminders"
+                          ? state.reminders.get(id)
+                          : collection === "navigationPreference"
+                            ? state.navigation.get(id)
+                            : collection === "calendarSettings"
+                              ? state.calendarSettings
+                              : null;
           return structuredClone(value ?? null);
         },
         reminders: async () => {

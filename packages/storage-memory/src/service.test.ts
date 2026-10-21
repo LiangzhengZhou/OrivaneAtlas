@@ -25,6 +25,114 @@ function setup(
   return { uow, service };
 }
 describe("Work application service", () => {
+  it("stable dependency edge entry retains graph permissions and server-owned audit IDs", async () => {
+    const { service, uow } = setup();
+    const a = await service.create(context, { title: "A" });
+    const b = await service.create(context, { title: "B" });
+    const stable = "33333333-3333-4333-8333-333333333333";
+    const observed: (string | undefined)[] = [];
+    let sequence = 0;
+    const replay = new WorkService(
+      uow,
+      new LocalAuthorization([
+        { ...context, permissions: ["graph:write", "work:read"] },
+      ]),
+      { now: () => "2026-09-13T00:00:00.000Z" },
+      {
+        next: () => `server-${++sequence}`,
+        nextFor: (purpose) => {
+          observed.push(purpose);
+          return `server-${++sequence}`;
+        },
+      },
+    );
+    await replay.addEdgeWithStableId(context, stable, a.id, b.id);
+    expect(observed).toEqual(["ACTIVITY", "OUTBOX"]);
+    const events = await uow.inspectEvents(context.workspaceId);
+    expect(events.activity.at(-1)).toMatchObject({
+      id: "server-1",
+      entityId: stable,
+      principalId: context.principalId,
+    });
+    expect(events.outbox.at(-1)).toMatchObject({ id: "server-2" });
+    const denied = new WorkService(
+      uow,
+      new LocalAuthorization([{ ...context, permissions: ["work:read"] }]),
+      { now: () => "2026-09-13T00:00:00.000Z" },
+      { next: () => "must-not-allocate" },
+    );
+    await expect(
+      denied.addEdgeWithStableId(
+        context,
+        "44444444-4444-4444-8444-444444444444",
+        b.id,
+        a.id,
+      ),
+    ).rejects.toThrow("FORBIDDEN");
+    expect(await uow.inspectEvents(context.workspaceId)).toEqual(events);
+  });
+  it("preserves offline UUID identity while retaining attribution, rules and duplicate protection", async () => {
+    const { service, uow } = setup();
+    const id = "11111111-1111-4111-8111-111111111111";
+    const task = await service.createWithStableId(context, id, {
+      title: "Offline",
+      descriptionMd: "原文\n第二行",
+    });
+    expect(task).toMatchObject({
+      id,
+      workspaceId: context.workspaceId,
+      createdBy: context.principalId,
+      version: 1,
+      descriptionMd: "原文\n第二行",
+    });
+    const before = await uow.inspectEvents(context.workspaceId);
+    await expect(
+      service.createWithStableId(context, id, { title: "Duplicate" }),
+    ).rejects.toThrow("VERSION_CONFLICT");
+    expect(await uow.inspectEvents(context.workspaceId)).toEqual(before);
+    await expect(
+      service.createWithStableId(context, "not-a-uuid", { title: "Invalid" }),
+    ).rejects.toThrow("VALIDATION_ERROR");
+    await expect(
+      service.createWithStableId(
+        context,
+        "22222222-2222-4222-8222-222222222222",
+        {
+          title: "Invalid parent",
+          type: "PROJECT",
+          parentProjectId: "missing",
+        },
+      ),
+    ).rejects.toThrow();
+    expect(
+      (await service.snapshot(context)).items.map((item) => item.id),
+    ).toEqual([id]);
+  });
+  it("stable UUID creation cannot bypass ordinary workspace and graph permissions", async () => {
+    const { service } = setup(["work:read"]);
+    await expect(
+      service.createWithStableId(
+        context,
+        "11111111-1111-4111-8111-111111111111",
+        { title: "Denied" },
+      ),
+    ).rejects.toThrow("FORBIDDEN");
+    const allowed = setup(["work:create", "work:read"]).service;
+    await expect(
+      allowed.createWithStableId(
+        context,
+        "11111111-1111-4111-8111-111111111111",
+        { title: "Graph denied", prerequisiteIds: ["missing"] },
+      ),
+    ).rejects.toThrow("FORBIDDEN");
+    await expect(
+      allowed.createWithStableId(
+        { ...context, workspaceId: "foreign" },
+        "11111111-1111-4111-8111-111111111111",
+        { title: "Foreign" },
+      ),
+    ).rejects.toThrow("FORBIDDEN");
+  });
   it("creates attributed work and atomic distinct activity/outbox records", async () => {
     const { uow, service } = setup();
     const task = await service.create(context, {

@@ -1,0 +1,38 @@
+.file-detail {
+  width: min(100%, 840px);
+  margin-inline: auto;
+  padding: var(--space-4);
+  overflow: auto;
+}
+.file-detail .ui-toolbar h2 {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.file-metadata {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 16px;
+}
+.file-metadata dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.file-text-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 45dvh;
+  overflow: auto;
+}
+.file-text-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.file-text-preview .virtual-task-scroll {
+  height: 45dvh;
+  max-height: 45dvh;
+}
+.library-file-row h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

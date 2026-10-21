@@ -39,9 +39,64 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
         return Err("INVALID_SERVER".into());
     }
     let raw_path = path.split('?').next().unwrap_or("");
+    // Only formal entity sync aliases share policy with their existing endpoints.
+    // Auth/account paths retain their exact matching and native session side effects.
+    let policy_path = match raw_path {
+        "/api/v1/sync" => "/api/sync",
+        "/api/v1/sync/receipt" => "/api/sync/receipt",
+        "/api/v1/ai/run" => "/api/ai/run",
+        "/api/v1/work/create" => "/api/work/create",
+        "/api/v1/work/update" => "/api/work/update",
+        "/api/v1/work/delete" => "/api/work/delete",
+        "/api/v1/work/calendar-settings" => "/api/work/calendar-settings",
+        "/api/v1/work/navigation-preference" => "/api/work/navigation-preference",
+        "/api/v1/work/navigation-move" => "/api/work/navigation-move",
+        "/api/v1/manual-orders/move" => "/api/manual-orders/move",
+        "/api/v1/projects/space/create" => "/api/projects/space/create",
+        "/api/v1/projects/space/link" => "/api/projects/space/link",
+        "/api/v1/projects/document/create" => "/api/projects/document/create",
+        "/api/v1/projects/delete" => "/api/projects/delete",
+        "/api/v1/recurrences/save" => "/api/recurrences/save",
+        "/api/v1/recurrences/task" => "/api/recurrences/task",
+        "/api/v1/recurrences/generate" => "/api/recurrences/generate",
+        "/api/v1/recurrences/backfill" => "/api/recurrences/backfill",
+        "/api/v1/recurrences/skip" => "/api/recurrences/skip",
+        "/api/v1/link/create" => "/api/link/create",
+        "/api/v1/link/delete" => "/api/link/delete",
+        "/api/v1/note/promote" => "/api/note/promote",
+        "/api/v1/note/link-space" => "/api/note/link-space",
+        "/api/v1/plans/preview" => "/api/plans/preview",
+        "/api/v1/plans/publish" => "/api/plans/publish",
+        "/api/v1/files/register" => "/api/files/register",
+        "/api/v1/files/rename" => "/api/files/rename",
+        "/api/v1/files/delete" => "/api/files/delete",
+        "/api/v1/files/policy" => "/api/files/policy",
+        "/api/v1/files/extraction" => "/api/files/extraction",
+        "/api/v1/ai/sessions/promote" => "/api/ai/sessions/promote",
+        "/api/v1/files/metadata" => "/api/files/metadata",
+        "/api/v1/files/bytes" => "/api/files/bytes",
+        "/api/v1/files/binary/status" => "/api/files/binary/status",
+        "/api/v1/files/binary/begin" => "/api/files/binary/begin",
+        "/api/v1/files/binary/chunk" => "/api/files/binary/chunk",
+        "/api/v1/files/binary/complete" => "/api/files/binary/complete",
+        "/api/v1/organize" => "/api/organize",
+        "/api/v1/categories/save" => "/api/categories/save",
+        "/api/v1/categories/reorder" => "/api/categories/reorder",
+        "/api/v1/edge/create" => "/api/edge/create",
+        "/api/v1/edge/delete" => "/api/edge/delete",
+        "/api/v1/note/save" => "/api/note/save",
+        "/api/v1/note/delete" => "/api/note/delete",
+        "/api/v1/library/save" => "/api/library/save",
+        "/api/v1/reminders/save" => "/api/reminders/save",
+        "/api/v1/library/delete" => "/api/library/delete",
+        "/api/v1/workspaces" => "/api/workspaces",
+        "/api/v1/workspaces/create" => "/api/workspaces/create",
+        _ => raw_path,
+    };
     let allowed = if post {
         &[
             "/api/session",
+            "/api/workspaces/create",
             "/api/register",
             "/api/account/password",
             "/api/account/sessions/revoke",
@@ -54,6 +109,8 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/work/create",
             "/api/work/calendar-settings",
             "/api/work/navigation-preference",
+            "/api/work/navigation-move",
+            "/api/manual-orders/move",
             "/api/projects/document",
             "/api/projects/spaces",
             "/api/projects/space/create",
@@ -79,6 +136,7 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/ai/providers/remove",
             "/api/ai/propose",
             "/api/ai/sessions/create",
+            "/api/ai/sessions/promote",
             "/api/ai/sessions/update",
             "/api/ai/sessions/profile",
             "/api/ai/capability",
@@ -92,8 +150,16 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/backup",
             "/api/organize",
             "/api/categories/save",
+            "/api/categories/reorder",
             "/api/plans/preview",
             "/api/plans/publish",
+            "/api/files/register",
+            "/api/files/rename",
+            "/api/files/delete",
+            "/api/files/policy",
+            "/api/files/binary/begin",
+            "/api/files/binary/chunk",
+            "/api/files/binary/complete",
             "/api/recurrences/save",
             "/api/recurrences/task",
             "/api/recurrences/generate",
@@ -109,6 +175,7 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
     } else {
         &[
             "/api/health",
+            "/api/workspaces",
             "/api/session",
             "/api/snapshot",
             "/api/bootstrap",
@@ -117,6 +184,7 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/notes/search",
             "/api/library/search",
             "/api/sync",
+            "/api/sync/receipt",
             "/api/admin",
             "/api/tokens",
             "/api/account/sessions",
@@ -126,17 +194,22 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/ai/providers",
             "/api/ai/configuration",
             "/api/ai",
+            "/api/ai/run",
             "/api/ai/sessions",
             "/api/ai/sessions/messages",
             "/api/ai/events",
             "/api/ai/trusted-endpoints",
             "/api/activity",
             "/api/projects/file",
+            "/api/files/metadata",
+            "/api/files/extraction",
+            "/api/files/bytes",
+            "/api/files/binary/status",
             "/api/projects/activity",
             "/api/revisions",
         ][..]
     };
-    if !allowed.contains(&raw_path) {
+    if !allowed.contains(&policy_path) {
         return Err("INVALID_SERVER".into());
     }
     let url = Url::parse(&(origin.to_string() + path)).map_err(|_| "INVALID_SERVER")?;
@@ -371,8 +444,126 @@ pub async fn server_request(
     payload: Option<String>,
     csrf: String,
     idempotency_key: String,
+    workspace_id: Option<String>,
+    workspace_precondition: Option<String>,
 ) -> Result<Reply, String> {
-    send(&state, origin, path, payload, csrf, idempotency_key).await
+    send_reviewed(&state, origin, path, payload, csrf, idempotency_key, workspace_id, workspace_precondition).await
+}
+
+fn workspace_scope(request: reqwest::RequestBuilder, workspace: Option<&str>) -> Result<reqwest::RequestBuilder, String> {
+    validate_workspace_scope(workspace)?;
+    if let Some(id) = workspace {
+        Ok(request.header("X-Workspace-Id", id))
+    } else { Ok(request) }
+}
+fn validate_workspace_scope(workspace: Option<&str>) -> Result<(), String> {
+    if workspace.is_some_and(|id| id.is_empty() || id.len() > 240 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')) { return Err("INVALID_WORKSPACE".into()); }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn server_upload_chunk(
+    state: tauri::State<'_, Transport>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<Reply, String> {
+    let header = |name: &str| -> Result<String, String> {
+        request.headers().get(name).and_then(|v| v.to_str().ok())
+            .map(str::to_string).ok_or_else(|| "INVALID_FILE_CHUNK".to_string())
+    };
+    let origin = header("x-atlas-origin")?;
+    let path = header("x-atlas-path")?;
+    let chunk_hash = header("x-atlas-chunk-hash")?;
+    let csrf = header("x-atlas-csrf")?;
+    let workspace_id = request.headers().get("x-atlas-workspace-id").and_then(|v| v.to_str().ok()).map(str::to_string);
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        _ => return Err("INVALID_FILE_CHUNK".into()),
+    };
+    send_binary_chunk_scoped(&state, origin, path, chunk_hash, csrf, bytes, workspace_id).await
+}
+
+async fn send_binary_chunk(
+    state: &Transport, origin: String, path: String, chunk_hash: String,
+    csrf: String, bytes: Vec<u8>,
+) -> Result<Reply, String> {
+    send_binary_chunk_scoped(state, origin, path, chunk_hash, csrf, bytes, None).await
+}
+async fn send_binary_chunk_scoped(
+    state: &Transport, origin: String, path: String, chunk_hash: String,
+    csrf: String, bytes: Vec<u8>, workspace_id: Option<String>,
+) -> Result<Reply, String> {
+    if bytes.is_empty() || bytes.len() > 262144 || chunk_hash.len() != 64
+        || !chunk_hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        return Err("INVALID_FILE_CHUNK".into());
+    }
+    let url = endpoint(&origin, &path, true)?;
+    if !["/api/files/binary/chunk", "/api/v1/files/binary/chunk"].contains(&url.path()) {
+        return Err("INVALID_FILE_CHUNK".into());
+    }
+    let (cookie, generation) = {
+        let current = state.0.lock().map_err(|_| "NETWORK_ERROR")?;
+        if current.origin != origin || origin.is_empty() { return Err("INVALID_SERVER".into()); }
+        (current.cookie.clone(), current.generation)
+    };
+    let mut request = client()?.post(url)
+        .header("Content-Type", "application/octet-stream")
+        .header("X-File-Chunk-Hash", chunk_hash)
+        .header("X-CSRF-Token", csrf).header("Origin", &origin)
+        .timeout(Duration::from_secs(30)).body(bytes);
+    if !cookie.is_empty() { request = request.header("Cookie", cookie); }
+    let response = workspace_scope(request, workspace_id.as_deref())?.send().await.map_err(network_error)?;
+    if response.status().is_redirection() { return Err("INVALID_RESPONSE".into()); }
+    let status = response.status().as_u16();
+    let content_type = response.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    if !content_type.starts_with("application/json") { return Err("INVALID_RESPONSE".into()); }
+    let bytes = response.bytes().await.map_err(network_error)?;
+    if bytes.len() > 900000 { return Err("INVALID_RESPONSE".into()); }
+    let mut current = state.0.lock().map_err(|_| "NETWORK_ERROR")?;
+    if current.generation != generation || current.origin != origin { return Err("SERVER_CHANGED".into()); }
+    if status == 401 { forget_current(state, &mut current)?; }
+    Ok(Reply { status, content_type, body: String::from_utf8(bytes.to_vec()).map_err(|_| "INVALID_RESPONSE")?, encoding: "utf8" })
+}
+
+#[tauri::command]
+pub async fn server_download_file(
+    state: tauri::State<'_, Transport>, origin: String, path: String,
+    workspace_id: Option<String>,
+) -> Result<tauri::ipc::Response, String> {
+    send_binary_download_scoped(&state,origin,path,workspace_id).await.map(tauri::ipc::Response::new)
+}
+async fn send_binary_download(state:&Transport,origin:String,path:String)->Result<Vec<u8>,String> {
+    send_binary_download_scoped(state,origin,path,None).await
+}
+async fn send_binary_download_scoped(state:&Transport,origin:String,path:String,workspace_id:Option<String>)->Result<Vec<u8>,String> {
+    let url=endpoint(&origin,&path,false)?;
+    if !["/api/files/bytes","/api/v1/files/bytes"].contains(&url.path()) { return Err("INVALID_FILE_PATH".into()); }
+    let (cookie,generation)={
+        let current=state.0.lock().map_err(|_|"NETWORK_ERROR")?;
+        if current.origin!=origin || origin.is_empty() { return Err("INVALID_SERVER".into()); }
+        (current.cookie.clone(),current.generation)
+    };
+    let mut request=client()?.get(url).header("Origin",&origin).timeout(Duration::from_secs(60));
+    if !cookie.is_empty(){request=request.header("Cookie",cookie);}
+    let mut response=workspace_scope(request,workspace_id.as_deref())?.send().await.map_err(network_error)?;
+    let status=response.status().as_u16();
+    if status==401 {
+        let mut current=state.0.lock().map_err(|_|"NETWORK_ERROR")?;
+        if current.generation==generation && current.origin==origin {forget_current(state,&mut current)?;}
+        return Err("UNAUTHORIZED".into());
+    }
+    if status==403 { return Err("FORBIDDEN".into()); }
+    if status==404 { return Err("NOT_FOUND".into()); }
+    if status!=200 || response.headers().get("content-type").and_then(|v|v.to_str().ok())!=Some("application/octet-stream") {return Err("INVALID_RESPONSE".into());}
+    const LIMIT:usize=100*1024*1024;
+    if response.content_length().is_some_and(|size|size>LIMIT as u64) {return Err("FILE_TOO_LARGE".into());}
+    let mut bytes=Vec::new();
+    while let Some(chunk)=response.chunk().await.map_err(network_error)? {
+        if chunk.len()>LIMIT-bytes.len(){return Err("FILE_TOO_LARGE".into());}
+        bytes.extend_from_slice(&chunk);
+    }
+    let current=state.0.lock().map_err(|_|"NETWORK_ERROR")?;
+    if current.generation!=generation || current.origin!=origin {return Err("SERVER_CHANGED".into());}
+    Ok(bytes)
 }
 async fn send(
     state: &Transport,
@@ -382,6 +573,34 @@ async fn send(
     csrf: String,
     idempotency_key: String,
 ) -> Result<Reply, String> {
+    send_scoped(state, origin, path, payload, csrf, idempotency_key, None).await
+}
+async fn send_scoped(
+    state: &Transport, origin: String, path: String, payload: Option<String>,
+    csrf: String, idempotency_key: String, workspace_id: Option<String>,
+) -> Result<Reply, String> {
+    send_reviewed(state, origin, path, payload, csrf, idempotency_key, workspace_id, None).await
+}
+fn validate_workspace_precondition(value: Option<&str>) -> Result<(), String> {
+    if let Some(raw) = value {
+        if raw.len() > 1024 { return Err("VALIDATION_ERROR".into()); }
+        let parsed: serde_json::Value = serde_json::from_str(raw).map_err(|_| "VALIDATION_ERROR")?;
+        let object = parsed.as_object().ok_or("VALIDATION_ERROR")?;
+        let epoch = object.get("epoch").and_then(|v| v.as_str()).ok_or("VALIDATION_ERROR")?;
+        let cursor = object.get("cursor").and_then(|v| v.as_u64()).ok_or("VALIDATION_ERROR")?;
+        if object.len() != 2 || epoch.is_empty() || epoch.chars().count() > 240 || cursor > 9_007_199_254_740_991 || raw.contains(['\r','\n']) {
+            return Err("VALIDATION_ERROR".into());
+        }
+    }
+    Ok(())
+}
+async fn send_reviewed(
+    state: &Transport, origin: String, path: String, payload: Option<String>,
+    csrf: String, idempotency_key: String, workspace_id: Option<String>, workspace_precondition: Option<String>,
+) -> Result<Reply, String> {
+    validate_workspace_scope(workspace_id.as_deref())?;
+    validate_workspace_precondition(workspace_precondition.as_deref())?;
+    if workspace_precondition.is_some() && payload.is_none() { return Err("INVALID_METHOD".into()); }
     let (cookie, generation) = {
         let mut current = state.0.lock().map_err(|_| "NETWORK_ERROR")?;
         if current.origin != origin || origin.is_empty() {
@@ -402,6 +621,9 @@ async fn send(
         (cookie, current.generation)
     };
     let url = endpoint(&origin, &path, payload.is_some())?;
+    if ["/api/files/bytes", "/api/v1/files/bytes"].contains(&url.path()) {
+        return Err("BINARY_TRANSPORT_REQUIRED".into());
+    }
     let timeout = if url.path() == "/api/session" {
         8
     } else if ["/api/backup", "/api/library/asset"].contains(&url.path()) {
@@ -426,7 +648,8 @@ async fn send(
     if !cookie.is_empty() {
         request = request.header("Cookie", cookie);
     }
-    let response = request.send().await.map_err(network_error)?;
+    if let Some(guard) = workspace_precondition { request = request.header("X-Workspace-Precondition", guard); }
+    let response = workspace_scope(request, workspace_id.as_deref())?.send().await.map_err(network_error)?;
     if response.status().is_redirection() {
         return Err("INVALID_RESPONSE".into());
     }
@@ -544,7 +767,108 @@ async fn send(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reviewed_json_preserves_scope_and_guard_without_base64() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let (origin, worker) = fixture(vec![(200, serde_json::json!({"id":"accepted"}), None)]);
+            let state = Transport::default();
+            state.0.lock().unwrap().origin = origin.clone();
+            let guard = r#"{"epoch":"reviewed","cursor":12}"#.to_string();
+            let reply = send_reviewed(&state, origin, "/api/work/create".into(), Some(r#"{"title":"原文"}"#.into()), "csrf".into(), "stable-operation-key".into(), Some("destination".into()), Some(guard.clone())).await.unwrap();
+            assert_eq!(reply.encoding,"utf8");
+            let requests = worker.join().unwrap();
+            assert!(requests[0].to_lowercase().contains("x-workspace-id: destination"));
+            assert!(requests[0].to_lowercase().contains(&format!("x-workspace-precondition: {}", guard)));
+            assert!(requests[0].contains("原文"));
+        });
+    }
+    #[test]
+    fn reviewed_workspace_precondition_is_strict_before_transport() {
+        assert!(super::validate_workspace_precondition(Some(r#"{"epoch":"e","cursor":12}"#)).is_ok());
+        for invalid in ["not-json", "[]", r#"{"epoch":"e","cursor":-1}"#, r#"{"epoch":"e","cursor":0,"extra":true}"#, r#"{"epoch":"e","cursor":9007199254740992}"#] {
+            assert!(super::validate_workspace_precondition(Some(invalid)).is_err());
+        }
+    }
+    #[test]
+    fn workspace_scope_is_explicit_and_preserves_exact_endpoint_methods() {
+        for path in ["/api/workspaces", "/api/v1/workspaces"] {
+            assert!(super::endpoint("http://127.0.0.1", path, false).is_ok());
+            assert!(super::endpoint("http://127.0.0.1", path, true).is_err());
+        }
+        for path in ["/api/workspaces/create", "/api/v1/workspaces/create"] {
+            assert!(super::endpoint("http://127.0.0.1", path, true).is_ok());
+            assert!(super::endpoint("http://127.0.0.1", path, false).is_err());
+        }
+        let request = super::workspace_scope(super::client().unwrap().get("http://127.0.0.1/api/bootstrap"), Some("workspace-a")).unwrap().build().unwrap();
+        assert_eq!(request.headers().get("x-workspace-id").unwrap(), "workspace-a");
+        for invalid in ["", "a\r\nAuthorization:secret", "../workspace", "a,b"] {
+            assert!(super::validate_workspace_scope(Some(invalid)).is_err());
+        }
+    }
     use super::*;
+    #[test]
+    fn file_chunk_uses_bounded_raw_bytes_and_utf8_reply() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let (origin, worker) = fixture(vec![(200, serde_json::json!({"index":0}), None)]);
+        let state = Transport::default();
+        {
+            let mut current = state.0.lock().unwrap();
+            current.origin = origin.clone();
+            current.cookie = format!("arc_session={}", "a".repeat(64));
+        }
+        let reply = send_binary_chunk(&state, origin.clone(), format!("/api/v1/files/binary/chunk?hash={}&index=0", "b".repeat(64)), "c".repeat(64), "csrf".into(), vec![0,1,127]).await.unwrap();
+        assert_eq!(reply.status,200);
+        assert_eq!(reply.encoding,"utf8");
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&reply.body).unwrap(),serde_json::json!({"index":0}));
+        let requests=worker.join().unwrap();
+        assert_eq!(requests.len(),1);
+        assert!(requests[0].to_lowercase().contains("content-type: application/octet-stream"));
+        assert!(requests[0].as_bytes().ends_with(&[0,1,127]));
+        assert_eq!(send_binary_chunk(&state,origin,"/api/v1/files/binary/chunk".into(),"c".repeat(64),"csrf".into(),vec![0;262145]).await.err().unwrap(),"INVALID_FILE_CHUNK");
+        });
+    }
+    #[test]
+    fn file_endpoint_aliases_preserve_method_boundaries() {
+        for path in ["/api/v1/files/register","/api/v1/files/rename","/api/v1/files/delete","/api/v1/files/policy","/api/v1/files/binary/begin","/api/v1/files/binary/chunk","/api/v1/files/binary/complete"] {
+            assert!(endpoint("http://127.0.0.1:4317",path,true).is_ok());
+            assert!(endpoint("http://127.0.0.1:4317",path,false).is_err());
+        }
+        for path in ["/api/v1/files/metadata","/api/v1/files/extraction","/api/v1/files/bytes","/api/v1/files/binary/status"] {
+            assert!(endpoint("http://127.0.0.1:4317",path,false).is_ok());
+            assert!(endpoint("http://127.0.0.1:4317",path,true).is_err());
+        }
+    }
+    #[test]
+    fn file_download_preserves_binary_and_rejects_json_base64_bridge() {
+        use std::io::{Read,Write};
+        let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin=format!("http://{}",listener.local_addr().unwrap());
+        let worker=std::thread::spawn(move||{
+            let(mut stream,_)=listener.accept().unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut request=[0;8192];let length=stream.read(&mut request).unwrap();
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: 5\r\nConnection: close\r\n\r\n").unwrap();
+            stream.write_all(&[0,1,127,128,255]).unwrap();
+            String::from_utf8_lossy(&request[..length]).into_owned()
+        });
+        let state=Transport::default();state.0.lock().unwrap().origin=origin.clone();
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let path="/api/v1/files/bytes?id=original".to_string();
+            assert_eq!(send(&state,origin.clone(),path.clone(),None,String::new(),String::new()).await.err().unwrap(),"BINARY_TRANSPORT_REQUIRED");
+            assert_eq!(send_binary_download(&state,origin,path).await.unwrap(),vec![0,1,127,128,255]);
+        });
+        assert!(worker.join().unwrap().starts_with("GET /api/v1/files/bytes?id=original "));
+    }
+    #[test]
+    fn file_download_preserves_permission_denial_without_exposing_body() {
+        let (origin, worker) = fixture(vec![(403, serde_json::json!({"error":"private response"}), None)]);
+        let state = Transport::default();
+        state.0.lock().unwrap().origin = origin.clone();
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            assert_eq!(send_binary_download(&state, origin, "/api/v1/files/bytes?id=original".into()).await.unwrap_err(), "FORBIDDEN");
+        });
+        assert_eq!(worker.join().unwrap().len(), 1);
+    }
     use crate::session_store::{SavedSession, Vault};
     use std::sync::Arc;
 
@@ -935,11 +1259,24 @@ mod tests {
     }
     #[test]
     fn metadata_and_conversation_paths_preserve_method_boundaries() {
-        for path in ["/api/bootstrap", "/api/document/body", "/api/document/note-backlinks", "/api/notes/search", "/api/library/search", "/api/ai/sessions/messages"] {
+        for path in [
+            "/api/bootstrap",
+            "/api/document/body",
+            "/api/document/note-backlinks",
+            "/api/notes/search",
+            "/api/library/search",
+            "/api/ai/sessions/messages",
+        ] {
             assert!(endpoint("https://example.com", path, false).is_ok());
             assert!(endpoint("https://example.com", path, true).is_err());
         }
-        for path in ["/api/ai/sessions/update", "/api/recurrences/skip", "/api/reminders/save"] {
+        for path in [
+            "/api/ai/sessions/update",
+            "/api/ai/sessions/promote",
+            "/api/v1/ai/sessions/promote",
+            "/api/recurrences/skip",
+            "/api/reminders/save",
+        ] {
             assert!(endpoint("https://example.com", path, true).is_ok());
             assert!(endpoint("https://example.com", path, false).is_err());
         }
@@ -1040,6 +1377,58 @@ mod tests {
             assert!(endpoint("https://example.com", p, true).is_err());
         }
         assert!(endpoint("https://example.com", "/api/sync?cursor=abc", false).is_ok());
+        for path in [
+            "/api/v1/sync?after=4&epoch=e",
+            "/api/v1/sync/receipt?commandId=a&deviceId=b",
+            "/api/sync/receipt?commandId=a&deviceId=b",
+        ] {
+            let url = endpoint("https://example.com", path, false).unwrap();
+            assert_eq!(url.path(), path.split('?').next().unwrap());
+            assert!(endpoint("https://example.com", path, true).is_err());
+        }
+        for path in [
+            "/api/v1/work/create",
+            "/api/v1/work/update",
+            "/api/v1/work/delete",
+            "/api/v1/edge/create",
+            "/api/v1/edge/delete",
+            "/api/v1/note/save",
+            "/api/v1/note/delete",
+            "/api/v1/library/save",
+            "/api/v1/library/delete",
+            "/api/v1/reminders/save",
+            "/api/v1/work/calendar-settings",
+            "/api/v1/work/navigation-preference",
+            "/api/v1/work/navigation-move",
+            "/api/v1/manual-orders/move",
+            "/api/v1/projects/space/create",
+            "/api/v1/projects/space/link",
+            "/api/v1/projects/document/create",
+            "/api/v1/projects/delete",
+            "/api/v1/recurrences/save",
+            "/api/v1/recurrences/task",
+            "/api/v1/recurrences/generate",
+            "/api/v1/recurrences/backfill",
+            "/api/v1/recurrences/skip",
+            "/api/v1/link/create",
+            "/api/v1/link/delete",
+            "/api/v1/organize",
+            "/api/v1/categories/save",
+            "/api/v1/categories/reorder",
+        ] {
+            assert!(endpoint("https://example.com", path, true).is_ok());
+            assert!(endpoint("https://example.com", path, false).is_err());
+        }
+        for path in [
+            "/api/v1/session",
+            "/api/v1/logout",
+            "/api/v1/admin",
+            "/api/v1/sync/../session",
+            "/api/v1/%2e%2e/session",
+        ] {
+            assert!(endpoint("https://example.com", path, true).is_err());
+            assert!(endpoint("https://example.com", path, false).is_err());
+        }
         assert!(endpoint("https://example.com", "/api/backup", false).is_err());
         assert!(endpoint("https://example.com", "/api/account/sessions", false).is_ok());
         assert!(endpoint("https://example.com", "/api/account/sessions", true).is_err());
@@ -1073,7 +1462,7 @@ mod tests {
     }
     #[test]
     fn capture_knowledge_mutations_require_post_and_stream_uses_fallback() {
-        for path in ["/api/note/promote", "/api/note/link-space"] {
+        for path in ["/api/note/promote", "/api/note/link-space", "/api/v1/note/promote", "/api/v1/note/link-space", "/api/v1/plans/preview", "/api/v1/plans/publish"] {
             assert!(endpoint("https://example.com", path, true).is_ok());
             assert!(endpoint("https://example.com", path, false).is_err());
         }
@@ -1098,15 +1487,31 @@ mod tests {
     #[test]
     fn json_transport_release_payload_parity() {
         fn memory() -> serde_json::Value {
-            #[cfg(windows)] {
-                use windows_sys::Win32::System::{ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS}, Threading::GetCurrentProcess};
+            #[cfg(windows)]
+            {
+                use windows_sys::Win32::System::{
+                    ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
+                    Threading::GetCurrentProcess,
+                };
                 let mut counters = PROCESS_MEMORY_COUNTERS::default();
                 counters.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
                 // Current-process handle and correctly sized writable counters.
-                assert_ne!(unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32) }, 0);
+                assert_ne!(
+                    unsafe {
+                        K32GetProcessMemoryInfo(
+                            GetCurrentProcess(),
+                            &mut counters,
+                            std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+                        )
+                    },
+                    0
+                );
                 serde_json::json!({"workingSetBytes":counters.WorkingSetSize,"peakWorkingSetBytes":counters.PeakWorkingSetSize})
             }
-            #[cfg(not(windows))] { serde_json::Value::Null }
+            #[cfg(not(windows))]
+            {
+                serde_json::Value::Null
+            }
         }
         let mut samples = Vec::new();
         for mib in [1, 5] {
@@ -1118,7 +1523,17 @@ mod tests {
                 configure(&state, &origin).unwrap();
                 let before = memory();
                 let started = std::time::Instant::now();
-                let reply = tokio::runtime::Runtime::new().unwrap().block_on(send(&state, origin, "/api/library".into(), None, String::new(), String::new())).unwrap();
+                let reply = tokio::runtime::Runtime::new()
+                    .unwrap()
+                    .block_on(send(
+                        &state,
+                        origin,
+                        "/api/library".into(),
+                        None,
+                        String::new(),
+                        String::new(),
+                    ))
+                    .unwrap();
                 let request_ms = started.elapsed().as_secs_f64() * 1000.0;
                 assert_eq!(reply.status, 200);
                 let serialized_started = std::time::Instant::now();
@@ -1133,16 +1548,23 @@ mod tests {
                     body.as_bytes().to_vec()
                 } else {
                     assert!(bridge.len() > raw_bytes * 13 / 10);
-                    base64::engine::general_purpose::STANDARD.decode(body).unwrap()
+                    base64::engine::general_purpose::STANDARD
+                        .decode(body)
+                        .unwrap()
                 };
                 let decoded: serde_json::Value = serde_json::from_slice(&json_bytes).unwrap();
-                assert_eq!(decoded["payload"].as_str().unwrap().len(), mib * 1024 * 1024);
+                assert_eq!(
+                    decoded["payload"].as_str().unwrap().len(),
+                    mib * 1024 * 1024
+                );
                 let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
                 samples.push(serde_json::json!({"payloadMiB":mib,"iteration":iteration,"rawJsonBytes":raw_bytes,"serializedBridgeBytes":bridge.len(),"requestMs":request_ms,"serializationMs":serialization_ms,"verificationParseMs":parse_ms,"memoryBefore":before,"memoryAfter":memory()}));
                 thread.join().unwrap();
             }
         }
-        println!("NATIVE_TRANSPORT_BENCHMARK {}", serde_json::json!({"encoding":if true {"utf8"} else {"base64"},"measurement":"real loopback HTTP + native Reply serialization; Rust verification parse; whole fixture process RSS, not a WebView IPC timing", "samples":samples}));
+        println!(
+            "NATIVE_TRANSPORT_BENCHMARK {}",
+            serde_json::json!({"encoding":if true {"utf8"} else {"base64"},"measurement":"real loopback HTTP + native Reply serialization; Rust verification parse; whole fixture process RSS, not a WebView IPC timing", "samples":samples})
+        );
     }
-
 }

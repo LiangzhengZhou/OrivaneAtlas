@@ -23,5 +23,20 @@
   "restore": "恢复",
   "remove": "移除",
   "openTask": "打开任务：{{title}}",
-  "statusLabel": "任务状态：{{title}}"
+  "statusLabel": "任务状态：{{title}}",
+  "completeTask": "完成：{{title}}",
+  "reopenTask": "重新打开：{{title}}",
+  "confirmCompleteTask": "确认完成：{{title}}",
+  "confirmReopenTask": "确认重新打开：{{title}}",
+  "taskCompleted": "任务已完成",
+  "taskReopened": "任务已重新打开",
+  "addDescription": "+ 添加描述",
+  "moreSettings": "+ 更多设置",
+  "hideMoreSettings": "收起更多设置",
+  "taskRelationships": "工作关系",
+  "taskIdentity": "任务是什么",
+  "taskPlacement": "属于哪里",
+  "taskTiming": "什么时候",
+  "taskBehavior": "高级行为",
+  "moreActions": "更多操作"
 }

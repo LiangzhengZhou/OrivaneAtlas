@@ -1,0 +1,2 @@
+ALTER TABLE file_blob_descriptor ADD COLUMN chunk_size INTEGER NOT NULL DEFAULT 262144 CHECK(chunk_size BETWEEN 1 AND 262144);
+ALTER TABLE file_blob_descriptor ADD COLUMN completed INTEGER NOT NULL DEFAULT 0 CHECK(completed IN (0,1));

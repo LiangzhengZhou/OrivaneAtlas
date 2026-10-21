@@ -74,7 +74,8 @@ describe("generated application brand", () => {
       "src-tauri/icons/android/values/ic_launcher_background.xml",
       "utf8",
     );
-    expect(background).toContain("#71777f");
+    expect(background).toContain("#F3F4F6");
+    expect(background).not.toContain("#71777f");
     expect(background).not.toContain("#172033");
   });
   it("wires the real Android notification and adaptive launcher resources", () => {
@@ -88,6 +89,19 @@ describe("generated application brand", () => {
     expect(
       readFileSync(`${base}res/mipmap-anydpi-v26/ic_launcher.xml`, "utf8"),
     ).toContain("@drawable/atlas_launcher_safe_foreground");
+    expect(
+      readFileSync(
+        `${base}res/drawable/atlas_launcher_safe_foreground.xml`,
+        "utf8",
+      ),
+    ).toContain('android:inset="14%"');
+    expect(
+      readFileSync(`${base}res/drawable/atlas_launcher_safe_foreground.xml`),
+    ).toEqual(
+      readFileSync(
+        "src-tauri/icons/android/drawable/atlas_launcher_safe_foreground.xml",
+      ),
+    );
     expect(readFileSync(`${base}res/drawable/atlas_notification.xml`)).toEqual(
       readFileSync("src-tauri/icons/android/drawable/atlas_notification.xml"),
     );

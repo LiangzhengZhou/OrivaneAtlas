@@ -1,0 +1,5 @@
+# ADR0103 — Explicit contextual conversation promotion
+
+2026-10-15. Contextual editing/File requests do not create Full Atlas history. A human may explicitly save completed contextual runs as a conversation. Application accepts only bounded canonical run ID/version references, verifies workspace, creator, terminal success and absence of a prior session, and atomically creates the conversation/messages plus run binding in the outer UnitOfWork. It never accepts a caller-authored assistant message or repeats a paid model request.
+
+AgentRun keeps an optional original userPrompt separate from augmented model instructions and canonical source bodies. Existing JSON payloads remain readable; older runs without that explicit prompt cannot be promoted by guessing/parsing their augmented prompt. This adds no SQL column and does not edit historical migrations. SQLite/PostgreSQL parity covers transaction rollback and persisted canonical fields. Promotion is human-session/CSRF/idempotent-receipt protected, not an external write bypass. Subsequent Full Atlas sends retain canonical context/policy validation through the run evidence.

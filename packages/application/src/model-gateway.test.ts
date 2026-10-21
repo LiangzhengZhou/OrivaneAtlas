@@ -1,3 +1,4 @@
+import type { EntityMemo } from "@arclattice/domain";
 import { afterEach, expect, test, vi } from "vitest";
 import type { AgentRun, ModelPort } from "./connected";
 import type { ContentPolicy } from "./content-policy";
@@ -8,6 +9,69 @@ import {
   validateContextPolicy,
 } from "./model-gateway";
 import { providerFailure } from "./provider-error";
+
+test("Memo canonical owner/target and policy are re-read at model dispatch; approval cannot override revocation", async () => {
+  const f = fixture();
+  const target = { targetKind: "TASK" as const, targetId: "task" };
+  let memo: EntityMemo = {
+    id: "memo",
+    workspaceId: actor.workspaceId,
+    ownerPrincipalId: actor.principalId,
+    ...target,
+    version: 1,
+    bodyMd: "Private source",
+    createdAt: "2026-10-18",
+    updatedAt: "2026-10-18",
+    createdBy: actor.principalId,
+    updatedBy: actor.principalId,
+    deletedAt: null,
+    aiPolicy: {
+      classification: "PRIVATE",
+      processingBoundary: "ANY",
+      aiAccess: "ASK",
+    },
+  };
+  const memos = {
+    target: async () => ({ deleted: false }),
+    find: async () => memo,
+    replace: vi.fn(),
+    appendChange: vi.fn(),
+  };
+  const notes = { get: vi.fn() },
+    library = { get: vi.fn() };
+  f.run.context = [
+    {
+      ref: { kind: "MEMO", id: memo.id, target },
+      memo: { target, ownerPrincipalId: actor.principalId },
+      version: 1,
+      title: "Private memo",
+      bodyMd: memo.bodyMd,
+    },
+  ];
+  await expect(
+    validateApprovedContext(actor, f.run, notes, library),
+  ).rejects.toThrow("CONTEXT_CHANGED");
+  await validateApprovedContext(actor, f.run, notes, library, undefined, memos);
+  memo = { ...memo, aiPolicy: { ...memo.aiPolicy!, aiAccess: "DENY" } };
+  const result = await executeApprovedModel(
+    actor,
+    f.run,
+    (route) =>
+      validateApprovedContext(
+        actor,
+        { ...f.run, route },
+        notes,
+        library,
+        undefined,
+        memos,
+      ),
+    f.resolve,
+    f.controller.signal,
+  );
+  expect(result.output).toBeNull();
+  expect(f.model.complete).not.toHaveBeenCalled();
+  expect(memos.replace).not.toHaveBeenCalled();
+});
 
 test("approved provider failures retain safe classification and status in events and persisted results", async () => {
   const f = fixture();
@@ -81,6 +145,21 @@ test("approved context is rechecked for revision, parent, workspace and route sc
   await expect(
     validateApprovedContext(actor, f.run, notes, library),
   ).resolves.toBeUndefined();
+  f.run.context[0]!.range = { from: 1, to: 5 };
+  f.run.context[0]!.bodyMd = "rigi";
+  await expect(
+    validateApprovedContext(actor, f.run, notes, library),
+  ).resolves.toBeUndefined();
+  f.run.context[0]!.bodyMd = "forged";
+  await expect(
+    validateApprovedContext(actor, f.run, notes, library),
+  ).rejects.toThrow("CONTEXT_CHANGED");
+  f.run.context[0]!.range = { from: 0, to: 99999 };
+  await expect(
+    validateApprovedContext(actor, f.run, notes, library),
+  ).rejects.toThrow("CONTEXT_CHANGED");
+  delete f.run.context[0]!.range;
+  f.run.context[0]!.bodyMd = entity.bodyMd;
   for (const patch of [
     { version: 2 },
     { bodyMd: "changed" },

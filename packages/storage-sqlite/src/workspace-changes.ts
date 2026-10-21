@@ -3,6 +3,8 @@ import type { WorkspaceChange, WorkTransaction } from "@arclattice/application";
 import { DomainError } from "@arclattice/domain";
 
 const tables: Record<string, string> = {
+  files: "library_file",
+  manualOrders: "manual_order_scope",
   items: "work_item",
   edges: "work_edge",
   notes: "notebook",
@@ -30,9 +32,9 @@ export function workspaceChangePort(
       guard();
       return db
         .prepare(
-          "SELECT payload FROM knowledge_link WHERE workspace_id=? AND ((json_extract(payload,'$.from.kind')=? AND json_extract(payload,'$.from.id')=?) OR (json_extract(payload,'$.to.kind')=? AND json_extract(payload,'$.to.id')=?))",
+          "SELECT l.payload FROM knowledge_link l WHERE l.workspace_id=? AND ((json_extract(l.payload,'$.from.kind')=? AND json_extract(l.payload,'$.from.id')=?) OR (json_extract(l.payload,'$.to.kind')=? AND json_extract(l.payload,'$.to.id')=?) OR EXISTS (SELECT 1 FROM library_file f WHERE f.workspace_id=l.workspace_id AND ((json_extract(l.payload,'$.from.kind')='FILE' AND json_extract(l.payload,'$.from.id')=f.id) OR (json_extract(l.payload,'$.to.kind')='FILE' AND json_extract(l.payload,'$.to.id')=f.id)) AND ((?='SPACE' AND json_extract(f.payload,'$.spaceId')=?) OR (?='DOCUMENT' AND json_extract(f.payload,'$.parentDocumentId')=?))))",
         )
-        .all(workspaceId, kind, id, kind, id)
+        .all(workspaceId, kind, id, kind, id, kind, id, kind, id)
         .map(
           (row) =>
             JSON.parse(
@@ -40,7 +42,7 @@ export function workspaceChangePort(
             ) as import("@arclattice/application").KnowledgeLink,
         );
     },
-    workspaceChanges: async (after, expectedEpoch) => {
+    workspaceChanges: async (after, expectedEpoch, privatePrincipalId) => {
       guard();
       if (!Number.isSafeInteger(after) || after < 0)
         throw new DomainError("VALIDATION_ERROR");
@@ -67,9 +69,9 @@ export function workspaceChangePort(
         };
       const rows = db
         .prepare(
-          "SELECT seq,workspace_id AS workspaceId,collection,entity_id AS entityId,op,version FROM workspace_change WHERE workspace_id=? AND seq>? ORDER BY seq LIMIT 501",
+          "SELECT seq,workspace_id AS workspaceId,collection,entity_id AS entityId,op,version FROM workspace_change WHERE workspace_id=? AND seq>? AND (owner_principal_id IS NULL OR owner_principal_id=?) ORDER BY seq LIMIT 501",
         )
-        .all(workspaceId, after);
+        .all(workspaceId, after, privatePrincipalId ?? null);
       const changes = rows.slice(0, 500) as unknown as WorkspaceChange[];
       return {
         epoch,
@@ -79,8 +81,17 @@ export function workspaceChangePort(
         hasMore: rows.length > 500,
       };
     },
-    workspaceEntity: async (collection, entityId) => {
+    workspaceEntity: async (collection, entityId, privatePrincipalId) => {
       guard();
+      if (collection === "entityMemos") {
+        if (!privatePrincipalId) return null;
+        const row = db
+          .prepare(
+            "SELECT payload FROM entity_memo WHERE workspace_id=? AND id=? AND owner_principal_id=?",
+          )
+          .get(workspaceId, entityId, privatePrincipalId);
+        return row ? (JSON.parse(String(row.payload)) as unknown) : null;
+      }
       const table = tables[collection];
       if (!table) throw new DomainError("VALIDATION_ERROR");
       const row =

@@ -3,8 +3,141 @@ import { expect } from "vitest";
 import {
   AgentSessionService,
   type AgentSessionStore,
+  ConnectedService,
+  type ConnectedStore,
 } from "../../packages/application/src/index";
 import type { ActorContext } from "../../packages/domain/src/index";
+
+export async function contextualPromotionScenario(
+  run: <T>(
+    actor: ActorContext,
+    operation: (
+      sessions: AgentSessionStore,
+      connected: ConnectedStore,
+    ) => Promise<T>,
+  ) => Promise<T>,
+) {
+  const actor = { workspaceId: "workspace-a", principalId: "human" },
+    auth = { require: async () => {} },
+    clock = { now: () => "2026-10-15T00:00:00Z" },
+    ids = { next: randomUUID };
+  const service = (sessions: AgentSessionStore) =>
+    new AgentSessionService(sessions, auth, clock, ids);
+  const original = await run(actor, async (_sessions, connected) => {
+    const proposed = await new ConnectedService(
+      connected,
+      auth,
+      clock,
+      ids,
+    ).propose(
+      actor,
+      "Model instruction and private canonical data",
+      {
+        fingerprint: "promotion",
+        provider: "ci",
+        model: "ci",
+        maxInputChars: 32000,
+        maxOutputTokens: 100,
+        maxRunsPerDay: 10,
+        timeoutMs: 5000,
+      },
+      [
+        {
+          ref: { kind: "FILE", id: "canonical-file" },
+          version: 1,
+          title: "Source file",
+          bodyMd: "Private extracted original",
+        },
+      ],
+      { userPrompt: "Human question" },
+    );
+    const finished = {
+      ...proposed,
+      status: "SUCCEEDED" as const,
+      version: 2,
+      output: "Canonical answer",
+    };
+    await connected.saveRun(finished, 1);
+    return finished;
+  });
+  const refs = [{ id: original.id, version: original.version }];
+  await expect(
+    run(actor, async (sessions, connected) => {
+      await service(sessions).promoteRuns(
+        actor,
+        connected,
+        "Rolled back",
+        refs,
+      );
+      throw new Error("ROLLBACK");
+    }),
+  ).rejects.toThrow("ROLLBACK");
+  expect(
+    await run(actor, (sessions) => service(sessions).summaries(actor)),
+  ).toEqual([]);
+  expect(
+    (await run(actor, (_sessions, connected) => connected.getRun(original.id)))
+      .version,
+  ).toBe(2);
+  await expect(
+    run(actor, (sessions, connected) =>
+      service(sessions).promoteRuns(actor, connected, "Duplicate", [
+        ...refs,
+        ...refs,
+      ]),
+    ),
+  ).rejects.toThrow("VALIDATION_ERROR");
+  await expect(
+    run({ ...actor, principalId: "other" }, (sessions, connected) =>
+      service(sessions).promoteRuns(
+        { ...actor, principalId: "other" },
+        connected,
+        "Foreign",
+        refs,
+      ),
+    ),
+  ).rejects.toThrow("FORBIDDEN");
+  const promoted = await run(actor, (sessions, connected) =>
+    service(sessions).promoteRuns(actor, connected, "Saved discussion", refs),
+  );
+  expect(
+    promoted.messages.map((message) => [
+      message.kind,
+      message.text,
+      message.runId,
+    ]),
+  ).toEqual([
+    ["USER", "Human question", original.id],
+    ["ASSISTANT", "Canonical answer", original.id],
+  ]);
+  expect(JSON.stringify(promoted)).not.toContain("private canonical data");
+  expect(JSON.stringify(promoted)).not.toContain("Private extracted original");
+  expect(promoted.messages[1]?.evidence).toContainEqual({
+    ref: { kind: "FILE", id: "canonical-file" },
+    version: 1,
+    title: "Source file",
+    source: "current",
+  });
+  const canonical = await run(actor, (_sessions, connected) =>
+    connected.getRun(original.id),
+  );
+  expect(canonical).toMatchObject({
+    sessionId: promoted.id,
+    version: 3,
+    userPrompt: "Human question",
+    output: "Canonical answer",
+  });
+  await expect(
+    run(actor, (sessions, connected) =>
+      service(sessions).promoteRuns(actor, connected, "Again", [
+        { id: original.id, version: 3 },
+      ]),
+    ),
+  ).rejects.toThrow("VERSION_CONFLICT");
+  expect(
+    await run(actor, (sessions) => service(sessions).summaries(actor)),
+  ).toHaveLength(1);
+}
 
 export async function conversationScenario(
   run: <T>(

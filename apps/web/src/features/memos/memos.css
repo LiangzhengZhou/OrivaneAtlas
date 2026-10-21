@@ -1,0 +1,83 @@
+.entity-memo {
+  margin-block: 16px;
+  min-width: 0;
+}
+.entity-memo-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+  font-size: 0.875rem;
+}
+.entity-memo-heading .muted {
+  font-size: 0.75rem;
+}
+.entity-memo textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 100px;
+  font: inherit;
+}
+.entity-memo .ui-pressable {
+  overflow-wrap: anywhere;
+}
+.entity-memo .markdown {
+  min-height: 0;
+}
+.entity-memo-review {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 30vh;
+  overflow: auto;
+  font: inherit;
+}
+.entity-memo-dialog {
+  max-width: min(680px, calc(100vw - 24px));
+}
+.entity-memo-dialog > .ui-button {
+  margin: 8px 8px 0 0;
+}
+.entity-memo-organization[open] {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  width: min(680px, calc(100vw - 24px));
+  height: max-content;
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+}
+.entity-memo-organization > h2,
+.entity-memo-organization > p {
+  margin: 0;
+}
+.entity-memo-organization > label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.entity-memo-organization input,
+.entity-memo-organization textarea {
+  width: 100%;
+  min-width: 0;
+}
+.entity-memo-organization > section[aria-label] {
+  max-height: 24dvh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.memo-atlas-content {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.memo-atlas-content > p {
+  margin: 0;
+}
+.memo-atlas-content > label {
+  display: grid;
+  gap: 6px;
+}
+.memo-atlas-content > select {
+  width: 100%;
+}

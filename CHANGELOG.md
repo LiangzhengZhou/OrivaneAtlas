@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0]
+
+- Durable IndexedDB local-first workspaces, offline restart recovery, outbox/ACK, device-scoped receipts and explicit CAS conflict review.
+- First-class files with chunked transport, exact-byte offline downloads, extraction/search and Project Knowledge integration.
+- EntityMemo and private memo synchronization with account/workspace/owner and AI-content authorization boundaries.
+- Atlas proposal review, graph/navigation improvements, notification center and native scheduling/receipt recovery.
+- Granular API/MCP scopes and append-only SQLite/PostgreSQL migrations; preserve backup/restore and stale-conflict rejection.
+- Fix recurrence lifecycle and knowledge-link unlink races using bounded workspace-revision restarts without weakening entity CAS.
+- Pre-release product acceptance:684/684 browser cases,1475/1475 unit/integration tests (zero skips), and14/14 formal performance metrics across20 complete samples.
+- Native automated builds, scheduling recovery, transport, Android policy tests, updater/APK signatures and icon parity verified. Windows real cold-start notification click and Android physical-device notification acceptance remain outstanding.
+
 ## [2.4.0]
 
 - Fix AI connection runtime, preserve provider HTTP contracts and normalize DeepSeek endpoints.

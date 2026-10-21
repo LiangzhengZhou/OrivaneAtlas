@@ -1,11 +1,19 @@
 import type { Reminder, ReminderInput, WorkItem } from "@arclattice/domain";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DateField } from "../../components/DateField";
 import { Button } from "../../components/ui/Button";
-import { Dialog, Select } from "../../components/ui/Surfaces";
+import {
+  DisclosureSection,
+  EditorActionsMenu,
+  EditorShell,
+} from "../../components/ui/InteractionSurfaces";
+import { TimezonePicker } from "../../components/ui/TimezonePicker";
+import "../tasks/task-editor.css";
+import { ConfirmDialog, Select } from "../../components/ui/Surfaces";
 import { ProjectDrilldownPicker } from "../projects/ProjectDrilldownPicker";
 import { TaskEntityPicker } from "../tasks/TaskEntityPicker";
+import { reminderDraftChanged } from "./reminder-draft";
 
 export function ReminderPanel({
   day,
@@ -32,14 +40,21 @@ export function ReminderPanel({
   const { i18n } = useTranslation();
   const text = (zh: string, en: string) =>
     i18n.language.startsWith("zh") ? zh : en;
+  const formId = useId();
+  const baseline = useRef<ReminderInput | null>(null);
+  const [discard, setDiscard] = useState(false);
+  const [bodyOpen, setBodyOpen] = useState(false);
+  const [linksOpen, setLinksOpen] = useState(false);
   const [draft, setDraft] = useState<ReminderInput | null>(null);
   const [editing, setEditing] = useState<Reminder | null>(null);
   const [pending, setPending] = useState(false);
   const [removed, setRemoved] = useState<Reminder | null>(null);
   const lastCreateRequest = useRef(0);
   const beginCreate = () => {
+    setBodyOpen(false);
+    setLinksOpen(false);
     setEditing(null);
-    setDraft({
+    const initial: ReminderInput = {
       title: "",
       bodyMd: "",
       day,
@@ -50,7 +65,10 @@ export function ReminderPanel({
       linkedProjectId: null,
       linkedTaskId: null,
       state: "ACTIVE",
-    });
+    };
+    baseline.current = initial;
+    setDiscard(false);
+    setDraft(initial);
   };
   useEffect(() => {
     if (createRequest && createRequest !== lastCreateRequest.current) {
@@ -58,6 +76,16 @@ export function ReminderPanel({
       beginCreate();
     }
   }, [createRequest, day, timezone]);
+  const requestClose = () => {
+    if (pending) return;
+    if (
+      draft &&
+      baseline.current &&
+      reminderDraftChanged(draft, baseline.current)
+    )
+      setDiscard(true);
+    else setDraft(null);
+  };
   async function submit(
     id: string | null,
     version: number,
@@ -117,7 +145,11 @@ export function ReminderPanel({
             <Button
               variant="text"
               onClick={() => {
+                setBodyOpen(false);
+                setLinksOpen(false);
                 setEditing(entry);
+                baseline.current = entry;
+                setDiscard(false);
                 setDraft(entry);
               }}
             >
@@ -163,16 +195,15 @@ export function ReminderPanel({
                 </Button>
               </div>
             )}
-            <Button
-              variant="text"
-              disabled={pending}
-              onClick={async () => {
+            <EditorActionsMenu
+              pending={pending}
+              label={text("更多操作：", "More actions: ") + entry.title}
+              deleteLabel={text("删除提醒", "Delete reminder")}
+              onDelete={async () => {
                 if (await submit(entry.id, entry.version, entry, true))
                   setRemoved({ ...entry, version: entry.version + 1 });
               }}
-            >
-              {text("删除提醒", "Delete reminder")}
-            </Button>
+            />
           </article>
         ))}
       {removed && (
@@ -195,13 +226,30 @@ export function ReminderPanel({
         </Button>
       )}
       {draft && (
-        <Dialog
-          aria-label={text("提醒", "Reminder")}
-          onRequestClose={() => {
-            if (!pending) setDraft(null);
-          }}
+        <EditorShell
+          className="work-editor-surface reminder-editor-surface"
+          title={text("提醒", "Reminder")}
+          pending={pending}
+          onClose={requestClose}
+          footer={
+            <>
+              <Button disabled={pending} onClick={requestClose}>
+                {text("取消", "Cancel")}
+              </Button>
+              <Button
+                form={formId}
+                type="submit"
+                variant="primary"
+                pending={pending}
+                disabled={draft.notifyMode !== "NONE" && !draft.time}
+              >
+                {text("保存", "Save")}
+              </Button>
+            </>
+          }
         >
           <form
+            id={formId}
             onSubmit={async (event) => {
               event.preventDefault();
               if (
@@ -210,7 +258,6 @@ export function ReminderPanel({
                 setDraft(null);
             }}
           >
-            <h2>{text("提醒", "Reminder")}</h2>
             <label>
               {text("标题", "Title")}
               <input
@@ -219,15 +266,6 @@ export function ReminderPanel({
                 value={draft.title}
                 onChange={(event) =>
                   setDraft({ ...draft, title: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              {text("内容", "Body")}
-              <textarea
-                value={draft.bodyMd}
-                onChange={(event) =>
-                  setDraft({ ...draft, bodyMd: event.target.value })
                 }
               />
             </label>
@@ -307,45 +345,92 @@ export function ReminderPanel({
                 />
               </label>
             )}
-            <div className="field">
-              <span>{text("关联项目", "Linked project")}</span>
-              <ProjectDrilldownPicker
-                mode="single"
-                projects={items.filter(
-                  (item) => item.type === "PROJECT" && !item.deletedAt,
-                )}
-                value={draft.linkedProjectId}
-                onChange={(value) =>
-                  setDraft({
-                    ...draft,
-                    linkedProjectId: typeof value === "string" ? value : null,
-                  })
-                }
+            {!bodyOpen && (
+              <Button variant="ghost" onClick={() => setBodyOpen(true)}>
+                {draft.bodyMd
+                  ? text("内容", "Body")
+                  : text("+ 添加内容", "+ Add body")}
+              </Button>
+            )}
+            {bodyOpen && (
+              <>
+                {" "}
+                <label>
+                  {text("内容", "Body")}
+                  <textarea
+                    aria-label={text("内容", "Body")}
+                    value={draft.bodyMd}
+                    onChange={(event) =>
+                      setDraft({ ...draft, bodyMd: event.target.value })
+                    }
+                  />
+                </label>
+              </>
+            )}
+            {!linksOpen && (
+              <Button variant="ghost" onClick={() => setLinksOpen(true)}>
+                {draft.linkedProjectId || draft.linkedTaskId
+                  ? text("关联项目 / 任务", "Linked project / task")
+                  : text("+ 关联项目 / 任务", "+ Link project / task")}
+              </Button>
+            )}
+            {linksOpen && (
+              <>
+                {" "}
+                <div className="field">
+                  <span>{text("关联项目", "Linked project")}</span>
+                  <ProjectDrilldownPicker
+                    mode="single"
+                    projects={items.filter(
+                      (item) => item.type === "PROJECT" && !item.deletedAt,
+                    )}
+                    value={draft.linkedProjectId}
+                    onChange={(value) =>
+                      setDraft({
+                        ...draft,
+                        linkedProjectId:
+                          typeof value === "string" ? value : null,
+                      })
+                    }
+                  />
+                </div>
+                <TaskEntityPicker
+                  label={text("关联任务", "Linked task")}
+                  items={items}
+                  mode="single"
+                  disabled={pending}
+                  values={draft.linkedTaskId ? [draft.linkedTaskId] : []}
+                  onChange={(values) =>
+                    setDraft({ ...draft, linkedTaskId: values[0] ?? null })
+                  }
+                />
+              </>
+            )}
+            <DisclosureSection title={text("高级", "Advanced")}>
+              <TimezonePicker
+                value={draft.timezone}
+                disabled={pending}
+                onChange={(timezone) => setDraft({ ...draft, timezone })}
               />
-            </div>
-            <TaskEntityPicker
-              label={text("关联任务", "Linked task")}
-              items={items}
-              mode="single"
-              disabled={pending}
-              values={draft.linkedTaskId ? [draft.linkedTaskId] : []}
-              onChange={(values) =>
-                setDraft({ ...draft, linkedTaskId: values[0] ?? null })
-              }
-            />
-            <small>{draft.timezone}</small>
-            <Button
-              type="submit"
-              pending={pending}
-              disabled={draft.notifyMode !== "NONE" && !draft.time}
-            >
-              {text("保存", "Save")}
-            </Button>
-            <Button disabled={pending} onClick={() => setDraft(null)}>
-              {text("取消", "Cancel")}
-            </Button>
+            </DisclosureSection>
           </form>
-        </Dialog>
+        </EditorShell>
+      )}{" "}
+      {discard && (
+        <ConfirmDialog
+          title={text("保留未保存的提醒？", "Keep the unsaved reminder?")}
+          confirmLabel={text("放弃修改", "Discard changes")}
+          cancelLabel={text("继续编辑", "Keep editing")}
+          danger
+          pending={pending}
+          onCancel={() => setDiscard(false)}
+          onConfirm={() => {
+            setDiscard(false);
+            setDraft(null);
+          }}
+        >
+          {text("关闭将丢弃当前修改。", "Closing will discard these changes.")}
+        </ConfirmDialog>
       )}
     </div>
   );

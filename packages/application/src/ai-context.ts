@@ -1,14 +1,25 @@
 import { capabilityRegistry } from "./capability-registry";
 import type { EntityRef } from "./connected";
 import type { ContentPolicy } from "./content-policy";
+import type { EntityMemoTarget } from "./entity-memos";
 
 export interface AiContextItem {
-  ref: EntityRef;
+  ref: EntityRef | { kind: "MEMO"; id: string; target: EntityMemoTarget };
   title: string;
   version: number;
   source: "current" | "selected" | "retrieved" | "linked" | "mentioned";
   tokenEstimate: number;
   permission: ContentPolicy;
+}
+
+/** Memo citations open their attached entity, never impersonate a Document. */
+export function aiContextNavigationRef(ref: AiContextItem["ref"]): EntityRef {
+  return ref.kind === "MEMO"
+    ? {
+        kind: ref.target.targetKind === "FILE" ? "FILE" : "WORK",
+        id: ref.target.targetId,
+      }
+    : ref;
 }
 export type ExecutionApproval =
   | "REVIEW_EVERYTHING"
@@ -18,6 +29,7 @@ export type AiCapabilityRisk = "READ" | "PROPOSE" | "WRITE" | "DESTRUCTIVE";
 export interface AiCapability {
   previewOnly?: boolean;
   name:
+    | "read_file_chunks"
     | "search_documents"
     | "read_document"
     | "list_project_tasks"

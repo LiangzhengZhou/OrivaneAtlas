@@ -63,6 +63,13 @@ export function libraryStore(
     get,
     async purge(id, expected) {
       guard();
+      const indexState = db
+        .prepare(
+          "SELECT index_version,dirty FROM wiki_index_state WHERE workspace_id=?",
+        )
+        .get(context.workspaceId);
+      const indexWasClean =
+        indexState?.index_version === 1 && indexState.dirty === 0;
       const entry = await get(id);
       if (entry.version !== expected) throw new DomainError("VERSION_CONFLICT");
       if (!entry.deletedAt) throw new DomainError("VALIDATION_ERROR");
@@ -104,8 +111,8 @@ export function libraryStore(
         ).run(context.workspaceId, id);
       }
       db.prepare(
-        "UPDATE document_wiki_link SET target_document_id=NULL WHERE workspace_id=? AND target_document_id=?",
-      ).run(context.workspaceId, id);
+        "UPDATE document_wiki_link SET target_document_id=NULL,version=version+1,updated_at=? WHERE workspace_id=? AND target_document_id=?",
+      ).run(new Date().toISOString(), context.workspaceId, id);
       for (const assetId of retained)
         for (const table of ["library_asset", "library_asset_upload"])
           db.prepare(
@@ -128,6 +135,10 @@ export function libraryStore(
       )
         throw new DomainError("VERSION_CONFLICT");
       event(id, expected + 1, "LIBRARY_PURGED");
+      if (indexWasClean)
+        db.prepare(
+          "UPDATE wiki_index_state SET dirty=0 WHERE workspace_id=?",
+        ).run(context.workspaceId);
     },
 
     async wikiLinks() {
@@ -437,14 +448,19 @@ export function libraryStore(
               )
             )
               db.prepare(
-                "UPDATE document_wiki_link SET target_document_id=? WHERE workspace_id=? AND id=?",
-              ).run(entry.id, context.workspaceId, String(link.id));
+                "UPDATE document_wiki_link SET target_document_id=?,version=version+1,updated_at=? WHERE workspace_id=? AND id=? AND target_document_id IS NULL",
+              ).run(
+                entry.id,
+                entry.updatedAt,
+                context.workspaceId,
+                String(link.id),
+              );
           }
         }
         if (entry.deletedAt)
           db.prepare(
-            "UPDATE document_wiki_link SET target_document_id=NULL WHERE workspace_id=? AND target_document_id=?",
-          ).run(context.workspaceId, entry.id);
+            "UPDATE document_wiki_link SET target_document_id=NULL,version=version+1,updated_at=? WHERE workspace_id=? AND target_document_id=?",
+          ).run(entry.updatedAt, context.workspaceId, entry.id);
       }
       if (indexWasClean && (entry.kind === "DOCUMENT" || spaceStaysLive))
         db.prepare(

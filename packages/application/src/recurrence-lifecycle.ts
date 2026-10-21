@@ -1,4 +1,4 @@
-import { DomainError } from "@arclattice/domain";
+import { DomainError, occurrenceDays } from "@arclattice/domain";
 import type { RecurrencePayload, WorkflowRecord } from "./workflows";
 
 export function recurrenceDefaults(
@@ -55,6 +55,44 @@ export function nextOccurrenceDay(
   rule: RecurrencePayload,
   day: string,
 ): string {
+  if (rule.weekdays || rule.monthlyRule) {
+    // Ignore series termination here: an occurrence's window still has a next
+    // calendar boundary even when this is the final emitted occurrence.
+    const calendarRule = { ...rule, endDate: null, endAfterCompleted: null };
+    if (rule.frequency === "MONTHLY") {
+      const anchor = new Date(rule.startDate + "T00:00:00Z");
+      const current = new Date(day + "T00:00:00Z");
+      const elapsedMonths =
+        (current.getUTCFullYear() - anchor.getUTCFullYear()) * 12 +
+        current.getUTCMonth() -
+        anchor.getUTCMonth();
+      const firstStep = Math.max(0, Math.floor(elapsedMonths / rule.interval));
+      for (let step = firstStep; step <= firstStep + 48; step++) {
+        const first = new Date(anchor);
+        first.setUTCDate(1);
+        first.setUTCMonth(anchor.getUTCMonth() + step * rule.interval);
+        const last = new Date(first);
+        last.setUTCMonth(last.getUTCMonth() + 1);
+        last.setUTCDate(0);
+        const candidate = occurrenceDays(
+          calendarRule,
+          first.toISOString().slice(0, 10),
+          last.toISOString().slice(0, 10),
+        ).find((value) => value > day);
+        if (candidate) return candidate;
+      }
+      throw new DomainError("VALIDATION_ERROR");
+    }
+    let from = calendarDateOffset(day, 1);
+    const horizon = rule.interval * 7 + 7;
+    for (let scanned = 0; scanned < horizon; scanned += 365) {
+      const to = calendarDateOffset(from, Math.min(364, horizon - scanned - 1));
+      const next = occurrenceDays(calendarRule, from, to)[0];
+      if (next) return next;
+      from = calendarDateOffset(to, 1);
+    }
+    throw new DomainError("VALIDATION_ERROR");
+  }
   if (rule.frequency !== "MONTHLY")
     return calendarDateOffset(
       day,

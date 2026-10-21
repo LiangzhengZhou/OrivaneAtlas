@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect } from "vitest";
 import {
+  ReminderReplayUnitOfWork,
   ReminderService,
   type UnitOfWork,
 } from "../../packages/application/src/index";
@@ -87,4 +88,72 @@ export async function reminderScenario(
   expect((await run(actor, (uow) => service(uow).list(actor)))[0]).toEqual(
     restored,
   );
+  const stableId = randomUUID();
+  const stable = await run(actor, async (uow) => {
+    const guarded = new ReminderReplayUnitOfWork(uow, actor.workspaceId, [
+      { collection: "reminders", id: stableId, op: "UPSERT", baseVersion: 0 },
+    ]);
+    const result = await service(guarded).createWithStableId(
+      actor,
+      stableId,
+      input,
+    );
+    expect(guarded.acceptedEffects).toEqual([
+      {
+        collection: "reminders",
+        id: stableId,
+        op: "UPSERT",
+        version: 1,
+        value: result,
+      },
+    ]);
+    const detached = guarded.acceptedEffects;
+    if (!detached[0]) throw new Error("Missing canonical effect");
+    Object.assign(detached[0].value, { title: "Caller mutation" });
+    expect(guarded.acceptedEffects[0]?.value.title).toBe(input.title);
+    return result;
+  });
+  expect(stable).toMatchObject({
+    id: stableId,
+    version: 1,
+    createdBy: actor.principalId,
+    bodyMd: input.bodyMd,
+  });
+  await expect(
+    run(actor, (uow) =>
+      service(uow).createWithStableId(actor, stableId, input),
+    ),
+  ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+  await expect(
+    run(actor, (uow) =>
+      service(
+        new ReminderReplayUnitOfWork(uow, actor.workspaceId, [
+          {
+            collection: "reminders",
+            id: stableId,
+            op: "UPSERT",
+            baseVersion: 0,
+          },
+        ]),
+      ).save(actor, stableId, 1, input),
+    ),
+  ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+  await expect(
+    run(actor, (uow) =>
+      new ReminderReplayUnitOfWork(uow, actor.workspaceId, [
+        { collection: "reminders", id: stableId, op: "UPSERT", baseVersion: 1 },
+      ]).run(actor.workspaceId, async (tx) => {
+        await tx.saveReminder(
+          { ...stable, version: 2, title: "Must roll back replay" },
+          1,
+        );
+        await tx.removeEdge(randomUUID());
+      }),
+    ),
+  ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+  expect(
+    (await run(actor, (uow) => service(uow).list(actor))).find(
+      (entry) => entry.id === stableId,
+    ),
+  ).toEqual(stable);
 }

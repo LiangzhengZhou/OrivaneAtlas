@@ -14,6 +14,8 @@ import {
   validateCapabilityInput,
 } from "./capability-registry";
 import type { ConnectedService } from "./connected";
+import { type readFileContextFile, selectFileContext } from "./file-ai-context";
+import type { LibraryFileStore } from "./files";
 import type { AuthorizationService, WorkService } from "./index";
 import type { LibraryEntry, LibraryService, LibraryStore } from "./library";
 import type { ProjectKnowledgeScope } from "./project-knowledge-scope";
@@ -21,6 +23,7 @@ import type { RetrievalResult, RetrievalService } from "./retrieval";
 import type { WorkflowService } from "./workflows";
 
 export type AiCapabilityCall =
+  | { name: "read_file_chunks"; id: string; version: number; query?: string }
   | {
       name: "preview_plan";
       projectId?: string;
@@ -80,6 +83,11 @@ export function parseAiCapabilityCall(
   scope: ProjectKnowledgeScope,
 ): AiCapabilityCall {
   validateCapabilityInput(capabilityDefinition(name).inputSchema, input);
+  if (name === "read_file_chunks")
+    return { ...input, name } as Extract<
+      AiCapabilityCall,
+      { name: "read_file_chunks" }
+    >;
   if (
     [
       "preview_plan",
@@ -173,6 +181,11 @@ export class AiCapabilityService {
     private readonly connected?: ConnectedService,
     private readonly externalDisclosure = false,
     private readonly workflows?: WorkflowService,
+    private readonly fileContext?: {
+      files: Pick<LibraryFileStore, "get" | "extractions">;
+      scope: string;
+      validatePolicy?: Parameters<typeof readFileContextFile>[6];
+    },
   ) {}
   private async readableDocument(
     context: ActorContext,
@@ -269,6 +282,32 @@ export class AiCapabilityService {
     if (!capability) throw new DomainError("VALIDATION_ERROR");
     await this.authorize(context, capability, approval, approved);
     switch (call.name) {
+      case "read_file_chunks": {
+        if (!this.fileContext) throw new DomainError("FORBIDDEN");
+        return selectFileContext(
+          context,
+          this.fileContext.files,
+          this.library,
+          {
+            id: call.id,
+            version: call.version,
+            query: call.query ?? "",
+            scope: this.fileContext.scope,
+          },
+          (entity) => {
+            const policy = entity.aiPolicy;
+            if (
+              !policy ||
+              policy.aiAccess === "DENY" ||
+              policy.processingBoundary !== "ANY" ||
+              policy.classification === "SECRET" ||
+              (!this.fileContext?.validatePolicy && policy.aiAccess !== "ALLOW")
+            )
+              throw new DomainError("FORBIDDEN");
+            this.fileContext?.validatePolicy?.(entity);
+          },
+        );
+      }
       case "preview_plan":
         if (!this.workflows) throw new DomainError("FORBIDDEN");
         return this.workflows.preview(

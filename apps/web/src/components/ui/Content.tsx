@@ -1,10 +1,12 @@
 import type { ComponentProps, ReactNode } from "react";
+import { type SurfaceIntent, surfaceAction } from "./interaction-intent";
 
 /** Content selection is distinct from action buttons; nested actions remain valid. */
 export function PressableSurface({
   as: Surface = "div",
   selected = false,
   disabled = false,
+  intent = "SELECT",
   onSelect,
   onOpen,
   className = "",
@@ -14,9 +16,15 @@ export function PressableSurface({
   as?: "div" | "article";
   selected?: boolean;
   disabled?: boolean;
+  intent?: SurfaceIntent;
   onSelect?(): void;
   onOpen?(): void;
 }) {
+  function activate(input: Parameters<typeof surfaceAction>[1]) {
+    const action = surfaceAction(intent, input);
+    if (action === "OPEN") (onOpen ?? onSelect)?.();
+    else if (action === "SELECT") onSelect?.();
+  }
   return (
     <Surface
       {...props}
@@ -53,7 +61,7 @@ export function PressableSurface({
           )
         )
           return;
-        if (!disabled) onSelect?.();
+        activate("CLICK");
         props.onClick?.(event);
       }}
       onDoubleClick={(event) => {
@@ -64,17 +72,17 @@ export function PressableSurface({
           )
         )
           return;
-        if (!disabled) onOpen?.();
+        activate("DOUBLE_CLICK");
         props.onDoubleClick?.(event);
       }}
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && !disabled) {
           if (event.key === "Enter") {
             event.preventDefault();
-            (onOpen ?? onSelect)?.();
+            activate("ENTER");
           } else if (event.key === " ") {
             event.preventDefault();
-            onSelect?.();
+            activate("SPACE");
           }
         }
         props.onKeyDown?.(event);
@@ -92,6 +100,24 @@ export function ListRow({
   return <PressableSurface {...props} className={`ui-list-row ${className}`} />;
 }
 export const EntityRow = ListRow;
+
+export function NavigationRow(
+  props: Omit<ComponentProps<typeof ListRow>, "intent" | "onSelect">,
+) {
+  return <ListRow {...props} intent="NAVIGATE" />;
+}
+
+export function SelectableRow(
+  props: Omit<ComponentProps<typeof ListRow>, "intent">,
+) {
+  return <ListRow {...props} intent="SELECT" />;
+}
+
+export function InspectableRow(
+  props: Omit<ComponentProps<typeof ListRow>, "intent">,
+) {
+  return <ListRow {...props} intent="INSPECT" />;
+}
 
 export function ListSurface({
   className = "",

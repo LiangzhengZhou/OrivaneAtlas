@@ -3,6 +3,8 @@ import { DomainError } from "@arclattice/domain";
 import type { PoolClient } from "pg";
 
 const tables: Record<string, string> = {
+  files: "library_file",
+  manualOrders: "manual_order_scope",
   items: "work_item",
   edges: "work_edge",
   notes: "notebook",
@@ -29,7 +31,7 @@ export function workspaceChangePort(
     workspaceRelatedLinks: (kind, id) =>
       schedule(async () => {
         const result = await client.query(
-          "SELECT payload FROM arclattice.knowledge_link WHERE workspace_id=$1 AND (((payload::jsonb->'from'->>'kind')=$2 AND (payload::jsonb->'from'->>'id')=$3) OR ((payload::jsonb->'to'->>'kind')=$2 AND (payload::jsonb->'to'->>'id')=$3))",
+          "SELECT l.payload FROM arclattice.knowledge_link l WHERE l.workspace_id=$1 AND (((l.payload::jsonb->'from'->>'kind')=$2 AND (l.payload::jsonb->'from'->>'id')=$3) OR ((l.payload::jsonb->'to'->>'kind')=$2 AND (l.payload::jsonb->'to'->>'id')=$3) OR EXISTS (SELECT 1 FROM arclattice.library_file f WHERE f.workspace_id=l.workspace_id AND (((l.payload::jsonb->'from'->>'kind')='FILE' AND (l.payload::jsonb->'from'->>'id')=f.id) OR ((l.payload::jsonb->'to'->>'kind')='FILE' AND (l.payload::jsonb->'to'->>'id')=f.id)) AND (($2='SPACE' AND (f.payload::jsonb->>'spaceId')=$3) OR ($2='DOCUMENT' AND (f.payload::jsonb->>'parentDocumentId')=$3))))",
           [workspaceId, kind, id],
         );
         return result.rows.map(
@@ -39,7 +41,7 @@ export function workspaceChangePort(
             ) as import("@arclattice/application").KnowledgeLink,
         );
       }),
-    workspaceChanges: (after, expectedEpoch) =>
+    workspaceChanges: (after, expectedEpoch, privatePrincipalId) =>
       schedule(async () => {
         if (!Number.isSafeInteger(after) || after < 0)
           throw new DomainError("VALIDATION_ERROR");
@@ -70,8 +72,8 @@ export function workspaceChangePort(
           };
         const rows = (
           await client.query(
-            'SELECT seq,workspace_id AS "workspaceId",collection,entity_id AS "entityId",op,version FROM arclattice.workspace_change WHERE workspace_id=$1 AND seq>$2 ORDER BY seq LIMIT 501',
-            [workspaceId, after],
+            'SELECT seq,workspace_id AS "workspaceId",collection,entity_id AS "entityId",op,version FROM arclattice.workspace_change WHERE workspace_id=$1 AND seq>$2 AND (owner_principal_id IS NULL OR owner_principal_id=$3) ORDER BY seq LIMIT 501',
+            [workspaceId, after, privatePrincipalId ?? null],
           )
         ).rows.map((row) => ({
           ...row,
@@ -87,8 +89,18 @@ export function workspaceChangePort(
           hasMore: rows.length > 500,
         };
       }),
-    workspaceEntity: (collection, entityId) =>
+    workspaceEntity: (collection, entityId, privatePrincipalId) =>
       schedule(async () => {
+        if (collection === "entityMemos") {
+          if (!privatePrincipalId) return null;
+          const row = (
+            await client.query(
+              "SELECT payload FROM arclattice.entity_memo WHERE workspace_id=$1 AND id=$2 AND owner_principal_id=$3",
+              [workspaceId, entityId, privatePrincipalId],
+            )
+          ).rows[0];
+          return row ? (JSON.parse(String(row.payload)) as unknown) : null;
+        }
         const table = tables[collection];
         if (!table) throw new DomainError("VALIDATION_ERROR");
         const row =

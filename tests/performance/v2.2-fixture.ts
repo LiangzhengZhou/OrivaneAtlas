@@ -43,7 +43,7 @@ export function v22PerformanceFixture(actor: ActorContext, today: string) {
       activationState: index % 5 === 0 ? "SCHEDULED" : "ACTIVE",
       activationPolicy: index % 5 === 0 ? "AT_SCHEDULED_TIME" : "MANUAL",
       startDate: index % 5 === 0 ? future : today,
-      dueDate: today,
+      dueDate: index % 5 === 0 ? future : today,
     }),
   );
   const edges: WorkEdge[] = [];
@@ -113,7 +113,7 @@ export function v22PerformanceFixture(actor: ActorContext, today: string) {
   const sessions = Array.from(
     { length: 100 },
     (_, index): AgentSession => ({
-      id: `perf-session-${index}`,
+      id: `01997722-3344-7555-8666-${index.toString(16).padStart(12, "0")}`,
       workspaceId: actor.workspaceId,
       createdBy: actor.principalId,
       version: 1,

@@ -12,6 +12,14 @@ fn main() {
             "forget_account",
             "detach_account",
             "server_request",
+            "server_upload_chunk",
+            "server_download_file",
+            "notification_permission",
+            "notification_request_permission",
+            "notification_reconcile",
+            "notification_cancel",
+            "notification_present",
+            "notification_take_route",
         ]),
     ))
     .expect("Tauri build failed");
@@ -21,6 +29,9 @@ fn main() {
     if std::env::var_os("ATLAS_NATIVE_TEST_MANIFEST").is_some()
         && std::env::var("TARGET").unwrap_or_default() == "x86_64-pc-windows-gnu"
     {
-        println!("cargo:rustc-link-arg={}/libresource.a", std::env::var("OUT_DIR").unwrap());
+        println!(
+            "cargo:rustc-link-arg={}/libresource.a",
+            std::env::var("OUT_DIR").unwrap()
+        );
     }
 }

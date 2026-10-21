@@ -11,6 +11,7 @@ import type {
   IdGenerator,
   UnitOfWork,
 } from "./index";
+import { stableEntityIds } from "./stable-entity-ids";
 
 export class ReminderService {
   constructor(
@@ -22,6 +23,38 @@ export class ReminderService {
   async list(context: ActorContext) {
     await this.authorization.require(context, "work:read");
     return this.uow.run(context.workspaceId, (tx) => tx.reminders());
+  }
+  /** Caller uses the authenticated business/receipt transaction. */
+  async createWithStableId(
+    contextInput: ActorContext,
+    id: string,
+    input: ReminderInput,
+    deleted = false,
+  ) {
+    const context = Object.freeze({ ...contextInput }),
+      captured = structuredClone(input);
+    await this.authorization.require(
+      context,
+      deleted ? "work:delete" : "work:update",
+    );
+    const ids = stableEntityIds(this.ids, "REMINDER", id);
+    const uow: UnitOfWork = {
+      run: (workspaceId, operation) =>
+        this.uow.run(workspaceId, async (tx) => {
+          if (workspaceId !== context.workspaceId)
+            throw new DomainError("FORBIDDEN");
+          if ((await tx.reminders()).some((reminder) => reminder.id === id))
+            throw new DomainError("VERSION_CONFLICT");
+          return operation(tx);
+        }),
+    };
+    return new ReminderService(uow, this.authorization, this.clock, ids).save(
+      context,
+      null,
+      0,
+      captured,
+      deleted,
+    );
   }
   async save(
     context: ActorContext,
@@ -60,7 +93,7 @@ export class ReminderService {
       const now = this.clock.now();
       const reminder: Reminder = {
         ...value,
-        id: old?.id ?? this.ids.next(),
+        id: old?.id ?? this.ids.nextFor?.("REMINDER") ?? this.ids.next(),
         workspaceId: context.workspaceId,
         version: version + 1,
         createdAt: old?.createdAt ?? now,

@@ -207,6 +207,42 @@
           "markdownDescription": "Enables the install_app_update command without any pre-configured scope."
         },
         {
+          "description": "Enables the notification_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-notification-cancel",
+          "markdownDescription": "Enables the notification_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the notification_permission command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-notification-permission",
+          "markdownDescription": "Enables the notification_permission command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the notification_present command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-notification-present",
+          "markdownDescription": "Enables the notification_present command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the notification_reconcile command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-notification-reconcile",
+          "markdownDescription": "Enables the notification_reconcile command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the notification_request_permission command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-notification-request-permission",
+          "markdownDescription": "Enables the notification_request_permission command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the notification_take_route command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-notification-take-route",
+          "markdownDescription": "Enables the notification_take_route command without any pre-configured scope."
+        },
+        {
           "description": "Enables the saved_accounts command without any pre-configured scope.",
           "type": "string",
           "const": "allow-saved-accounts",
@@ -219,10 +255,22 @@
           "markdownDescription": "Enables the select_account command without any pre-configured scope."
         },
         {
+          "description": "Enables the server_download_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-server-download-file",
+          "markdownDescription": "Enables the server_download_file command without any pre-configured scope."
+        },
+        {
           "description": "Enables the server_request command without any pre-configured scope.",
           "type": "string",
           "const": "allow-server-request",
           "markdownDescription": "Enables the server_request command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the server_upload_chunk command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-server-upload-chunk",
+          "markdownDescription": "Enables the server_upload_chunk command without any pre-configured scope."
         },
         {
           "description": "Denies the check_app_update command without any pre-configured scope.",
@@ -255,6 +303,42 @@
           "markdownDescription": "Denies the install_app_update command without any pre-configured scope."
         },
         {
+          "description": "Denies the notification_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-notification-cancel",
+          "markdownDescription": "Denies the notification_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the notification_permission command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-notification-permission",
+          "markdownDescription": "Denies the notification_permission command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the notification_present command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-notification-present",
+          "markdownDescription": "Denies the notification_present command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the notification_reconcile command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-notification-reconcile",
+          "markdownDescription": "Denies the notification_reconcile command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the notification_request_permission command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-notification-request-permission",
+          "markdownDescription": "Denies the notification_request_permission command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the notification_take_route command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-notification-take-route",
+          "markdownDescription": "Denies the notification_take_route command without any pre-configured scope."
+        },
+        {
           "description": "Denies the saved_accounts command without any pre-configured scope.",
           "type": "string",
           "const": "deny-saved-accounts",
@@ -267,10 +351,22 @@
           "markdownDescription": "Denies the select_account command without any pre-configured scope."
         },
         {
+          "description": "Denies the server_download_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-server-download-file",
+          "markdownDescription": "Denies the server_download_file command without any pre-configured scope."
+        },
+        {
           "description": "Denies the server_request command without any pre-configured scope.",
           "type": "string",
           "const": "deny-server-request",
           "markdownDescription": "Denies the server_request command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the server_upload_chunk command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-server-upload-chunk",
+          "markdownDescription": "Denies the server_upload_chunk command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

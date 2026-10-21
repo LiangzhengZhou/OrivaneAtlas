@@ -16,6 +16,7 @@ import {
   projection,
   workFields,
 } from "./fields";
+import { manualOrderPort } from "./manual-order";
 import { purgeRelations } from "./purge";
 import { workflowPort } from "./workflows";
 import { workspaceChangePort } from "./workspace-changes";
@@ -301,6 +302,7 @@ export function repository(client: PoolClient, workspaceId: string) {
         if (result.rowCount !== 1) throw new DomainError("VERSION_CONFLICT");
       }),
     ...categoryPort(client, workspaceId, schedule),
+    ...manualOrderPort(client, workspaceId, schedule),
     ...workflowPort(client, workspaceId, schedule),
     get: (id) => schedule(() => get(id)),
     list: (includeDeleted = false) =>

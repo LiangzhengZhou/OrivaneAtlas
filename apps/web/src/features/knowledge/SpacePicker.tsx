@@ -1,13 +1,13 @@
 import type { WorkspaceLibraryEntry as LibraryEntry } from "@arclattice/application";
-import { useState } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "../../components/ui/Button";
+import { HierarchyPicker } from "../hierarchy/HierarchyPicker";
 
 export function SpacePicker({
   spaces,
   value,
   disabled,
-  projectSpaceIds = new Set(),
+  projectSpaceIds,
   onChange,
 }: {
   spaces: readonly LibraryEntry[];
@@ -18,80 +18,34 @@ export function SpacePicker({
 }) {
   const { i18n } = useTranslation();
   const zh = i18n.language.startsWith("zh");
-  const [query, setQuery] = useState("");
-  const [recent, setRecent] = useState<string[]>([]);
-  const choose = (id: string) => {
-    setRecent((previous) =>
-      [id, ...previous.filter((value) => value !== id)].slice(0, 5),
-    );
-    onChange(id);
-  };
-  const live = spaces.filter(
-    (entry) =>
-      entry.kind === "SPACE" &&
-      !entry.deletedAt &&
-      entry.title.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
+  const entries = useMemo(
+    () =>
+      spaces
+        .filter((entry) => entry.kind === "SPACE" && !entry.deletedAt)
+        .sort(
+          (a, b) =>
+            Number(projectSpaceIds?.has(b.id) ?? false) -
+            Number(projectSpaceIds?.has(a.id) ?? false),
+        )
+        .map((entry) => ({ id: entry.id, title: entry.title, parentId: null })),
+    [spaces, projectSpaceIds],
   );
   return (
     <section className="space-picker">
-      <input
-        type="search"
-        aria-label={zh ? "搜索知识空间" : "Search knowledge spaces"}
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
+      <HierarchyPicker
+        kind="SPACE"
+        entries={entries}
+        mode="single"
+        values={value ? [value] : []}
+        disabled={disabled ?? false}
+        allowClear={false}
+        label={zh ? "选择知识空间" : "Choose knowledge space"}
+        rootLabel={zh ? "知识空间" : "Knowledge spaces"}
+        onChange={(values) => {
+          const id = values[0];
+          if (id) onChange(id);
+        }}
       />
-      {recent.length > 0 && (
-        <div>
-          <h4>{zh ? "最近空间" : "Recent spaces"}</h4>
-          {live
-            .filter((entry) => recent.includes(entry.id))
-            .map((entry) => (
-              <Button
-                type="button"
-                variant="toggle"
-                key={entry.id}
-                disabled={disabled}
-                aria-pressed={entry.id === value}
-                onClick={() => choose(entry.id)}
-              >
-                {entry.title}
-              </Button>
-            ))}
-        </div>
-      )}
-      {[true, false].map((project) => (
-        <div key={String(project)}>
-          {projectSpaceIds.size > 0 && (
-            <h4>
-              {project
-                ? zh
-                  ? "项目空间"
-                  : "Project spaces"
-                : zh
-                  ? "其他空间"
-                  : "Other spaces"}
-            </h4>
-          )}
-          {live
-            .filter(
-              (entry) =>
-                projectSpaceIds.has(entry.id) === project &&
-                !recent.includes(entry.id),
-            )
-            .map((entry) => (
-              <Button
-                type="button"
-                variant="toggle"
-                key={entry.id}
-                disabled={disabled ?? false}
-                aria-pressed={entry.id === value}
-                onClick={() => choose(entry.id)}
-              >
-                {entry.title}
-              </Button>
-            ))}
-        </div>
-      ))}
     </section>
   );
 }

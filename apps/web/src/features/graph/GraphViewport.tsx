@@ -22,9 +22,12 @@ function SpaceClusterNode({ data }: NodeProps<Node<{ label: string }>>) {
   return <div className="space-cluster-label">{data.label}</div>;
 }
 const nodeTypes = { spaceCluster: SpaceClusterNode };
+const readableFitOptions = { minZoom: 0.6, maxZoom: 1 };
 export interface GraphViewportStateProps {
   initialViewport?: Viewport | undefined;
   onViewportChange?: ((viewport: Viewport) => void) | undefined;
+  /** Rank direction, owned by the graph route so reload/back/forward restore it. */
+  direction?: "LR" | "TB" | undefined;
 }
 
 function GraphControls({ onViewportIntent }: { onViewportIntent(): void }) {
@@ -61,7 +64,7 @@ function GraphControls({ onViewportIntent }: { onViewportIntent(): void }) {
             label={zh ? "适应视图" : "Fit View"}
             onClick={() => {
               onViewportIntent();
-              void flow.fitView();
+              void flow.fitView(readableFitOptions);
             }}
           >
             <Maximize />
@@ -229,6 +232,7 @@ export function GraphViewport({
                 setMenuNode(node);
               }}
               fitView={!initialViewport}
+              fitViewOptions={readableFitOptions}
               {...(initialViewport ? { defaultViewport: initialViewport } : {})}
               onMoveStart={(event) => {
                 if (event) viewportIntent.current = true;

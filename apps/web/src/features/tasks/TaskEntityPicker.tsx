@@ -3,6 +3,8 @@ import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnchoredFloatingSurface } from "../../app/AnchoredFloatingSurface";
 import { Button } from "../../components/ui/Button";
+import { EntityPickerRow } from "../../components/ui/EntityPickerRow";
+import { pickerKeyboard } from "../../components/ui/picker-keyboard";
 import { PickerIdentityContext } from "../hierarchy/PickerIdentityContext";
 import { cleanRecent, recentKey } from "../hierarchy/recent";
 import { VirtualTaskCollection } from "./VirtualTaskCollection";
@@ -105,8 +107,9 @@ export function TaskEntityPicker({
     [taskIds, excludedIds, accessible, index, queryLower],
   );
   const visibleRecent = useMemo(
-    () => (!query ? recent.filter((id) => taskIds.includes(id)) : []),
-    [query, recent, taskIds],
+    () =>
+      !query ? recent.filter((id) => taskIds.includes(id) && matches(id)) : [],
+    [query, recent, taskIds, excludedIds, accessible, index, queryLower],
   );
   const choose = (id: string) => {
     if (
@@ -138,22 +141,23 @@ export function TaskEntityPicker({
     const item = index.itemsById.get(id);
     if (!item || item.deletedAt) return null;
     return (
-      <Button
+      <EntityPickerRow
         key={id}
-        variant="text"
-        disabled={disabled || id === excludedId || disabledIds?.has(id)}
-        aria-pressed={values.includes(id)}
-        onClick={() => choose(id)}
-      >
-        {values.includes(id) ? "✓ " : ""}
-        {item.title}
-        <small>
-          {(index.taskProjectIds.get(id) ?? [])
-            .map((projectId) => index.projectPathById.get(projectId))
-            .join(" · ")}{" "}
-          · {t("statuses." + item.status)}
-        </small>
-      </Button>
+        as="div"
+        title={item.title}
+        exploreLabel=""
+        disabled={!!(disabled || id === excludedId || disabledIds?.has(id))}
+        selected={values.includes(id)}
+        onSelect={() => choose(id)}
+        description={
+          <>
+            {(index.taskProjectIds.get(id) ?? [])
+              .map((projectId) => index.projectPathById.get(projectId))
+              .join(" · ")}{" "}
+            · {t("statuses." + item.status)}
+          </>
+        }
+      />
     );
   };
   return (
@@ -188,59 +192,85 @@ export function TaskEntityPicker({
           className="hierarchy-browser"
           deferFocus
         >
-          <nav aria-label={zh ? "任务路径" : "Task path"}>
-            {!scopeProjectId && (
+          <div
+            onKeyDown={(event) =>
+              pickerKeyboard(
+                event,
+                current && current !== scopeProjectId
+                  ? () => {
+                      setCurrent(index.parentProjectById.get(current) ?? "");
+                      setQuery("");
+                    }
+                  : undefined,
+              )
+            }
+          >
+            <nav aria-label={zh ? "任务路径" : "Task path"}>
+              {!scopeProjectId && (
+                <Button
+                  variant="text"
+                  onClick={() => {
+                    setCurrent("");
+                    setQuery("");
+                  }}
+                >
+                  {zh ? "项目" : "Projects"}
+                </Button>
+              )}
+              {path.map((id) => (
+                <Button
+                  key={id}
+                  variant="text"
+                  onClick={() => {
+                    setCurrent(id);
+                    setQuery("");
+                  }}
+                >
+                  {index.itemsById.get(id)?.title}
+                </Button>
+              ))}
+            </nav>
+            <input
+              type="search"
+              aria-label={t("prerequisites")}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            {current && current !== scopeProjectId && (
               <Button
-                variant="text"
+                variant="ghost"
                 onClick={() => {
-                  setCurrent("");
+                  setCurrent(index.parentProjectById.get(current) ?? "");
                   setQuery("");
                 }}
               >
-                {zh ? "项目" : "Projects"}
+                {zh ? "返回上一级" : "Back one level"}
               </Button>
             )}
-            {path.map((id) => (
+            {visibleChildren.map((id) => (
               <Button
                 key={id}
-                variant="text"
+                data-picker-navigation
+                variant="ghost"
                 onClick={() => {
                   setCurrent(id);
                   setQuery("");
                 }}
               >
-                {index.itemsById.get(id)?.title}
+                {index.itemsById.get(id)?.title} ›
               </Button>
             ))}
-          </nav>
-          <input
-            type="search"
-            aria-label={t("prerequisites")}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {visibleChildren.map((id) => (
-            <Button
-              key={id}
-              variant="text"
-              onClick={() => {
-                setCurrent(id);
-                setQuery("");
-              }}
-            >
-              {index.itemsById.get(id)?.title} ›
-            </Button>
-          ))}
-          <VirtualTaskCollection
-            items={visibleTasks}
-            render={(entry) => row(entry.id)}
-          />
-          {visibleRecent.length > 0 && (
-            <section aria-label={zh ? "最近" : "Recent"}>
-              <small>{zh ? "最近" : "Recent"}</small>
-              {visibleRecent.map(row)}
-            </section>
-          )}
+            <VirtualTaskCollection
+              items={visibleTasks}
+              render={(entry) => row(entry.id)}
+            />
+            {visibleRecent.length > 0 && (
+              <section aria-label={zh ? "最近" : "Recent"}>
+                <small>{zh ? "最近" : "Recent"}</small>
+                {visibleRecent.map(row)}
+              </section>
+            )}
+          </div>
         </AnchoredFloatingSurface>
       )}
     </section>

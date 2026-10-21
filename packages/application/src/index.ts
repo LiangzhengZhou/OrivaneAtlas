@@ -1,7 +1,10 @@
 import {
   localCalendarDay,
+  moveNavigationWithinGroup,
   type NavigationPreference,
+  type NavigationViewId,
   type ProjectLifecycle,
+  projectDescendants,
   projectLifecyclePatch,
   projectLifecycles,
   projectScope,
@@ -11,14 +14,35 @@ import {
 } from "@arclattice/domain";
 
 export * from "./categories";
+export * from "./file-extraction";
+export * from "./file-extraction-coordinator";
+export * from "./file-processing";
+export * from "./file-search-index";
+export * from "./local-canonical-file";
+export * from "./manual-order";
 export * from "./project-materials";
 export * from "./workflows";
 
+import { requireStableUuid } from "./mutation-receipt";
 import type { WorkflowRecord } from "./workflows";
 
+export * from "./calendar-replay-effects";
+export * from "./category-replay-effects";
 export * from "./connected";
+export * from "./local-calendar-replay-request";
+export * from "./local-category-replay-request";
+export * from "./local-manual-order-replay-request";
+export * from "./local-navigation-replay-request";
+export * from "./local-organization-replay-request";
+export * from "./local-project-knowledge-replay-request";
+export * from "./local-reminder-replay-request";
+export * from "./manual-order-replay-effects";
+export * from "./navigation-replay-effects";
 export * from "./notebook";
 export * from "./organization";
+export * from "./organization-replay-effects";
+export * from "./project-knowledge-replay-effects";
+export * from "./reminder-replay-effects";
 export * from "./reminders";
 export * from "./workspace-change-log";
 
@@ -27,6 +51,7 @@ import type {
   ActivationState,
   ActorContext,
   EdgeType,
+  ManualOrderState,
   Priority,
   WorkEdge,
   WorkItem,
@@ -65,8 +90,22 @@ export interface Clock {
   readonly calendarTimezone?: string;
   now(): string;
 }
+export type ApplicationIdPurpose =
+  | "WORK"
+  | "EDGE"
+  | "NOTE"
+  | "LIBRARY"
+  | "REMINDER"
+  | "CATEGORY"
+  | "PROJECT_MATERIAL"
+  | "WORKFLOW"
+  | "KNOWLEDGE_LINK"
+  | "FILE"
+  | "ACTIVITY"
+  | "OUTBOX";
 export interface IdGenerator {
   next(): string;
+  nextFor?(purpose: ApplicationIdPurpose): string;
 }
 export interface ActivityEvent {
   readonly reason?:
@@ -100,6 +139,7 @@ export interface OutboxEvent {
   readonly occurredAt: string;
 }
 export interface WorkSnapshot {
+  readonly manualOrders?: readonly ManualOrderState[];
   readonly navigationPreference?: NavigationPreference;
   readonly calendarSettings?: CalendarSettings;
   readonly calendarTimezone?: string;
@@ -111,8 +151,13 @@ export interface WorkTransaction {
   workspaceChanges(
     after: number,
     epoch?: string,
+    privatePrincipalId?: string,
   ): Promise<import("./workspace-change-log").WorkspaceChangePage>;
-  workspaceEntity(collection: string, entityId: string): Promise<unknown>;
+  workspaceEntity(
+    collection: string,
+    entityId: string,
+    privatePrincipalId?: string,
+  ): Promise<unknown>;
   workspaceRelatedLinks(
     kind: string,
     entityId: string,
@@ -141,6 +186,11 @@ export interface WorkTransaction {
   workflows(): Promise<WorkflowRecord[]>;
   saveWorkflow(record: WorkflowRecord, expectedVersion: number): Promise<void>;
   categories(): Promise<ProjectCategory[]>;
+  manualOrders(): Promise<readonly ManualOrderState[]>;
+  saveManualOrder(
+    state: ManualOrderState,
+    expectedVersion: number,
+  ): Promise<void>;
   saveCategory(
     category: ProjectCategory,
     expectedVersion: number,
@@ -241,6 +291,27 @@ export class WorkService {
     }));
   }
 
+  /** Offline replay entry; host must still authenticate and persist a mutation receipt. */
+  async createWithStableId(
+    context: ActorContext,
+    id: string,
+    input: CreateWorkInput,
+  ): Promise<WorkItem> {
+    await this.authorization.require(context, "work:create");
+    requireStableUuid(id);
+    let allocated = false;
+    return new WorkService(this.uow, this.authorization, this.clock, {
+      next: () => this.ids.next(),
+      nextFor: (purpose) => {
+        if (purpose === "WORK" && !allocated) {
+          allocated = true;
+          return id;
+        }
+        return this.ids.nextFor?.(purpose) ?? this.ids.next();
+      },
+    }).create(context, input);
+  }
+
   async create(
     context: ActorContext,
     input: CreateWorkInput,
@@ -256,7 +327,7 @@ export class WorkService {
     return this.uow.run(context.workspaceId, async (tx) => {
       const now = this.clock.now();
       const item: WorkItem = {
-        id: this.ids.next(),
+        id: this.ids.nextFor?.("WORK") ?? this.ids.next(),
         workspaceId: context.workspaceId,
         title: requireTitle(input.title),
         descriptionMd: input.descriptionMd ?? "",
@@ -329,7 +400,7 @@ export class WorkService {
             field: "prerequisiteIds",
           });
         const edge: WorkEdge = {
-          id: this.ids.next(),
+          id: this.ids.nextFor?.("EDGE") ?? this.ids.next(),
           workspaceId: context.workspaceId,
           fromId,
           toId: item.id,
@@ -550,7 +621,7 @@ export class WorkService {
             )
           ) {
             const edge: WorkEdge = {
-              id: this.ids.next(),
+              id: this.ids.nextFor?.("EDGE") ?? this.ids.next(),
               workspaceId: context.workspaceId,
               fromId: prerequisiteId,
               toId: id,
@@ -702,6 +773,28 @@ export class WorkService {
     });
   }
 
+  async addEdgeWithStableId(
+    context: ActorContext,
+    id: string,
+    fromId: string,
+    toId: string,
+    type: EdgeType = "BLOCKS",
+  ): Promise<WorkEdge> {
+    await this.authorization.require(context, "graph:write");
+    requireStableUuid(id);
+    let allocated = false;
+    return new WorkService(this.uow, this.authorization, this.clock, {
+      next: () => this.ids.next(),
+      nextFor: (purpose) => {
+        if (purpose === "EDGE" && !allocated) {
+          allocated = true;
+          return id;
+        }
+        return this.ids.nextFor?.(purpose) ?? this.ids.next();
+      },
+    }).addEdge(context, fromId, toId, type);
+  }
+
   async addEdge(
     context: ActorContext,
     fromId: string,
@@ -712,7 +805,7 @@ export class WorkService {
     return this.uow.run(context.workspaceId, async (tx) => {
       const now = this.clock.now();
       const edge: WorkEdge = {
-        id: this.ids.next(),
+        id: this.ids.nextFor?.("EDGE") ?? this.ids.next(),
         workspaceId: context.workspaceId,
         fromId,
         toId,
@@ -789,7 +882,13 @@ export class WorkService {
     resolution: UpdateWorkInput["completionResolution"],
     now: string,
   ): Promise<void> {
-    const scoped = projectScope(project, await tx.list(), "SUBTREE");
+    const items = await tx.list();
+    const scoped = projectScope(project, items, "SUBTREE");
+    const unfinishedMilestones = projectDescendants(project, items).filter(
+      (entry) =>
+        entry.type === "MILESTONE" &&
+        !["DONE", "CANCELED"].includes(entry.status),
+    );
     const unfinished = scoped.tasks.filter(
       (task) => !["DONE", "CANCELED"].includes(task.status),
     );
@@ -798,10 +897,16 @@ export class WorkService {
         entry.id !== project.id &&
         !["COMPLETED", "CANCELED"].includes(entry.lifecycle ?? "PLANNED"),
     );
-    if (!resolution && (unfinished.length || unfinishedProjects.length))
+    if (
+      !resolution &&
+      (unfinished.length ||
+        unfinishedProjects.length ||
+        unfinishedMilestones.length)
+    )
       throw new DomainError("PROJECT_HAS_UNFINISHED_WORK", {
         unfinished: unfinished.length,
         unfinishedProjects: unfinishedProjects.length,
+        unfinishedMilestones: unfinishedMilestones.length,
       });
     if (!resolution) return;
     requireMember(
@@ -820,6 +925,22 @@ export class WorkService {
         throw new DomainError("VALIDATION_ERROR", {
           field: "completionResolution",
         });
+    }
+    for (const milestone of unfinishedMilestones) {
+      const updated: WorkItem = {
+        ...milestone,
+        ...(resolution.action === "CANCEL"
+          ? { status: "CANCELED" as const }
+          : {
+              parentProjectId:
+                resolution.action === "MOVE" ? resolution.projectId! : null,
+            }),
+        version: milestone.version + 1,
+        updatedBy: context.principalId,
+        updatedAt: now,
+      };
+      await tx.replace(updated, milestone.version);
+      await this.record(tx, context, milestone.id, "WORK_ITEM_UPDATED", now);
     }
     for (const task of unfinished) {
       const projectIds = (task.projectIds ?? []).filter(
@@ -1006,6 +1127,44 @@ export class WorkService {
     });
   }
 
+  async moveNavigationPreference(
+    context: ActorContext,
+    input: {
+      version: number;
+      movingId: NavigationViewId;
+      anchorId: NavigationViewId;
+      placement: "BEFORE" | "AFTER";
+    },
+  ): Promise<NavigationPreference> {
+    await this.authorization.require(context, "work:update");
+    return this.uow.run(context.workspaceId, async (tx) => {
+      const current = await tx.navigationPreference(context.principalId);
+      if (current.version !== input.version)
+        throw new DomainError("VERSION_CONFLICT");
+      const moved = moveNavigationWithinGroup(
+        current,
+        input.movingId,
+        input.anchorId,
+        input.placement,
+      );
+      if (moved === current) return current;
+      const next = { ...moved, version: current.version + 1 };
+      await tx.saveNavigationPreference(
+        context.principalId,
+        next,
+        current.version,
+      );
+      await this.record(
+        tx,
+        context,
+        context.principalId,
+        "WORKSPACE_SETTINGS_UPDATED",
+        this.clock.now(),
+      );
+      return next;
+    });
+  }
+
   private async calendarTimezone(tx: WorkTransaction): Promise<string> {
     return (
       (await tx.calendarSettings()).timezone ??
@@ -1100,7 +1259,7 @@ export class WorkService {
     edge?: WorkEdge,
     reason?: "RECURRENCE_WINDOW_EXPIRED" | "RECURRENCE_USER_SKIPPED",
   ): Promise<void> {
-    const id = this.ids.next();
+    const id = this.ids.nextFor?.("ACTIVITY") ?? this.ids.next();
     await tx.appendActivity({
       id,
       workspaceId: context.workspaceId,
@@ -1114,7 +1273,7 @@ export class WorkService {
       reason: reason ?? null,
     });
     await tx.appendOutbox({
-      id: this.ids.next(),
+      id: this.ids.nextFor?.("OUTBOX") ?? this.ids.next(),
       workspaceId: context.workspaceId,
       activityId: id,
       type: "WORK_CHANGED",
@@ -1127,10 +1286,76 @@ export * from "./agent-harness";
 export * from "./agent-session";
 export * from "./ai-capabilities";
 export * from "./ai-context";
+export * from "./api-scopes";
 export * from "./capability-registry";
 export * from "./content-policy";
+export * from "./editor-proposals";
+export * from "./entity-memo-identity";
+export * from "./entity-memo-replay";
+export * from "./entity-memos";
+export * from "./file-ai-context";
+export * from "./file-binary";
+export * from "./file-replay-effects";
+export * from "./file-transfer";
+export * from "./files";
 export * from "./gateway-policy";
+export * from "./knowledge-replay-effects";
 export * from "./library";
+export * from "./linked-knowledge-replay-effects";
+export {
+  LocalBodyUnavailableError,
+  remoteBodyUnavailable,
+} from "./local-body-availability";
+export * from "./local-canonical-entity-memo";
+export * from "./local-canonical-knowledge";
+export {
+  canonicalWikiLink,
+  requireProjectedWikiLink,
+} from "./local-canonical-wiki-read";
+export * from "./local-canonical-workflow";
+export * from "./local-command";
+export * from "./local-command-plan";
+export * from "./local-conflict-body";
+export * from "./local-deleted-knowledge";
+export * from "./local-dto";
+export * from "./local-entity-memo-bootstrap";
+export * from "./local-entity-memo-replay-request";
+export * from "./local-file-binary-sync";
+export * from "./local-file-hydration";
+export * from "./local-file-replay-request";
+export { requireRasterImage } from "./local-image-assets";
+export * from "./local-json-equal";
+export { prepareLocalKnowledgeHydration } from "./local-knowledge-hydration";
+export * from "./local-knowledge-replay-ack";
+export * from "./local-knowledge-replay-request";
+export type { LocalWikiIndexer } from "./local-library-store";
+export * from "./local-linked-knowledge-replay-request";
+export * from "./local-mutation-order";
+export * from "./local-mutation-transaction";
+export * from "./local-note-knowledge-replay-request";
+export * from "./local-outbox-attempt";
+export * from "./local-pending-work-rebase";
+export * from "./local-persistence";
+export * from "./local-plan-replay-request";
+export * from "./local-purge-replay-request";
+export * from "./local-purged-memo";
+export * from "./local-rebase";
+export * from "./local-receipt-recovery";
+export * from "./local-recurrence-replay-request";
+export * from "./local-replica";
+export { LocalRuntime, type LocalWorkService } from "./local-runtime";
+export * from "./local-search";
+export * from "./local-work-conflict-review";
+export * from "./local-work-pull";
+export * from "./local-work-replay-ack";
+export * from "./local-work-replay-request";
+export * from "./local-work-sync";
+export * from "./local-work-unit-of-work";
+export * from "./local-workspace";
+export { markdownContextRange } from "./markdown-context-range";
+export * from "./markdown-merge";
+export * from "./memo-ai-context";
+export * from "./memo-proposals";
 export * from "./model-configuration";
 export {
   executeApprovedModel,
@@ -1138,22 +1363,46 @@ export {
   validateContextPolicy,
 } from "./model-gateway";
 export * from "./model-route-resolver";
+export * from "./mutation-receipt";
 export * from "./note-knowledge";
+export * from "./note-knowledge-replay-effects";
 export * from "./note-wiki-references";
+export * from "./notification-causes";
+export * from "./notification-center";
+export * from "./notification-policy";
 export * from "./notifications";
+export * from "./open-account-workspace";
+export * from "./owned-workspaces";
 export type {
   PersonalModelInput,
   PersonalModelSummary,
   PersonalModelVault,
 } from "./personal-ai";
 export { type AiTextEdit, parseAiTextEdits } from "./personal-ai";
+export * from "./plan-documents";
+export * from "./plan-knowledge-replay-effects";
+export * from "./plan-replay-effects";
 export * from "./project-knowledge-scope";
 export * from "./provider-adapter";
 export * from "./provider-error";
+export * from "./purge-replay-effects";
 export * from "./recurrence-lifecycle";
+export * from "./recurrence-replay-effects";
 export * from "./retrieval";
 export * from "./retrieval-context-resolver";
 export * from "./trusted-ai-endpoint";
 export type { AppUpdateInfo, AppUpdateProgress, AppUpdates } from "./updates";
+export * from "./work-replay-effects";
+export * from "./workspace-binding-preview";
 export * from "./workspace-bootstrap";
+export * from "./workspace-catalog";
 export * from "./workspace-changes";
+export * from "./workspace-import";
+export * from "./workspace-import-resolution";
+export * from "./workspace-import-review";
+export * from "./workspace-import-steps";
+export * from "./workspace-memo-copies";
+export * from "./workspace-merge-backup";
+export * from "./workspace-merge-materialize";
+export * from "./workspace-merge-selection";
+export * from "./workspace-private-memo-review";

@@ -6,6 +6,14 @@ export function purgeRelations(
   workspaceId: string,
   ref: EntityRef,
 ) {
+  if (ref.kind === "WORK")
+    db.prepare(
+      "DELETE FROM entity_memo WHERE workspace_id=? AND target_id=? AND target_kind IN ('PROJECT','TASK','MILESTONE')",
+    ).run(workspaceId, ref.id);
+  else if (ref.kind === "FILE")
+    db.prepare(
+      "DELETE FROM entity_memo WHERE workspace_id=? AND target_id=? AND target_kind='FILE'",
+    ).run(workspaceId, ref.id);
   db.prepare(
     "DELETE FROM knowledge_link WHERE workspace_id=? AND ((json_extract(payload,'$.from.kind')=? AND json_extract(payload,'$.from.id')=?) OR (json_extract(payload,'$.to.kind')=? AND json_extract(payload,'$.to.id')=?))",
   ).run(workspaceId, ref.kind, ref.id, ref.kind, ref.id);

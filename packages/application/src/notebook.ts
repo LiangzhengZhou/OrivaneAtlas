@@ -5,6 +5,7 @@ import {
 } from "@arclattice/domain";
 import { type ContentPolicy, contentPolicy } from "./content-policy";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
+import { stableEntityIds } from "./stable-entity-ids";
 import { type BodyManifest, bodyManifest } from "./workspace-bootstrap";
 
 export interface Note {
@@ -50,6 +51,31 @@ export class NotebookService {
     private readonly ids: IdGenerator,
     private readonly source: Note["provenance"] = "HUMAN",
   ) {}
+  /** Invoke inside the authenticated business/receipt transaction for offline creation. */
+  async createWithStableId(
+    contextInput: ActorContext,
+    id: string,
+    input: NoteInput,
+  ): Promise<Note> {
+    const context = Object.freeze({ ...contextInput }),
+      captured = structuredClone(input);
+    await this.authorization.require(context, "work:create");
+    const ids = stableEntityIds(this.ids, "NOTE", id);
+    try {
+      await this.store.get(id);
+      throw new DomainError("VERSION_CONFLICT");
+    } catch (error) {
+      if (!(error instanceof DomainError) || error.code !== "NOT_FOUND")
+        throw error;
+    }
+    return new NotebookService(
+      this.store,
+      this.authorization,
+      this.clock,
+      ids,
+      this.source,
+    ).save(context, null, 0, captured);
+  }
   async list(context: ActorContext) {
     await this.authorization.require(context, "work:read");
     return this.store.list();
@@ -113,7 +139,7 @@ export class NotebookService {
       old?.aiPolicy,
     );
     const note: Note = {
-      id: old?.id ?? this.ids.next(),
+      id: old?.id ?? this.ids.nextFor?.("NOTE") ?? this.ids.next(),
       workspaceId: context.workspaceId,
       title: requireTitle(input.title),
       bodyMd: input.bodyMd,
@@ -133,6 +159,24 @@ export class NotebookService {
     };
     await this.store.save(note, version);
     return note;
+  }
+  /** Explicit human recovery; caller must provide one transaction for both existing writes. */
+  async restoreAndSave(
+    context: ActorContext,
+    id: string,
+    version: number,
+    input: NoteInput,
+  ) {
+    context = Object.freeze({ ...context });
+    input = structuredClone(input);
+    await this.authorization.require(context, "work:update");
+    if (this.source !== "HUMAN") throw new DomainError("FORBIDDEN");
+    const old = await this.store.get(id);
+    if (old.workspaceId !== context.workspaceId)
+      throw new DomainError("NOT_FOUND");
+    if (!old.deletedAt) throw new DomainError("VERSION_CONFLICT");
+    const restored = await this.setDeleted(context, id, version, false);
+    return this.save(context, id, restored.version, input);
   }
   async purge(
     context: ActorContext,

@@ -1,6 +1,7 @@
 import { occurrenceDays } from "@arclattice/domain";
 import { expect, test } from "vitest";
 import {
+  nextOccurrenceDay,
   normalizeWorkflowRecords,
   occurrenceExpiry,
 } from "./recurrence-lifecycle";
@@ -16,6 +17,43 @@ const rule: RecurrencePayload = {
   frequency: "DAILY",
   interval: 1,
 };
+test("natural next windows honor selected weekdays and sparse fifth monthly weekdays", () => {
+  expect(
+    nextOccurrenceDay(
+      {
+        ...rule,
+        startDate: "2026-01-05",
+        frequency: "WEEKLY",
+        weekdays: [1, 5],
+        endAfterCompleted: 1,
+      },
+      "2026-01-05",
+    ),
+  ).toBe("2026-01-09");
+  expect(
+    nextOccurrenceDay(
+      {
+        ...rule,
+        startDate: "2026-01-01",
+        frequency: "MONTHLY",
+        monthlyRule: { kind: "ORDINAL_WEEKDAY", ordinal: 5, weekday: 1 },
+        endDate: "2026-03-30",
+      },
+      "2026-03-30",
+    ),
+  ).toBe("2026-06-29");
+  expect(
+    nextOccurrenceDay(
+      {
+        ...rule,
+        startDate: "2026-01-01",
+        frequency: "MONTHLY",
+        monthlyRule: { kind: "DAY", day: 31 },
+      },
+      "2026-01-31",
+    ),
+  ).toBe("2026-03-31");
+});
 test("daily weekly and monthly expected dates remain stable across missing month days", () => {
   expect(
     occurrenceDays(

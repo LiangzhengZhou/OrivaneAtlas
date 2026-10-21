@@ -21,9 +21,14 @@ it("upgrades exact v2.2 PostgreSQL schema26 with a Wiki gate and restores its ph
   );
   const backup = await harness.cluster().snapshot();
   await harness.client(name, (client) =>
-    migrate(client, 2000, async () => {
-      expect((await stat(backup)).isDirectory()).toBe(true);
-    }),
+    migrate(
+      client,
+      2000,
+      async () => {
+        expect((await stat(backup)).isDirectory()).toBe(true);
+      },
+      migrations.slice(0, 27),
+    ),
   );
   expect(await harness.client(name, (client) => inspectSchema(client))).toBe(
     27,
@@ -36,6 +41,23 @@ it("upgrades exact v2.2 PostgreSQL schema26 with a Wiki gate and restores its ph
       )
     ).rows[0],
   ).toMatchObject({ index_version: 0, dirty: 1 });
+  expect(
+    (
+      await harness.query(
+        name,
+        "SELECT payload FROM arclattice.library_entry WHERE id='legacy-document'",
+      )
+    ).rows[0]?.payload,
+  ).toBe(legacyV21Document);
+  const v23Backup = await harness.cluster().snapshot();
+  await harness.client(name, (client) =>
+    migrate(client, 2000, async () => {
+      expect((await stat(v23Backup)).isDirectory()).toBe(true);
+    }),
+  );
+  expect(await harness.client(name, (client) => inspectSchema(client))).toBe(
+    37,
+  );
   expect(
     (
       await harness.query(
