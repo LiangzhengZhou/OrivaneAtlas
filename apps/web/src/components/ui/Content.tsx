@@ -54,6 +54,7 @@ export function PressableSurface({
       }}
       onClick={(event) => {
         if (disabled) return;
+        if (intent === "NAVIGATE" && event.detail > 1) return;
         if (
           event.target !== event.currentTarget &&
           (event.target as HTMLElement).closest(

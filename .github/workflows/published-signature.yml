@@ -1,0 +1,31 @@
+name: Published release signature
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to verify
+        required: true
+        default: v3.0.1
+permissions:
+  contents: read
+jobs:
+  signature:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify this release's installer and signature
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version="${RELEASE_TAG#v}"
+          mkdir release-verification
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "OrivaneAtlas-$version-windows-x64-setup.exe" --pattern "OrivaneAtlas-$version-windows-x64-setup.exe.sig" --dir release-verification
+          node scripts/verify-updater-signature.mjs "release-verification/OrivaneAtlas-$version-windows-x64-setup.exe"

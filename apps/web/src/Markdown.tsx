@@ -24,7 +24,7 @@ import { Dialog } from "./components/ui/Surfaces";
 import { FileLink } from "./features/files/FileLinkContext";
 import { parseFileHash } from "./features/files/fileRoute";
 import { ImageLoadError, imageFailureReason } from "./imageResponse";
-import { holdPrivateImage } from "./privateImageCache";
+import { holdPrivateImage, invalidatePrivateImage } from "./privateImageCache";
 import "katex/dist/katex.min.css";
 
 export const PrivateImageContext = createContext<
@@ -88,7 +88,10 @@ function PrivateImage({ src, alt }: { src: string; alt: string }) {
             event.preventDefault();
             event.stopPropagation();
           }}
-          onClick={() => setAttempt((value) => value + 1)}
+          onClick={() => {
+            if (load) invalidatePrivateImage(load, src);
+            setAttempt((value) => value + 1);
+          }}
         >
           {t("imageRetry")}
         </Button>

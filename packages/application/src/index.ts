@@ -1300,6 +1300,7 @@ export * from "./file-transfer";
 export * from "./files";
 export * from "./gateway-policy";
 export * from "./knowledge-replay-effects";
+export * from "./legacy-image-cache";
 export * from "./library";
 export * from "./linked-knowledge-replay-effects";
 export {
@@ -1395,6 +1396,7 @@ export type { AppUpdateInfo, AppUpdateProgress, AppUpdates } from "./updates";
 export * from "./work-replay-effects";
 export * from "./workspace-binding-preview";
 export * from "./workspace-bootstrap";
+export * from "./workspace-bootstrap-backup";
 export * from "./workspace-catalog";
 export * from "./workspace-changes";
 export * from "./workspace-import";

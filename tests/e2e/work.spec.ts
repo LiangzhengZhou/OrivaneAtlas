@@ -1144,6 +1144,7 @@ test("v2.3 task rows expose completion and defer management to the menu", async 
       exact: true,
     }),
   ).toHaveAttribute("aria-pressed", "false");
+  await waitForLocalReplay(page);
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -5282,6 +5283,7 @@ test("private image editing: modern picker, clipboard, concurrent typing and ret
     path: info.outputPath("private-images.png"),
     fullPage: true,
   });
+  await waitForLocalReplay(page);
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
@@ -8027,6 +8029,200 @@ test("dependencies, filters and board transitions", async ({
   await expect(
     page.getByLabel(w.common.statusLabel.replace("{{title}}", "Dependent B")),
   ).toHaveValue("DONE");
+});
+
+test("v3 More sheet destinations and reorder handles fit narrow screens and large text", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.locator(".mobile-navigation-toggle").click();
+    const sheet = page.locator(".mobile-more-sheet");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator(".ui-drag-handle").first()).toHaveCSS(
+      "opacity",
+      "1",
+    );
+    await expect(sheet.locator(".ui-drag-handle").first()).toBeVisible();
+    for (const large of [false, true]) {
+      await sheet.evaluate((node, large) => {
+        node.style.fontSize = large ? "24px" : "16px";
+      }, large);
+      const rows = await sheet
+        .locator(".ui-sortable-row")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const row = node.getBoundingClientRect();
+            const main = node
+              .querySelector(".mobile-more-destination")!
+              .getBoundingClientRect();
+            const handle = node
+              .querySelector(".ui-drag-handle")
+              ?.getBoundingClientRect();
+            return {
+              row: row.width,
+              main: main.width,
+              height: main.height,
+              handle: handle?.width ?? 0,
+              overflow: node.scrollWidth > node.clientWidth,
+            };
+          }),
+        );
+      expect(rows.length).toBeGreaterThan(5);
+      for (const row of rows) {
+        expect(row.main).toBeGreaterThan(row.row * 0.65);
+        expect(row.height).toBeGreaterThanOrEqual(48);
+        expect(Math.abs(row.main + row.handle - row.row)).toBeLessThan(2);
+        expect(row.overflow).toBe(false);
+        if (row.handle) expect(row.handle).toBe(48);
+      }
+    }
+    await page.emulateMedia({
+      reducedMotion: "reduce",
+      forcedColors: "active",
+    });
+    await expect(sheet).toBeVisible();
+    await page.screenshot({
+      path: info.outputPath(`more-${width}.png`),
+      fullPage: true,
+    });
+    await page.emulateMedia({
+      reducedMotion: "no-preference",
+      forcedColors: "none",
+    });
+    await page.keyboard.press("Escape");
+  }
+});
+
+test("v3 upgrade notes open on one click with independent selection and details", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  for (const title of ["Single click research", "Another research note"])
+    await mutation(page, "/api/note/save", {
+      id: null,
+      version: 0,
+      input: {
+        title,
+        kind: "NOTE",
+        day: null,
+        bodyMd: "Original $E=mc^2$ content",
+      },
+    });
+  await page.reload();
+  await nav(page, w.desk.notes);
+  const row = page
+    .locator(".note-card")
+    .filter({ hasText: "Single click research" });
+  // The checkbox belongs to the list, not the document-open surface.
+  await row.locator("..").locator('input[type="checkbox"]').check();
+  await expect(page.locator(".document-pane")).toHaveCount(0);
+  await row
+    .getByRole("heading", { name: "Single click research", exact: true })
+    .click();
+  await expect(
+    pane(page).getByLabel(w.desk.noteTitle, { exact: true }),
+  ).toHaveValue("Single click research");
+  await expect(page.locator(".entity-inspector")).toHaveCount(0);
+  await documentMode(page, w.desk.read);
+  const shortBody = pane(page).locator(".document-reading > .markdown");
+  await expect(shortBody.locator(".katex")).toBeVisible();
+  expect((await shortBody.boundingBox())!.height).toBeLessThan(150);
+  await page.screenshot({
+    path: info.outputPath("short-document-reading.png"),
+    fullPage: true,
+  });
+  await nav(page, w.desk.notes);
+  await row.focus();
+  await row.press("Space");
+  await expect(
+    pane(page).getByLabel(w.desk.noteTitle, { exact: true }),
+  ).toHaveValue("Single click research");
+  await nav(page, w.desk.notes);
+  const bounds = await row.boundingBox();
+  expect(bounds!.height).toBeLessThan(120);
+  await page.screenshot({
+    path: info.outputPath("dense-notes.png"),
+    fullPage: true,
+  });
+  await row.getByRole("button", { name: /More actions|更多操作/ }).click();
+  await page
+    .getByRole("menuitem", { name: /Inspect details|检查详情/, exact: true })
+    .click();
+  await expect(page.locator(".entity-inspector")).toBeVisible();
+});
+
+test("v3 upgrade legacy asset survives replica bootstrap and note reopen", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXs8AAAAASUVORK5CYII=";
+  const raster = await page.evaluate(async (png) => {
+    const source = new Image();
+    source.src = `data:image/png;base64,${png}`;
+    await source.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    canvas.getContext("2d")!.drawImage(source, 0, 0);
+    return ["image/png", "image/jpeg", "image/webp"].map((mime) => ({
+      mime,
+      base64: canvas.toDataURL(mime).split(",")[1]!,
+    }));
+  }, png);
+  const references: string[] = [];
+  for (const image of raster) {
+    const asset = await mutation(page, "/api/library/upload", {
+      spaceId: null,
+      name: "legacy-image",
+      ...image,
+    });
+    references.push(`![Original ${image.mime}](${asset.url})`);
+  }
+  const markdown = `# Legacy scientific note\n\n$Z=0$\n\n${references.join("\n\n")}`;
+  await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      title: "Legacy scientific note",
+      kind: "NOTE",
+      day: null,
+      bodyMd: markdown,
+    },
+  });
+  await prepareOfflineShell(page);
+  for (let restart = 0; restart < 3; restart++) {
+    if (restart === 2) await page.context().setOffline(true);
+    await page.reload();
+    await nav(page, w.desk.notes);
+    await page
+      .locator(".note-card")
+      .filter({ hasText: "Legacy scientific note" })
+      .click();
+    await documentMode(page, w.desk.read);
+    const images = pane(page).locator(".document-reading img");
+    await expect(images).toHaveCount(3);
+    for (const image of await images.all())
+      await expect(image).toHaveJSProperty("naturalWidth", 1);
+    await expect(pane(page).locator(".document-reading .katex")).toBeVisible();
+    await documentMode(page, /^(Source|源码)$/);
+    await expect(
+      pane(page).getByLabel(w.desk.noteBody, { exact: true }),
+    ).toHaveText(markdown, { useInnerText: true });
+  }
+  await page.screenshot({
+    path: info.outputPath("legacy-image-reopened.png"),
+    fullPage: true,
+  });
+  await page.context().setOffline(false);
 });
 
 test("notes, safe reading, revision restore, journal and export", async ({
@@ -12779,7 +12975,7 @@ test("v2.3 note right click opens shared actions and trash undo preserves Markdo
     has: page.getByRole("heading", { name: "Context note", exact: true }),
   });
   await row.getByRole("heading").click({ button: "right" });
-  await expect(row).toHaveAttribute("data-selected", "true");
+  await expect(page.locator(".entity-inspector")).toHaveCount(0);
   await expect(page.locator(".document-pane")).toHaveCount(0);
   const menu = page.getByRole("menu", {
     name: zh ? "更多操作：Context note" : "More actions: Context note",
@@ -12833,19 +13029,13 @@ test("v2.3 Notes search body on the server before lazy hydration", async ({
   await expect(page.locator(".note-card")).toHaveCount(1);
   await expect(page.locator(".note-card")).toContainText("Target capture");
   expect(bodyRequests).toEqual([]);
-  await page.locator(".note-card").click();
-  await expect(page.locator(".note-card")).toHaveAttribute(
-    "data-selected",
-    "true",
-  );
-  await expect(page.locator(".document-pane")).toHaveCount(0);
-  expect(bodyRequests).toEqual([]);
   const loaded = page.waitForResponse(
     (response) =>
       response.url().includes("/api/document/body?") &&
       response.status() === 200,
   );
-  await page.locator(".note-card").press("Enter");
+  await page.locator(".note-card").click();
+  await expect(page.locator(".entity-inspector")).toHaveCount(0);
   expect((await (await loaded).json()).bodyMd).toBe(
     "Private needle-body-v23 content",
   );

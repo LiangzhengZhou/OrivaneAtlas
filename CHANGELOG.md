@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.0.1]
+
+- Complete account replica initialization before delta replay, including untouched historical projects. Existing partial replicas retain local drafts and receive a verified original backup before repair.
+- Restore authorized legacy Markdown image downloads, scoped persistent offline caching, and fresh-byte retries without changing original Markdown or weakening account/workspace permissions.
+- Open notes with one click, use compact note rows and independent selection/details, and remove excessive reader spacing.
+- Separate mobile navigation destinations from fixed-width reorder handles and accommodate Android system bars, cutouts and IME using native Window Insets.
+- Restart only aborted transactions caused by unrelated workspace revision changes; preserve original entity CAS and atomic Outbox effects.
+- Local functional acceptance: 1496/1496 unit/integration tests, 699/699 browser cases and 14/14 formal performance metrics across 20 samples. Real Windows WebView2 composite backup/restart and PNG/JPEG/WebP decoding also verified.
+- Physical Android system bars/notifications and Windows cold-start notification clicks remain manual acceptance items. Cloud results are reported separately from local acceptance.
+
 ## [3.0.0]
 
 - Durable IndexedDB local-first workspaces, offline restart recovery, outbox/ACK, device-scoped receipts and explicit CAS conflict review.

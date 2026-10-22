@@ -41,6 +41,8 @@ export const replicaCollections: ReadonlySet<string> = new Set([
   "projectMaterials",
   "files",
   "libraryAssets",
+  "$local.legacyImage",
+  "$local.workspaceBootstrap",
   "$local.remoteBase",
   "$local.entityMemoBootstrap",
   "$local.conflicts",

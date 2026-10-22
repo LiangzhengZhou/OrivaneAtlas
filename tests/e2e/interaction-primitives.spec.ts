@@ -102,6 +102,21 @@ test("destination opens directly; nested action and operational selection remain
   await expect(events).toHaveText("navigate,nested,select,open");
 });
 
+test("destination double click opens once; Enter and Space each open once", async ({
+  page,
+}) => {
+  const destination = page
+    .locator(".ui-pressable")
+    .filter({ hasText: "Destination" })
+    .first();
+  const events = page.getByLabel("Events");
+  await destination.dblclick({ position: { x: 5, y: 5 } });
+  await expect(events).toHaveText("navigate");
+  await destination.press("Enter");
+  await destination.press("Space");
+  await expect(events).toHaveText("navigate,navigate,navigate");
+});
+
 test("arming never commits and escape/outside/expiry cancel; second click commits", async ({
   page,
 }) => {

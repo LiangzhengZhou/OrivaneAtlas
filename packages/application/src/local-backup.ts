@@ -174,7 +174,7 @@ export async function restoreLocalWorkspace(
       continue;
     const value = localObject(localDto(record.value));
     if (
-      record.collection === "files" &&
+      ["files", "$local.legacyImage"].includes(record.collection) &&
       (typeof value.contentHash !== "string" ||
         !verified.has(value.contentHash))
     )
@@ -206,7 +206,7 @@ export async function exportLocalWorkspace(
     const value = entity.value;
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     if (
-      entity.collection === "files" &&
+      ["files", "$local.legacyImage"].includes(entity.collection) &&
       "contentHash" in value &&
       typeof value.contentHash === "string"
     )

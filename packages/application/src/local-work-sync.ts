@@ -4,6 +4,7 @@ import { buildLocalCalendarReplayRequest } from "./local-calendar-replay-request
 import { buildLocalCategoryReplayRequest } from "./local-category-replay-request";
 import { type LocalCommandPlan, planLocalCommands } from "./local-command-plan";
 import { hydrateLocalConflictBody } from "./local-conflict-body";
+import { localObject } from "./local-dto";
 import { initializeLocalEntityMemoHistory } from "./local-entity-memo-bootstrap";
 import { buildLocalEntityMemoReplayRequest } from "./local-entity-memo-replay-request";
 import {
@@ -40,7 +41,10 @@ import {
 import { buildLocalRecurrenceReplayRequest } from "./local-recurrence-replay-request";
 import { buildLocalReminderReplayRequest } from "./local-reminder-replay-request";
 import type { LocalReplicaStore } from "./local-replica";
-import { prepareLocalWorkPull } from "./local-work-pull";
+import {
+  prepareLocalWorkPull,
+  prepareLocalWorkspaceBootstrap,
+} from "./local-work-pull";
 import { prepareLocalWorkReplayAcknowledgement } from "./local-work-replay-ack";
 import {
   buildLocalWorkReplayRequest,
@@ -48,6 +52,7 @@ import {
 } from "./local-work-replay-request";
 
 export interface LocalWorkSyncTransport extends LocalReceiptTransport {
+  bootstrap?(binding: LocalSyncState): Promise<unknown>;
   pullPrivateMemos?(binding: LocalSyncState, after: number): Promise<unknown>;
   readKnowledge?(
     binding: LocalSyncState,
@@ -61,6 +66,11 @@ export interface LocalWorkSyncTransport extends LocalReceiptTransport {
   ): Promise<unknown>;
 }
 export interface LocalWorkSyncPorts {
+  beforeBootstrap?(
+    binding: LocalSyncState,
+    expectedRevision: number | null,
+    remoteCursor: number,
+  ): Promise<void>;
   memoIdentity?: Pick<EntityMemoIdentity, "forTarget">;
   pendingRebase?: {
     store: LocalPendingWorkRebaseStore;
@@ -164,6 +174,51 @@ export class LocalWorkSyncCoordinator {
         if (prepared) await ports.replica.commit(prepared);
       } while (hasMore);
     };
+    if (ports.transport.bootstrap) {
+      const marker = await ports.metadata.get(
+        actor.workspaceId,
+        "$local.workspaceBootstrap",
+        "complete",
+      );
+      if (marker) {
+        const value = localObject(marker.value);
+        if (
+          marker.workspaceId !== actor.workspaceId ||
+          value.schemaVersion !== 1 ||
+          typeof value.cursor !== "number" ||
+          !Number.isSafeInteger(value.cursor) ||
+          value.cursor < 0 ||
+          value.cursor > original.cursor ||
+          [
+            "remoteWorkspaceId",
+            "remotePrincipalId",
+            "serverOrigin",
+            "epoch",
+          ].some(
+            (field) => value[field] !== original[field as keyof LocalSyncState],
+          )
+        )
+          throw new DomainError("FORBIDDEN");
+      } else {
+        const scope = await binding();
+        const manifest = await ports.transport.bootstrap(scope);
+        const prepared = await prepareLocalWorkspaceBootstrap(
+          actor,
+          scope,
+          manifest,
+          await ports.outbox.list(actor.workspaceId),
+          ports.metadata,
+          ports.memoIdentity,
+        );
+        if (ports.beforeBootstrap)
+          await ports.beforeBootstrap(
+            scope,
+            prepared.expectedWorkspaceVersion,
+            prepared.nextCursor,
+          );
+        await ports.replica.commit(prepared);
+      }
+    }
     if (ports.memoIdentity) {
       if (!ports.transport.pullPrivateMemos)
         throw new Error("LOCAL_MEMO_BOOTSTRAP_PORT_INCOMPLETE");

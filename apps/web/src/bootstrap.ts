@@ -70,7 +70,9 @@ import {
   prepareLocalPurgedMemo,
   prepareLocalWorkPull,
   prepareWorkspaceMergeBackup,
+  preserveReplicaBootstrapBackup,
   previewWorkspaceBinding,
+  readLegacyImage,
   readWorkspacePrivateMemoReview,
   recoverLocalWorkReceipts,
   recoverWorkspaceImportReceipts,
@@ -113,7 +115,8 @@ import {
   resolveWikiLinks,
 } from "@arclattice/wiki-core";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
-import { imageLoadFailure } from "./imageResponse";
+import { imageLoadFailure, imageResponseBlob } from "./imageResponse";
+import { scopedImageLoader } from "./scoped-image-loader";
 import { WorkspaceEventDecoder } from "./utils/workspace-event-decoder";
 
 const localeKey = "arclattice.ui.locale";
@@ -502,6 +505,8 @@ export async function bootstrap() {
       return value;
     };
     return {
+      bootstrap: (binding) =>
+        read(binding, "/api/bootstrap?relationMode=canonical"),
       readKnowledge: (binding, collection, id) =>
         read(
           binding,
@@ -1268,8 +1273,30 @@ export async function bootstrap() {
   let localSyncUnavailable = false;
   function syncLocalWork() {
     if (!localCoordinator || localCoordinatorGeneration !== serverGeneration) {
+      const generation = serverGeneration;
       localCoordinatorGeneration = serverGeneration;
       localCoordinator = new LocalWorkSyncCoordinator(local.context, {
+        beforeBootstrap: async (scope, revision, cursor) => {
+          const store = await IndexedDbWorkspaceMergeBackups.open();
+          try {
+            await preserveReplicaBootstrapBackup(
+              local.context,
+              scope,
+              revision,
+              cursor,
+              {
+                metadata: localStore.metadata,
+                blobs: localBlobs,
+                store,
+                assertScope: () => requireRemoteBindingScope(scope, generation),
+                id: () => crypto.randomUUID(),
+                now: () => new Date().toISOString(),
+              },
+            );
+          } finally {
+            store.close();
+          }
+        },
         memoIdentity: { forTarget: deriveEntityMemoId },
         pendingRebase: {
           store: localStore.pendingWorkRebase,
@@ -1546,6 +1573,77 @@ export async function bootstrap() {
     await readDocumentBody(note);
     if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
   }
+  const privateImageLoader = scopedImageLoader(
+    () =>
+      `${serverGeneration}|${local.context.workspaceId}|${local.context.principalId}`,
+    async (path: string) => {
+      const file = /^\/api\/v1\/files\/bytes\?id=([a-zA-Z0-9-]+)$/.exec(path);
+      if (file) {
+        const metadata = await local.readFile(local.context, file[1]!);
+        if (!["image/png", "image/jpeg", "image/webp"].includes(metadata.mime))
+          throw new DomainError("VALIDATION_ERROR");
+        try {
+          return await readFileBytes(metadata.id);
+        } catch (error) {
+          throw imageLoadFailure(error);
+        }
+      }
+      if (!/^\/api\/library\/asset\?id=[a-zA-Z0-9-]+$/.test(path))
+        throw new DomainError("VALIDATION_ERROR");
+      try {
+        return await local.loadImage(path);
+      } catch (error) {
+        if (
+          !(error instanceof DomainError && error.code === "NOT_FOUND") &&
+          !(error instanceof Error && error.message === "LOCAL_BINARY_MISSING")
+        )
+          throw imageLoadFailure(error);
+        // Legacy assets are not in the workspace bootstrap manifest. The server
+        // still owns their bytes and performs the original Workspace/Space guard.
+        const generation = serverGeneration;
+        const binding = async () => {
+          const current = await localStore.syncState.get(
+            local.context.workspaceId,
+          );
+          if (!current) throw imageLoadFailure(error);
+          if (navigator.onLine === false) {
+            const remote = activeWorkspace.remote;
+            if (
+              generation !== serverGeneration ||
+              !remote ||
+              remote.serverOrigin !== current.serverOrigin ||
+              remote.workspaceId !== current.remoteWorkspaceId ||
+              remote.principalId !== current.remotePrincipalId
+            )
+              throw new DomainError("FORBIDDEN");
+          } else requireRemoteBindingScope(current, generation);
+          return current;
+        };
+        return readLegacyImage(
+          local.context,
+          path.slice("/api/library/asset?id=".length),
+          {
+            binding,
+            metadata: localStore.metadata,
+            blobs: localBlobs,
+            replica: localStore.replica,
+            offline: navigator.onLine === false,
+            download: async (scope) => {
+              requireRemoteBindingScope(scope, generation);
+              const response = await transport(
+                path,
+                undefined,
+                "",
+                scope.remoteWorkspaceId!,
+              );
+              requireRemoteBindingScope(scope, generation);
+              return imageResponseBlob(response);
+            },
+          },
+        );
+      }
+    },
+  );
   return {
     readDocumentBody,
     async readRemoteDocumentBody(
@@ -2613,6 +2711,31 @@ export async function bootstrap() {
             const coordinator = new LocalWorkSyncCoordinator(
               { workspaceId: own.workspaceId, principalId: own.principalId },
               {
+                beforeBootstrap: async (scope, revision, cursor) => {
+                  const blobs = await IndexedDbLocalBlobStore.open(
+                    entry.databaseName,
+                  );
+                  const backups = await IndexedDbWorkspaceMergeBackups.open();
+                  try {
+                    await preserveReplicaBootstrapBackup(
+                      own,
+                      scope,
+                      revision,
+                      cursor,
+                      {
+                        metadata: target.metadata,
+                        blobs,
+                        store: backups,
+                        assertScope,
+                        id: () => crypto.randomUUID(),
+                        now: () => new Date().toISOString(),
+                      },
+                    );
+                  } finally {
+                    blobs.close();
+                    backups.close();
+                  }
+                },
                 memoIdentity: { forTarget: deriveEntityMemoId },
                 metadata: target.metadata,
                 outbox: target.outbox,
@@ -3296,19 +3419,8 @@ export async function bootstrap() {
       }
       return response.blob();
     },
-    async loadImage(path: string) {
-      const match = /^\/api\/v1\/files\/bytes\?id=([a-zA-Z0-9-]+)$/.exec(path);
-      if (match) {
-        const file = await local.readFile(local.context, match[1]!);
-        if (!["image/png", "image/jpeg", "image/webp"].includes(file.mime))
-          throw new DomainError("VALIDATION_ERROR");
-        try {
-          return await readFileBytes(file.id);
-        } catch (error) {
-          throw imageLoadFailure(error);
-        }
-      }
-      return local.loadImage(path);
+    get loadImage() {
+      return privateImageLoader();
     },
     revisions: (id: string) => local.revisions(id),
     organize: async (input: OrganizeInput) => {

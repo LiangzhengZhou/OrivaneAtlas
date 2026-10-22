@@ -60,6 +60,7 @@ export function MoreSheet({
                 }
               >
                 <Button
+                  className="mobile-more-destination"
                   type="button"
                   key={entry.id}
                   onClick={() => onNavigate(entry.id)}

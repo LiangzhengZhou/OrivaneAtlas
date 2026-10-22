@@ -22,6 +22,21 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm build
+      - name: Build real Native Transport fixture for the quality gate
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .artifacts | Out-Null
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --no-run --message-format=json > .artifacts/ci-native-fixture.jsonl
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $fixtures = @(Get-Content .artifacts/ci-native-fixture.jsonl | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.profile.test -and $_.executable -and $_.target.name -eq 'arclattice_lib' })
+          if ($fixtures.Count -ne 1) { throw 'Expected exactly one current native test executable' }
+          "ATLAS_NATIVE_TEST_EXE=$($fixtures[0].executable)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          'NO_PROXY=127.0.0.1,localhost,::1' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - run: pnpm check
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e

@@ -69,12 +69,14 @@ export class LocalRuntime {
       create: (actor, input) => {
         const captured = structuredClone(input);
         const context = { ...actor };
-        return workspace.run(
-          (s) => s.work.create(context, captured),
-          (result) => ({
-            name: "work.create",
-            input: localDto({ id: result.id, input: captured }),
-          }),
+        return this.restartAbortedWorkspaceWrite(() =>
+          workspace.run(
+            (s) => s.work.create(context, captured),
+            (result) => ({
+              name: "work.create",
+              input: localDto({ id: result.id, input: captured }),
+            }),
+          ),
         );
       },
       update: (actor, id, version, input) => {
@@ -552,17 +554,19 @@ export class LocalRuntime {
 
   saveNote(id: string | null, version: number, input: NoteInput) {
     const captured = structuredClone(input);
-    return this.workspace.run(
-      (s) => s.notes.save(this.context, id, version, captured),
-      (result) => ({
-        name: "note.save",
-        input: localDto({
-          id: result.id,
-          version,
-          create: id === null,
-          input: captured,
+    return this.restartAbortedWorkspaceWrite(() =>
+      this.workspace.run(
+        (s) => s.notes.save(this.context, id, version, captured),
+        (result) => ({
+          name: "note.save",
+          input: localDto({
+            id: result.id,
+            version,
+            create: id === null,
+            input: captured,
+          }),
         }),
-      }),
+      ),
     );
   }
   deleteNote(id: string, version: number, deleted: boolean) {
@@ -764,16 +768,18 @@ export class LocalRuntime {
   }
   saveCategory(input: Parameters<CategoryService["save"]>[1]) {
     const captured = structuredClone(input);
-    return this.workspace.run(
-      (s) => s.categories.save(this.context, captured),
-      (result) => ({
-        name: "category.save",
-        input: localDto({
-          id: result.id,
-          create: !captured.id,
-          input: captured,
+    return this.restartAbortedWorkspaceWrite(() =>
+      this.workspace.run(
+        (s) => s.categories.save(this.context, captured),
+        (result) => ({
+          name: "category.save",
+          input: localDto({
+            id: result.id,
+            create: !captured.id,
+            input: captured,
+          }),
         }),
-      }),
+      ),
     );
   }
   reorderCategories(ordered: Parameters<CategoryService["reorder"]>[1]) {
@@ -874,9 +880,11 @@ export class LocalRuntime {
     );
   }
   publishPlan(id: string, version: number) {
-    return this.workspace.run(
-      (s) => s.workflows.publish(this.context, id, version),
-      () => ({ name: "plan.publish", input: localDto({ id, version }) }),
+    return this.restartAbortedWorkspaceWrite(() =>
+      this.workspace.run(
+        (s) => s.workflows.publish(this.context, id, version),
+        () => ({ name: "plan.publish", input: localDto({ id, version }) }),
+      ),
     );
   }
   promoteNote(

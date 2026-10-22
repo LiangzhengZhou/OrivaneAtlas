@@ -2,6 +2,13 @@
 interface Entry {
   promise: Promise<string>;
   users: number;
+  invalidated?: boolean;
+}
+function revoke(entry: Entry) {
+  void entry.promise.then(
+    (url) => URL.revokeObjectURL(url),
+    () => {},
+  );
 }
 const caches = new WeakMap<
   (path: string) => Promise<Blob>,
@@ -12,10 +19,7 @@ function trim(cache: Map<string, Entry>) {
   for (const [path, entry] of cache) {
     if (entry.users !== 0) continue;
     cache.delete(path);
-    void entry.promise.then(
-      (url) => URL.revokeObjectURL(url),
-      () => {},
-    );
+    revoke(entry);
     if (cache.size <= 128) break;
   }
 }
@@ -33,11 +37,24 @@ export function resolvePrivateImage(
   const pending = load(path)
     .then((blob) => URL.createObjectURL(blob))
     .catch((error: unknown) => {
-      cache.delete(path);
+      if (cache.get(path)?.promise === pending) cache.delete(path);
       throw error;
     });
   cache.set(path, { promise: pending, users: 0 });
   return pending;
+}
+
+/** Retrying a decoded failure must fetch fresh bytes, without revoking other readers. */
+export function invalidatePrivateImage(
+  load: (path: string) => Promise<Blob>,
+  path: string,
+) {
+  const cache = caches.get(load);
+  const entry = cache?.get(path);
+  if (!entry) return;
+  cache!.delete(path);
+  entry.invalidated = true;
+  if (entry.users === 0) revoke(entry);
 }
 
 /** Mounted readers pin URLs. Only unmounted cache entries may be revoked. */
@@ -57,6 +74,7 @@ export function holdPrivateImage(
       if (released) return;
       released = true;
       entry.users--;
+      if (entry.invalidated && entry.users === 0) revoke(entry);
       trim(cache);
     },
   };

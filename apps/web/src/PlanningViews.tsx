@@ -232,7 +232,9 @@ export function ProjectView({
   isArchived,
   archiveSource,
   onOrganize,
+  onReviewWorkspace,
 }: {
+  onReviewWorkspace?(): void;
   manualOrders: readonly ManualOrderState[];
   onReparent(movingId: string, parentProjectId: string): void;
   onMoveCategory(movingId: string, categoryId: string | null): void;
@@ -578,6 +580,20 @@ export function ProjectView({
               <FolderKanban size={32} />
               <h2>{t(showArchived ? "noArchivedProjects" : "firstProject")}</h2>
               {!showArchived && <p>{t("projectsHint")}</p>}
+              {!showArchived && projects.length === 0 && onReviewWorkspace && (
+                <>
+                  <p>
+                    {i18n.language.startsWith("zh")
+                      ? "当前工作区没有可显示的项目。升级后找不到已有项目时，请先核对账户、服务器和本机工作区。"
+                      : "This workspace has no visible projects. If existing projects are missing after an upgrade, review your account, server and device workspaces."}
+                  </p>
+                  <Button variant="secondary" onClick={onReviewWorkspace}>
+                    {i18n.language.startsWith("zh")
+                      ? "检查账户与工作区"
+                      : "Review account and workspaces"}
+                  </Button>
+                </>
+              )}
             </div>
           )}
         </div>

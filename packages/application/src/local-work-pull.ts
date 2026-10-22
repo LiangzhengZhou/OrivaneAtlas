@@ -70,12 +70,174 @@ interface Effect {
 
 /** Work/knowledge metadata projection. Other collections stop cursor advancement safely. */
 export async function prepareLocalWorkPull(
+  actor: ActorContext,
+  binding: LocalSyncState,
+  page: unknown,
+  pending: readonly LocalMutation[],
+  metadata: LocalMetadataStore,
+  memoIdentity?: Pick<EntityMemoIdentity, "forTarget">,
+): Promise<LocalReplicaCommit | null> {
+  return prepareProjection(
+    actor,
+    binding,
+    page,
+    pending,
+    metadata,
+    memoIdentity,
+    false,
+  );
+}
+
+/** Full metadata is a distinct input, never invented change-log sequences. */
+export async function prepareLocalWorkspaceBootstrap(
+  actor: ActorContext,
+  binding: LocalSyncState,
+  manifestInput: unknown,
+  pending: readonly LocalMutation[],
+  metadata: LocalMetadataStore,
+  memoIdentity?: Pick<EntityMemoIdentity, "forTarget">,
+): Promise<LocalReplicaCommit> {
+  const manifest = localObject(localDto(manifestInput));
+  const workspace = localObject(manifest.workspace!);
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.epoch !== binding.epoch ||
+    typeof manifest.cursor !== "number" ||
+    manifest.cursor < binding.cursor
+  )
+    throw new DomainError("VERSION_CONFLICT", { field: "workspaceBootstrap" });
+  const collections: Record<
+    string,
+    { upserts: LocalJson[]; removed: string[] }
+  > = {};
+  const records: LocalJson[] = [];
+  for (const name of [
+    "items",
+    "edges",
+    "categories",
+    "organization",
+    "projectMaterials",
+    "links",
+    "reminders",
+    "workflows",
+    "manualOrders",
+    "wikiLinks",
+    "files",
+    "notes",
+    "library",
+  ]) {
+    const source =
+      name === "notes" || name === "library" ? manifest[name] : workspace[name];
+    if (
+      source === undefined &&
+      [
+        "items",
+        "edges",
+        "notes",
+        "library",
+        "projectMaterials",
+        "organization",
+        "links",
+      ].includes(name)
+    )
+      throw new DomainError("VALIDATION_ERROR", {
+        field: "incompleteWorkspaceBootstrap",
+      });
+    const entries = source ?? [];
+    if (!Array.isArray(entries)) throw new DomainError("VALIDATION_ERROR");
+    collections[name] = { upserts: entries, removed: [] };
+    for (const entry of entries) {
+      const entity = localObject(entry);
+      records.push({
+        workspaceId: binding.remoteWorkspaceId!,
+        collection: name,
+        entityId:
+          name === "organization" ? `${entity.kind}:${entity.id}` : entity.id!,
+        version: name === "edges" ? 1 : entity.version!,
+        op: "UPSERT",
+      });
+    }
+  }
+  const values: Record<string, LocalJson> = {};
+  for (const name of ["calendarSettings", "navigationPreference"]) {
+    const value = workspace[name];
+    if (value === undefined || localObject(value).version === 0) continue;
+    values[name] = value;
+    records.push({
+      workspaceId: binding.remoteWorkspaceId!,
+      collection: name,
+      entityId:
+        name === "calendarSettings" ? "workspace" : binding.remotePrincipalId!,
+      version: localObject(value).version!,
+      op: "UPSERT",
+    });
+  }
+  const prepared = await prepareProjection(
+    actor,
+    binding,
+    {
+      epoch: manifest.epoch,
+      cursor: manifest.cursor,
+      recovery: false,
+      hasMore: false,
+      snapshot: null,
+      records,
+      changes: { collections, values },
+    },
+    pending,
+    metadata,
+    memoIdentity,
+    true,
+  );
+  const revision = prepared
+    ? null
+    : await metadata.get(actor.workspaceId, "$local.workspace", "revision");
+  const marker = await metadata.get(
+    actor.workspaceId,
+    "$local.workspaceBootstrap",
+    "complete",
+  );
+  const base = prepared ?? {
+    workspaceId: actor.workspaceId,
+    principalId: actor.principalId,
+    binding,
+    nextCursor: manifest.cursor,
+    expectedWorkspaceVersion: revision?.version ?? null,
+    records: [],
+  };
+  return {
+    ...base,
+    records: [
+      ...base.records,
+      {
+        expectedVersion: marker?.version ?? null,
+        entity: {
+          workspaceId: actor.workspaceId,
+          collection: "$local.workspaceBootstrap",
+          id: "complete",
+          version: (marker?.version ?? 0) + 1,
+          value: {
+            schemaVersion: 1,
+            serverOrigin: binding.serverOrigin,
+            remoteWorkspaceId: binding.remoteWorkspaceId,
+            remotePrincipalId: binding.remotePrincipalId!,
+            epoch: binding.epoch,
+            cursor: manifest.cursor,
+          },
+        },
+      },
+    ],
+  };
+}
+
+async function prepareProjection(
   actorInput: ActorContext,
   bindingInput: LocalSyncState,
   pageInput: unknown,
   pendingInput: readonly LocalMutation[],
   metadata: LocalMetadataStore,
   memoIdentity?: Pick<EntityMemoIdentity, "forTarget">,
+  fullSnapshot = false,
 ): Promise<LocalReplicaCommit | null> {
   const actor = { ...actorInput },
     binding = structuredClone(bindingInput),
@@ -110,7 +272,7 @@ export async function prepareLocalWorkPull(
     !Number.isSafeInteger(page.cursor) ||
     page.cursor < binding.cursor ||
     !Array.isArray(page.records) ||
-    page.records.length > 2000
+    page.records.length > (fullSnapshot ? 100000 : 2000)
   )
     invalid();
   const changes = localObject(page.changes!),
@@ -157,10 +319,11 @@ export async function prepareLocalWorkPull(
     const record = localObject(input);
     if (
       record.workspaceId !== binding.remoteWorkspaceId ||
-      typeof record.seq !== "number" ||
-      !Number.isSafeInteger(record.seq) ||
-      record.seq <= lastSeq ||
-      record.seq > page.cursor ||
+      (!fullSnapshot &&
+        (typeof record.seq !== "number" ||
+          !Number.isSafeInteger(record.seq) ||
+          record.seq <= lastSeq ||
+          record.seq > page.cursor)) ||
       typeof record.entityId !== "string" ||
       !record.entityId ||
       record.entityId.length > 240 ||
@@ -191,7 +354,7 @@ export async function prepareLocalWorkPull(
       throw new DomainError("VALIDATION_ERROR", {
         field: "unsupportedSyncCollection",
       });
-    lastSeq = record.seq;
+    if (!fullSnapshot) lastSeq = record.seq as number;
     if (
       record.collection === "calendarSettings" &&
       (record.entityId !== "workspace" || record.op !== "UPSERT")

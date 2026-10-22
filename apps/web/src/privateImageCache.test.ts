@@ -1,5 +1,9 @@
 import { expect, test, vi } from "vitest";
-import { holdPrivateImage, resolvePrivateImage } from "./privateImageCache";
+import {
+  holdPrivateImage,
+  invalidatePrivateImage,
+  resolvePrivateImage,
+} from "./privateImageCache";
 
 test("mode changes and viewer reuse one scoped Blob URL; failures remain retryable", async () => {
   const blob = new Blob(["original"], { type: "image/png" });
@@ -38,4 +42,52 @@ test("cache pressure never revokes a mounted reader", async () => {
   pinned.release();
   pinned.release();
   revoke.mockRestore();
+});
+
+test("decode retry fetches fresh bytes and releases the old URL only after all readers leave", async () => {
+  const load = vi.fn(async () => new Blob(["bytes"], { type: "image/png" }));
+  const revoke = vi.spyOn(URL, "revokeObjectURL");
+  const first = holdPrivateImage(load, "image");
+  const viewer = holdPrivateImage(load, "image");
+  const oldUrl = await first.promise;
+  invalidatePrivateImage(load, "image");
+  const retry = holdPrivateImage(load, "image");
+  const newUrl = await retry.promise;
+  expect(newUrl).not.toBe(oldUrl);
+  expect(load).toHaveBeenCalledTimes(2);
+  first.release();
+  expect(revoke).not.toHaveBeenCalledWith(oldUrl);
+  viewer.release();
+  await Promise.resolve();
+  expect(revoke).toHaveBeenCalledWith(oldUrl);
+  expect(revoke).not.toHaveBeenCalledWith(newUrl);
+  retry.release();
+  invalidatePrivateImage(load, "image");
+  revoke.mockRestore();
+});
+
+test("a retired rejected request cannot evict its newer retry or another account", async () => {
+  let reject!: (error: Error) => void;
+  const load = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<Blob>((_resolve, fail) => {
+          reject = fail;
+        }),
+    )
+    .mockResolvedValue(new Blob(["fresh"]));
+  const first = holdPrivateImage(load, "image");
+  const failure = expect(first.promise).rejects.toThrow("offline");
+  invalidatePrivateImage(load, "image");
+  const fresh = await resolvePrivateImage(load, "image");
+  reject(new Error("offline"));
+  await failure;
+  expect(await resolvePrivateImage(load, "image")).toBe(fresh);
+  const otherAccount = vi.fn(async () => new Blob(["private"]));
+  const other = await resolvePrivateImage(otherAccount, "image");
+  invalidatePrivateImage(load, "image");
+  expect(await resolvePrivateImage(otherAccount, "image")).toBe(other);
+  first.release();
+  invalidatePrivateImage(otherAccount, "image");
 });

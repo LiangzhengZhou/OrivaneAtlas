@@ -9,12 +9,14 @@ export function EntityMenu({
   title,
   pending = false,
   onOpen,
+  onInspect,
   onDelete,
   onDownload,
 }: {
   title: string;
   pending?: boolean;
   onOpen?(): void;
+  onInspect?(): void;
   onDelete?(): void;
   onDownload?(): void;
 }) {
@@ -45,6 +47,16 @@ export function EntityMenu({
               }}
             >
               {zh ? "打开" : "Open"}
+            </MenuItem>
+          )}
+          {onInspect && (
+            <MenuItem
+              onClick={() => {
+                setOpen(false);
+                onInspect();
+              }}
+            >
+              {zh ? "检查详情" : "Inspect details"}
             </MenuItem>
           )}
           {onDownload && (

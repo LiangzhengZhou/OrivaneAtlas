@@ -68,6 +68,9 @@ jobs:
           retention-days: 7
   published-signature:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        release: ["1.0.0", "3.0.0"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -76,7 +79,8 @@ jobs:
       - name: Verify published installer against embedded trust anchor
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ matrix.release }}
         run: |
           mkdir -p release-verification
-          gh release download v1.0.0 --repo "$GITHUB_REPOSITORY" --pattern '*.exe' --pattern '*.exe.sig' --dir release-verification
-          node scripts/verify-updater-signature.mjs release-verification/OrivaneAtlas-1.0.0-windows-x64-setup.exe
+          gh release download "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --pattern '*.exe' --pattern '*.exe.sig' --dir release-verification
+          node scripts/verify-updater-signature.mjs "release-verification/OrivaneAtlas-$RELEASE_VERSION-windows-x64-setup.exe"

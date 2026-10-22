@@ -110,6 +110,40 @@ export function WorkspaceConnection({
       aria-label={zh ? "连接账户与工作区" : "Account and workspace connection"}
     >
       <h2>{zh ? "工作区与同步" : "Workspaces and sync"}</h2>
+      <section
+        aria-label={zh ? "当前工作区身份" : "Current workspace identity"}
+      >
+        <h3>{zh ? "当前打开" : "Currently open"}</h3>
+        <dl>
+          <dt>{zh ? "本机工作区" : "Device workspace"}</dt>
+          <dd>
+            {runtime.activeWorkspace.id === "default"
+              ? zh
+                ? "本机原工作区"
+                : "Original device workspace"
+              : runtime.activeWorkspace.title === "Account workspace"
+                ? zh
+                  ? "账户工作区"
+                  : "Account workspace"
+                : runtime.activeWorkspace.title}
+          </dd>
+          <dt>Workspace ID</dt>
+          <dd>{runtime.context.workspaceId}</dd>
+          <dt>Principal ID</dt>
+          <dd>{runtime.context.principalId}</dd>
+          <dt>{zh ? "服务器" : "Server"}</dt>
+          <dd>
+            {runtime.activeWorkspace.remote?.serverOrigin ??
+              (zh ? "未绑定服务器" : "Not bound to a server")}
+          </dd>
+          {runtime.activeWorkspace.remote && (
+            <>
+              <dt>{zh ? "远端工作区" : "Remote workspace"}</dt>
+              <dd>{runtime.activeWorkspace.remote.workspaceId}</dd>
+            </>
+          )}
+        </dl>
+      </section>
       <WorkspaceConflictReview runtime={runtime} zh={zh} />
       <WorkspaceImportRecovery
         confirmLeave={confirmLeave}
