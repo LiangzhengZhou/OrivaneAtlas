@@ -8748,13 +8748,20 @@ describe("private HTTP host", () => {
       ),
     );
     expect(responses.map((r) => r.status).sort()).toEqual([200, 403]);
-    await vi.waitFor(async () =>
-      expect(
-        (await (await call("/api/ai")).json()).runs.some(
-          (r: { status: string }) => r.status === "INTERRUPTED",
-        ),
-      ).toBe(true),
-    );
+    const approved = [a, b].find((_run, i) => responses[i]?.status === 200)!;
+    // The model deadline and the subsequent durable completion are distinct.
+    // Await the real terminal event instead of racing fsync with waitFor's
+    // implicit one-second polling deadline on a shared CI disk.
+    const events = await call("/api/ai/events/stream?id=" + approved.id);
+    expect(events.status).toBe(200);
+    expect(events.headers.get("content-type")).toBe("text/event-stream");
+    expect(await events.text()).toContain('"done":true');
+    expect(
+      (await (await call("/api/ai")).json()).runs.find(
+        (r: { id: string }) => r.id === approved.id,
+      ).status,
+    ).toBe("INTERRUPTED");
+    expect(complete.mock.calls[0]?.[1].aborted).toBe(true);
     expect(complete).toHaveBeenCalledTimes(1);
   });
   it("permits only exact HTTPS origin with secure cookies, never public HTTP", async () => {
