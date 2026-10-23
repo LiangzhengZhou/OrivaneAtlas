@@ -1,3 +1,4 @@
+@import url("./features/notes/note-browser.css");
 @import url("./base.css");
 .virtual-task-scroll {
   height: min(65dvh, 760px);
@@ -66,97 +67,6 @@ input[type="checkbox"] {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
-}
-.selectable-note {
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  overflow: hidden;
-}
-.selectable-note:has(input:checked) {
-  outline: 2px solid var(--accent);
-}
-.note-selection {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 20px 0;
-  color: var(--muted);
-}
-.note-selection span {
-  overflow-wrap: anywhere;
-}
-.selectable-note .note-card {
-  width: 100%;
-  border: none;
-  border-radius: 0;
-}
-.note-grid {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-}
-.selectable-note {
-  display: flex;
-  align-items: center;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-}
-.note-selection {
-  flex: 0 0 auto;
-  padding: 12px;
-}
-.note-selection span {
-  max-width: 100px;
-  font-size: 12px;
-}
-.selectable-note .note-card {
-  min-width: 0;
-  min-height: 0;
-  padding: 10px 12px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px 16px;
-}
-.note-card .note-card-top {
-  grid-column: 2;
-  grid-row: 1;
-  gap: 8px;
-  font-size: 12px;
-}
-.note-card h3 {
-  grid-column: 1;
-  grid-row: 1;
-  margin: 0;
-  font-size: 15px;
-}
-.note-card p {
-  grid-column: 1;
-  grid-row: 2;
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  -webkit-line-clamp: 1;
-}
-.note-card footer {
-  grid-column: 2;
-  grid-row: 2;
-  gap: 8px;
-  padding: 0;
-  margin: 0;
-}
-@media (max-width: 600px) {
-  .note-selection span {
-    display: none;
-  }
-  .selectable-note .note-card {
-    gap: 4px 8px;
-  }
-  .note-card .note-card-top svg,
-  .note-card footer > span {
-    display: none;
-  }
 }
 .md-live-math {
   display: inline-block;

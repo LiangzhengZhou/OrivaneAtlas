@@ -328,5 +328,29 @@
   "moveProject": "移动项目：{{title}}",
   "moveIntoProject": "移入 {{title}}",
   "moveIntoCategory": "移到 {{title}}",
-  "changeProjectLifecycle": "更改项目状态"
+  "changeProjectLifecycle": "更改项目状态",
+  "noteBrowser": {
+    "view": "显示方式",
+    "sort": "笔记排序",
+    "updated": "最近更新",
+    "journalDate": "日记日期",
+    "layout": {
+      "list": "列表",
+      "small": "小图标",
+      "medium": "中图标",
+      "large": "大图标"
+    },
+    "groupBy": "日记分组",
+    "grouping": {
+      "none": "不分组",
+      "year": "按年",
+      "month": "按月",
+      "week": "按周（周一至周日）",
+      "day": "按日"
+    },
+    "expandAll": "全部展开",
+    "collapseAll": "全部收起",
+    "undated": "无日期",
+    "count": "{{count}} 篇"
+  }
 }

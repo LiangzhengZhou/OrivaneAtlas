@@ -10,7 +10,7 @@
 
 ## What it is
 
-Orivane Atlas 3.0.1 is a Windows-native, local-first workspace for knowledge, projects and AI collaboration. Durable device storage, an outbox and version checks support offline work and explicit synchronization. Projects bind knowledge spaces, documents preserve Markdown, and files and private memos have scoped access controls. Web and native clients can connect to a self-hosted server.
+Orivane Atlas 3.0.2 is a Windows-native, local-first workspace for knowledge, projects and AI collaboration. Durable device storage, an outbox and version checks support offline work and explicit synchronization. Projects bind knowledge spaces, documents preserve Markdown, and files and private memos have scoped access controls. Web and native clients can connect to a self-hosted server.
 
 AI integration is optional. Orivane Atlas is not a handoff-only project: this repository is for people who want to run, use, extend, or contribute to the product.
 

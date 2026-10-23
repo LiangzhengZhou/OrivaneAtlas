@@ -75,8 +75,6 @@ import { WorkspaceRouter } from "./app/WorkspaceRouter";
 import { type Runtime, readPreference, savePreference } from "./bootstrap";
 import { Button, Toolbar } from "./components/ui/Button";
 import { confirmAction } from "./components/ui/ConfirmationHost";
-import { EntityRow } from "./components/ui/Content";
-import { EntityMenu } from "./components/ui/EntityMenu";
 import { Popover, Select } from "./components/ui/Surfaces";
 import { DocumentWorkspace, type WorkspaceRequest } from "./DocumentWorkspace";
 import { AssistantPane } from "./features/ai/AssistantPane";
@@ -89,6 +87,8 @@ import { PickerIdentityContext } from "./features/hierarchy/PickerIdentityContex
 import { CreateSpaceDialog } from "./features/knowledge/CreateSpaceDialog";
 import { EntityMemo, WorkEntityMemo } from "./features/memos/EntityMemo";
 import { MoreSheet } from "./features/mobile/MoreSheet";
+import { NoteBrowser } from "./features/notes/NoteBrowser";
+import { useNotePresentation } from "./features/notes/useNotePresentation";
 import { ProjectDrilldownPicker } from "./features/projects/ProjectDrilldownPicker";
 import type { TaskPresentation } from "./features/tasks/TasksWorkspace";
 import { selectTasks } from "./features/tasks/task-selectors";
@@ -333,7 +333,9 @@ function Workbench({
     false,
   );
   const [selectedNotes, setSelectedNotes] = useState<string[]>([]);
-  const [noteSort, setNoteSort] = useState("updated");
+  const [notePresentation, setNotePresentation] = useNotePresentation(
+    view === "journal",
+  );
   const [folderFilter, setFolderFilter] = useViewState<string | null>(
     view,
     null,
@@ -1092,91 +1094,43 @@ function Workbench({
     await i18n.changeLanguage(locale);
     document.documentElement.lang = locale;
   }
-  const noteCards = (allEntries: Note[]) => {
-    const entries = allEntries
-      .filter(
-        (n) =>
-          folderFilter === null ||
-          (organization("NOTE", n.id)?.folder ?? "") === folderFilter,
-      )
-      .sort((a, b) =>
-        noteSort === "title"
-          ? a.title.localeCompare(b.title, i18n.language) ||
-            a.id.localeCompare(b.id)
-          : b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
-      );
-    return (
-      <>
-        <div className="organization-toolbar">
-          <Select
-            aria-label={
-              i18n.language.startsWith("zh") ? "笔记排序" : "Sort notes"
-            }
-            value={noteSort}
-            onChange={(event) => setNoteSort(event.target.value)}
-          >
-            <option value="updated">
-              {i18n.language.startsWith("zh") ? "最近更新" : "Recently updated"}
-            </option>
-            <option value="title">
-              {i18n.language.startsWith("zh") ? "标题" : "Title"}
-            </option>
-          </Select>
-          <label>
-            <input
-              type="checkbox"
-              aria-label={t("selectVisible")}
-              checked={
-                entries.length > 0 &&
-                entries.every((n) => selectedNotes.includes(n.id))
-              }
-              disabled={busy || entries.length > 100}
-              onChange={(e) =>
-                setSelectedNotes(
-                  e.target.checked ? entries.map((n) => n.id) : [],
-                )
-              }
-            />
-            {t("selectVisible")}
-          </label>
-          <span>{t("selectionCount", { count: selectedNotes.length })}</span>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={!selectedNotes.length || busy}
-            onClick={() => setSelectedNotes([])}
-          >
-            {t("clearSelection")}
-          </Button>
-          <label>
-            {t("folder")}
-            <Select
-              aria-label={t("folderFilter")}
-              value={folderFilter === null ? "all" : "folder:" + folderFilter}
-              onChange={(e) => {
-                setFolderFilter(
-                  e.target.value === "all" ? null : e.target.value.slice(7),
-                );
-                setSelectedNotes([]);
-              }}
-            >
-              <option value="all">{t("allFolders")}</option>
-              <option value="folder:">{t("unfiled")}</option>
-              {[
-                ...new Set(
-                  notes
-                    .map((n) => organization("NOTE", n.id)?.folder ?? "")
-                    .filter(Boolean),
-                ),
-              ]
-                .sort()
-                .map((folder) => (
-                  <option key={folder} value={"folder:" + folder}>
-                    {folder}
-                  </option>
-                ))}
-            </Select>
-          </label>
+  const noteCards = (allEntries: Note[]) => (
+    <NoteBrowser
+      entries={allEntries}
+      journal={view === "journal"}
+      presentation={notePresentation}
+      onPresentation={setNotePresentation}
+      folderFilter={folderFilter}
+      onFolderFilter={setFolderFilter}
+      folders={[
+        ...new Set(
+          notes
+            .map((note) => organization("NOTE", note.id)?.folder ?? "")
+            .filter(Boolean),
+        ),
+      ].sort()}
+      getFolder={(id) => organization("NOTE", id)?.folder ?? ""}
+      selectedIds={selectedNotes}
+      onSelection={setSelectedNotes}
+      pending={busy}
+      searching={Boolean(query.trim())}
+      date={date}
+      onOpen={openNote}
+      onInspect={(note) => {
+        setSelectedEntity({ kind: "NOTE", id: note.id });
+        setAssistantOpen(false);
+      }}
+      onDelete={(note) =>
+        void run(async () => {
+          const deleted = await runtime.deleteNote(note.id, note.version, true);
+          showToast(t("movedToTrash"), async () => {
+            await runtime.deleteNote(deleted.id, deleted.version, false);
+            await refresh();
+          });
+        })
+      }
+      selectionActions={
+        <>
           {selectedNotes.length > 0 && (
             <>
               <input
@@ -1231,101 +1185,10 @@ function Workbench({
               </Button>
             </>
           )}
-        </div>
-        <div className="note-grid">
-          {entries
-            .filter(
-              (n) =>
-                folderFilter === null ||
-                (organization("NOTE", n.id)?.folder ?? "") === folderFilter,
-            )
-            .map((note) => (
-              <article className="selectable-note" key={note.id}>
-                <label className="note-selection">
-                  <input
-                    type="checkbox"
-                    aria-label={t("selectNote", { title: note.title })}
-                    checked={selectedNotes.includes(note.id)}
-                    disabled={
-                      busy ||
-                      (!selectedNotes.includes(note.id) &&
-                        selectedNotes.length >= 100)
-                    }
-                    onChange={(e) =>
-                      setSelectedNotes((old) =>
-                        e.target.checked
-                          ? [...old, note.id]
-                          : old.filter((id) => id !== note.id),
-                      )
-                    }
-                  />
-                  <span>
-                    {organization("NOTE", note.id)?.folder || t("unfiled")}
-                  </span>
-                </label>
-                <EntityRow
-                  className="note-card"
-                  intent="NAVIGATE"
-                  key={note.id}
-                  selected={
-                    selectedEntity?.kind === "NOTE" &&
-                    selectedEntity.id === note.id
-                  }
-                  onOpen={() => openNote(note)}
-                >
-                  <div className="note-card-top">
-                    {note.kind === "JOURNAL" ? (
-                      <NotebookPen size={18} />
-                    ) : (
-                      <BookOpen size={18} />
-                    )}
-                    <span>{note.day ?? date(note.updatedAt)}</span>
-                  </div>
-                  <h3>{note.title}</h3>
-                  {note.bodyMd !== undefined && (
-                    <p>{note.bodyMd.slice(0, 180) || t("emptyNote")}</p>
-                  )}
-                  <footer>
-                    <span>{t("private")}</span>
-                    <EntityMenu
-                      title={note.title}
-                      pending={busy}
-                      onOpen={() => openNote(note)}
-                      onInspect={() => {
-                        setSelectedEntity({ kind: "NOTE", id: note.id });
-                        setAssistantOpen(false);
-                      }}
-                      onDelete={() =>
-                        void run(async () => {
-                          const deleted = await runtime.deleteNote(
-                            note.id,
-                            note.version,
-                            true,
-                          );
-                          showToast(
-                            i18n.language.startsWith("zh")
-                              ? "已移至回收站"
-                              : "Moved to Trash",
-                            async () => {
-                              await runtime.deleteNote(
-                                deleted.id,
-                                deleted.version,
-                                false,
-                              );
-                              await refresh();
-                            },
-                          );
-                        })
-                      }
-                    />
-                  </footer>
-                </EntityRow>
-              </article>
-            ))}
-        </div>
-      </>
-    );
-  };
+        </>
+      }
+    />
+  );
   const pageCrumbs =
     view === "projects" &&
     activeProjectId &&

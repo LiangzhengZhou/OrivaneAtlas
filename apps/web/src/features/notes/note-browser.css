@@ -1,0 +1,272 @@
+.note-browser {
+  --note-columns: 20px minmax(0, 1fr) minmax(72px, 16%) 112px 18px 32px;
+  --note-selection-width: 36px;
+  min-width: 0;
+}
+.note-browser .organization-toolbar {
+  gap: 8px 16px;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.note-view-toolbar > label {
+  color: var(--text-secondary);
+  min-width: 0;
+}
+.note-fold-actions {
+  display: flex;
+  gap: 4px;
+}
+.note-browser .note-selection-toolbar {
+  min-height: 32px;
+  margin: 6px 0;
+}
+.note-browser .note-selection-toolbar > label {
+  color: var(--text-secondary);
+}
+.note-browser .note-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.note-browser .selectable-note,
+.note-list-header {
+  display: grid;
+  grid-template-columns: var(--note-selection-width) minmax(0, 1fr);
+  min-width: 0;
+  align-items: center;
+}
+.note-browser .selectable-note {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.note-browser .selectable-note:hover {
+  background: var(--surface-hover);
+}
+.note-browser .selectable-note[data-checked="true"] {
+  background: var(--surface-active);
+  box-shadow: inset 2px 0 var(--accent);
+}
+.note-browser .note-selection {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+.note-browser .note-selection input {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+}
+.note-browser .note-card,
+.note-list-columns {
+  display: grid;
+  grid-template-columns: var(--note-columns);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 3px 8px 3px 2px;
+}
+.note-browser .note-card {
+  width: 100%;
+  min-height: 39px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.note-list-header {
+  min-height: 30px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.note-browser .note-card h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-file-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--text-secondary);
+}
+.note-folder,
+.note-date {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-private {
+  color: var(--text-tertiary, var(--text-secondary));
+  display: flex;
+}
+.note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.note-browser .note-actions > .ui-icon-button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 4px;
+}
+.journal-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.journal-group-toggle:hover {
+  background: var(--surface-hover);
+}
+.journal-group-toggle[aria-expanded="false"] > svg {
+  transform: rotate(-90deg);
+}
+.journal-group-count {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.note-browser-empty {
+  padding: 16px 8px;
+  color: var(--text-secondary);
+}
+/* Small icons are horizontal tiles; medium and large icons use vertical tiles. */
+.note-browser[data-layout="small"] .note-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: 4px 8px;
+}
+.note-browser[data-layout="small"] .note-card {
+  grid-template-columns: 24px minmax(0, 1fr) 32px;
+  min-height: 44px;
+}
+.note-browser[data-layout="small"] .note-file-icon {
+  width: 24px;
+  height: 24px;
+}
+.note-browser[data-layout="small"]
+  :is(.note-folder, .note-date, .note-private) {
+  display: none;
+}
+.note-browser:is([data-layout="medium"], [data-layout="large"]) .note-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 156px), 1fr));
+  gap: 8px;
+}
+.note-browser[data-layout="large"] .note-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 196px), 1fr));
+}
+.note-browser:is([data-layout="medium"], [data-layout="large"])
+  .selectable-note {
+  position: relative;
+  display: block;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.note-browser:is([data-layout="medium"], [data-layout="large"])
+  .note-selection {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 32px;
+  z-index: 1;
+}
+.note-browser:is([data-layout="medium"], [data-layout="large"]) .note-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-height: 138px;
+  padding: 12px 10px;
+  border-radius: 6px;
+}
+.note-browser[data-layout="large"] .note-card {
+  min-height: 170px;
+  padding: 18px 12px;
+}
+.note-browser:is([data-layout="medium"], [data-layout="large"])
+  .note-file-icon {
+  width: 44px;
+  height: 44px;
+  stroke-width: 1.25;
+  color: var(--accent);
+}
+.note-browser[data-layout="large"] .note-file-icon {
+  width: 64px;
+  height: 64px;
+}
+.note-browser:is([data-layout="medium"], [data-layout="large"]) .note-card h3 {
+  flex: none;
+  width: 100%;
+  min-height: 2.8em;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.note-browser:is([data-layout="medium"], [data-layout="large"]) .note-folder {
+  max-width: 100%;
+}
+.note-browser:is([data-layout="medium"], [data-layout="large"])
+  :is(.note-date, .note-private) {
+  display: none;
+}
+.note-browser:is([data-layout="medium"], [data-layout="large"]) .note-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+@media (max-width: 760px) {
+  .note-browser {
+    --note-columns: 18px minmax(0, 1fr) 84px 32px;
+    --note-selection-width: 32px;
+  }
+  .note-browser[data-layout="list"] :is(.note-folder, .note-private),
+  .note-list-columns > span:nth-child(5) {
+    display: none;
+  }
+  .note-browser .note-card,
+  .note-list-columns {
+    gap: 6px;
+    padding-right: 2px;
+  }
+}
+@media (pointer: coarse) {
+  .note-browser .note-card {
+    min-height: 47px;
+  }
+  .note-browser .note-actions > .ui-icon-button {
+    width: 32px;
+    height: 44px;
+    min-height: 44px;
+  }
+  .journal-group-toggle {
+    min-height: 44px;
+  }
+}
+@media (forced-colors: active) {
+  .note-browser .selectable-note[data-checked="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

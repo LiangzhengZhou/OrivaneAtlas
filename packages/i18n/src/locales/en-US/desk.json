@@ -328,5 +328,29 @@
   "moveProject": "Move project: {{title}}",
   "moveIntoProject": "Move into {{title}}",
   "moveIntoCategory": "Move to {{title}}",
-  "changeProjectLifecycle": "Change project status"
+  "changeProjectLifecycle": "Change project status",
+  "noteBrowser": {
+    "view": "View layout",
+    "sort": "Sort notes",
+    "updated": "Recently updated",
+    "journalDate": "Journal date",
+    "layout": {
+      "list": "List",
+      "small": "Small icons",
+      "medium": "Medium icons",
+      "large": "Large icons"
+    },
+    "groupBy": "Group journals by",
+    "grouping": {
+      "none": "No grouping",
+      "year": "Year",
+      "month": "Month",
+      "week": "Week (Mon–Sun)",
+      "day": "Day"
+    },
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all",
+    "undated": "Undated",
+    "count": "{{count}} entries"
+  }
 }

@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.0.2]
+
+- Replace tall Notes and Journal cards with aligned compact rows and selectable list, small, medium and large icon views.
+- Group Journal entries by year, month, Monday-to-Sunday week or day, with individual and expand-all/collapse-all controls. Search reveals matching folded entries.
+- Remember separate Notes and Journal display preferences; preserve single-click opening, independent selection and menus, keyboard navigation and original Markdown.
+- Validate the UI source with 1500/1500 unit/integration tests and 708/708 browser cases across English desktop, Chinese desktop and Chinese mobile configurations. Native packages and publication are validated separately.
+- No database schema or account/workspace migration. Physical-device acceptance remains separate from browser automation.
+
 ## [3.0.1]
 
 - Complete account replica initialization before delta replay, including untouched historical projects. Existing partial replicas retain local drafts and receive a verified original backup before repair.

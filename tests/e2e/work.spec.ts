@@ -5367,7 +5367,7 @@ test("organization selection archive delete scannable rows and readable typograp
   await page
     .getByRole("button", { name: w.desk.moveSelected, exact: true })
     .click();
-  await expect(page.locator(".note-selection span").first()).toHaveText(
+  await expect(page.locator(".note-card .note-folder").first()).toHaveText(
     "量子场论",
   );
   await page.getByLabel(w.desk.folderFilter).selectOption("folder:");
@@ -8095,6 +8095,289 @@ test("v3 More sheet destinations and reorder handles fit narrow screens and larg
     });
     await page.keyboard.press("Escape");
   }
+});
+
+test("notes explorer compact columns and four view sizes preserve opening and selection", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  for (let index = 0; index < 8; index++)
+    await mutation(page, "/api/note/save", {
+      id: null,
+      version: 0,
+      input: {
+        title:
+          index === 0
+            ? "Lee–Yang theorem"
+            : `Research ${index} · 中文长标题与 English research`,
+        kind: "NOTE",
+        day: null,
+        bodyMd: "Original $E=mc^2$ content",
+      },
+    });
+  await page.reload();
+  await nav(page, w.desk.notes);
+  const rows = page.locator(".selectable-note");
+  await expect(rows).toHaveCount(8);
+  await page.screenshot({
+    path: info.outputPath("notes-list.png"),
+    fullPage: true,
+  });
+  const boxes = await rows.evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const row = node.getBoundingClientRect();
+      const title = node.querySelector("h3")!.getBoundingClientRect();
+      return { height: row.height, titleX: title.x };
+    }),
+  );
+  for (const box of boxes) {
+    expect(box.height).toBeLessThanOrEqual(
+      info.project.name.startsWith("mobile") ? 52 : 44,
+    );
+    expect(box.titleX).toBe(boxes[0]!.titleX);
+  }
+  const layout = page.getByLabel(/^(View layout|显示方式)$/);
+  for (const mode of ["small", "medium", "large", "list"]) {
+    await layout.selectOption(mode);
+    await expect(page.locator(".note-browser")).toHaveAttribute(
+      "data-layout",
+      mode,
+    );
+    const row = rows.filter({ hasText: "Lee–Yang theorem" });
+    await row.locator('input[type="checkbox"]').check();
+    await expect(page.locator(".document-pane")).toHaveCount(0);
+    await row
+      .getByRole("heading", { name: "Lee–Yang theorem", exact: true })
+      .click();
+    await expect(
+      pane(page).getByLabel(w.desk.noteTitle, { exact: true }),
+    ).toHaveValue("Lee–Yang theorem");
+    await expect(page.locator(".entity-inspector")).toHaveCount(0);
+    await nav(page, w.desk.notes);
+    await expect(layout).toHaveValue(mode);
+    await page.screenshot({
+      path: info.outputPath(`notes-${mode}.png`),
+      fullPage: true,
+    });
+  }
+  await layout.selectOption("medium");
+  await page.reload();
+  await expect(layout).toHaveValue("medium");
+  await layout.selectOption("list");
+  await page.locator(".note-card").first().focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator(".note-card").nth(1)).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(page.locator(".note-card").last()).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(page.locator(".note-card").first()).toBeFocused();
+});
+
+test("journal explorer year month week day folding preserves dates and search", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const days = [
+    "2025-12-28",
+    "2025-12-29",
+    "2026-01-04",
+    "2026-01-05",
+    "2026-10-19",
+    "2026-10-20",
+  ];
+  for (const day of days)
+    await mutation(page, "/api/note/save", {
+      id: null,
+      version: 0,
+      input: {
+        title: day,
+        kind: "JOURNAL",
+        day,
+        bodyMd: `Journal original ${day}`,
+      },
+    });
+  await page.reload();
+  await nav(page, w.desk.journal);
+  const grouping = page.getByLabel(/^(Group journals by|日记分组)$/);
+  const groups = page.locator(".journal-group");
+  await expect(grouping).toHaveValue("month");
+  await expect(groups).toHaveCount(3);
+  for (const [mode, count] of [
+    ["year", 2],
+    ["month", 3],
+    ["week", 4],
+    ["day", 6],
+  ] as const) {
+    await grouping.selectOption(mode);
+    await expect(groups).toHaveCount(count);
+    if (mode === "week") {
+      const crossYear = groups.filter({
+        has: page.locator('h3[title="2025-12-29"]'),
+      });
+      await expect(crossYear.locator("h3")).toHaveText([
+        "2026-01-04",
+        "2025-12-29",
+      ]);
+    }
+    const heading = groups.first().locator(".journal-group-toggle");
+    await groups.first().locator('input[type="checkbox"]').first().check();
+    await heading.press("Enter");
+    await expect(heading).toHaveAttribute("aria-expanded", "false");
+    await expect(groups.first().locator(".note-card")).toHaveCount(0);
+    await heading.press("Space");
+    await expect(heading).toHaveAttribute("aria-expanded", "true");
+    await expect(
+      groups.first().locator('input[type="checkbox"]').first(),
+    ).not.toBeChecked();
+    await page
+      .getByRole("button", { name: /^(Collapse all|全部收起)$/ })
+      .click();
+    await expect(page.locator(".note-card")).toHaveCount(0);
+    await page.screenshot({
+      path: info.outputPath(`journal-${mode}-collapsed.png`),
+      fullPage: true,
+    });
+    await page.getByRole("button", { name: /^(Expand all|全部展开)$/ }).click();
+    await expect(page.locator(".note-card")).toHaveCount(6);
+  }
+  await grouping.selectOption("week");
+  await page.getByRole("button", { name: /^(Collapse all|全部收起)$/ }).click();
+  const search = page.locator(".page-header input").first();
+  await search.fill("2025-12-29");
+  await expect(page.locator(".note-card")).toHaveCount(1);
+  await expect(page.locator(".note-card")).toContainText("2025-12-29");
+  await search.fill("");
+  await expect(page.locator(".note-card")).toHaveCount(0);
+  await page.getByRole("button", { name: /^(Expand all|全部展开)$/ }).click();
+  await page.getByLabel(/^(View layout|显示方式)$/).selectOption("small");
+  await page.reload();
+  await expect(grouping).toHaveValue("week");
+  await expect(page.getByLabel(/^(View layout|显示方式)$/)).toHaveValue(
+    "small",
+  );
+  await expect(groups).toHaveCount(4);
+  await page
+    .locator(".note-card")
+    .filter({ hasText: "2025-12-29" })
+    .press("Enter");
+  await expect(
+    pane(page).getByRole("textbox", {
+      name: /^(Journal title|日记标题)$/,
+      exact: true,
+    }),
+  ).toHaveValue("2025-12-29");
+  await expect(pane(page)).toContainText("Journal original 2025-12-29");
+  await nav(page, w.desk.journal);
+  await page.getByLabel(/^(View layout|显示方式)$/).selectOption("list");
+  await grouping.selectOption("month");
+  await page.screenshot({
+    path: info.outputPath("journal-month-expanded.png"),
+    fullPage: true,
+  });
+  await grouping.selectOption("none");
+  await expect(groups).toHaveCount(0);
+  await expect(page.locator(".note-card")).toHaveCount(6);
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.notes.map((note: { day: string }) => note.day).sort(),
+  ).toEqual([...days].sort());
+  for (const note of snapshot.notes) {
+    expect(note.version).toBe(1);
+    expect(note.bodyMd).toBe(`Journal original ${note.day}`);
+  }
+});
+
+test("notes explorer responsive icon alignment dark mode and enlarged text", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  for (const title of [
+    "Short",
+    "长标题与 English research " + "verylongfilename".repeat(12),
+  ])
+    await mutation(page, "/api/note/save", {
+      id: null,
+      version: 0,
+      input: { title, kind: "NOTE", day: null, bodyMd: "Original" },
+    });
+  await page.reload();
+  await nav(page, w.desk.notes);
+  const layout = page.getByLabel(/^(View layout|显示方式)$/);
+  for (const width of [360, 390, 430, 900, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const mode of ["list", "small", "medium", "large"]) {
+      await layout.selectOption(mode);
+      await page.evaluate(
+        (dark) => {
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+        },
+        width === 390 || width === 1440,
+      );
+      const bounds = await page
+        .locator(".note-browser")
+        .evaluate((element) => ({
+          width: element.clientWidth,
+          content: element.scrollWidth,
+          rows: [...element.querySelectorAll(".selectable-note")].map((row) => {
+            const rect = row.getBoundingClientRect();
+            const icon = row
+              .querySelector(".note-file-icon")!
+              .getBoundingClientRect();
+            return {
+              x: rect.x,
+              right: rect.right,
+              iconY: icon.y - rect.y,
+              iconWidth: icon.width,
+            };
+          }),
+        }));
+      expect(bounds.content).toBeLessThanOrEqual(bounds.width + 1);
+      for (const row of bounds.rows) {
+        expect(row.x).toBeGreaterThanOrEqual(0);
+        expect(row.right).toBeLessThanOrEqual(width);
+        expect(row.iconWidth).toBe(
+          mode === "large"
+            ? 64
+            : mode === "medium"
+              ? 44
+              : mode === "small"
+                ? 24
+                : 18,
+        );
+      }
+      expect(bounds.rows[0]!.iconY).toBe(bounds.rows[1]!.iconY);
+      if (mode === "list" || mode === "large")
+        await page.screenshot({
+          path: info.outputPath(`notes-responsive-${width}-${mode}.png`),
+          fullPage: true,
+        });
+    }
+  }
+  await page.setViewportSize({ width: 360, height: 900 });
+  await layout.selectOption("list");
+  await page.emulateMedia({ reducedMotion: "reduce", forcedColors: "active" });
+  await page.addStyleTag({
+    content:
+      ".note-browser h3, .note-browser label, .note-browser select { font-size: 20px; }",
+  });
+  await expect(page.locator(".note-card")).toHaveCount(2);
+  expect(
+    await page
+      .locator(".note-browser")
+      .evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
+  await page.screenshot({
+    path: info.outputPath("notes-enlarged-forced-colors.png"),
+    fullPage: true,
+  });
 });
 
 test("v3 upgrade notes open on one click with independent selection and details", async ({
