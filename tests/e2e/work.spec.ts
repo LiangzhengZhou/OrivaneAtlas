@@ -2685,7 +2685,11 @@ test("legacy Project original migrates once to the same first-class File identit
   await legacyRow
     .getByRole("button", { name: zh ? "恢复" : "Restore", exact: true })
     .click();
-  await expect(legacyRow).toBeVisible();
+  // Deleted rows are already visible with "Include deleted materials" checked.
+  // Wait for the committed restored state before interrupting the page.
+  await expect(
+    legacyRow.getByRole("button", { name: "Legacy original.bin", exact: true }),
+  ).toBeEnabled();
   await page.reload();
   await expect(legacyRow).toBeVisible();
   await page.context().setOffline(false);
