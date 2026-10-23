@@ -335,7 +335,9 @@ export function AssistantPane({
     };
   }, [runtime, selectionKey, requestedSessionId, sessionListLoad]);
   const [run, setRun] = useState<AgentRun | null>(null);
-  const [pending, setPending] = useState(false);
+  // Sessions always load on mount; render that state immediately instead of
+  // exposing enabled controls and scheduling an extra initial render.
+  const [pending, setPending] = useState(true);
   const [streamedText, setStreamedText] = useState("");
   const [error, setError] = useState("");
   useEffect(() => {

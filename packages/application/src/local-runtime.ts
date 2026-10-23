@@ -421,12 +421,14 @@ export class LocalRuntime {
     return file;
   }
   deleteFile(id: string, version: number, deleted: boolean) {
-    return this.workspace.run(
-      (s) => s.files.setDeleted(this.context, id, version, deleted),
-      () => ({
-        name: "file.delete",
-        input: localDto({ id, version, deleted }),
-      }),
+    return this.restartAbortedWorkspaceWrite(() =>
+      this.workspace.run(
+        (s) => s.files.setDeleted(this.context, id, version, deleted),
+        () => ({
+          name: "file.delete",
+          input: localDto({ id, version, deleted }),
+        }),
+      ),
     );
   }
   setFilePolicy(

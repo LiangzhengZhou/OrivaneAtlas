@@ -1243,6 +1243,8 @@ test("quick completion and restore arm without mutation and support cancellation
   await row.getByRole("button", { name: label, exact: true }).click();
   await row.getByRole("button", { name: confirmation, exact: true }).click();
   await taskScope(page, w.desk.taskWorkspace.completed);
+  // The local completed view can precede the remote replay ACK.
+  await expect.poll(async () => (await read()).status).toBe("DONE");
   const reopen = (zh ? "重新打开：" : "Reopen: ") + "Confirm safely";
   const confirmReopen =
     (zh ? "确认重新打开：" : "Confirm reopen: ") + "Confirm safely";

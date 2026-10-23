@@ -286,17 +286,21 @@ test("native secure account selector switches without password and forgets local
       page.locator(".note-card").filter({ hasText: "Remote note" }),
     ).toBeVisible();
     await page.locator(".note-card").filter({ hasText: "Remote note" }).click();
-    await page
-      .locator(".note-card")
-      .filter({ hasText: "Remote note" })
-      .press("Enter");
     // A legacy remote-keyed draft must not automatically enter a new local replica.
     await expect(
       page.getByRole("tab", { name: /research private draft/ }),
     ).toHaveCount(0);
     await expect(page.locator(".document-title")).toHaveValue("Remote note");
+    await expect(page.locator(".cm-content")).toHaveText("Remote body");
     await page.locator(".document-title").fill("research private draft");
-    await page.locator(".cm-content").fill("research private body");
+    // CodeMirror owns selection; DOM contenteditable fill can insert before its
+    // existing document. Exercise the same select-all/replace path as a user.
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.insertText("research private body");
+    await expect(page.locator(".cm-content")).toHaveText(
+      "research private body",
+    );
     await page.keyboard.press("Control+s");
     await expect(page.locator(".document-pane [role=status]")).toContainText(
       /Saved on this device|已保存到本机/,
@@ -318,14 +322,15 @@ test("native secure account selector switches without password and forgets local
       location.hash = "notes";
     });
     await page.locator(".note-card").filter({ hasText: "Remote note" }).click();
-    await page
-      .locator(".note-card")
-      .filter({ hasText: "Remote note" })
-      .press("Enter");
     await expect(page.locator(".document-title")).toHaveValue("Remote note");
     await expect(page.locator(".cm-content")).toHaveText("Remote body");
     await page.locator(".document-title").fill("personal private draft");
-    await page.locator(".cm-content").fill("personal private body");
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.insertText("personal private body");
+    await expect(page.locator(".cm-content")).toHaveText(
+      "personal private body",
+    );
     await page.keyboard.press("Control+s");
     await expect(page.locator(".document-pane [role=status]")).toContainText(
       /Saved on this device|已保存到本机/,
