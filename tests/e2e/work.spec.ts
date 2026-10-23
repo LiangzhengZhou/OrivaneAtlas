@@ -6576,7 +6576,13 @@ for (const transport of ["SSE", "cursor fallback"])
     await assistant
       .getByRole("textbox", { name: /^(Ask Atlas|向 Atlas 提问)$/ })
       .fill("Continue");
+    const proposed = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === "/api/ai/propose",
+    );
     await assistant.getByRole("button", { name: /^(Send|发送)$/ }).click();
+    expect((await proposed).ok()).toBe(true);
     const sessions = await (
       await page.request.get(workbench.url + "/api/ai/sessions")
     ).json();
@@ -9667,6 +9673,15 @@ test("workspace timezone appearance density and mobile navigation persist", asyn
   await expect(
     page.getByLabel(w.desk.workspaceTimezone, { exact: true }),
   ).toHaveValue("Asia/Tokyo");
+  // The input already contains this value before the asynchronous save starts.
+  // Confirm durable replay before testing that a reload preserves the setting.
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(workbench.url + "/api/snapshot")).json())
+          .calendarTimezone,
+    )
+    .toBe("Asia/Tokyo");
   await page
     .getByLabel(w.desk.appearance, { exact: true })
     .selectOption("dark");
@@ -16245,12 +16260,18 @@ test("local content imports into a newly created owned workspace before explicit
   await page
     .getByLabel(zh ? "新工作区名称" : "New workspace name", { exact: true })
     .fill("Imported device workspace");
+  const created = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/v1/workspaces/create",
+  );
   await page
     .getByRole("button", {
       name: zh ? "创建空工作区" : "Create empty workspace",
       exact: true,
     })
     .click();
+  expect((await created).ok()).toBe(true);
   const response = await page.request.get(workbench.url + "/api/v1/workspaces");
   const owned: { id: string; name: string }[] = await response.json();
   const destination = owned.find(

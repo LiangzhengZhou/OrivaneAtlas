@@ -143,12 +143,14 @@ export class LocalRuntime {
       },
       setCalendarSettings: (actor, version, timezone) => {
         const context = { ...actor };
-        return workspace.run(
-          (s) => s.work.setCalendarSettings(context, version, timezone),
-          () => ({
-            name: "calendar.settings",
-            input: localDto({ version, timezone }),
-          }),
+        return this.restartAbortedWorkspaceWrite(() =>
+          workspace.run(
+            (s) => s.work.setCalendarSettings(context, version, timezone),
+            () => ({
+              name: "calendar.settings",
+              input: localDto({ version, timezone }),
+            }),
+          ),
         );
       },
       setNavigationPreference: (actor, input) => {
@@ -318,17 +320,19 @@ export class LocalRuntime {
 
   uploadFile(input: FileUploadInput, bytes: Blob) {
     const captured = structuredClone(input);
-    return this.workspace.run(
-      (s) => s.files.upload(this.context, captured, bytes),
-      (result) => ({
-        name: "file.upload",
-        input: localDto({
-          id: result.id,
-          input: captured,
-          contentHash: result.contentHash,
-          size: result.size,
+    return this.restartAbortedWorkspaceWrite(() =>
+      this.workspace.run(
+        (s) => s.files.upload(this.context, captured, bytes),
+        (result) => ({
+          name: "file.upload",
+          input: localDto({
+            id: result.id,
+            input: captured,
+            contentHash: result.contentHash,
+            size: result.size,
+          }),
         }),
-      }),
+      ),
     );
   }
   async uploadProjectFile(

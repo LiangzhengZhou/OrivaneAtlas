@@ -1,10 +1,19 @@
+import { createHash } from "node:crypto";
 import { LocalRuntime, LocalWorkspace } from "@arclattice/application";
 import { IDBFactory } from "fake-indexeddb";
 import { expect, it } from "vitest";
 import { IndexedDbLocalStore } from "./indexed-db";
 
 it.each(
-  (["CREATE", "RESTORE_CATEGORY", "PUBLISH"] as const).flatMap((operation) =>
+  (
+    [
+      "CREATE",
+      "RESTORE_CATEGORY",
+      "PUBLISH",
+      "FILE_UPLOAD",
+      "CALENDAR",
+    ] as const
+  ).flatMap((operation) =>
     ([false, true] as const).map((continuous) => ({ operation, continuous })),
   ),
 )(
@@ -27,7 +36,18 @@ it.each(
     };
     const clock = { now: () => "2026-10-22T00:00:00Z" };
     const ids = { next: () => crypto.randomUUID() };
-    const blobs = { get: async () => null, put: async () => {} };
+    const content = new Map<string, Blob>();
+    const blobs = {
+      get: async (_workspace: string, hash: string) =>
+        content.get(hash) ?? null,
+      put: async (_workspace: string, hash: string, bytes: Blob) => {
+        content.set(hash, bytes);
+      },
+      digest: async (bytes: Blob) =>
+        createHash("sha256")
+          .update(Buffer.from(await bytes.arrayBuffer()))
+          .digest("hex"),
+    };
     const wiki = { extract: () => [], resolve: () => [] };
     const other = new LocalRuntime(
       new LocalWorkspace(second.metadata, blobs, identity, wiki, clock, ids),
@@ -76,23 +96,63 @@ it.each(
         version: 1,
         tasks: [{ tempId: "first", title: "Published once" }],
       });
+      const bytes = new Blob([new Uint8Array([0, 128, 255, 10])]);
       interfere = true;
       const result =
-        operation === "CREATE"
-          ? runtime.service.create(runtime.context, { title: "Created once" })
-          : operation === "RESTORE_CATEGORY"
-            ? runtime.saveCategory({
-                id: deleted.id,
-                version: deleted.version,
-                name: deleted.name,
-                deleted: false,
-              })
-            : runtime.publishPlan(plan.id, plan.version);
+        operation === "FILE_UPLOAD"
+          ? runtime.uploadFile(
+              {
+                name: "Preserved.bin",
+                mime: "application/octet-stream",
+                spaceId: null,
+              },
+              bytes,
+            )
+          : operation === "CALENDAR"
+            ? runtime.service.setCalendarSettings(
+                runtime.context,
+                0,
+                "Asia/Tokyo",
+              )
+            : operation === "CREATE"
+              ? runtime.service.create(runtime.context, {
+                  title: "Created once",
+                })
+              : operation === "RESTORE_CATEGORY"
+                ? runtime.saveCategory({
+                    id: deleted.id,
+                    version: deleted.version,
+                    name: deleted.name,
+                    deleted: false,
+                  })
+                : runtime.publishPlan(plan.id, plan.version);
       if (continuous)
         await expect(result).rejects.toMatchObject({
           code: "VERSION_CONFLICT",
         });
-      else if (operation === "CREATE")
+      else if (operation === "FILE_UPLOAD") {
+        const file = (await result) as Awaited<
+          ReturnType<LocalRuntime["uploadFile"]>
+        >;
+        expect(file).toMatchObject({
+          originalName: "Preserved.bin",
+          version: 1,
+        });
+        expect(
+          new Uint8Array(
+            await (await runtime.readFileBytes(file.id)).arrayBuffer(),
+          ),
+        ).toEqual(new Uint8Array(await bytes.arrayBuffer()));
+        expect(content.size).toBe(1);
+      } else if (operation === "CALENDAR") {
+        await expect(result).resolves.toMatchObject({
+          version: 1,
+          timezone: "Asia/Tokyo",
+        });
+        await expect(
+          runtime.service.setCalendarSettings(runtime.context, 0, "UTC"),
+        ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+      } else if (operation === "CREATE")
         await expect(result).resolves.toMatchObject({
           title: "Created once",
           version: 1,
@@ -124,6 +184,15 @@ it.each(
       ).toHaveLength(operation === "PUBLISH" && !continuous ? 1 : 0);
       expect(collisions).toBe(continuous ? 3 : 1);
       const outbox = await first.outbox.list(identity.workspaceId);
+      expect(outbox.filter((item) => item.entityType === "files")).toHaveLength(
+        operation === "FILE_UPLOAD" && !continuous ? 1 : 0,
+      );
+      expect(snapshot.calendarTimezone).toBe(
+        operation === "CALENDAR" && !continuous ? "Asia/Tokyo" : "UTC",
+      );
+      expect(snapshot.calendarSettings?.version).toBe(
+        operation === "CALENDAR" && !continuous ? 1 : 0,
+      );
       expect(outbox.filter((item) => item.entityType === "notes")).toHaveLength(
         continuous ? 3 : 1,
       );
