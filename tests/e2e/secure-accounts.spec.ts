@@ -271,11 +271,15 @@ test("native secure account selector switches without password and forgets local
       await page
         .getByRole("button", { name: /^(Review sync options|查看同步选项)$/ })
         .click();
-      await page
-        .getByRole("button", {
-          name: /^(Open account workspace|打开账户工作区)$/,
-        })
-        .click();
+      await Promise.all([
+        page.waitForEvent("domcontentloaded"),
+        page
+          .getByRole("button", {
+            name: /^(Open account workspace|打开账户工作区)$/,
+          })
+          .click(),
+      ]);
+      await expect(page.locator(".app-shell")).toBeVisible();
     };
     await openReplica();
     await expect(page.locator(".app-shell")).toBeVisible();

@@ -98,9 +98,12 @@ export class LocalMutationTransaction {
     this.assertOpen();
     const key = this.key(collection, id);
     const pending = this.writes.get(key) ?? this.records.get(key);
+    const listed = this.collectionReads.get(collection);
     const value =
       pending?.entity ??
-      (await this.store.get(this.actor.workspaceId, collection, id));
+      (listed
+        ? ((await listed).find((entity) => entity.id === id) ?? null)
+        : await this.store.get(this.actor.workspaceId, collection, id));
     this.assertOpen();
     return structuredClone(value);
   }
@@ -188,10 +191,12 @@ export class LocalMutationTransaction {
         )
           throw new Error("LOCAL_DATA_CORRUPT");
         const key = this.key(ref.collection, ref.id);
+        const listed = this.collectionReads.get(ref.collection);
         const selected =
           (this.writes.get(key) ?? this.records.get(key))?.entity ??
-          value ??
-          null;
+          (listed
+            ? ((await listed).find((entity) => entity.id === ref.id) ?? null)
+            : (value ?? null));
         result.push(this.readProjection ? selected : structuredClone(selected));
       }
     }

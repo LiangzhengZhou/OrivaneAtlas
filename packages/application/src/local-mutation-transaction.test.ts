@@ -231,10 +231,28 @@ it("shares only same-stage collection reads and overlays later writes without ex
   ]);
   Object.assign(first[0]!.value!, { title: "Caller changed" });
   expect(second[0]!.value).toEqual({ title: "Original" });
+  vi.mocked(store.get).mockImplementation(async (_workspace, collection, id) =>
+    collection === "items"
+      ? { ...entity, id, value: { title: "Concurrent canonical value" } }
+      : null,
+  );
+  expect((await tx.get("items", "task"))?.value).toEqual({ title: "Original" });
+  expect(await tx.get("items", "arrived-later")).toBeNull();
+  const pointReads = await tx.getMany([
+    { collection: "items", id: "task" },
+    { collection: "items", id: "arrived-later" },
+  ]);
+  expect(pointReads.map((row) => row?.value ?? null)).toEqual([
+    { title: "Original" },
+    null,
+  ]);
+  Object.assign(pointReads[0]!.value!, { title: "Caller changed again" });
+  expect((await tx.get("items", "task"))?.value).toEqual({ title: "Original" });
   tx.stage({ ...entity, version: 2, value: { title: "Staged" } }, 1, "PATCH", {
     title: "Staged",
   });
   expect((await tx.list("items"))[0]!.value).toEqual({ title: "Staged" });
+  expect((await tx.get("items", "task"))?.value).toEqual({ title: "Staged" });
   expect(store.list).toHaveBeenCalledTimes(1);
   tx.abort();
   await (await begin()).list("items");
