@@ -81,10 +81,13 @@ export function AssistantPane({
   );
   const currentSelectionKey = useRef(selectionKey);
   currentSelectionKey.current = selectionKey;
-  function rememberSelection(id: string | null) {
-    if (id) localStorage.setItem(selectionKey, id);
-    else localStorage.removeItem(selectionKey);
-  }
+  const rememberSelection = useCallback(
+    (id: string | null) => {
+      if (id) localStorage.setItem(selectionKey, id);
+      else localStorage.removeItem(selectionKey);
+    },
+    [selectionKey],
+  );
   const [prompt, setPrompt] = useState("");
   const [selectedProject, setSelectedProject] = useState<string | null>(
     projectId ?? null,
@@ -231,22 +234,25 @@ export function AssistantPane({
   }, [session?.id, session?.messages.length, queueMessageLayout]);
   const [historyBefore, setHistoryBefore] = useState(0);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
-  async function openSession(id: string) {
-    const requestedKey = selectionKey;
-    const page = await runtime.agentSessionPage(id);
-    if (currentSelectionKey.current !== requestedKey) return page.session;
-    rememberSelection(page.session.id);
-    if (embedded)
-      history.replaceState(
-        history.state,
-        "",
-        conversationHash(page.session.id),
-      );
-    setSession(page.session);
-    setHistoryBefore(page.before);
-    setHasMoreHistory(page.hasMore);
-    return page.session;
-  }
+  const openSession = useCallback(
+    async (id: string) => {
+      const requestedKey = selectionKey;
+      const page = await runtime.agentSessionPage(id);
+      if (currentSelectionKey.current !== requestedKey) return page.session;
+      rememberSelection(page.session.id);
+      if (embedded)
+        history.replaceState(
+          history.state,
+          "",
+          conversationHash(page.session.id),
+        );
+      setSession(page.session);
+      setHistoryBefore(page.before);
+      setHasMoreHistory(page.hasMore);
+      return page.session;
+    },
+    [runtime, selectionKey, rememberSelection, embedded],
+  );
   const [profiles, setProfiles] = useState<ModelProfile[]>([]),
     [explicitProfile, setExplicitProfile] = useState("");
   useEffect(() => {
@@ -479,6 +485,75 @@ export function AssistantPane({
       })(),
     );
   }
+  const conversationRows = useMemo(
+    () =>
+      conversationGroups.map((group) => (
+        <section key={group.id}>
+          {group.title && <h3>{group.title}</h3>}
+          <VirtualTaskCollection
+            items={group.entries}
+            virtualizeAfter={40}
+            estimatedRowHeight={72}
+            render={(entry) => (
+              <Button
+                className="conversation-entry"
+                variant="ghost"
+                type="button"
+                key={entry.id}
+                aria-current={entry.id === session?.id ? "page" : undefined}
+                disabled={
+                  pending ||
+                  run?.status === "RUNNING" ||
+                  run?.status === "WAITING_APPROVAL"
+                }
+                onClick={async () => {
+                  if (embedded) {
+                    location.hash = conversationHash(entry.id);
+                    return;
+                  }
+                  setPending(true);
+                  try {
+                    const opened = await openSession(entry.id);
+                    setRun(null);
+                    setStreamedText("");
+                    const lastRunId = latestConversationRunId(opened.messages);
+                    setRun(
+                      lastRunId ? await runtime.agentRun(lastRunId) : null,
+                    );
+                  } catch (failure) {
+                    setError(
+                      failure instanceof Error
+                        ? failure.message
+                        : "UNAVAILABLE",
+                    );
+                  } finally {
+                    setPending(false);
+                  }
+                }}
+              >
+                <span className="conversation-entry-title">{entry.title}</span>
+                {entry.projectId && (
+                  <small>
+                    {projectTitles.get(entry.projectId) ??
+                      (zh ? "项目" : "Project")}
+                  </small>
+                )}
+              </Button>
+            )}
+          />
+        </section>
+      )),
+    [
+      conversationGroups,
+      projectTitles,
+      zh,
+      session?.id,
+      pending,
+      run?.status,
+      embedded,
+      openSession,
+    ],
+  );
   return (
     <aside
       className={
@@ -538,70 +613,7 @@ export function AssistantPane({
               onArchived={setShowArchived}
               onGrouped={setGroupByProject}
             />
-            {conversationGroups.map((group) => (
-              <section key={group.id}>
-                {group.title && <h3>{group.title}</h3>}
-                <VirtualTaskCollection
-                  items={group.entries}
-                  virtualizeAfter={40}
-                  estimatedRowHeight={72}
-                  render={(entry) => (
-                    <Button
-                      className="conversation-entry"
-                      variant="ghost"
-                      type="button"
-                      key={entry.id}
-                      aria-current={
-                        entry.id === session?.id ? "page" : undefined
-                      }
-                      disabled={
-                        pending ||
-                        run?.status === "RUNNING" ||
-                        run?.status === "WAITING_APPROVAL"
-                      }
-                      onClick={async () => {
-                        if (embedded) {
-                          location.hash = conversationHash(entry.id);
-                          return;
-                        }
-                        setPending(true);
-                        try {
-                          const opened = await openSession(entry.id);
-                          setRun(null);
-                          setStreamedText("");
-                          const lastRunId = latestConversationRunId(
-                            opened.messages,
-                          );
-                          setRun(
-                            lastRunId
-                              ? await runtime.agentRun(lastRunId)
-                              : null,
-                          );
-                        } catch (failure) {
-                          setError(
-                            failure instanceof Error
-                              ? failure.message
-                              : "UNAVAILABLE",
-                          );
-                        } finally {
-                          setPending(false);
-                        }
-                      }}
-                    >
-                      <span className="conversation-entry-title">
-                        {entry.title}
-                      </span>
-                      {entry.projectId && (
-                        <small>
-                          {projectTitles.get(entry.projectId) ??
-                            (zh ? "项目" : "Project")}
-                        </small>
-                      )}
-                    </Button>
-                  )}
-                />
-              </section>
-            ))}
+            {conversationRows}
           </nav>
         </div>
         <div className="conversation-main">
