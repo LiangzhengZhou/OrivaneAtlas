@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.0.3]
+
+- Refresh the workspace shell and shared controls: warm neutral surfaces, restrained accent use, unified typography/spacing/radii, quieter buttons and consistent Lucide icon sizing.
+- Unify Files into a NOTE/DOCUMENT/FILE workspace with note folders, document reading columns, uploads, original-image viewing and mobile resource-first layouts.
+- Add compact task timers, minute-level due times, project overview/material refinements and reconciled empty states.
+- Reorganize Settings and Account/API hierarchy, including mobile advanced settings and a separate server connectivity probe.
+- Harden folder recovery/import replay, task timer timestamps, notification causes, local drafts and concurrent sync ACK effects without weakening entity CAS or permissions.
+- Validate the current source with 1527/1527 executed tests (1 skipped), 738/738 browser cases across English desktop, Chinese desktop and Chinese mobile configurations, and Windows/Android native packages.
+- Formal 20-sample/14-metric performance acceptance is not fully green; Atlas conversation-list performance remains an open item for 3.1.0. Physical-device acceptance remains separate from browser automation.
+
 ## [3.0.2]
 
 - Replace tall Notes and Journal cards with aligned compact rows and selectable list, small, medium and large icon views.

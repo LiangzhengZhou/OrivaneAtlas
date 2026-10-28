@@ -111,8 +111,14 @@ test("Gateway registry policy persists and approved alternatives are visible bef
       }),
     ).toBeVisible();
     await page.evaluate(() => {
-      location.hash = "settings";
+      location.hash = "account";
     });
+    await page
+      .getByRole("tab", {
+        name: zh ? "API 与模型" : "API & models",
+        exact: true,
+      })
+      .click();
     const defaultRow = page
       .locator(".model-settings-row")
       .filter({ has: page.locator("strong", { hasText: "Default profile" }) });
@@ -156,8 +162,14 @@ test("Gateway registry policy persists and approved alternatives are visible bef
       }),
     ).toBeVisible();
     await page.evaluate(() => {
-      location.hash = "settings";
+      location.hash = "account";
     });
+    await page
+      .getByRole("tab", {
+        name: zh ? "API 与模型" : "API & models",
+        exact: true,
+      })
+      .click();
     await defaultRow
       .getByRole("button", {
         name: zh ? "编辑配置" : "Edit profile",

@@ -66,7 +66,19 @@ export function ContextPane({
             <p className="muted">{t(`statuses.${entity.status}`)}</p>
           )}
           {"dueDate" in entity && entity.dueDate && (
-            <time dateTime={entity.dueDate}>{entity.dueDate}</time>
+            <time
+              dateTime={
+                entity.dueDate +
+                ("dueTime" in entity && entity.dueTime
+                  ? "T" + entity.dueTime
+                  : "")
+              }
+            >
+              {entity.dueDate}
+              {"dueTime" in entity && entity.dueTime
+                ? ` ${entity.dueTime}`
+                : ""}
+            </time>
           )}
           {selected && (
             <Button variant="ghost" onClick={() => onOpen(selected)}>

@@ -115,7 +115,11 @@ import {
   resolveWikiLinks,
 } from "@arclattice/wiki-core";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
-import { imageLoadFailure, imageResponseBlob } from "./imageResponse";
+import {
+  ImageLoadError,
+  imageLoadFailure,
+  imageResponseBlob,
+} from "./imageResponse";
 import { scopedImageLoader } from "./scoped-image-loader";
 import { WorkspaceEventDecoder } from "./utils/workspace-event-decoder";
 
@@ -257,6 +261,18 @@ interface SyncResponse {
   snapshot: Snapshot | null;
   changes?: WorkspaceChanges;
   hasMore: boolean;
+}
+export interface ServerProbeResult {
+  kind:
+    | "OK"
+    | "AUTH_REQUIRED"
+    | "NETWORK_FAILURE"
+    | "TIMEOUT"
+    | "SERVER_ERROR"
+    | "LOCAL_ONLY";
+  latencyMs: number | null;
+  status: number | null;
+  checkedAt: string;
 }
 export async function bootstrap() {
   const workspaceCatalog = await IndexedDbWorkspaceCatalog.open();
@@ -1639,6 +1655,32 @@ export async function bootstrap() {
               requireRemoteBindingScope(scope, generation);
               return imageResponseBlob(response);
             },
+            revalidateCache: async (scope, contentHash) => {
+              requireRemoteBindingScope(scope, generation);
+              const response = await transport(
+                `/api/library/asset/meta?id=${encodeURIComponent(path.slice("/api/library/asset?id=".length))}`,
+                undefined,
+                "",
+                scope.remoteWorkspaceId!,
+              );
+              requireRemoteBindingScope(scope, generation);
+              // Older servers have no metadata route; fall back to a full fetch.
+              if (response.status === 404 || response.status === 405)
+                return false;
+              if (response.status === 401 || response.status === 403)
+                throw new ImageLoadError("access", response.status);
+              if (!response.ok)
+                throw new ImageLoadError("response", response.status);
+              let meta: Record<string, unknown> | null = null;
+              try {
+                const value: unknown = await response.json();
+                if (value && typeof value === "object" && !Array.isArray(value))
+                  meta = value as Record<string, unknown>;
+              } catch {
+                meta = null;
+              }
+              return meta?.contentHash === contentHash;
+            },
           },
         );
       }
@@ -2866,6 +2908,53 @@ export async function bootstrap() {
     get serverOrigin() {
       return serverOrigin;
     },
+    /** Read-only reachability probe: health first, then authenticated session status. */
+    probeServer: async (): Promise<ServerProbeResult> => {
+      const checkedAt = new Date().toISOString();
+      if (!serverOrigin)
+        return {
+          kind: "LOCAL_ONLY",
+          latencyMs: null,
+          status: null,
+          checkedAt,
+        };
+      const started = performance.now();
+      try {
+        const health = await transport("/api/health");
+        const latencyMs = Math.max(0, Math.round(performance.now() - started));
+        if (!health.ok)
+          return {
+            kind: "SERVER_ERROR",
+            latencyMs,
+            status: health.status,
+            checkedAt,
+          };
+        const session = await transport("/api/account/sessions");
+        if (session.ok)
+          return { kind: "OK", latencyMs, status: session.status, checkedAt };
+        if (session.status === 401 || session.status === 403)
+          return {
+            kind: "AUTH_REQUIRED",
+            latencyMs,
+            status: session.status,
+            checkedAt,
+          };
+        return {
+          kind: "SERVER_ERROR",
+          latencyMs,
+          status: session.status,
+          checkedAt,
+        };
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "";
+        return {
+          kind: code === "LOGIN_TIMEOUT" ? "TIMEOUT" : "NETWORK_FAILURE",
+          latencyMs: Math.max(0, Math.round(performance.now() - started)),
+          status: null,
+          checkedAt,
+        };
+      }
+    },
     async setServerOrigin(value: string) {
       await notifications.reconcile([]);
       const normalized = normalizeServerOrigin(value);
@@ -3427,7 +3516,7 @@ export async function bootstrap() {
       const captured = structuredClone(input),
         generation = serverGeneration;
       if (captured.kind === "NOTE" && captured.action === "delete") {
-        for (const entry of captured.entries)
+        for (const entry of captured.entries ?? [])
           await prepareKnowledgeLifecycle("notes", entry.id, entry.version);
       }
       if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");

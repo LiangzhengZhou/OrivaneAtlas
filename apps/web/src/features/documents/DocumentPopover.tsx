@@ -6,11 +6,14 @@ export function DocumentPopover({
   className,
   children,
   requestOpen = 0,
+  closeOnClick = false,
 }: {
   label: ReactNode;
   className: string;
   children: ReactNode;
   requestOpen?: number;
+  /** Terminal single-choice menus close on selection; panels with inputs stay open. */
+  closeOnClick?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -46,7 +49,13 @@ export function DocumentPopover({
         {label}
       </Button>
       {open && (
-        <div className="document-popover-panel" role="dialog">
+        <div
+          className="document-popover-panel"
+          role="dialog"
+          onClick={() => {
+            if (closeOnClick) setOpen(false);
+          }}
+        >
           {children}
         </div>
       )}

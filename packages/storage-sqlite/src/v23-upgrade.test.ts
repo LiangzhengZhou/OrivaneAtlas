@@ -35,7 +35,7 @@ it("upgrades exact v2.2 SQLite schema32 with a dirty Wiki gate and restorable or
     expect(raw.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     const next = await migrate(raw, file, 100);
     expect(next.backupPath).toBeTruthy();
-    expect(inspectSchema(raw)).toBe(42);
+    expect(inspectSchema(raw)).toBe(migrations.length);
     expect(
       raw
         .prepare("SELECT payload FROM library_entry WHERE id='legacy-document'")

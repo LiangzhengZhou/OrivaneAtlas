@@ -5,6 +5,7 @@ import {
   type WorkItem,
 } from "@arclattice/domain";
 import { calendarDateOffset, calendarDayStart } from "./recurrence-lifecycle";
+import { taskDueInstant } from "./task-due";
 import type { WorkflowRecord } from "./workflows";
 
 export type NotificationKind =
@@ -181,7 +182,14 @@ export class NotificationPlanner {
         continue;
       if (task.startDate) add("TASK_START", task.id, task.startDate);
       if (task.dueDate) {
-        add("TASK_DUE", task.id, task.dueDate);
+        add(
+          "TASK_DUE",
+          task.id,
+          task.dueDate,
+          input.timezone,
+          taskDueInstant(task, input.timezone) ??
+            localTime(task.dueDate, input.timezone, hour),
+        );
         add("TASK_OVERDUE", task.id, calendarDateOffset(task.dueDate, 1));
       }
     }

@@ -6,22 +6,27 @@ import type {
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { WorkspaceConnection } from "./app/WorkspaceConnection";
-import type { Runtime } from "./bootstrap";
+import type { Runtime, Snapshot } from "./bootstrap";
 import { Button } from "./components/ui/Button";
 import { confirmAction } from "./components/ui/ConfirmationHost";
 import { Select } from "./components/ui/Surfaces";
+import { AiSettingsView } from "./features/ai/AiSettingsView";
+import "./AccountViews.css";
 
 export function AccountView({
   runtime,
+  snapshot,
   onLogout,
   confirmLeave,
 }: {
   runtime: Runtime;
+  snapshot: Snapshot;
   onLogout: () => void;
   confirmLeave: () => Promise<boolean>;
 }) {
   const { t, i18n } = useTranslation("spaces");
   const zh = i18n.language.startsWith("zh");
+  const [tab, setTab] = useState<"account" | "api">("account");
   const [days, setDays] = useState<30 | 90 | 365 | null>(30);
   const [, accountChanged] = useState(0);
   const [sessions, setSessions] = useState<AccountSession[]>([]);
@@ -71,336 +76,392 @@ export function AccountView({
   }
   return (
     <div className="account-grid">
-      <WorkspaceConnection
-        runtime={runtime}
-        confirmLeave={confirmLeave}
-        onChanged={() => accountChanged((value) => value + 1)}
-      />
+      <nav
+        className="account-tabs"
+        role="tablist"
+        aria-label={zh ? "账户分区" : "Account sections"}
+      >
+        {(
+          [
+            ["account", zh ? "账户与安全" : "Account & security"],
+            ["api", zh ? "API 与模型" : "API & models"],
+          ] as const
+        ).map(([id, label]) => (
+          <Button
+            key={id}
+            type="button"
+            role="tab"
+            variant={tab === id ? "primary" : "ghost"}
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+          >
+            {label}
+          </Button>
+        ))}
+      </nav>
       {error && (
         <p className="error" role="alert">
           {t("error")}
         </p>
       )}
       {notice && <p role="status">{t(notice)}</p>}
-      {runtime.account && (
-        <section className="panel account-panel">
-          <h2>{t("loginSessions")}</h2>
-          <p className="muted">
-            {runtime.native
-              ? t("secureSwitchHint", {
-                  defaultValue: zh
-                    ? "切换账户会保留本机加密会话，返回登录页选择账户或添加其他服务器账户。退出登录会撤销并删除当前会话。"
-                    : "Switch preserves encrypted sessions on this device. Select an account or add another server account on the sign-in page. Sign out revokes and removes the current session.",
-                })
-              : t("switchHint")}
-          </p>
-          <div className="action-row">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={busy}
-              onClick={async () => {
-                if (await confirmLeave())
-                  void run(async () => {
-                    await runtime.logout();
-                    onLogout();
-                  });
-              }}
-            >
-              {t("signOut")}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={busy}
-              onClick={async () => {
-                if (await confirmLeave())
-                  void run(async () => {
-                    if (runtime.native) await runtime.beginAccountSwitch();
-                    else await runtime.logout();
-                    onLogout();
-                  });
-              }}
-            >
-              {t("switchAccount")}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => setSessions(await runtime.sessions()))
-              }
-            >
-              {t("refresh")}
-            </Button>
-          </div>
-          {sessions.map((session) => (
-            <div className="token-row" key={session.id}>
-              <div>
-                <strong>
-                  {t(session.current ? "currentSession" : "otherSession")}
-                </strong>
-                <small>
-                  {t("signedInAt")}{" "}
-                  {new Date(session.createdAt).toLocaleString(i18n.language)}
-                </small>
-                <small>
-                  {t("expires")}{" "}
-                  {session.expiresAt === null
-                    ? t("PERMANENT")
-                    : new Date(session.expiresAt).toLocaleString(i18n.language)}
-                </small>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={busy}
-                onClick={async () => {
-                  if (session.current && !(await confirmLeave())) return;
-                  void run(async () => {
-                    await runtime.revokeSession(session);
-                    if (session.current) onLogout();
-                    else setSessions(await runtime.sessions());
-                  });
-                }}
-              >
-                {t("revoke")}
-              </Button>
-            </div>
-          ))}
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={busy || sessions.length === 0}
-            onClick={async () => {
-              if (
-                (await confirmLeave()) &&
-                (await confirmAction(t("revokeAllConfirm")))
-              )
-                void run(async () => {
-                  await runtime.revokeSession({ all: true });
-                  onLogout();
-                });
-            }}
-          >
-            {t("revokeAllSessions")}
-          </Button>
-        </section>
-      )}
-      {!runtime.account && runtime.remoteContext ? (
-        <section className="panel account-panel">
-          <h2>{t("claim")}</h2>
-          <p>{t("claimHint")}</p>
-          <p className="muted">{t("signInHint")}</p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run(async () => {
-                await runtime.claim(username, password);
-                setPassword("");
-                setNotice("claimed");
-              });
-            }}
-          >
-            <label className="field">
-              {t("username")}
-              <input
-                autoComplete="username"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </label>
-            <label className="field">
-              {t("password")}
-              <input
-                type="password"
-                minLength={12}
-                maxLength={128}
-                autoComplete="new-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </label>
-            <Button variant="primary" type="submit" disabled={busy || !!notice}>
-              {t("claim")}
-            </Button>
-          </form>
-        </section>
-      ) : runtime.account ? (
-        <section className="panel account-panel">
-          <h2>{runtime.account.username}</h2>
-          <p>{t(runtime.account.role)}</p>
-          <h3>{t("passwordChange")}</h3>
-          <p className="muted">{t("passwordHint")}</p>
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (!(await confirmLeave())) return;
-              void run(async () => {
-                await runtime.changePassword(current, password);
-                setCurrent("");
-                setPassword("");
-                onLogout();
-              });
-            }}
-          >
-            <label className="field">
-              {t("currentPassword")}
-              <input
-                type="password"
-                required
-                autoComplete="current-password"
-                value={current}
-                onChange={(e) => setCurrent(e.target.value)}
-              />
-            </label>
-            <label className="field">
-              {t("newPassword")}
-              <input
-                type="password"
-                required
-                minLength={12}
-                maxLength={128}
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </label>
-            <Button type="submit" variant="secondary" disabled={busy}>
-              {t("passwordChange")}
-            </Button>
-          </form>
-        </section>
-      ) : null}
-      <section className="panel account-panel">
-        <h2>{t("tokens")}</h2>
-        <p>{t("tokenHint")}</p>
-        <p className="muted">{t("apiExample")}</p>
-        <a
-          className="ui-button ui-button-secondary"
-          href="/api/openapi.json"
-          download="arclattice-openapi.json"
-        >
-          {t("apiSpec")}
-        </a>
-        {!runtime.account ? (
-          <p>{t("bindFirst")}</p>
-        ) : (
-          <>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  const result = await runtime.issueToken(name, scope, days);
-                  setSecret(result.secret);
-                  setTokens(await runtime.tokens());
-                });
-              }}
-            >
-              <label className="field">
-                {t("tokenName")}
-                <input
-                  required
-                  maxLength={80}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                {t("scope", { defaultValue: t("tokens") })}
-                <Select
-                  value={scope}
-                  onChange={(e) =>
-                    setScope(e.target.value as ApiCredential["scope"])
-                  }
-                >
-                  <option value="write">{t("write")}</option>
-                  <option value="read-write">{t("readWrite")}</option>
-                </Select>
-              </label>
-              <label className="field">
-                {zh ? "有效期" : "Validity"}
-                <Select
-                  value={days ?? "permanent"}
-                  onChange={(e) =>
-                    setDays(
-                      e.target.value === "permanent"
-                        ? null
-                        : (Number(e.target.value) as 30 | 90 | 365),
-                    )
-                  }
-                >
-                  {[30, 90, 365].map((n) => (
-                    <option key={n} value={n}>
-                      {n} {zh ? "天" : "days"}
-                    </option>
-                  ))}
-                  <option value="permanent">
-                    {zh ? "长期有效（可撤销）" : "Permanent (revocable)"}
-                  </option>
-                </Select>
-              </label>
-              <p className="muted">{t("readWarning")}</p>
-              <Button
-                variant="primary"
-                type="submit"
-                disabled={busy || !!secret}
-              >
-                {t("issue")}
-              </Button>
-            </form>
-            {secret && (
-              <div className="secret-once">
-                <p>{t("once")}</p>
-                <textarea
-                  readOnly
-                  value={secret}
-                  aria-label={t("tokens")}
-                  onFocus={(e) => e.target.select()}
-                />
+      {tab === "account" && (
+        <>
+          <WorkspaceConnection
+            runtime={runtime}
+            confirmLeave={confirmLeave}
+            onChanged={() => accountChanged((value) => value + 1)}
+          />
+          {runtime.account && (
+            <section className="panel account-panel">
+              <h2>{t("loginSessions")}</h2>
+              <p className="muted">
+                {runtime.native
+                  ? t("secureSwitchHint", {
+                      defaultValue: zh
+                        ? "切换账户会保留本机加密会话，返回登录页选择账户或添加其他服务器账户。退出登录会撤销并删除当前会话。"
+                        : "Switch preserves encrypted sessions on this device. Select an account or add another server account on the sign-in page. Sign out revokes and removes the current session.",
+                    })
+                  : t("switchHint")}
+              </p>
+              <div className="action-row">
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => setSecret("")}
+                  disabled={busy}
+                  onClick={async () => {
+                    if (await confirmLeave())
+                      void run(async () => {
+                        await runtime.logout();
+                        onLogout();
+                      });
+                  }}
                 >
-                  {t("closeSecret")}
+                  {t("signOut")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={async () => {
+                    if (await confirmLeave())
+                      void run(async () => {
+                        if (runtime.native) await runtime.beginAccountSwitch();
+                        else await runtime.logout();
+                        onLogout();
+                      });
+                  }}
+                >
+                  {t("switchAccount")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => setSessions(await runtime.sessions()))
+                  }
+                >
+                  {t("refresh")}
                 </Button>
               </div>
-            )}
-            <div className="token-list">
-              {tokens.map((item) => (
-                <div className="token-row" key={item.id}>
+              {sessions.map((session) => (
+                <div className="token-row" key={session.id}>
                   <div>
-                    <strong>{item.name}</strong>
+                    <strong>
+                      {t(session.current ? "currentSession" : "otherSession")}
+                    </strong>
                     <small>
-                      {t(item.scope === "write" ? "write" : "readWrite")} ·{" "}
+                      {t("signedInAt")}{" "}
+                      {new Date(session.createdAt).toLocaleString(
+                        i18n.language,
+                      )}
+                    </small>
+                    <small>
                       {t("expires")}{" "}
-                      {item.expiresAt?.slice(0, 10) ??
-                        (zh ? "长期有效" : "Permanent")}
+                      {session.expiresAt === null
+                        ? t("PERMANENT")
+                        : new Date(session.expiresAt).toLocaleString(
+                            i18n.language,
+                          )}
                     </small>
                   </div>
                   <Button
-                    variant="secondary"
                     type="button"
-                    disabled={busy || !!item.revokedAt}
-                    onClick={() =>
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={async () => {
+                      if (session.current && !(await confirmLeave())) return;
                       void run(async () => {
-                        await runtime.revokeToken(item.id);
-                        setTokens(await runtime.tokens());
-                      })
-                    }
+                        await runtime.revokeSession(session);
+                        if (session.current) onLogout();
+                        else setSessions(await runtime.sessions());
+                      });
+                    }}
                   >
-                    {t(item.revokedAt ? "revoked" : "revoke")}
+                    {t("revoke")}
                   </Button>
                 </div>
               ))}
-            </div>
-          </>
-        )}
-      </section>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy || sessions.length === 0}
+                onClick={async () => {
+                  if (
+                    (await confirmLeave()) &&
+                    (await confirmAction(t("revokeAllConfirm")))
+                  )
+                    void run(async () => {
+                      await runtime.revokeSession({ all: true });
+                      onLogout();
+                    });
+                }}
+              >
+                {t("revokeAllSessions")}
+              </Button>
+            </section>
+          )}
+          {!runtime.account && runtime.remoteContext ? (
+            <section className="panel account-panel">
+              <h2>{t("claim")}</h2>
+              <p>{t("claimHint")}</p>
+              <p className="muted">{t("signInHint")}</p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void run(async () => {
+                    await runtime.claim(username, password);
+                    setPassword("");
+                    setNotice("claimed");
+                  });
+                }}
+              >
+                <label className="field">
+                  {t("username")}
+                  <input
+                    autoComplete="username"
+                    required
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  {t("password")}
+                  <input
+                    type="password"
+                    minLength={12}
+                    maxLength={128}
+                    autoComplete="new-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </label>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  disabled={busy || !!notice}
+                >
+                  {t("claim")}
+                </Button>
+              </form>
+            </section>
+          ) : runtime.account ? (
+            <section className="panel account-panel">
+              <h2>{runtime.account.username}</h2>
+              <p>{t(runtime.account.role)}</p>
+              <h3>{t("passwordChange")}</h3>
+              <p className="muted">{t("passwordHint")}</p>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!(await confirmLeave())) return;
+                  void run(async () => {
+                    await runtime.changePassword(current, password);
+                    setCurrent("");
+                    setPassword("");
+                    onLogout();
+                  });
+                }}
+              >
+                <label className="field">
+                  {t("currentPassword")}
+                  <input
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    value={current}
+                    onChange={(e) => setCurrent(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  {t("newPassword")}
+                  <input
+                    type="password"
+                    required
+                    minLength={12}
+                    maxLength={128}
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </label>
+                <Button type="submit" variant="secondary" disabled={busy}>
+                  {t("passwordChange")}
+                </Button>
+              </form>
+            </section>
+          ) : null}
+        </>
+      )}
+      {tab === "api" && (
+        <>
+          <section className="panel account-panel">
+            <h2>{t("tokens")}</h2>
+            <p>{t("tokenHint")}</p>
+            <p className="muted">{t("apiExample")}</p>
+            <a
+              className="ui-button ui-button-secondary"
+              href="/api/openapi.json"
+              download="arclattice-openapi.json"
+            >
+              {t("apiSpec")}
+            </a>
+            {!runtime.account ? (
+              <p>{t("bindFirst")}</p>
+            ) : (
+              <>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void run(async () => {
+                      const result = await runtime.issueToken(
+                        name,
+                        scope,
+                        days,
+                      );
+                      setSecret(result.secret);
+                      setTokens(await runtime.tokens());
+                    });
+                  }}
+                >
+                  <label className="field">
+                    {t("tokenName")}
+                    <input
+                      required
+                      maxLength={80}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    {t("scope", { defaultValue: t("tokens") })}
+                    <Select
+                      value={scope}
+                      onChange={(e) =>
+                        setScope(e.target.value as ApiCredential["scope"])
+                      }
+                    >
+                      <option value="write">{t("write")}</option>
+                      <option value="read-write">{t("readWrite")}</option>
+                    </Select>
+                  </label>
+                  <label className="field">
+                    {zh ? "有效期" : "Validity"}
+                    <Select
+                      value={days ?? "permanent"}
+                      onChange={(e) =>
+                        setDays(
+                          e.target.value === "permanent"
+                            ? null
+                            : (Number(e.target.value) as 30 | 90 | 365),
+                        )
+                      }
+                    >
+                      {[30, 90, 365].map((n) => (
+                        <option key={n} value={n}>
+                          {n} {zh ? "天" : "days"}
+                        </option>
+                      ))}
+                      <option value="permanent">
+                        {zh ? "长期有效（可撤销）" : "Permanent (revocable)"}
+                      </option>
+                    </Select>
+                  </label>
+                  <p className="muted">{t("readWarning")}</p>
+                  <Button
+                    variant="primary"
+                    type="submit"
+                    disabled={busy || !!secret}
+                  >
+                    {t("issue")}
+                  </Button>
+                </form>
+                {secret && (
+                  <div className="secret-once">
+                    <p>{t("once")}</p>
+                    <textarea
+                      readOnly
+                      value={secret}
+                      aria-label={t("tokens")}
+                      onFocus={(e) => e.target.select()}
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setSecret("")}
+                    >
+                      {t("closeSecret")}
+                    </Button>
+                  </div>
+                )}
+                <div className="token-list">
+                  {tokens.map((item) => (
+                    <div className="token-row" key={item.id}>
+                      <div>
+                        <strong>{item.name}</strong>
+                        <small>
+                          {t(item.scope === "write" ? "write" : "readWrite")} ·{" "}
+                          {t("expires")}{" "}
+                          {item.expiresAt?.slice(0, 10) ??
+                            (zh ? "长期有效" : "Permanent")}
+                        </small>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        type="button"
+                        disabled={busy || !!item.revokedAt}
+                        onClick={() =>
+                          void run(async () => {
+                            await runtime.revokeToken(item.id);
+                            setTokens(await runtime.tokens());
+                          })
+                        }
+                      >
+                        {t(item.revokedAt ? "revoked" : "revoke")}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+          <section className="panel account-panel">
+            <h2>{zh ? "Atlas 模型与提供方" : "Atlas models & providers"}</h2>
+            <p className="muted">
+              {zh
+                ? "模型凭据与可信端点属于当前账户的本机设置；与上方集成令牌相互独立。"
+                : "Model credentials and trusted endpoints are local settings for this account, separate from the integration tokens above."}
+            </p>
+            {runtime.account ? (
+              <AiSettingsView runtime={runtime} snapshot={snapshot} />
+            ) : (
+              <p>{t("bindFirst")}</p>
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
 }

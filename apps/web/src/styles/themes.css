@@ -4,35 +4,43 @@
     --priority-high: #eeb07d;
     --priority-medium: #a4b5c8;
     --priority-low: #a1a1aa;
-    --canvas: #111214;
-    --sidebar-surface: #15171a;
-    --surface: #1b1d21;
-    --surface-raised: #22252a;
-    --surface-subtle: #22252a;
-    --surface-hover: #292c31;
-    --surface-active: #303339;
-    --text-primary: #f4f4f5;
-    --text-secondary: #a1a1aa;
-    --text-muted: #92929c;
-    --border-subtle: #24272c;
-    --border-default: #2b2e34;
-    --border-strong: #51555e;
-    --accent: #ac9aff;
-    --accent-hover: #c1b2ff;
+    --canvas: #0f1012;
+    --sidebar-surface: #121316;
+    --surface: #17181b;
+    --surface-raised: #1c1e22;
+    --surface-subtle: #1e2024;
+    --surface-hover: #26292e;
+    --surface-active: #2c3036;
+    --text-primary: #f3f3f4;
+    --text-secondary: #a6a8b0;
+    --text-muted: #8e9199;
+    --border-subtle: #24262b;
+    --border-default: #2d3036;
+    --border-strong: #4e525c;
+    --accent: #a99bff;
+    --accent-hover: #bdb2ff;
+    --accent-subtle: color-mix(in srgb, var(--accent) 13%, var(--surface));
     --success: #77c69b;
     --warning: #e1b86a;
     --danger: #f0919a;
     --info: #82b6e0;
-    --on-accent: #18181b;
-    --glass-bg: color-mix(in srgb, var(--surface-raised) 74%, transparent);
+    --on-accent: #17181b;
+    --shadow-xs: 0 1px 2px #0000004d;
+    --shadow-card: 0 1px 2px #00000040, 0 2px 10px #0000002e;
+    --shadow-popover: 0 20px 46px #00000073, 0 4px 12px #0000004d;
+    --shadow-dialog: 0 36px 90px #0000008c, 0 10px 28px #00000059;
+    --glass-bg: color-mix(in srgb, var(--surface-raised) 72%, transparent);
     --glass-bg-strong: color-mix(
       in srgb,
       var(--surface-raised) 88%,
       transparent
     );
-    --glass-border: color-mix(in srgb, #fff 12%, transparent);
+    --glass-chrome: color-mix(in srgb, var(--canvas) 78%, transparent);
+    --glass-border: color-mix(in srgb, #fff 11%, transparent);
     --glass-shadow:
-      0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset, 0 12px 34px #0007;
+      0 1px 0 color-mix(in srgb, #fff 7%, transparent) inset,
+      0 18px 44px #00000073;
+    --glass-fallback-bg: var(--surface-raised);
     color-scheme: dark;
   }
 }

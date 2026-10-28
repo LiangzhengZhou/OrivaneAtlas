@@ -24,7 +24,9 @@ it("upgrades business-only v36 to v37 with physical backup recovery without inve
       expect((await stat(backup)).isDirectory()).toBe(true);
     }),
   );
-  expect(await h.client(name, (client) => inspectSchema(client))).toBe(37);
+  expect(await h.client(name, (client) => inspectSchema(client))).toBe(
+    migrations.length,
+  );
   expect(
     (
       await h.query(

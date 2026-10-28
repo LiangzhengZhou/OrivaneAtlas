@@ -82,3 +82,46 @@ test("calendar groups all five day-panel dimensions and excludes deleted content
   ).toEqual([task]);
   expect(index.daySummary("2026-10-05").due).toEqual([]);
 });
+
+test("due minute becomes overdue at the workspace clock while date-only work stays pending", () => {
+  const day = "2026-10-04",
+    timed = {
+      ...work("timed"),
+      startDate: null,
+      dueDate: day,
+      dueTime: "18:30",
+      status: "TODO" as const,
+    },
+    dateOnly = {
+      ...work("date-only"),
+      startDate: null,
+      dueDate: day,
+      dueTime: null,
+      status: "TODO" as const,
+    };
+  const before = buildCalendarIndex(
+    [timed, dateOnly],
+    [],
+    [],
+    "Asia/Shanghai",
+    day,
+    [],
+    Date.parse("2026-10-04T10:00:00.000Z"),
+  );
+  expect(before.dueByDay.get(day)?.map((item) => item.id)).toEqual([
+    timed.id,
+    dateOnly.id,
+  ]);
+  expect(before.overdue).toEqual([]);
+  const after = buildCalendarIndex(
+    [timed, dateOnly],
+    [],
+    [],
+    "Asia/Shanghai",
+    day,
+    [],
+    Date.parse("2026-10-04T10:31:00.000Z"),
+  );
+  // 18:31 in Asia/Shanghai; date-only work has no clock and remains not overdue.
+  expect(after.overdue.map((item) => item.id)).toEqual([timed.id]);
+});

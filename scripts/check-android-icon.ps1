@@ -29,8 +29,9 @@ foreach ($root in $roots) {
         } finally { $bitmap.Dispose() }
     }
 }
-foreach ($file in Get-ChildItem -LiteralPath (Join-Path $repo $roots[0]) -Recurse -File) {
-    $relative = [System.IO.Path]::GetRelativePath((Join-Path $repo $roots[0]), $file.FullName)
+$iconRoot = (Resolve-Path -LiteralPath (Join-Path $repo $roots[0])).Path
+foreach ($file in Get-ChildItem -LiteralPath $iconRoot -Recurse -File) {
+    $relative = $file.FullName.Substring($iconRoot.Length).TrimStart('\', '/')
     $other = Join-Path (Join-Path $repo $roots[1]) $relative
     if ((Get-FileHash -LiteralPath $file.FullName).Hash -ne (Get-FileHash -LiteralPath $other).Hash) {
         throw "Packaging resource differs: $relative"

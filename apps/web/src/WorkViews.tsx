@@ -33,6 +33,7 @@ import { TouchReorderScope } from "./components/ui/TouchReorder";
 import { TaskEntityPicker } from "./features/tasks/TaskEntityPicker";
 import type { taskDerivedIndex } from "./features/tasks/task-index";
 import type { TaskWorkspaceIndex } from "./features/tasks/task-selectors";
+import { TaskTimerControl } from "./features/tasks/task-timer";
 import { VirtualTaskCollection } from "./features/tasks/VirtualTaskCollection";
 
 export interface WorkProps {
@@ -213,13 +214,15 @@ function Task({
         )}
         {item.dueDate && (
           <time
-            dateTime={item.dueDate}
+            dateTime={item.dueDate + (item.dueTime ? "T" + item.dueTime : "")}
             className="task-due"
             title={t("desk:dueDate")}
           >
             {item.dueDate}
+            {item.dueTime ? ` ${item.dueTime}` : ""}
           </time>
         )}
+        <TaskTimerControl item={item} busy={workspaceBusy} />
         {item.status === "TODO" && activated && blocked && (
           <span className="readiness blocked">
             <LockKeyhole size={12} aria-hidden="true" />

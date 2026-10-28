@@ -56,7 +56,7 @@ it("upgrades exact v2.2 PostgreSQL schema26 with a Wiki gate and restores its ph
     }),
   );
   expect(await harness.client(name, (client) => inspectSchema(client))).toBe(
-    37,
+    migrations.length,
   );
   expect(
     (

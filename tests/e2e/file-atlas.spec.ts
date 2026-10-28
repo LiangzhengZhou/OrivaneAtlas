@@ -484,6 +484,10 @@ test("File Atlas uses the real Host and canonical worker, waits for approval and
       exact: true,
     });
     await expect(selectionToolbar).toBeVisible();
+    await page.screenshot({
+      path: info.outputPath("selection-toolbar.png"),
+      fullPage: true,
+    });
     await selectionToolbar
       .getByRole("button", { name: zh ? "粗体" : "Bold", exact: true })
       .click();

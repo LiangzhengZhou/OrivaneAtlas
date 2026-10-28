@@ -512,6 +512,161 @@ body {
 .task-inspector::backdrop {
   background: #0002;
 }
+@media (max-width: 600px) {
+  /* Mobile project header: keep title, lifecycle and actions, drop duplicated counters. */
+  .project-workspace > .project-summary {
+    padding: 6px 0;
+    gap: 6px 10px;
+  }
+  .project-workspace > .project-summary > h1 {
+    font-size: 20px;
+    line-height: 1.3;
+  }
+  .project-workspace > .project-summary > p {
+    font-size: 12px;
+  }
+  .project-workspace > .project-summary > p:empty,
+  .project-workspace > .project-summary > p[data-testid="project-progress"] {
+    display: none;
+  }
+  .project-workspace > .project-summary > .ui-toolbar {
+    flex-basis: auto;
+  }
+  .project-workspace .project-scope {
+    margin-block: 6px;
+  }
+  .project-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .project-workspace > .project-summary {
+    margin: 0;
+    padding: 2px 0 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    gap: 6px 8px;
+  }
+  .project-workspace > .project-summary > h1 {
+    font-size: 22px;
+    letter-spacing: -0.02em;
+  }
+  .project-workspace > .project-summary > p:not(.muted) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 1px 8px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    background: var(--surface-subtle);
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+  .project-workspace > .project-summary > p:empty {
+    display: none;
+  }
+  .project-workspace > .project-summary > .ui-toolbar {
+    margin-inline-start: auto;
+    gap: 6px;
+  }
+  .project-workspace > .project-summary > .ui-toolbar .ui-button {
+    min-height: 36px;
+    padding-inline: 12px;
+  }
+  .project-workspace > [role="tablist"] {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 2px;
+    width: 100%;
+    padding: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .project-workspace > [role="tablist"]::-webkit-scrollbar {
+    display: none;
+  }
+  .project-workspace > [role="tablist"] .ui-button {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 8px 14px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--text-secondary);
+  }
+  .project-workspace > [role="tablist"] .ui-button[aria-selected="true"] {
+    border-bottom-color: var(--accent);
+    color: var(--text-primary);
+    background: transparent;
+  }
+  .project-workspace > [role="tabpanel"] > .project-overview {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .project-workspace .project-overview > section,
+  .project-workspace .project-overview > details,
+  .project-workspace .project-overview > .project-brief-editor,
+  .project-workspace .project-overview > .panel {
+    margin: 0;
+    padding: 14px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    box-shadow: var(--shadow-xs);
+  }
+  .project-workspace .project-overview h2 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: -0.01em;
+  }
+  .project-workspace .project-overview .agenda-item {
+    width: 100%;
+    min-height: 40px;
+    padding: 7px 4px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    text-align: start;
+  }
+  .project-workspace .project-overview .agenda-item:hover {
+    background: var(--surface-hover);
+  }
+  .project-workspace .project-next:not(:has(.agenda-item)) {
+    display: none;
+  }
+  .project-workspace .project-overview > progress {
+    width: 100%;
+    margin: 0 4px;
+  }
+  .project-workspace .project-timeline > summary {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    font-weight: var(--font-weight-semibold);
+  }
+  .project-workspace .project-timeline > summary::before {
+    content: "▸";
+    margin-inline-end: 8px;
+    color: var(--text-muted);
+  }
+  .project-workspace .project-timeline[open] > summary::before {
+    content: "▾";
+  }
+  .project-workspace .project-brief-editor .ui-button {
+    justify-self: start;
+    width: auto;
+  }
+  .project-workspace .project-brief-editor .cm-content {
+    min-height: 140px;
+  }
+  .project-workspace .project-brief-editor .brief-source {
+    min-height: 160px;
+  }
+}
 @media (max-width: 800px) {
   .task-dialog.task-inspector {
     width: 100%;

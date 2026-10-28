@@ -9,6 +9,12 @@ import type {
 import { LocalStorageError } from "./local-persistence";
 import type { LocalReplicaStore } from "./local-replica";
 
+interface CachedImage {
+  contentHash: string;
+  size: number;
+  mime: string;
+}
+const contentHashPattern = /^[a-f0-9]{64}$/;
 /** Derived cache only. Original Markdown, legacy assets and Outbox remain untouched. */
 export async function readLegacyImage(
   actor: ActorContext,
@@ -20,6 +26,15 @@ export async function readLegacyImage(
     replica: LocalReplicaStore;
     offline: boolean;
     download(binding: LocalSyncState): Promise<Blob>;
+    /**
+     * Revalidates an already cached copy against the authoritative server. The
+     * server performs the same access check as the byte route, so an online
+     * denial never falls back to local bytes. Absent on older servers/adapters.
+     */
+    revalidateCache?(
+      binding: LocalSyncState,
+      contentHash: string,
+    ): Promise<boolean>;
   },
 ): Promise<Blob> {
   const scope = structuredClone(await ports.binding());
@@ -58,6 +73,44 @@ export async function readLegacyImage(
       throw new DomainError("FORBIDDEN");
     return current;
   };
+  const readCacheRecord = async (): Promise<CachedImage | null> => {
+    const record = await ports.metadata.get(
+      actor.workspaceId,
+      "$local.legacyImage",
+      key,
+    );
+    if (!record || record.workspaceId !== actor.workspaceId) return null;
+    const value = localObject(record.value);
+    if (
+      typeof value.contentHash !== "string" ||
+      !contentHashPattern.test(value.contentHash) ||
+      typeof value.size !== "number" ||
+      typeof value.mime !== "string"
+    )
+      return null;
+    return {
+      contentHash: value.contentHash,
+      size: value.size,
+      mime: value.mime,
+    };
+  };
+  const readCachedBlob = async (cached: CachedImage): Promise<Blob | null> => {
+    const blob = await ports.blobs.get(actor.workspaceId, cached.contentHash);
+    if (
+      !blob ||
+      blob.size !== cached.size ||
+      blob.type !== cached.mime ||
+      !ports.blobs.digest ||
+      (await ports.blobs.digest(blob)) !== cached.contentHash
+    )
+      return null;
+    try {
+      await requireRasterImage(blob);
+    } catch {
+      return null;
+    }
+    return blob;
+  };
   if (ports.offline) {
     const record = await ports.metadata.get(
       actor.workspaceId,
@@ -86,11 +139,26 @@ export async function readLegacyImage(
     await check();
     return blob;
   }
+  const cachedRecord = await readCacheRecord();
+  if (cachedRecord && ports.revalidateCache) {
+    if (await ports.revalidateCache(scope, cachedRecord.contentHash)) {
+      const cached = await readCachedBlob(cachedRecord);
+      if (cached) {
+        await check();
+        return cached;
+      }
+    }
+  }
   const blob = await ports.download(scope);
   await requireRasterImage(blob);
   await check();
   if (!ports.blobs.digest) throw new Error("LOCAL_BACKUP_PORT_INCOMPLETE");
   const hash = await ports.blobs.digest(blob);
+  // The authoritative bytes match the authorized cache entry: keep it as-is.
+  if (hash === cachedRecord?.contentHash) {
+    await check();
+    return blob;
+  }
   await ports.blobs.put(actor.workspaceId, hash, blob);
   for (let attempt = 0; ; attempt++) {
     const binding = await check();

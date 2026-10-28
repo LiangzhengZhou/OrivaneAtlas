@@ -41,5 +41,13 @@
   "prerequisites": "前置任务",
   "availability": "可用性",
   "waiting": "等待",
-  "paused": "已暂停"
+  "paused": "已暂停",
+  "timer": "计时",
+  "timerStart": "开始计时",
+  "timerPause": "暂停计时",
+  "timerContinue": "继续计时",
+  "timerEnd": "结束计时",
+  "timerRunning": "计时中",
+  "timerPaused": "已暂停",
+  "timerSaving": "正在保存计时"
 }

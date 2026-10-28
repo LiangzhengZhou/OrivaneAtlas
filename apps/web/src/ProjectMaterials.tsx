@@ -383,6 +383,7 @@ export function ProjectHistory({
     }[]
   >([]);
   const [error, setError] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const labels: Record<string, string> = {
     MATERIAL_SAVED: zh ? "资料已保存" : "Material saved",
@@ -399,6 +400,7 @@ export function ProjectHistory({
     const taskIds = new Set([projectId, ...tasks.map((task) => task.id)]);
     const edgeIds = new Set((edges ?? []).map((edge) => edge.id));
     setError(false);
+    setLoaded(false);
     void Promise.all([
       Promise.all((projectIds ?? [projectId]).map(load)),
       loadWork(),
@@ -432,11 +434,15 @@ export function ProjectHistory({
       })
       .catch(() => {
         if (active) setError(true);
+      })
+      .finally(() => {
+        if (active) setLoaded(true);
       });
     return () => {
       active = false;
     };
   }, [projectId, projectIds, tasks, edges, load, loadWork]);
+  if (loaded && !error && events.length === 0) return null;
   return (
     <section className="panel project-summary">
       <h2>{zh ? "最近活动" : "Recent activity"}</h2>

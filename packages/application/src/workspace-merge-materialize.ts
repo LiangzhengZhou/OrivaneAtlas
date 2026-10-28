@@ -36,6 +36,10 @@ export function materializeWorkspaceMergeCopies(
     plan.mappings.map((entry) => key(entry.collection, entry.sourceId)),
   );
   const destinations = new Set(plan.mappings.map((entry) => entry.targetId));
+  // Folder rows target `FOLDER:<id>`; their own field references use the bare id.
+  for (const mapping of plan.mappings)
+    if (mapping.targetId.startsWith("FOLDER:"))
+      destinations.add(mapping.targetId.slice("FOLDER:".length));
   for (const reference of plan.references)
     if (
       !mapped.has(key(reference.collection, reference.sourceId)) ||

@@ -45,6 +45,31 @@ describe("real PostgreSQL storage", () => {
     ).toBe(markdown);
   }, 30_000);
 
+  it("reads task timer fields as safe numbers across reconnect", async () => {
+    const name = await h.database();
+    const db = await h.provision(await h.open(name));
+    const app = service(db);
+    const task = await app.create(context, { title: "Timer task" });
+    const started = await app.update(context, task.id, task.version, {
+      timer: "START",
+    });
+    expect(typeof started.timerAccumulatedMs).toBe("number");
+    expect(started.timerStartedAt).toEqual(expect.any(String));
+    const paused = await app.update(context, task.id, started.version, {
+      timer: "PAUSE",
+    });
+    expect(typeof paused.timerAccumulatedMs).toBe("number");
+    expect(Number.isSafeInteger(paused.timerAccumulatedMs)).toBe(true);
+    expect(paused.timerStartedAt).toBeNull();
+    await db.close();
+    const reopened = await h.open(name);
+    expect(
+      (await service(reopened).snapshot(context, true)).items[0]
+        ?.timerAccumulatedMs,
+    ).toBe(paused.timerAccumulatedMs);
+    await reopened.close();
+  }, 30_000);
+
   it("rolls back business data and events on late foreign-key failure", async () => {
     const db = await h.create();
     await expect(

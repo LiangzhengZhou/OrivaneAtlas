@@ -83,6 +83,9 @@ const workFields = {
   activationPolicy: "activation_policy",
   startDate: "start_date",
   dueDate: "due_date",
+  dueTime: "due_time",
+  timerStartedAt: "timer_started_at",
+  timerAccumulatedMs: "timer_accumulated_ms",
   version: "version",
   createdBy: "created_by",
   updatedBy: "updated_by",
@@ -128,9 +131,12 @@ function values<T extends object>(
   fields: Partial<Record<keyof T, string>>,
   entity: T,
 ): SQLInputValue[] {
-  return (Object.keys(fields) as (keyof T)[]).map(
-    (key) => entity[key] as SQLInputValue,
-  );
+  return (Object.keys(fields) as (keyof T)[]).map((key) => {
+    const value = entity[key] as SQLInputValue | undefined;
+    if (value !== undefined) return value;
+    // Legacy callers/tests omit the optional timer fields; persist defaults.
+    return String(key) === "timerAccumulatedMs" ? 0 : null;
+  });
 }
 function insert<T extends object>(
   db: DatabaseSync,

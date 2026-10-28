@@ -6,6 +6,7 @@ export function DismissibleDialog({
   onRequestClose,
   modal = true,
   closeOnOutside = true,
+  className = "",
   ...props
 }: Omit<ComponentProps<"dialog">, "onCancel"> & {
   modal?: boolean;
@@ -82,6 +83,7 @@ export function DismissibleDialog({
     <dialog
       {...props}
       ref={ref}
+      className={`glass-surface ${className}`.trim()}
       onCancel={(event) => {
         event.preventDefault();
         request.current("escape");

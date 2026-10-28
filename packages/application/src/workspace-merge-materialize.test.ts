@@ -87,6 +87,90 @@ test("materializes detached copies with computed IDs and nested references while
   expect(source).toEqual(before);
 });
 
+test("folder identity, parent links and note membership survive copy materialization", () => {
+  const folderA = randomUUID(),
+    folderB = randomUUID();
+  const folderSource = {
+    workspaceId: "source",
+    revision: 7,
+    records: [
+      record("notes", "note", {
+        id: "note",
+        title: "Filed",
+        bodyMd: "Original",
+        kind: "NOTE",
+      }),
+      record("organization", "FOLDER:" + folderA, {
+        kind: "FOLDER",
+        id: folderA,
+        name: "Research",
+        parentId: "",
+        archived: false,
+        folder: "",
+        icon: "🧪",
+      }),
+      record("organization", "FOLDER:" + folderB, {
+        kind: "FOLDER",
+        id: folderB,
+        name: "Papers",
+        parentId: folderA,
+        archived: false,
+        folder: "",
+        icon: "📚",
+      }),
+      record("organization", "NOTE:note", {
+        kind: "NOTE",
+        id: "note",
+        archived: false,
+        folder: "",
+        folderId: folderB,
+        icon: "🔬",
+      }),
+    ],
+  };
+  const selected = planWorkspaceMergeSelection(
+    actor,
+    folderSource,
+    { workspaceId: "target", revision: 0, records: [] },
+    folderSource.records.map((row) => ({
+      collection: row.collection,
+      sourceId: row.id,
+      action: "COPY",
+    })),
+    { next: randomUUID },
+  );
+  const copies = materializeWorkspaceMergeCopies(folderSource, selected);
+  const targetFolder = (id: string) =>
+    selected.mappings
+      .find((entry) => entry.sourceId === "FOLDER:" + id)!
+      .targetId.slice("FOLDER:".length);
+  const copiedFolderA = copies.find(
+    (entry) => entry.sourceId === "FOLDER:" + folderA,
+  )!;
+  const copiedFolderB = copies.find(
+    (entry) => entry.sourceId === "FOLDER:" + folderB,
+  )!;
+  const copiedNote = copies.find((entry) => entry.sourceId === "NOTE:note")!;
+  expect(copiedFolderA.value).toMatchObject({
+    kind: "FOLDER",
+    id: targetFolder(folderA),
+    name: "Research",
+    parentId: "",
+    icon: "🧪",
+  });
+  expect(copiedFolderB.value).toMatchObject({
+    kind: "FOLDER",
+    id: targetFolder(folderB),
+    parentId: targetFolder(folderA),
+  });
+  expect(copiedNote.value).toMatchObject({
+    kind: "NOTE",
+    id: copies.find((entry) => entry.sourceId === "note")!.targetId,
+    folderId: targetFolder(folderB),
+    icon: "🔬",
+  });
+});
+
 test("refuses stale source revisions/versions and foreign or prototype reference paths before producing copies", () => {
   const selected = plan();
   expect(() =>

@@ -8,6 +8,7 @@ import {
   isReady,
   optionalTitle,
   requireTitle,
+  timerElapsedMs,
   validateEdge,
   type WorkEdge,
 } from "./index";
@@ -162,5 +163,27 @@ describe("Work domain", () => {
       ),
       { numRuns: 150, seed: 20260913 },
     );
+  });
+  it("derives task timer elapsed time from stored instants", () => {
+    const now = Date.parse("2026-10-26T12:00:00.000Z");
+    expect(timerElapsedMs({}, now)).toBe(0);
+    expect(
+      timerElapsedMs(
+        {
+          timerStartedAt: "2026-10-26T11:59:00.000Z",
+          timerAccumulatedMs: 5_000,
+        },
+        now,
+      ),
+    ).toBe(65_000);
+    expect(
+      timerElapsedMs({ timerStartedAt: null, timerAccumulatedMs: 12_345 }, now),
+    ).toBe(12_345);
+    expect(
+      timerElapsedMs(
+        { timerStartedAt: "not-a-date", timerAccumulatedMs: 1_000 },
+        now,
+      ),
+    ).toBe(1_000);
   });
 });

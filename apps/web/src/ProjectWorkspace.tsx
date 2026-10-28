@@ -445,7 +445,7 @@ export function ProjectWorkspace({
         aria-labelledby={`project-tab-${tab}`}
       >
         {tab === "overview" && (
-          <div>
+          <div className="project-overview">
             <EntityMemo
               runtime={runtime}
               targetKind="PROJECT"
@@ -542,7 +542,7 @@ export function ProjectWorkspace({
               max={Math.max(1, scoped.completed + scoped.unfinished)}
               value={scoped.completed}
             />
-            <section>
+            <section className="project-children">
               <h2>{t("projectHub.children")}</h2>
               <Button
                 type="button"
@@ -588,6 +588,7 @@ export function ProjectWorkspace({
               </section>
             )}
             <details
+              className="project-timeline"
               onToggle={(event) => setTimelineOpen(event.currentTarget.open)}
             >
               <summary>

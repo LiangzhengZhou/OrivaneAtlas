@@ -942,6 +942,7 @@ export async function createHost(options: HostOptions) {
             "/api/library/search",
             "/api/library/revisions",
             "/api/library/asset",
+            "/api/library/asset/meta",
             "/api/openapi.json",
             "/api/projects/file",
             "/api/projects/activity",
@@ -2169,6 +2170,42 @@ export async function createHost(options: HostOptions) {
           } else res.end(Buffer.from(asset.base64, "base64"));
           return;
         }
+        if (path === "/api/library/asset/meta" && req.method === "GET") {
+          const asset = await db.request(
+            context,
+            null,
+            (_u, _n, _c, s) => s.asset(string(url.searchParams.get("id"))),
+            requireAccess,
+          );
+          // Same authorization as the byte route; callers may reuse an already
+          // authorized local cache copy instead of transferring identical bytes.
+          const hash = createHash("sha256");
+          let size = 0;
+          if (asset.chunkCount) {
+            for (let index = 0; index < asset.chunkCount; index++) {
+              const base64 = await db.request(
+                context,
+                null,
+                (_u, _n, _c, s) => s.assetChunk(asset.id, index),
+                requireAccess,
+              );
+              const bytes = Buffer.from(base64, "base64");
+              size += bytes.length;
+              hash.update(bytes);
+            }
+          } else {
+            const bytes = Buffer.from(asset.base64, "base64");
+            size = bytes.length;
+            hash.update(bytes);
+          }
+          json(res, 200, {
+            id: asset.id,
+            mime: asset.mime,
+            size,
+            contentHash: hash.digest("hex"),
+          });
+          return;
+        }
         if (path === "/api/logout" && mutation) {
           await db.accounts((store) => {
             requireAccess(store);
@@ -3145,7 +3182,9 @@ export async function createHost(options: HostOptions) {
                               ? value.action === "delete"
                                 ? value.kind === "WORK"
                                   ? ["items"]
-                                  : ["notes"]
+                                  : value.kind === "NOTE"
+                                    ? ["notes"]
+                                    : ["organization"]
                                 : ["organization"]
                               : categoryReplay
                                 ? ["categories"]
@@ -4251,23 +4290,43 @@ export async function createHost(options: HostOptions) {
                   );
                 }
                 case "/api/organize": {
-                  keys(value, ["kind", "action", "folder", "entries"]);
-                  if (!Array.isArray(value.entries))
-                    fail(400, "VALIDATION_ERROR");
-                  for (const entry of value.entries) {
-                    if (
-                      !entry ||
-                      typeof entry !== "object" ||
-                      Array.isArray(entry)
-                    )
+                  keys(value, [
+                    "kind",
+                    "action",
+                    "folder",
+                    "folderId",
+                    "name",
+                    "parentId",
+                    "id",
+                    "icon",
+                    "entries",
+                  ]);
+                  if (value.entries !== undefined) {
+                    if (!Array.isArray(value.entries))
                       fail(400, "VALIDATION_ERROR");
-                    keys(entry as Record<string, unknown>, [
-                      "id",
-                      "version",
-                      "organizationVersion",
-                    ]);
-                  }
-                  if (organizationReplay && value.action === "delete")
+                    for (const entry of value.entries) {
+                      if (
+                        !entry ||
+                        typeof entry !== "object" ||
+                        Array.isArray(entry)
+                      )
+                        fail(400, "VALIDATION_ERROR");
+                      keys(entry as Record<string, unknown>, [
+                        "id",
+                        "version",
+                        "organizationVersion",
+                      ]);
+                    }
+                  } else if (
+                    value.kind !== "FOLDER" ||
+                    value.action !== "create"
+                  )
+                    fail(400, "VALIDATION_ERROR");
+                  if (
+                    organizationReplay &&
+                    value.action === "delete" &&
+                    value.kind !== "FOLDER"
+                  )
                     fail(400, "VALIDATION_ERROR");
                   return new OrganizationService(
                     organizationReplay ?? organization,
@@ -5786,11 +5845,13 @@ export async function createHost(options: HostOptions) {
                     "activationPolicy",
                     "startDate",
                     "dueDate",
+                    "dueTime",
                   ]);
                   for (const field of [
                     "parentProjectId",
                     "startDate",
                     "dueDate",
+                    "dueTime",
                     "assigneePrincipalId",
                   ])
                     if (value[field] !== undefined && value[field] !== null)
@@ -5878,6 +5939,8 @@ export async function createHost(options: HostOptions) {
                     "activationPolicy",
                     "startDate",
                     "dueDate",
+                    "dueTime",
+                    "timer",
                   ]);
                   for (const [key, val] of Object.entries(input)) {
                     if (
@@ -5895,6 +5958,7 @@ export async function createHost(options: HostOptions) {
                         "categoryId",
                         "startDate",
                         "dueDate",
+                        "dueTime",
                         "assigneePrincipalId",
                       ].includes(key) &&
                       val === null

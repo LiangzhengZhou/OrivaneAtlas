@@ -390,6 +390,138 @@ test("file import registers the original name and verified hash before a display
   });
 });
 
+test("folder create order, folder icons and note membership replay before note icons", () => {
+  const folderA = randomUUID(),
+    folderB = randomUUID(),
+    archived = randomUUID(),
+    note = randomUUID();
+  const folder = (id: string, name: string, parentId: string, icon?: string) =>
+    copy(
+      "organization",
+      {
+        kind: "FOLDER",
+        id,
+        name,
+        parentId,
+        archived: false,
+        folder: "",
+        ...(icon ? { icon } : {}),
+      },
+      "FOLDER:" + id,
+    );
+  const steps = planWorkspaceImportSteps(
+    [
+      copy("notes", { kind: "NOTE", title: "Filed", bodyMd: "Original" }, note),
+      folder(folderA, "Research", "", "🧪"),
+      folder(folderB, "Papers", folderA, "📚"),
+      copy(
+        "organization",
+        {
+          kind: "FOLDER",
+          id: archived,
+          name: "Old",
+          parentId: "",
+          archived: true,
+          folder: "",
+        },
+        "FOLDER:" + archived,
+      ),
+      copy(
+        "organization",
+        {
+          kind: "NOTE",
+          id: note,
+          archived: false,
+          folder: "",
+          folderId: folderB,
+          icon: "🔬",
+        },
+        "NOTE:" + note,
+      ),
+    ],
+    identity,
+    { next: randomUUID },
+  );
+  expect(
+    steps.filter((step) => step.path === "/api/organize").map((s) => s.payload),
+  ).toEqual([
+    {
+      kind: "FOLDER",
+      action: "create",
+      id: folderA,
+      name: "Research",
+      parentId: "",
+    },
+    {
+      kind: "FOLDER",
+      action: "icon",
+      icon: "🧪",
+      entries: [{ id: folderA, version: 1, organizationVersion: 1 }],
+    },
+    {
+      kind: "FOLDER",
+      action: "create",
+      id: folderB,
+      name: "Papers",
+      parentId: folderA,
+    },
+    {
+      kind: "FOLDER",
+      action: "icon",
+      icon: "📚",
+      entries: [{ id: folderB, version: 1, organizationVersion: 1 }],
+    },
+    {
+      kind: "NOTE",
+      action: "move",
+      folderId: folderB,
+      entries: [{ id: note, version: 1, organizationVersion: 0 }],
+    },
+    {
+      kind: "NOTE",
+      action: "icon",
+      icon: "🔬",
+      entries: [{ id: note, version: 1, organizationVersion: 1 }],
+    },
+  ]);
+  expect(() =>
+    planWorkspaceImportSteps(
+      [
+        copy(
+          "organization",
+          {
+            kind: "FOLDER",
+            id: archived,
+            name: "Old",
+            parentId: "",
+            archived: true,
+            folder: "",
+          },
+          "FOLDER:" + archived,
+        ),
+        copy(
+          "notes",
+          { kind: "NOTE", title: "Filed", bodyMd: "Original" },
+          note,
+        ),
+        copy(
+          "organization",
+          {
+            kind: "NOTE",
+            id: note,
+            archived: false,
+            folder: "",
+            folderId: archived,
+          },
+          "NOTE:" + note,
+        ),
+      ],
+      identity,
+      { next: randomUUID },
+    ),
+  ).toThrow("VALIDATION_ERROR");
+});
+
 test("unsupported data, unhydrated bodies, unresolved original bytes, foreign assignees and cycles fail before execution", () => {
   const id = randomUUID();
   for (const copies of [

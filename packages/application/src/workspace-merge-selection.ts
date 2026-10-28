@@ -103,19 +103,28 @@ export function planWorkspaceMergeSelection(
     if (mapping.collection === "entityMemos")
       requireEntityMemoOwner(actor, requireEntityMemoRecord(value));
     if (mapping.collection === "organization") {
-      const collection =
-        value.kind === "WORK"
-          ? "items"
-          : value.kind === "NOTE"
-            ? "notes"
+      if (value.kind === "FOLDER") {
+        // Folders are organization rows without a separate business entity; the
+        // allocated UUID is their own stable identity.
+        if (!mapping.targetId.startsWith("FOLDER:"))
+          mapping.targetId = `FOLDER:${mapping.targetId}`;
+      } else {
+        const collection =
+          value.kind === "WORK"
+            ? "items"
+            : value.kind === "NOTE"
+              ? "notes"
+              : null;
+        const entity =
+          collection && typeof value.id === "string"
+            ? selected.get(key(collection, value.id))
             : null;
-      const entity =
-        collection && typeof value.id === "string"
-          ? selected.get(key(collection, value.id))
-          : null;
-      if (!entity)
-        throw new DomainError("VALIDATION_ERROR", { field: "mergeReference" });
-      mapping.targetId = `${value.kind}:${entity.targetId}`;
+        if (!entity)
+          throw new DomainError("VALIDATION_ERROR", {
+            field: "mergeReference",
+          });
+        mapping.targetId = `${value.kind}:${entity.targetId}`;
+      }
     } else if (mapping.collection === "manualOrders") {
       const scope = requireManualOrderScope(value.scope);
       const remap = (id: string) => {
@@ -232,16 +241,61 @@ export function planWorkspaceMergeSelection(
         targetId: destination.targetId,
       });
     };
-    if (mapping.collection === "organization") {
-      const collection =
-        value.kind === "WORK"
-          ? "items"
-          : value.kind === "NOTE"
-            ? "notes"
-            : null;
-      if (!collection)
+    const folderReference = (
+      id: unknown,
+      path: readonly (string | number)[],
+    ) => {
+      if (typeof id !== "string" || !id)
         throw new DomainError("VALIDATION_ERROR", { field: "mergeReference" });
-      reference(collection, value.id, ["id"]);
+      const destination = selected.get(key("organization", `FOLDER:${id}`));
+      if (!destination || !destination.targetId.startsWith("FOLDER:"))
+        throw new DomainError("VALIDATION_ERROR", { field: "mergeReference" });
+      references.push({
+        collection: "organization",
+        sourceId: mapping.sourceId,
+        path,
+        targetId: destination.targetId.slice("FOLDER:".length),
+      });
+    };
+    if (mapping.collection === "organization") {
+      if (value.kind === "FOLDER") {
+        if (mapping.action === "COPY") {
+          if (!mapping.targetId.startsWith("FOLDER:"))
+            throw new DomainError("VALIDATION_ERROR", {
+              field: "mergeReference",
+            });
+          references.push({
+            collection: "organization",
+            sourceId: mapping.sourceId,
+            path: ["id"],
+            targetId: mapping.targetId.slice("FOLDER:".length),
+          });
+          if (value.parentId !== undefined && value.parentId !== "")
+            folderReference(value.parentId, ["parentId"]);
+          else if (typeof value.parentId !== "string")
+            throw new DomainError("VALIDATION_ERROR", {
+              field: "mergeReference",
+            });
+        }
+      } else {
+        const collection =
+          value.kind === "WORK"
+            ? "items"
+            : value.kind === "NOTE"
+              ? "notes"
+              : null;
+        if (!collection)
+          throw new DomainError("VALIDATION_ERROR", {
+            field: "mergeReference",
+          });
+        reference(collection, value.id, ["id"]);
+        if (
+          value.kind === "NOTE" &&
+          value.folderId &&
+          mapping.action === "COPY"
+        )
+          folderReference(value.folderId, ["folderId"]);
+      }
     } else if (mapping.collection === "manualOrders") {
       const scope = requireManualOrderScope(value.scope);
       if (scope.kind === "PROJECT_TASKS")

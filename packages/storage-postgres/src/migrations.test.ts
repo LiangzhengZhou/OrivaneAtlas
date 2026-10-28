@@ -5,6 +5,15 @@ import { inspectSchema, migrate, migrations } from "./migrations";
 import { postgresHarness } from "./testing";
 
 const h = postgresHarness();
+/** Timer columns are added by migration 39; legacy-row preservation compares the rest. */
+const legacyWork = (rows: Record<string, unknown>[]) =>
+  rows.map((row) => {
+    const copy = { ...row };
+    delete copy.timer_started_at;
+    delete copy.timer_accumulated_ms;
+    delete copy.due_time;
+    return copy;
+  });
 const latest = migrations[migrations.length - 1]!.version;
 const v2 = [
   ...migrations,
@@ -92,15 +101,18 @@ describe("PostgreSQL transactional migrations", () => {
       name,
       "INSERT INTO arclattice.work_item (workspace_id,id,type,title,description_md,status,priority,execution_mode,version,created_by,updated_by,created_at,updated_at,lifecycle) VALUES ('w','project','PROJECT','Original project','# Original','TODO','MEDIUM','MANUAL',1,'p','p','2026-10-01','2026-10-01','PLANNED')",
     );
-    const before = (await h.query(name, "SELECT * FROM arclattice.work_item"))
-      .rows;
+    const before = legacyWork(
+      (await h.query(name, "SELECT * FROM arclattice.work_item")).rows,
+    );
     let backedUp = false;
     await run(name, migrations, async () => {
       backedUp = true;
     });
     expect(backedUp).toBe(true);
     expect(
-      (await h.query(name, "SELECT * FROM arclattice.work_item")).rows,
+      legacyWork(
+        (await h.query(name, "SELECT * FROM arclattice.work_item")).rows,
+      ),
     ).toEqual(before);
     await h.query(
       name,
@@ -183,17 +195,20 @@ describe("PostgreSQL transactional migrations", () => {
         [id, type, project, deleted],
       );
     }
-    const before = (
-      await h.query(name, "SELECT * FROM arclattice.work_item ORDER BY id")
-    ).rows;
+    const before = legacyWork(
+      (await h.query(name, "SELECT * FROM arclattice.work_item ORDER BY id"))
+        .rows,
+    );
     let backedUp = false;
     await run(name, migrations, async () => {
       backedUp = true;
     });
     expect(backedUp).toBe(true);
     expect(
-      (await h.query(name, "SELECT * FROM arclattice.work_item ORDER BY id"))
-        .rows,
+      legacyWork(
+        (await h.query(name, "SELECT * FROM arclattice.work_item ORDER BY id"))
+          .rows,
+      ),
     ).toEqual(
       before.map(({ project_id: _legacy, ...row }) => ({
         ...row,

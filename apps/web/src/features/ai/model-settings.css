@@ -1,18 +1,32 @@
 .model-settings {
   display: grid;
-  gap: var(--space-6);
+  gap: 10px;
   min-width: 0;
 }
 .model-settings-section {
   display: grid;
-  gap: var(--space-3);
-  padding-block: var(--space-4);
-  border-bottom: 1px solid var(--border-default);
+  gap: 10px;
+  padding-block: 18px;
+  border-bottom: 1px solid var(--border-subtle);
   min-width: 0;
 }
 .model-settings-section h3,
 .model-settings-section p {
   margin: 0;
+}
+.model-settings-section h3 {
+  font-size: 13.5px;
+  font-weight: var(--font-weight-semibold);
+}
+.model-settings-section > p {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: var(--line-body);
+}
+.model-settings-section > .ui-button,
+.model-settings-section > form > .ui-button {
+  justify-self: start;
+  width: auto;
 }
 .model-settings-section label {
   display: grid;
@@ -37,10 +51,13 @@
 .model-settings-row span {
   color: var(--muted);
 }
+.model-settings-row > .ui-button {
+  margin-inline-start: auto;
+}
 .model-settings-form {
   display: grid;
   gap: 0.8rem;
-  max-width: 48rem;
+  max-width: 40rem;
   padding-block: 0.75rem;
 }
 .model-settings-form input,
@@ -60,4 +77,14 @@
 .model-settings-section button {
   max-width: 100%;
   overflow-wrap: anywhere;
+}
+.model-settings-section > details {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 10px;
+}
+.model-settings-section > details summary,
+.model-settings-section > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
 }

@@ -1,4 +1,5 @@
 import { DomainError } from "@arclattice/domain";
+import { stableUuidPattern } from "./mutation-receipt";
 import type { Organization, OrganizationStore } from "./organization";
 
 export interface OrganizationReplayEffect {
@@ -14,6 +15,29 @@ export interface CanonicalOrganizationReplayEffect {
   readonly version: number;
   readonly value: Organization;
 }
+const stableFolderId = new RegExp(stableUuidPattern);
+function validOptionalIdentity(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === "" ||
+    (typeof value === "string" &&
+      value.length <= 240 &&
+      stableFolderId.test(value))
+  );
+}
+function validIcon(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "string" &&
+      (value === "" || value.trim() !== "") &&
+      [...value].length <= 16 &&
+      !/[\x00-\x1f]/.test(value))
+  );
+}
+/**
+ * Canonical rows carry the same shape the service writes: WORK keeps only the
+ * legacy label, NOTE may reference a stable folder, FOLDER owns name/parentId.
+ */
 export function requireCanonicalOrganization(
   input: unknown,
   id: string,
@@ -23,8 +47,32 @@ export function requireCanonicalOrganization(
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new DomainError("VALIDATION_ERROR");
   const value = input as Organization;
+  const kindValid = ["WORK", "NOTE", "FOLDER"].includes(value.kind);
+  const folderShapeValid =
+    value.kind === "FOLDER"
+      ? typeof value.name === "string" &&
+        value.name === value.name.trim() &&
+        value.name.length > 0 &&
+        value.name.length <= 80 &&
+        !/[\x00-\x1f]/.test(value.name) &&
+        typeof value.parentId === "string" &&
+        value.parentId.length <= 240 &&
+        !/[\x00-\x1f]/.test(value.parentId) &&
+        (value.parentId === "" || stableFolderId.test(value.parentId)) &&
+        value.folderId === undefined &&
+        validIcon(value.icon)
+      : value.kind === "NOTE"
+        ? value.name === undefined &&
+          value.parentId === undefined &&
+          validOptionalIdentity(value.folderId) &&
+          validIcon(value.icon)
+        : value.name === undefined &&
+          value.parentId === undefined &&
+          value.folderId === undefined &&
+          value.icon === undefined;
   if (
-    !["WORK", "NOTE"].includes(value.kind) ||
+    !kindValid ||
+    !folderShapeValid ||
     typeof value.id !== "string" ||
     !value.id ||
     `${value.kind}:${value.id}` !== id ||
@@ -73,7 +121,7 @@ export class OrganizationReplayStore implements OrganizationStore {
         (effect) =>
           effect.collection !== "organization" ||
           effect.op !== "UPSERT" ||
-          !/^(WORK|NOTE):.+$/.test(effect.id) ||
+          !/^(WORK|NOTE|FOLDER):.+$/.test(effect.id) ||
           !Number.isSafeInteger(effect.baseVersion) ||
           effect.baseVersion < 0,
       )

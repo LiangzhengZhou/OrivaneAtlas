@@ -562,15 +562,93 @@ export function planWorkspaceImportSteps(
     });
   }
   // Restore organization only after all formal entity state transitions.
-  for (const copy of copies.filter(
+  const organizationCopies = copies.filter(
     (copy) => copy.collection === "organization",
-  )) {
-    const value = values.get(copy.targetId)!;
+  );
+  const folderValue = (copy: WorkspaceMergeCopy) => values.get(copy.targetId)!;
+  // Parent folders must exist before children and before any note membership.
+  const pendingFolders = organizationCopies.filter(
+    (copy) => folderValue(copy).kind === "FOLDER",
+  );
+  const activeFolderIds = new Set<string>();
+  const orderedFolders: WorkspaceMergeCopy[] = [];
+  for (const copy of pendingFolders) {
+    const value = folderValue(copy);
+    if (
+      typeof value.id !== "string" ||
+      !value.id ||
+      typeof value.name !== "string" ||
+      value.name !== value.name.trim() ||
+      !value.name ||
+      value.name.length > 80 ||
+      /[\x00-\x1f]/.test(value.name) ||
+      typeof value.parentId !== "string" ||
+      typeof value.archived !== "boolean" ||
+      typeof value.folder !== "string" ||
+      value.folder !== "" ||
+      (value.icon !== undefined && typeof value.icon !== "string")
+    )
+      throw new DomainError("VALIDATION_ERROR", {
+        field: "workspaceImportOrganization",
+      });
+    if (!value.archived) activeFolderIds.add(value.id);
+  }
+  const remainingFolders = pendingFolders.filter(
+    (copy) => !folderValue(copy).archived,
+  );
+  const emittedFolders = new Set<string>();
+  while (remainingFolders.length) {
+    const index = remainingFolders.findIndex((copy) => {
+      const parentId = String(folderValue(copy).parentId);
+      return parentId === "" || emittedFolders.has(parentId);
+    });
+    if (index < 0)
+      throw new DomainError("VALIDATION_ERROR", {
+        field: "workspaceImportOrganization",
+      });
+    const [folder] = remainingFolders.splice(index, 1);
+    const value = folderValue(folder!);
+    if (value.parentId !== "" && !activeFolderIds.has(String(value.parentId)))
+      throw new DomainError("VALIDATION_ERROR", {
+        field: "workspaceImportOrganization",
+      });
+    orderedFolders.push(folder!);
+    emittedFolders.add(String(value.id));
+  }
+  for (const copy of orderedFolders) {
+    const value = folderValue(copy);
+    const id = String(value.id);
+    add(copy, "/api/organize", {
+      kind: "FOLDER",
+      action: "create",
+      id,
+      name: String(value.name),
+      parentId: String(value.parentId),
+    });
+    if (typeof value.icon === "string" && value.icon)
+      add(copy, "/api/organize", {
+        kind: "FOLDER",
+        action: "icon",
+        icon: value.icon,
+        entries: [
+          {
+            id,
+            version: 1,
+            organizationVersion: 1,
+          },
+        ],
+      });
+  }
+  for (const copy of organizationCopies) {
+    const value = folderValue(copy);
+    if (value.kind === "FOLDER") continue;
     if (
       (value.kind !== "WORK" && value.kind !== "NOTE") ||
       typeof value.id !== "string" ||
       typeof value.archived !== "boolean" ||
-      typeof value.folder !== "string"
+      typeof value.folder !== "string" ||
+      (value.folderId !== undefined && typeof value.folderId !== "string") ||
+      (value.icon !== undefined && typeof value.icon !== "string")
     )
       throw new DomainError("VALIDATION_ERROR", {
         field: "workspaceImportOrganization",
@@ -596,13 +674,43 @@ export function planWorkspaceImportSteps(
         action: "archive",
         entries: [{ id: value.id, version, organizationVersion: 0 }],
       });
-    if (value.kind === "NOTE" && value.folder !== "")
-      add(copy, "/api/organize", {
-        kind: "NOTE",
-        action: "move",
-        folder: value.folder,
-        entries: [{ id: value.id, version, organizationVersion: 0 }],
-      });
+    if (value.kind === "NOTE") {
+      let organizationVersion = 0;
+      if (typeof value.folderId === "string" && value.folderId) {
+        if (!emittedFolders.has(value.folderId))
+          throw new DomainError("VALIDATION_ERROR", {
+            field: "workspaceImportOrganizationTarget",
+          });
+        add(copy, "/api/organize", {
+          kind: "NOTE",
+          action: "move",
+          folderId: value.folderId,
+          entries: [{ id: value.id, version, organizationVersion: 0 }],
+        });
+        organizationVersion = 1;
+      } else if (value.folder !== "") {
+        add(copy, "/api/organize", {
+          kind: "NOTE",
+          action: "move",
+          folder: value.folder,
+          entries: [{ id: value.id, version, organizationVersion: 0 }],
+        });
+        organizationVersion = 1;
+      }
+      if (typeof value.icon === "string" && value.icon)
+        add(copy, "/api/organize", {
+          kind: "NOTE",
+          action: "icon",
+          icon: value.icon,
+          entries: [
+            {
+              id: value.id,
+              version,
+              organizationVersion,
+            },
+          ],
+        });
+    }
   }
   return steps;
 }

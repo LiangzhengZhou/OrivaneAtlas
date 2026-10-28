@@ -50,7 +50,7 @@ it("upgrades schema37 to extraction and FTS with original bytes preserved and a 
         new Uint8Array([0, 128, 255]),
       );
     backup = (await migrate(raw, file, 2000)).backupPath!;
-    expect(inspectSchema(raw)).toBe(42);
+    expect(inspectSchema(raw)).toBe(migrations.length);
     expect(
       raw.prepare("SELECT count(*) count FROM workspace_owner").get()?.count,
     ).toBe(0);

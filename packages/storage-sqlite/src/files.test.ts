@@ -30,7 +30,7 @@ test("binary completion upgrade preserves v35 chunks as incomplete and restores 
       );
     expect(inspectSchema(raw, migrations.slice(0, 35))).toBe(35);
     backup = (await migrate(raw, path, 2000)).backupPath!;
-    expect(inspectSchema(raw)).toBe(42);
+    expect(inspectSchema(raw)).toBe(migrations.length);
     expect(
       raw
         .prepare("SELECT chunk_size,completed FROM file_blob_descriptor")
@@ -68,7 +68,7 @@ test("File schema upgrades v34 without changing data and restores its pre-upgrad
     await migrate(raw, path, 2000, migrations.slice(0, 34));
     raw.exec("INSERT INTO workspace VALUES('workspace-a','Preserved')");
     backup = (await migrate(raw, path, 2000)).backupPath!;
-    expect(inspectSchema(raw)).toBe(42);
+    expect(inspectSchema(raw)).toBe(migrations.length);
     expect(raw.prepare("SELECT name FROM workspace").get()?.name).toBe(
       "Preserved",
     );

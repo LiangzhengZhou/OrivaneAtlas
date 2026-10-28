@@ -2,6 +2,7 @@ import {
   type NotificationCenterService,
   notificationCauses,
   notificationReminderOccasion,
+  taskDueOccasion,
 } from "@arclattice/application";
 import type { NotificationRecord } from "@arclattice/domain";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -253,7 +254,9 @@ export function useNotificationCenter(
             open &&
             (record.reason === "TASK_START"
               ? item?.startDate
-              : item?.dueDate) === occasion,
+              : item
+                ? taskDueOccasion(item)
+                : null) === occasion,
           version: null,
         };
       };

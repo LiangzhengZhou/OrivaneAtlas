@@ -45,7 +45,9 @@ test("binary completion upgrade preserves v29 chunks and restores its physical b
     }),
   );
   expect(backupGate).toBe(true);
-  expect(await h.client(name, (client) => inspectSchema(client))).toBe(37);
+  expect(await h.client(name, (client) => inspectSchema(client))).toBe(
+    migrations.length,
+  );
   expect(
     (
       await h.query(
@@ -101,7 +103,9 @@ test("File schema upgrades v28 and preserves exact binary chunks", async () => {
     }),
   );
   expect(backupGate).toBe(true);
-  expect(await h.client(name, (client) => inspectSchema(client))).toBe(37);
+  expect(await h.client(name, (client) => inspectSchema(client))).toBe(
+    migrations.length,
+  );
   expect(
     (await h.query(name, "SELECT name FROM arclattice.workspace")).rows[0]
       ?.name,

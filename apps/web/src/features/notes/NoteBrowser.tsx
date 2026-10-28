@@ -1,11 +1,18 @@
 import type { WorkspaceNote } from "@arclattice/application";
-import { BookOpen, ChevronDown, LockKeyhole, NotebookPen } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useId } from "react";
+import {
+  BookOpen,
+  CheckCheck,
+  ChevronDown,
+  LockKeyhole,
+  NotebookPen,
+} from "lucide-react";
+import { type KeyboardEvent, type ReactNode, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/Button";
 import { EntityRow } from "../../components/ui/Content";
 import { EntityMenu } from "../../components/ui/EntityMenu";
 import { Select } from "../../components/ui/Surfaces";
+import { EntityIcon } from "./EntityIcon";
 import {
   groupJournalEntries,
   journalGroupings,
@@ -21,8 +28,12 @@ export function NoteBrowser({
   onPresentation,
   folderFilter,
   onFolderFilter,
-  folders,
-  getFolder,
+  folderOptions,
+  getFolderKey,
+  getFolderLabel,
+  getIcon,
+  onIcon,
+  folderPanel,
   selectedIds,
   onSelection,
   pending,
@@ -39,8 +50,12 @@ export function NoteBrowser({
   onPresentation(value: NotePresentation): void;
   folderFilter: string | null;
   onFolderFilter(value: string | null): void;
-  folders: string[];
-  getFolder(id: string): string;
+  folderOptions: { value: string; label: string }[];
+  getFolderKey(note: WorkspaceNote): string;
+  getFolderLabel(note: WorkspaceNote): string;
+  getIcon(note: WorkspaceNote): string;
+  onIcon(note: WorkspaceNote, icon: string): void;
+  folderPanel?: ReactNode;
   selectedIds: string[];
   onSelection(ids: string[]): void;
   pending: boolean;
@@ -52,11 +67,12 @@ export function NoteBrowser({
   searching: boolean;
 }) {
   const { t, i18n } = useTranslation("desk");
+  const [selecting, setSelecting] = useState(false);
   const groupId = useId();
   const { layout, grouping, sort, collapsed } = presentation;
   const sorted = entries
     .filter(
-      (note) => folderFilter === null || getFolder(note.id) === folderFilter,
+      (note) => folderFilter === null || getFolderKey(note) === folderFilter,
     )
     .sort(
       (a, b) =>
@@ -120,40 +136,53 @@ export function NoteBrowser({
           key={note.id}
           data-checked={selected.has(note.id) || undefined}
         >
-          <label className="note-selection">
-            <input
-              type="checkbox"
-              aria-label={t("selectNote", { title: note.title })}
-              checked={selected.has(note.id)}
-              disabled={
-                pending || (!selected.has(note.id) && selectedIds.length >= 100)
-              }
-              onChange={(event) =>
-                onSelection(
-                  event.target.checked
-                    ? [...selectedIds, note.id]
-                    : selectedIds.filter((id) => id !== note.id),
-                )
-              }
-            />
-          </label>
+          {selecting ? (
+            <label className="note-selection">
+              <input
+                type="checkbox"
+                aria-label={t("selectNote", { title: note.title })}
+                checked={selected.has(note.id)}
+                disabled={
+                  pending ||
+                  (!selected.has(note.id) && selectedIds.length >= 100)
+                }
+                onChange={(event) =>
+                  onSelection(
+                    event.target.checked
+                      ? [...selectedIds, note.id]
+                      : selectedIds.filter((id) => id !== note.id),
+                  )
+                }
+              />
+            </label>
+          ) : (
+            <span className="note-selection" aria-hidden="true" />
+          )}
           <EntityRow
             className="note-card"
             intent="NAVIGATE"
             onOpen={() => onOpen(note)}
             aria-label={note.title}
           >
-            {note.kind === "JOURNAL" ? (
-              <NotebookPen className="note-file-icon" aria-hidden="true" />
-            ) : (
-              <BookOpen className="note-file-icon" aria-hidden="true" />
-            )}
+            <EntityIcon
+              className="note-file-icon"
+              icon={getIcon(note)}
+              fallback={
+                note.kind === "JOURNAL" ? (
+                  <NotebookPen aria-hidden="true" />
+                ) : (
+                  <BookOpen aria-hidden="true" />
+                )
+              }
+              label={t("chooseIcon")}
+              defaultLabel={t("defaultIcon")}
+              customLabel={t("customIcon")}
+              applyLabel={t("applyIcon")}
+              onChange={(icon) => onIcon(note, icon)}
+            />
             <h3 title={note.title}>{note.title}</h3>
-            <span
-              className="note-folder"
-              title={getFolder(note.id) || t("unfiled")}
-            >
-              {getFolder(note.id) || t("unfiled")}
+            <span className="note-folder" title={getFolderLabel(note)}>
+              {getFolderLabel(note)}
             </span>
             <time
               className="note-date"
@@ -180,199 +209,229 @@ export function NoteBrowser({
     </div>
   );
   return (
-    <div className="note-browser" data-layout={layout} onKeyDown={moveFocus}>
-      <div className="organization-toolbar note-view-toolbar">
-        <label>
-          {t("noteBrowser.view")}
-          <Select
-            aria-label={t("noteBrowser.view")}
-            value={layout}
-            onChange={(event) =>
-              onPresentation({
-                ...presentation,
-                layout: event.target.value as NotePresentation["layout"],
-              })
-            }
-          >
-            {noteLayouts.map((value) => (
-              <option key={value} value={value}>
-                {t(`noteBrowser.layout.${value}`)}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label>
-          {t("sort")}
-          <Select
-            aria-label={t("noteBrowser.sort")}
-            value={sort}
-            onChange={(event) =>
-              onPresentation({
-                ...presentation,
-                sort: event.target.value as NotePresentation["sort"],
-              })
-            }
-          >
-            {journal && (
-              <option value="day">{t("noteBrowser.journalDate")}</option>
-            )}
-            <option value="updated">{t("noteBrowser.updated")}</option>
-            <option value="title">{t("title")}</option>
-          </Select>
-        </label>
-        <label>
-          {t("folder")}
-          <Select
-            aria-label={t("folderFilter")}
-            value={folderFilter === null ? "all" : `folder:${folderFilter}`}
-            onChange={(event) => {
-              onFolderFilter(
-                event.target.value === "all"
-                  ? null
-                  : event.target.value.slice(7),
-              );
-              onSelection([]);
-            }}
-          >
-            <option value="all">{t("allFolders")}</option>
-            <option value="folder:">{t("unfiled")}</option>
-            {folders.map((folder) => (
-              <option key={folder} value={`folder:${folder}`}>
-                {folder}
-              </option>
-            ))}
-          </Select>
-        </label>
-        {journal && (
+    <div className={folderPanel ? "note-browser-shell" : undefined}>
+      {folderPanel && (
+        <aside className="note-folder-panel">{folderPanel}</aside>
+      )}
+      <div
+        className="note-browser"
+        data-layout={layout}
+        data-selecting={selecting ? "true" : "false"}
+        onKeyDown={moveFocus}
+      >
+        <div className="organization-toolbar note-view-toolbar">
           <label>
-            {t("noteBrowser.groupBy")}
+            {t("noteBrowser.view")}
             <Select
-              aria-label={t("noteBrowser.groupBy")}
-              value={grouping}
-              onChange={(event) => {
+              aria-label={t("noteBrowser.view")}
+              value={layout}
+              onChange={(event) =>
                 onPresentation({
                   ...presentation,
-                  grouping: event.target.value as NotePresentation["grouping"],
-                  collapsed: [],
-                });
-                onSelection([]);
-              }}
+                  layout: event.target.value as NotePresentation["layout"],
+                })
+              }
             >
-              {journalGroupings.map((value) => (
+              {noteLayouts.map((value) => (
                 <option key={value} value={value}>
-                  {t(`noteBrowser.grouping.${value}`)}
+                  {t(`noteBrowser.layout.${value}`)}
                 </option>
               ))}
             </Select>
           </label>
-        )}
-        {grouped && (
-          <div className="note-fold-actions">
-            <Button
-              variant="ghost"
-              disabled={searching || groups.every(([key]) => !isCollapsed(key))}
-              onClick={() => changeFold([])}
+          <label>
+            {t("sort")}
+            <Select
+              aria-label={t("noteBrowser.sort")}
+              value={sort}
+              onChange={(event) =>
+                onPresentation({
+                  ...presentation,
+                  sort: event.target.value as NotePresentation["sort"],
+                })
+              }
             >
-              {t("noteBrowser.expandAll")}
-            </Button>
-            <Button
-              variant="ghost"
-              disabled={searching || groups.every(([key]) => isCollapsed(key))}
-              onClick={() => changeFold(groups.map(([key]) => key))}
-            >
-              {t("noteBrowser.collapseAll")}
-            </Button>
-          </div>
-        )}
-      </div>
-      <div className="organization-toolbar note-selection-toolbar">
-        <label>
-          <input
-            type="checkbox"
-            aria-label={t("selectVisible")}
-            checked={
-              visible.length > 0 &&
-              visible.every((note) => selected.has(note.id))
-            }
-            disabled={pending || visible.length === 0 || visible.length > 100}
-            onChange={(event) =>
-              onSelection(
-                event.target.checked ? visible.map((note) => note.id) : [],
-              )
-            }
-          />
-          {t("selectVisible")}
-        </label>
-        {selectedIds.length > 0 && (
-          <>
-            <span role="status">
-              {t("selectionCount", { count: selectedIds.length })}
-            </span>
-            <Button
-              variant="ghost"
-              disabled={pending}
-              onClick={() => onSelection([])}
-            >
-              {t("clearSelection")}
-            </Button>
-            {selectionActions}
-          </>
-        )}
-      </div>
-      {layout === "list" && sorted.length > 0 && (
-        <div className="note-list-header" aria-hidden="true">
-          <span />{" "}
-          <div className="note-list-columns">
-            <span />
-            <span>{t("title")}</span>
-            <span className="note-folder">{t("folder")}</span>
-            <span className="note-date">
-              {t(journal ? "noteBrowser.journalDate" : "noteBrowser.updated")}
-            </span>
-            <span />
-            <span />
-          </div>
-        </div>
-      )}
-      {groups.map(([key, notes]) =>
-        grouped ? (
-          <section className="journal-group" key={key}>
-            <button
-              type="button"
-              className="journal-group-toggle"
-              aria-expanded={!isCollapsed(key)}
-              aria-controls={`${groupId}-${key}`}
-              onClick={() => {
-                if (!searching)
-                  changeFold(
-                    isCollapsed(key)
-                      ? collapsed.filter((value) => value !== key)
-                      : [...collapsed, key],
-                  );
+              {journal && (
+                <option value="day">{t("noteBrowser.journalDate")}</option>
+              )}
+              <option value="updated">{t("noteBrowser.updated")}</option>
+              <option value="title">{t("title")}</option>
+            </Select>
+          </label>
+          <label>
+            {t("folder")}
+            <Select
+              aria-label={t("folderFilter")}
+              value={folderFilter === null ? "all" : folderFilter}
+              onChange={(event) => {
+                onFolderFilter(
+                  event.target.value === "all" ? null : event.target.value,
+                );
+                onSelection([]);
               }}
-              aria-disabled={searching || undefined}
             >
-              <ChevronDown size={16} aria-hidden="true" />
-              <span>
-                {key === "undated"
-                  ? t("noteBrowser.undated")
-                  : journalGroupLabel(key, grouping, i18n.language)}
-              </span>
-              <span className="journal-group-count">
-                {t("noteBrowser.count", { count: notes.length })}
-              </span>
-            </button>
-            <div id={`${groupId}-${key}`}>
-              {!isCollapsed(key) && renderRows(notes)}
+              <option value="all">{t("allFolders")}</option>
+              <option value="folder:">{t("unfiled")}</option>
+              {folderOptions.map((folder) => (
+                <option key={folder.value} value={folder.value}>
+                  {folder.label}
+                </option>
+              ))}
+            </Select>
+          </label>
+          {journal && (
+            <label>
+              {t("noteBrowser.groupBy")}
+              <Select
+                aria-label={t("noteBrowser.groupBy")}
+                value={grouping}
+                onChange={(event) => {
+                  onPresentation({
+                    ...presentation,
+                    grouping: event.target
+                      .value as NotePresentation["grouping"],
+                    collapsed: [],
+                  });
+                  onSelection([]);
+                }}
+              >
+                {journalGroupings.map((value) => (
+                  <option key={value} value={value}>
+                    {t(`noteBrowser.grouping.${value}`)}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          )}
+          {grouped && (
+            <div className="note-fold-actions">
+              <Button
+                variant="ghost"
+                disabled={
+                  searching || groups.every(([key]) => !isCollapsed(key))
+                }
+                onClick={() => changeFold([])}
+              >
+                {t("noteBrowser.expandAll")}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={
+                  searching || groups.every(([key]) => isCollapsed(key))
+                }
+                onClick={() => changeFold(groups.map(([key]) => key))}
+              >
+                {t("noteBrowser.collapseAll")}
+              </Button>
             </div>
-          </section>
-        ) : (
-          <div key={key}>{renderRows(notes)}</div>
-        ),
-      )}
-      {sorted.length === 0 && (
-        <p className="note-browser-empty">{t("noResults")}</p>
-      )}
+          )}
+        </div>
+        <div className="organization-toolbar note-selection-toolbar">
+          <Button
+            type="button"
+            variant={selecting ? "secondary" : "ghost"}
+            aria-pressed={selecting}
+            onClick={() => {
+              const next = !selecting;
+              setSelecting(next);
+              if (!next) onSelection([]);
+            }}
+          >
+            <CheckCheck size={15} />
+            {selecting ? t("exitSelectionMode") : t("selectionMode")}
+          </Button>
+          {selecting && (
+            <label>
+              <input
+                type="checkbox"
+                aria-label={t("selectVisible")}
+                checked={
+                  visible.length > 0 &&
+                  visible.every((note) => selected.has(note.id))
+                }
+                disabled={
+                  pending || visible.length === 0 || visible.length > 100
+                }
+                onChange={(event) =>
+                  onSelection(
+                    event.target.checked ? visible.map((note) => note.id) : [],
+                  )
+                }
+              />
+              {t("selectVisible")}
+            </label>
+          )}
+          {selectedIds.length > 0 && (
+            <>
+              <span role="status">
+                {t("selectionCount", { count: selectedIds.length })}
+              </span>
+              <Button
+                variant="ghost"
+                disabled={pending}
+                onClick={() => onSelection([])}
+              >
+                {t("clearSelection")}
+              </Button>
+              {selectionActions}
+            </>
+          )}
+        </div>
+        {layout === "list" && sorted.length > 0 && (
+          <div className="note-list-header" aria-hidden="true">
+            <span />{" "}
+            <div className="note-list-columns">
+              <span />
+              <span>{t("title")}</span>
+              <span className="note-folder">{t("folder")}</span>
+              <span className="note-date">
+                {t(journal ? "noteBrowser.journalDate" : "noteBrowser.updated")}
+              </span>
+              <span />
+              <span />
+            </div>
+          </div>
+        )}
+        {groups.map(([key, notes]) =>
+          grouped ? (
+            <section className="journal-group" key={key}>
+              <button
+                type="button"
+                className="journal-group-toggle"
+                aria-expanded={!isCollapsed(key)}
+                aria-controls={`${groupId}-${key}`}
+                onClick={() => {
+                  if (!searching)
+                    changeFold(
+                      isCollapsed(key)
+                        ? collapsed.filter((value) => value !== key)
+                        : [...collapsed, key],
+                    );
+                }}
+                aria-disabled={searching || undefined}
+              >
+                <ChevronDown size={16} aria-hidden="true" />
+                <span>
+                  {key === "undated"
+                    ? t("noteBrowser.undated")
+                    : journalGroupLabel(key, grouping, i18n.language)}
+                </span>
+                <span className="journal-group-count">
+                  {t("noteBrowser.count", { count: notes.length })}
+                </span>
+              </button>
+              <div id={`${groupId}-${key}`}>
+                {!isCollapsed(key) && renderRows(notes)}
+              </div>
+            </section>
+          ) : (
+            <div key={key}>{renderRows(notes)}</div>
+          ),
+        )}
+        {sorted.length === 0 && (
+          <p className="note-browser-empty">{t("noResults")}</p>
+        )}
+      </div>
     </div>
   );
 }

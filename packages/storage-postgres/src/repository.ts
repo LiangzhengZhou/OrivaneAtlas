@@ -25,7 +25,12 @@ function values<T extends object>(
   fields: Partial<Record<keyof T, string>>,
   entity: T,
 ) {
-  return (Object.keys(fields) as (keyof T)[]).map((key) => entity[key]);
+  return (Object.keys(fields) as (keyof T)[]).map((key) => {
+    const value = entity[key];
+    if (value !== undefined) return value;
+    // Legacy callers/tests omit the optional timer fields; persist defaults.
+    return String(key) === "timerAccumulatedMs" ? 0 : null;
+  });
 }
 async function insert<T extends object>(
   client: PoolClient,

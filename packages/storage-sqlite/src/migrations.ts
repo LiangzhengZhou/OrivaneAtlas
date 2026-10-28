@@ -361,6 +361,30 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 43,
+    name: "folder-organization",
+    sql: readFileSync(
+      new URL("./migrations/0043-folder-organization.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 44,
+    name: "task-timer",
+    sql: readFileSync(
+      new URL("./migrations/0044-task-timer.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 45,
+    name: "task-due-time",
+    sql: readFileSync(
+      new URL("./migrations/0045-task-due-time.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {
@@ -436,6 +460,19 @@ export function inspectSchema(
       .some((column) => column.name === "grants_json")
   )
     throw new StorageError("SCHEMA_OBJECT_MISSING");
+  if (version >= 44) {
+    const columns = db
+      .prepare("PRAGMA table_info(work_item)")
+      .all()
+      .map((column) => column.name);
+    if (
+      !columns.includes("timer_started_at") ||
+      !columns.includes("timer_accumulated_ms")
+    )
+      throw new StorageError("SCHEMA_OBJECT_MISSING");
+    if (version >= 45 && !columns.includes("due_time"))
+      throw new StorageError("SCHEMA_OBJECT_MISSING");
+  }
   if (version >= 35)
     required.push(
       "library_file",

@@ -17,6 +17,9 @@ export const workFields = {
   activationPolicy: "activation_policy",
   startDate: "start_date",
   dueDate: "due_date",
+  dueTime: "due_time",
+  timerStartedAt: "timer_started_at",
+  timerAccumulatedMs: "timer_accumulated_ms",
   version: "version",
   createdBy: "created_by",
   updatedBy: "updated_by",
@@ -57,7 +60,9 @@ export function projection(fields: Record<string, string>) {
   return Object.entries(fields)
     .map(
       ([key, column]) =>
-        (column === "version" ? "version::float8" : column) +
+        (column === "version" || column === "timer_accumulated_ms"
+          ? column + "::float8"
+          : column) +
         ' AS "' +
         key +
         '"',

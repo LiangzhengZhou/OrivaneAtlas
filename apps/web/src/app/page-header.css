@@ -3,9 +3,25 @@
   align-items: center;
   gap: var(--space-4);
   margin-bottom: var(--space-5);
-  min-height: 40px;
+  min-height: 44px;
   /* Search sits between the title and the actions, so it must not push them off. */
   flex-wrap: nowrap;
+  /* Frosted context band. It stays in flow: overlaying it on content hid
+     rows from pointer interaction while scrolling. */
+  padding-block: 12px;
+  background: var(--glass-chrome);
+  border-bottom: 1px solid var(--border-subtle);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(135%);
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more),
+  (forced-colors: active), (max-width: 720px) {
+  .page-header {
+    background: var(--canvas);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 .page-header-title {
   display: flex;
@@ -16,24 +32,25 @@
 }
 .page-header h1 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.3;
+  font-size: 21px;
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-tight);
+  letter-spacing: -0.02em;
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 .page-header .breadcrumb {
-  font-size: 14px;
+  font-size: 13px;
 }
 .page-header .breadcrumb h1 {
   display: inline;
   font-size: inherit;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 .page-header-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   flex-shrink: 0;
 }
 @media (max-width: 767px) {
@@ -41,6 +58,7 @@
   .page-header {
     flex-wrap: wrap;
     gap: var(--space-2);
+    padding-block: 8px;
   }
   .page-header-title {
     flex: 1 1 auto;
@@ -53,7 +71,7 @@
     flex: 1 1 100%;
   }
   .page-header h1 {
-    font-size: 18px;
+    font-size: 19px;
   }
 }
 .page-header + * {

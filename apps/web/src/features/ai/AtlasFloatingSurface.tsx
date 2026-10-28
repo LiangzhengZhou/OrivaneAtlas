@@ -67,7 +67,7 @@ export function AtlasFloatingSurface({
     <Dialog
       modal={false}
       closeOnOutside={false}
-      className="atlas-floating-surface"
+      className="atlas-floating-surface glass-surface"
       aria-label={label}
       onRequestClose={onClose}
     >

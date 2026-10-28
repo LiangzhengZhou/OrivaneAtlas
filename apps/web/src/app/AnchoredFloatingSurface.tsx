@@ -153,7 +153,7 @@ export function AnchoredFloatingSurface({
         data-floating-surface
         role={role}
         aria-label={label}
-        className={className}
+        className={`glass-surface ${className}`.trim()}
         style={{
           position: "fixed",
           left: 8,
@@ -162,7 +162,6 @@ export function AnchoredFloatingSurface({
           maxHeight: "calc(100vh - 16px)",
           overflow: "auto",
           zIndex: 1000,
-          background: "var(--surface, var(--bg))",
         }}
       >
         {children}

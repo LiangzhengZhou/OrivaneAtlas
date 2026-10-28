@@ -1,32 +1,36 @@
 :root {
-  --canvas: #f7f8fa;
-  --surface: #fff;
-  --surface-raised: #fff;
-  --surface-subtle: #f3f4f6;
-  --surface-hover: #eceef1;
-  --surface-active: #e7e9ed;
-  --sidebar-surface: #f3f4f6;
-  --text-primary: #18181b;
-  --text-secondary: #52525b;
-  --text-muted: #71717a;
-  --border-subtle: #eff0f2;
-  --border-default: #e4e4e7;
-  --border-strong: #c6c6ce;
-  --accent: #6454ce;
-  --accent-hover: #5344b7;
-  --accent-subtle: color-mix(in srgb, var(--accent) 8%, var(--surface));
-  --success: #278451;
-  --warning: #a96b13;
-  --danger: #c43b46;
-  --info: #367bb5;
-  --priority-urgent: #b52a38;
-  --priority-high: #9b4a13;
-  --priority-medium: #526477;
-  --priority-low: #71717a;
-  --on-accent: #fff;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  /* Neutral, cool work surface. Brand color is reserved for action/selection. */
+  --canvas: #f6f7f9;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-subtle: #f2f4f7;
+  --surface-hover: #eceef3;
+  --surface-active: #e6e9ef;
+  --sidebar-surface: #f2f4f7;
+  --text-primary: #17181b;
+  --text-secondary: #54565e;
+  --text-muted: #7b7e87;
+  --border-subtle: #eef0f3;
+  --border-default: #e2e5ea;
+  --border-strong: #c4c8d1;
+  --accent: #5a5bd6;
+  --accent-hover: #4b4cc6;
+  --accent-subtle: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  --success: #257a4c;
+  --warning: #9a6512;
+  --danger: #bf3a46;
+  --info: #2f72a8;
+  --priority-urgent: #ac2837;
+  --priority-high: #914512;
+  --priority-medium: #4e5f70;
+  --priority-low: #71747c;
+  --on-accent: #ffffff;
+  --radius-sm: 8px;
+  --radius-md: 11px;
+  --radius-lg: 14px;
+  --radius-control: 8px;
+  --radius-popover: 12px;
+  --radius-float: 16px;
   --space-0: 0;
   --space-1: 4px;
   --space-2: 8px;
@@ -36,41 +40,49 @@
   --space-8: 32px;
   --space-12: 48px;
   --font-ui:
-    Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC",
-    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    "Inter", "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei",
+    "Noto Sans CJK SC", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-body-size: 14px;
   --font-meta-size: 12px;
-  --font-title-size: 26px;
+  --font-section-size: 13px;
+  --font-title-size: 24px;
+  --font-display-size: 28px;
+  --line-body: 1.55;
+  --line-tight: 1.3;
   --font-weight-medium: 500;
+  --font-weight-semibold: 600;
   --control-height: 36px;
-  --row-height: 48px;
-  --panel-padding: 24px;
-  --content-gap: 24px;
-  --motion-duration: 150ms;
-  --shadow-floating: 0 8px 24px #0002;
-  /* Glass is elevation, not decoration: only transient floating surfaces use it.
-     Every glass surface must also work as the opaque fallback below. */
-  --glass-bg: color-mix(in srgb, var(--surface) 78%, transparent);
-  --glass-bg-strong: color-mix(in srgb, var(--surface) 90%, transparent);
-  --glass-border: color-mix(in srgb, var(--text-primary) 10%, transparent);
-  --glass-shadow:
-    0 1px 0 color-mix(in srgb, #fff 55%, transparent) inset,
-    0 10px 30px #17223826;
-  --glass-blur: 14px;
-  --glass-saturation: 140%;
-  --glass-fallback-bg: var(--surface-raised);
-  --radius-control: 6px;
-  --radius-popover: 10px;
-  --radius-float: 14px;
+  --row-height: 46px;
+  --panel-padding: 22px;
+  --content-gap: 22px;
+  --motion-duration: 160ms;
   --motion-fast: 120ms;
+  --shadow-xs: 0 1px 2px #1018280a;
+  --shadow-card: 0 1px 2px #10182808, 0 2px 8px #1018280a;
+  --shadow-popover: 0 18px 40px #0f172a1f, 0 3px 10px #0f172a12;
+  --shadow-dialog: 0 32px 80px #0f172a2e, 0 8px 24px #0f172a1a;
+  --shadow-floating: var(--shadow-popover);
+  /* Glass is elevation, not decoration: only transient floating surfaces and
+     the workspace chrome use it. Every glass surface has an opaque fallback. */
+  --glass-bg: color-mix(in srgb, var(--surface) 72%, transparent);
+  --glass-bg-strong: color-mix(in srgb, var(--surface) 88%, transparent);
+  --glass-chrome: color-mix(in srgb, var(--canvas) 76%, transparent);
+  --glass-border: color-mix(in srgb, var(--text-primary) 9%, transparent);
+  --glass-shadow:
+    0 1px 0 color-mix(in srgb, #fff 60%, transparent) inset,
+    0 18px 44px #1722381f;
+  --glass-blur: 20px;
+  --glass-saturation: 155%;
+  --glass-fallback-bg: var(--surface-raised);
   --semantic-urgent: var(--danger);
   --semantic-attention: var(--warning);
   --semantic-neutral: var(--text-muted);
   --nav-item-height: 38px;
-  --row-padding: 16px;
+  --row-padding: 14px;
   --border: var(--border-default);
   --muted: var(--text-muted);
   --text: var(--text-primary);
   --soft: var(--surface-subtle);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
   color-scheme: light;
 }

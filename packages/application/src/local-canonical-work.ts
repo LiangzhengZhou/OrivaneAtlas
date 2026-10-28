@@ -80,9 +80,24 @@ export function validateLocalCanonicalWorkValue(
         entity.projectIds.some((id) => typeof id !== "string"))
     )
       invalid();
+    if (
+      entity.timerStartedAt !== undefined &&
+      entity.timerStartedAt !== null &&
+      (typeof entity.timerStartedAt !== "string" ||
+        !Number.isFinite(Date.parse(entity.timerStartedAt)))
+    )
+      invalid();
+    if (
+      entity.timerAccumulatedMs !== undefined &&
+      (typeof entity.timerAccumulatedMs !== "number" ||
+        !Number.isSafeInteger(entity.timerAccumulatedMs) ||
+        entity.timerAccumulatedMs < 0)
+    )
+      invalid();
     validateSchedule(
       entity.startDate as string | null,
       entity.dueDate as string | null,
+      (entity.dueTime ?? null) as string | null,
     );
   } else if (
     typeof entity.fromId !== "string" ||

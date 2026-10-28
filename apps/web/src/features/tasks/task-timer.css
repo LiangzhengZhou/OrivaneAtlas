@@ -1,0 +1,28 @@
+.task-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  background: color-mix(in oklab, var(--surface-strong) 70%, transparent);
+}
+
+.task-timer[data-running="true"] {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+
+.task-timer .task-timer-elapsed {
+  margin: 0 2px;
+  font-weight: 600;
+}
+
+.task-timer .ui-icon-button {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+}

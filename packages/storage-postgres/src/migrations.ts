@@ -327,6 +327,30 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 38,
+    name: "folder-organization",
+    sql: readFileSync(
+      new URL("./migrations/0038-folder-organization.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 39,
+    name: "task-timer",
+    sql: readFileSync(
+      new URL("./migrations/0039-task-timer.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 40,
+    name: "task-due-time",
+    sql: readFileSync(
+      new URL("./migrations/0040-task-due-time.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")
@@ -576,6 +600,20 @@ export async function inspectSchema(
       trigger[0]?.relname !== "entity_memo"
     )
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
+  }
+  if (rows.length >= 39) {
+    const timer = await client.query(
+      "SELECT column_name FROM information_schema.columns WHERE table_schema='arclattice' AND table_name='work_item' AND column_name IN ('timer_started_at','timer_accumulated_ms')",
+    );
+    if (timer.rowCount !== 2)
+      throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
+    if (rows.length >= 40) {
+      const dueTime = await client.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema='arclattice' AND table_name='work_item' AND column_name='due_time'",
+      );
+      if (dueTime.rowCount !== 1)
+        throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
+    }
   }
   if (
     knowledgeTables.some(

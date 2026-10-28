@@ -101,6 +101,7 @@ export function CommandPalette({
       ["tasks", text("任务", "Tasks")],
       ["projects", text("项目", "Projects")],
       ["calendar", text("日历", "Calendar")],
+      ["files", text("文件", "Files")],
       ["library", text("知识空间", "Library")],
       ["focus", text("专注", "Focus")],
       ["settings", text("设置", "Settings")],

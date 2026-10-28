@@ -13,6 +13,9 @@
   box-shadow: var(--shadow-floating);
   overflow: hidden;
 }
+.atlas-floating-surface.glass-surface {
+  border-radius: var(--radius-lg);
+}
 .atlas-floating-surface[open] {
   display: flex;
   flex-direction: column;
@@ -53,11 +56,36 @@
 .atlas-floating-surface:has(.assistant-pane) {
   width: min(440px, calc(100vw - 16px));
   height: min(640px, 80dvh);
+  max-height: 80dvh;
 }
 .atlas-floating-body textarea {
   width: 100%;
   min-height: 88px;
   resize: vertical;
+}
+.atlas-floating-body .conversation-composer {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-subtle) 58%, transparent);
+}
+.atlas-floating-body .conversation-composer textarea {
+  min-height: 62px;
+  max-height: 150px;
+  padding: 10px 12px;
+  border-color: transparent;
+  background: var(--surface);
+  resize: none;
+}
+.atlas-floating-body .conversation-composer textarea:focus-visible {
+  border-color: var(--accent);
+}
+.atlas-floating-body .conversation-composer-controls > label {
+  font-size: 11px;
+}
+.atlas-floating-body .conversation-composer-controls > .ui-button:last-child {
+  min-height: 34px;
 }
 .atlas-floating-body .ui-toolbar {
   flex-wrap: wrap;

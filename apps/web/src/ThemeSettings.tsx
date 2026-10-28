@@ -5,7 +5,8 @@ import { Select } from "./components/ui/Surfaces";
 type Theme = "system" | "light" | "dark";
 const storageKey = "orivane-atlas.theme";
 export function ThemeSettings({ controls }: { controls: boolean }) {
-  const { t } = useTranslation("desk");
+  const { t, i18n } = useTranslation("desk");
+  const zh = i18n.language.startsWith("zh");
   const [theme, setTheme] = useState<Theme>(() => {
     try {
       const value = localStorage.getItem(storageKey);
@@ -26,7 +27,7 @@ export function ThemeSettings({ controls }: { controls: boolean }) {
   }, [theme]);
   return controls ? (
     <label className="density-settings">
-      {t("appearance")}
+      {zh ? "主题" : "Theme"}
       <Select
         aria-label={t("appearance")}
         value={theme}

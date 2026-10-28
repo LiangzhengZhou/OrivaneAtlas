@@ -87,6 +87,22 @@ test("planner generates all task kinds with local wall time across DST and stabl
   );
   expect(planner.plan(input)).toEqual(intents);
 });
+test("a task due minute schedules the due intent at that workspace wall time", () => {
+  const intents = planner.plan({
+    ...base,
+    items: [
+      {
+        ...work("task"),
+        startDate: null,
+        dueDate: base.today,
+        dueTime: "14:30",
+      },
+    ],
+  });
+  expect(
+    intents.find((intent) => intent.kind === "TASK_DUE")?.scheduledAt,
+  ).toBe("2026-03-08T18:30:00.000Z");
+});
 test("completed canceled deleted and foreign tasks never schedule; identity separates native schedules", () => {
   const intents = planner.plan({
     ...base,

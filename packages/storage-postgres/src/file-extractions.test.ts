@@ -51,7 +51,7 @@ it("upgrades schema32 to extraction/search and restores its physical original-by
   );
   expect(backupVerified).toBe(true);
   expect(await harness.client(name, (client) => inspectSchema(client))).toBe(
-    37,
+    migrations.length,
   );
   expect(
     (

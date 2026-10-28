@@ -87,6 +87,7 @@ function TaskEditorSurface({
     item ? (item.startDate ?? "") : (initialStartDate ?? ""),
   );
   const [dueDate, setDueDate] = useState(item?.dueDate ?? "");
+  const [dueTime, setDueTime] = useState(item?.dueTime ?? "");
   const [prerequisiteIds, setPrerequisiteIds] = useState<string[]>(() =>
     item
       ? edges
@@ -188,6 +189,7 @@ function TaskEditorSurface({
       (seriesRule?.activationPolicy ?? item?.activationPolicy ?? "MANUAL") ||
     startDate !== (item ? (item.startDate ?? "") : (initialStartDate ?? "")) ||
     dueDate !== (item?.dueDate ?? "") ||
+    dueTime !== (item?.dueTime ?? "") ||
     JSON.stringify([...prerequisiteIds].sort()) !==
       JSON.stringify(initialPrerequisites);
   function changeEditScope(action: () => void) {
@@ -338,7 +340,12 @@ function TaskEditorSurface({
                     },
                   },
                 });
-              } else await onSave(draft);
+              } else
+                await onSave({
+                  ...draft,
+                  // Recurrence drafts do not carry minute precision yet.
+                  dueTime: dueDate ? dueTime || null : null,
+                });
             })();
         }}
       >
@@ -435,9 +442,23 @@ function TaskEditorSurface({
                 min={startDate || "0001-01-01"}
                 max="9999-12-31"
                 value={dueDate}
-                onChange={setDueDate}
+                onChange={(value) => {
+                  setDueDate(value);
+                  if (!value) setDueTime("");
+                }}
               />
             </label>
+            {dueDate && (
+              <label className="field">
+                <span>{t("desk:dueTime")}</span>
+                <input
+                  type="time"
+                  aria-label={t("desk:dueTime")}
+                  value={dueTime}
+                  onChange={(event) => setDueTime(event.target.value)}
+                />
+              </label>
+            )}
           </div>
           {
             <label className="field">

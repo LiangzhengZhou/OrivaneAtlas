@@ -185,6 +185,13 @@ async function chooseDate(page: Page, field: Locator, iso: string) {
   await calendar.getByRole("button", { name: iso, exact: true }).click();
 }
 
+async function setTheme(page: Page, theme: "light" | "dark") {
+  await page.evaluate((value) => {
+    localStorage.setItem("orivane-atlas.theme", value);
+    document.documentElement.dataset.theme = value;
+  }, theme);
+}
+
 async function openTaskAdvanced(dialog: Locator) {
   const summary = dialog.locator(".task-advanced > summary");
   if (!(await summary.isVisible()))
@@ -2058,6 +2065,10 @@ test("project milestones are editable and appear in overview without task-count 
   }, project.id);
   const workspace = page.locator(".project-workspace");
   await expect(workspace).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("project-header.png"),
+    fullPage: true,
+  });
   await workspace
     .getByRole("button", { name: w.desk.newMilestone, exact: true })
     .click();
@@ -2860,7 +2871,7 @@ test("v2.4 provider connection test and discovery have separate friendly diagnos
   const w = words(info.project.name),
     zh = info.project.name.endsWith("zh");
   await unlock(page, workbench.url, workbench.secret, w);
-  await nav(page, w.desk.settings);
+  await openAccountApiModels(page, zh);
   await page
     .getByRole("button", {
       name: zh ? "添加服务连接" : "Add provider connection",
@@ -2962,7 +2973,7 @@ test("named AI profiles persist independently and bind reviewed proposals", asyn
   const w = words(info.project.name);
   const zh = info.project.name.endsWith("zh");
   await unlock(page, workbench.url, workbench.secret, w);
-  await nav(page, w.desk.settings);
+  await openAccountApiModels(page, zh);
   await page
     .getByRole("button", {
       name: zh ? "添加服务连接" : "Add provider connection",
@@ -3055,7 +3066,7 @@ test("named AI profiles persist independently and bind reviewed proposals", asyn
     page.locator(".model-settings input[type=password]"),
   ).toHaveCount(0);
   await page.reload();
-  await nav(page, w.desk.settings);
+  await openAccountApiModels(page, zh);
   await page.locator("summary").filter({ hasText: w.connected.newRun }).click();
   const selector = page.getByRole("combobox", {
     name: zh ? "本次使用的模型配置" : "Model profile for this request",
@@ -3179,7 +3190,7 @@ test("2.1 Provider catalog routing Explicit Space Project Personal and Unlimited
     },
   });
   await page.reload();
-  await nav(page, w.desk.settings);
+  await openAccountApiModels(page, zh);
   await expect(
     page
       .locator(".model-settings-row")
@@ -4958,6 +4969,145 @@ test("Delta untitled documents autosave independently offline and sync without s
   ).toEqual(bodies);
 });
 
+test("unnamed notes save body first and expose explicit save across document focus", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.notes);
+  await page.locator(".page-header .compact-create").click();
+  const body = pane(page).getByLabel(w.desk.noteBody, { exact: true });
+  // Playwright fill can append on an emulated touch CodeMirror surface; select-all +
+  // insertText exercises the same editor input contract deterministically.
+  const replaceBody = async (text: string) => {
+    await body.click();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.insertText(text);
+  };
+  const original = "Body first research\n\nOriginal $E=mc^2$ text";
+  await replaceBody(original);
+  await expect(
+    pane(page).getByLabel(w.desk.noteTitle, { exact: true }),
+  ).toHaveValue("Body first research");
+  await expect(pane(page).locator("[data-locally-saved]")).toHaveAttribute(
+    "data-locally-saved",
+    "true",
+  );
+  await replaceBody(original + "\nExplicit save");
+  const save = pane(page).getByRole("button", { name: /^(保存|Save)$/ });
+  await save.click();
+  await waitForLocalReplay(page);
+  const read = async () =>
+    (
+      await (await page.request.get(workbench.url + "/api/snapshot")).json()
+    ).notes.find(
+      (entry: { title: string }) => entry.title === "Body first research",
+    );
+  await expect
+    .poll(async () => (await read())?.bodyMd)
+    .toBe(original + "\nExplicit save");
+  await replaceBody(original + "\nKeyboard save");
+  await save.focus();
+  await page.keyboard.press("Control+s");
+  await expect
+    .poll(async () => (await read())?.bodyMd)
+    .toBe(original + "\nKeyboard save");
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await page
+    .locator(".note-card")
+    .filter({ hasText: "Body first research" })
+    .click();
+  await documentMode(
+    page,
+    info.project.name.endsWith("zh") ? "源码" : "Source",
+  );
+  await expect(
+    pane(page).getByLabel(w.desk.noteBody, { exact: true }),
+  ).toContainText("Keyboard save");
+});
+
+test("image viewer zooms pans and resets without fetching the original again", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.notes);
+  await page.locator(".page-header .compact-create").click();
+  await pane(page)
+    .getByLabel(w.desk.noteTitle, { exact: true })
+    .fill("Image navigation");
+  const body = pane(page).getByLabel(w.desk.noteBody, { exact: true });
+  await body.focus();
+  await body.evaluate(async (element) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 800;
+    canvas.height = 600;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#c7d2fe";
+    ctx.fillRect(0, 0, 800, 600);
+    ctx.fillStyle = "#312e81";
+    ctx.font = "48px sans-serif";
+    ctx.fillText("Image navigation", 60, 160);
+    const blob = await new Promise<Blob>((resolve) =>
+      canvas.toBlob((value) => resolve(value!), "image/png"),
+    );
+    const clipboard = new DataTransfer();
+    clipboard.items.add(
+      new File([blob], "navigation.png", { type: "image/png" }),
+    );
+    element.dispatchEvent(
+      new ClipboardEvent("paste", {
+        clipboardData: clipboard,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  await documentMode(page, w.desk.read);
+  const picture = pane(page).locator(".document-reading img");
+  await expect(picture).toHaveJSProperty("naturalWidth", 800);
+  let downloads = 0;
+  page.on("request", (request) => {
+    if (/\/api\/(library\/asset|v1\/files\/bytes)\?/.test(request.url()))
+      downloads++;
+  });
+  await picture.click();
+  const viewer = page.locator(".image-viewer");
+  const zoom = viewer.locator("output");
+  const initial = await zoom.textContent();
+  await viewer.getByRole("button", { name: /^(放大|Zoom in)$/ }).click();
+  await expect(zoom).not.toHaveText(initial!);
+  const surface = viewer.locator(".image-viewer-viewport");
+  const box = (await surface.boundingBox())!;
+  const before = await viewer.locator("img").getAttribute("style");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    box.x + box.width / 2 + 60,
+    box.y + box.height / 2 + 30,
+  );
+  await page.mouse.up();
+  await expect(viewer.locator("img")).not.toHaveAttribute("style", before!);
+  await viewer
+    .getByRole("button", { name: /^(适应窗口|Fit to window)$/ })
+    .click();
+  await expect(zoom).toHaveText(initial!);
+  await viewer
+    .getByRole("button", { name: /^(原始尺寸|Actual size)$/ })
+    .click();
+  await expect(zoom).toHaveText("100%");
+  await page.screenshot({
+    path: info.outputPath("image-viewer.png"),
+    fullPage: true,
+  });
+  await page.keyboard.press("Escape");
+  await expect(viewer).toHaveCount(0);
+  expect(downloads).toBe(0);
+});
+
 test("Delta image paste is durable offline and reconnects with original bytes without mode fetch loops", async ({
   page,
   workbench,
@@ -5368,19 +5518,39 @@ test("organization selection archive delete scannable rows and readable typograp
     .click();
   await expect(page.locator(".task-card")).toHaveCount(2);
   await nav(page, w.desk.notes);
+  const folderTree = page.locator(".folder-tree");
+  await folderTree
+    .getByRole("button", { name: w.desk.newFolder, exact: true })
+    .click();
+  await folderTree.getByLabel(w.desk.folderName).fill("量子场论");
+  await folderTree
+    .getByRole("button", { name: w.desk.createFolder, exact: true })
+    .click();
+  await expect(
+    folderTree.getByRole("button", { name: "量子场论", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: w.desk.selectionMode, exact: true })
+    .click();
   await page.getByLabel(w.desk.selectVisible).check();
-  await page.getByLabel(w.desk.destinationFolder).fill("量子场论");
+  await page
+    .getByLabel(w.desk.destinationFolder)
+    .selectOption({ label: "量子场论" });
   await page
     .getByRole("button", { name: w.desk.moveSelected, exact: true })
     .click();
   await expect(page.locator(".note-card .note-folder").first()).toHaveText(
     "量子场论",
   );
-  await page.getByLabel(w.desk.folderFilter).selectOption("folder:");
+  await folderTree
+    .getByRole("button", { name: w.desk.unfiled, exact: true })
+    .click();
   await expect(
     page.locator(".note-card, .library-document-row, .space-card"),
   ).toHaveCount(0);
-  await page.getByLabel(w.desk.folderFilter).selectOption("folder:量子场论");
+  await folderTree
+    .getByRole("button", { name: "量子场论", exact: true })
+    .click();
   await expect(
     page.locator(".note-card, .library-document-row, .space-card"),
   ).toHaveCount(2);
@@ -5406,6 +5576,726 @@ test("organization selection archive delete scannable rows and readable typograp
   ).toBe(true);
   expect(errors).toEqual([]);
 });
+test("task timer persists timestamp transitions without per-second writes", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh"),
+    w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const task = await mutation(page, "/api/work/create", {
+    title: "Timer research",
+    priority: "LOW",
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  const row = () =>
+    page.locator(".task-card").filter({ hasText: "Timer research" });
+  const timer = row().locator(".task-timer");
+  let updates = 0;
+  page.on("request", (request) => {
+    if (request.method() !== "POST") return;
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/work/update" || path === "/api/v1/work/update")
+      updates++;
+  });
+  await timer
+    .getByRole("button", { name: zh ? "开始计时" : "Start timer" })
+    .click();
+  await expect(timer).toHaveAttribute("data-running", "true");
+  await page.waitForTimeout(1300);
+  await expect(timer.locator(".task-timer-elapsed")).not.toHaveText("00:00:00");
+  // The one-second display tick is local; only the transition reaches the Host.
+  expect(updates).toBe(1);
+  await timer
+    .getByRole("button", { name: zh ? "暂停计时" : "Pause timer" })
+    .click();
+  await expect(timer).toHaveAttribute("data-running", "false");
+  await expect(
+    timer.getByRole("button", { name: zh ? "继续计时" : "Continue timer" }),
+  ).toBeVisible();
+  const readTask = async () =>
+    (
+      await (await page.request.get(workbench.url + "/api/snapshot")).json()
+    ).items.find((item: { id: string }) => item.id === task.id);
+  await expect.poll(async () => (await readTask()).timerStartedAt).toBeNull();
+  await expect
+    .poll(async () => (await readTask()).timerAccumulatedMs)
+    .toBeGreaterThanOrEqual(1000);
+  const paused = await readTask();
+  expect(paused.timerStartedAt).toBeNull();
+  expect(updates).toBe(2);
+  await timer
+    .getByRole("button", { name: zh ? "继续计时" : "Continue timer" })
+    .click();
+  await expect(timer).toHaveAttribute("data-running", "true");
+  await timer
+    .getByRole("button", { name: zh ? "结束计时" : "End timer" })
+    .click();
+  await expect(timer).toHaveAttribute("data-running", "false");
+  await expect.poll(async () => (await readTask()).timerStartedAt).toBeNull();
+  const ended = await readTask();
+  expect(ended.timerStartedAt).toBeNull();
+  expect(ended.timerAccumulatedMs).toBeGreaterThan(paused.timerAccumulatedMs);
+  expect(updates).toBe(4);
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await expect(row().locator(".task-timer-elapsed")).toHaveText(
+    new RegExp(`^00:00:0[1-9]$`),
+  );
+  await page.screenshot({
+    path: info.outputPath("task-timer.png"),
+    fullPage: true,
+  });
+});
+test("task due minute keeps date-only work unchanged and clears with the date", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh"),
+    w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await page.goto(workbench.url + "/#tasks");
+  await page
+    .getByRole("button", { name: zh ? "新建任务" : "New task", exact: true })
+    .first()
+    .click();
+  const editor = page.getByRole("dialog");
+  await editor
+    .getByLabel(zh ? "标题" : "Title", { exact: true })
+    .fill("Deadline minute");
+  await chooseDate(page, editor.getByLabel(w.desk.dueDate), "2099-12-31");
+  await expect(
+    editor.getByLabel(w.desk.dueTime, { exact: true }),
+  ).toBeVisible();
+  await editor.getByLabel(w.desk.dueTime, { exact: true }).fill("18:30");
+  await editor
+    .getByRole("button", { name: zh ? "新建任务" : "Create task", exact: true })
+    .click();
+  await expect(editor).toHaveCount(0);
+  const read = async (title: string) =>
+    (
+      await (await page.request.get(workbench.url + "/api/snapshot")).json()
+    ).items.find((item: { title: string }) => item.title === title);
+  await expect
+    .poll(async () => (await read("Deadline minute"))?.dueTime)
+    .toBe("18:30");
+  expect((await read("Deadline minute"))?.dueDate).toBe("2099-12-31");
+  // Date-only work keeps its existing semantics and renders without a time.
+  await mutation(page, "/api/work/create", {
+    title: "Date only deadline",
+    dueDate: "2099-12-30",
+  });
+  expect((await read("Date only deadline"))?.dueTime).toBeNull();
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  const row = page.locator(".task-card").filter({ hasText: "Deadline minute" });
+  await expect(row.locator(".task-due")).toHaveText("2099-12-31 18:30");
+  await expect(
+    page.locator(".task-card").filter({ hasText: "Date only deadline" }),
+  ).toContainText("2099-12-30");
+  await page.screenshot({
+    path: info.outputPath("task-due-minute-set.png"),
+    fullPage: true,
+  });
+  await row.locator(".task-title").press("Enter");
+  const reopened = page.getByRole("dialog");
+  await expect(
+    reopened.getByLabel(w.desk.dueTime, { exact: true }),
+  ).toHaveValue("18:30");
+  await reopened.getByLabel(w.desk.dueDate).click();
+  await page
+    .locator(".calendar-popover")
+    .getByRole("button", { name: zh ? "清除" : "Clear", exact: true })
+    .click();
+  await expect(
+    reopened.getByLabel(w.desk.dueTime, { exact: true }),
+  ).toHaveCount(0);
+  await reopened
+    .getByRole("button", { name: /^(保存修改|Save changes)$/ })
+    .click();
+  await expect(reopened).toHaveCount(0);
+  await expect
+    .poll(async () => (await read("Deadline minute"))?.dueDate)
+    .toBe(null);
+  expect((await read("Deadline minute"))?.dueTime).toBeNull();
+  await page.screenshot({
+    path: info.outputPath("task-due-minute.png"),
+    fullPage: true,
+  });
+});
+test("workspace chrome is frosted and the context header stays sticky with accessible fallbacks", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    mobile = info.project.name.startsWith("mobile");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await page.goto(workbench.url + "/#tasks");
+  const header = page.locator(".page-header").first();
+  await expect(header).toBeVisible();
+  const readStyle = (locator: typeof header) =>
+    locator.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        position: style.position,
+        backdrop:
+          style.backdropFilter === "none"
+            ? ((
+                style as CSSStyleDeclaration & {
+                  webkitBackdropFilter?: string;
+                }
+              ).webkitBackdropFilter ?? "none")
+            : style.backdropFilter,
+      };
+    });
+  const headerStyle = await readStyle(header);
+  // The band is frosted but must stay in flow so it never intercepts row clicks.
+  expect(headerStyle.position).not.toBe("sticky");
+  const sidebar = page.locator(".app-shell .sidebar");
+  const sidebarStyle = await readStyle(sidebar);
+  if (mobile) {
+    // Mobile compositing keeps chrome opaque.
+    expect(headerStyle.backdrop).toBe("none");
+    expect(sidebarStyle.backdrop).toBe("none");
+  } else {
+    expect(headerStyle.backdrop).toContain("blur");
+    expect(sidebarStyle.backdrop).toContain("blur");
+  }
+  await page.emulateMedia({ forcedColors: "active" });
+  const forcedHeader = await readStyle(header);
+  expect(forcedHeader.backdrop).toBe("none");
+  await page.emulateMedia({ forcedColors: "none" });
+  await page.screenshot({
+    path: info.outputPath("workspace-chrome.png"),
+    fullPage: true,
+  });
+});
+test("settings preferences are separated from account, API and model hierarchy", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh"),
+    w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await page.goto(workbench.url + "/#settings");
+  await expect(page.locator(".settings-page")).toBeVisible();
+  await expect(
+    page.locator(".settings-navigation .settings-nav-group-label"),
+  ).toHaveCount(3);
+  // API/model configuration is no longer a preference sub-section.
+  await expect(page.locator(".settings-page .model-settings")).toHaveCount(0);
+  await page.screenshot({
+    path: info.outputPath("settings-grouped.png"),
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", {
+      name: zh ? "账户、API 与模型" : "Account, API & models",
+      exact: true,
+    })
+    .click();
+  await expect(page).toHaveURL(/#account/);
+  const tabs = page.getByRole("tablist", {
+    name: zh ? "账户分区" : "Account sections",
+    exact: true,
+  });
+  await expect(tabs).toBeVisible();
+  await page
+    .getByRole("tab", { name: zh ? "API 与模型" : "API & models", exact: true })
+    .click();
+  await expect(page.locator(".model-settings").first()).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("account-api-models.png"),
+    fullPage: true,
+  });
+  await page
+    .getByRole("tab", {
+      name: zh ? "账户与安全" : "Account & security",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("button", {
+      name: zh ? "查看同步选项" : "Review sync options",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator(".model-settings")).toHaveCount(0);
+  await page.screenshot({
+    path: info.outputPath("account-security.png"),
+    fullPage: true,
+  });
+  await setTheme(page, "dark");
+  await page.goto(workbench.url + "/#settings");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator(".settings-page")).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("settings-dark.png"),
+    fullPage: true,
+  });
+  await page.goto(workbench.url + "/#account");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page
+    .getByRole("tab", { name: zh ? "API 与模型" : "API & models", exact: true })
+    .click();
+  await expect(page.locator(".model-settings").first()).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("account-api-dark.png"),
+    fullPage: true,
+  });
+});
+test("note folders keep stable identity through nesting, rename, offline replay and reload", async ({
+  page,
+  workbench,
+}, info) => {
+  test.setTimeout(180000);
+  const w = words(info.project.name);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.files);
+  const tree = page.locator(".folder-tree");
+  const createRootFolder = async (name: string) => {
+    await tree
+      .getByRole("button", { name: w.desk.newFolder, exact: true })
+      .click();
+    await tree.getByLabel(w.desk.folderName).fill(name);
+    await tree
+      .getByRole("button", { name: w.desk.createFolder, exact: true })
+      .click();
+    await expect(tree.getByRole("button", { name, exact: true })).toBeVisible();
+  };
+  const row = (name: string) =>
+    tree.locator(".folder-tree-row").filter({ hasText: name });
+  const openActions = async (name: string) => {
+    await row(name)
+      .getByRole("button", {
+        name: new RegExp(`^(Folder actions|文件夹操作): ${name}$`),
+      })
+      .click();
+  };
+  const organization = async () =>
+    (await (await page.request.get(workbench.url + "/api/snapshot")).json())
+      .organization as {
+      kind: string;
+      id: string;
+      name?: string;
+      parentId?: string;
+    }[];
+
+  await createRootFolder("Alpha");
+  await createRootFolder("Beta");
+  await createRootFolder("Empty");
+  // Empty folders are first-class rows: they survive a reload before any note exists.
+  await page.reload();
+  await nav(page, w.desk.files);
+  await expect(
+    tree.getByRole("button", { name: "Empty", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("files-folders.png"),
+    fullPage: true,
+  });
+  await openActions("Beta");
+  await page
+    .getByRole("menuitem", { name: w.desk.renameFolder, exact: true })
+    .click();
+  await tree.getByLabel(w.desk.folderName).fill("Gamma");
+  await page.getByRole("button", { name: /^(Save changes|保存修改)$/ }).click();
+  await expect(
+    tree.getByRole("button", { name: "Gamma", exact: true }),
+  ).toBeVisible();
+  await expect(
+    tree.getByRole("button", { name: "Beta", exact: true }),
+  ).toHaveCount(0);
+  await openActions("Gamma");
+  await page
+    .getByRole("menuitem", { name: w.desk.moveFolder, exact: true })
+    .click();
+  await tree
+    .getByLabel(w.desk.folderMoveTarget)
+    .selectOption({ label: "Alpha" });
+  await page
+    .getByRole("button", { name: w.desk.moveFolder, exact: true })
+    .last()
+    .click();
+  await expect(tree.locator("ul ul li").first()).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("folders-nested.png"),
+    fullPage: true,
+  });
+  await waitForLocalReplay(page);
+  await expect
+    .poll(async () => {
+      const rows = await organization();
+      const folder = rows.find(
+        (entry) => entry.kind === "FOLDER" && entry.name === "Gamma",
+      );
+      const target = rows.find(
+        (entry) => entry.kind === "FOLDER" && entry.name === "Alpha",
+      );
+      return folder?.parentId === target?.id;
+    })
+    .toBe(true);
+  // Create a note inside a folder through the tree action, then read it back.
+  await openActions("Alpha");
+  await page
+    .getByRole("menuitem", { name: w.desk.newDocumentInFolder, exact: true })
+    .click();
+  const pane = page.locator(".document-pane");
+  await expect(pane.getByLabel(w.desk.noteTitle, { exact: true })).toHaveValue(
+    w.desk.untitledNote,
+  );
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      const alpha = snapshot.organization.find(
+        (entry: { kind: string; name?: string }) =>
+          entry.kind === "FOLDER" && entry.name === "Alpha",
+      );
+      const note = snapshot.notes.find(
+        (entry: { title: string }) => entry.title === w.desk.untitledNote,
+      );
+      return snapshot.organization.some(
+        (entry: { kind: string; id: string; folderId?: string }) =>
+          entry.kind === "NOTE" &&
+          entry.id === note?.id &&
+          entry.folderId === alpha?.id,
+      );
+    })
+    .toBe(true);
+  await page
+    .getByRole("button", { name: /^(Workspace|工作台)$/, exact: true })
+    .click();
+  await nav(page, w.desk.files);
+  await tree.getByRole("button", { name: "Alpha", exact: true }).click();
+  await expect(page.locator(".note-card")).toHaveCount(1);
+  await expect(page.locator(".note-card .note-folder")).toHaveText("Alpha");
+  // Offline folder creation replays after reconnect without losing the folder.
+  await page.route("**/api/v1/sync?*", (route) => route.abort("failed"));
+  await createRootFolder("Offline");
+  await page.reload();
+  await nav(page, w.desk.files);
+  await expect(
+    tree.getByRole("button", { name: "Offline", exact: true }),
+  ).toBeVisible();
+  await page.unroute("**/api/v1/sync?*");
+  await page.reload();
+  await waitForLocalReplay(page);
+  expect(
+    (await organization()).some(
+      (entry) => entry.kind === "FOLDER" && entry.name === "Offline",
+    ),
+  ).toBe(true);
+  // Non-empty folders are protected; empty folders can be deleted.
+  await nav(page, w.desk.files);
+  await openActions("Alpha");
+  await page
+    .getByRole("menuitem", { name: w.desk.deleteFolder, exact: true })
+    .click();
+  await answerConfirmation(page, true);
+  await expect(page.getByText(w.desk.folderNotEmpty)).toBeVisible();
+  await openActions("Empty");
+  await page
+    .getByRole("menuitem", { name: w.desk.deleteFolder, exact: true })
+    .click();
+  await answerConfirmation(page, true);
+  await expect(
+    tree.getByRole("button", { name: "Empty", exact: true }),
+  ).toHaveCount(0);
+  await tree.locator(".folder-tree-deleted summary").click();
+  await tree
+    .locator(".folder-tree-deleted")
+    .getByRole("button", { name: w.desk.restoreFolder, exact: true })
+    .click();
+  await expect(
+    tree.getByRole("button", { name: "Empty", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("note-folders.png"),
+    fullPage: true,
+  });
+  expect(errors).toEqual([]);
+});
+
+test("files page opens real documents and uploads original files", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const resourceSpace = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "SPACE",
+      spaceId: null,
+      title: "Resource space",
+      bodyMd: "",
+    },
+  });
+  await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: resourceSpace.id,
+      title: "Resource document",
+      bodyMd: "Original document body",
+    },
+  });
+  await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: resourceSpace.id,
+      title:
+        "A long bilingual research document title with 中文标题 and a deliberately extended line for truncation checks",
+      bodyMd: "Long-form context",
+    },
+  });
+  await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      title:
+        "Field notes — 量子场论 weekly review with a deliberately long title for the unified file browser",
+      kind: "NOTE",
+      day: null,
+      bodyMd: "Unfiled note used by the Files benchmark.",
+    },
+  });
+  await page.reload();
+  await nav(page, w.desk.files);
+  const resources = page.locator(".workspace-resources");
+  await resources.getByRole("button", { name: /Resource document/ }).click();
+  await expect(page.locator(".document-pane")).toBeVisible();
+  await nav(page, w.desk.files);
+  await resources.locator('input[type="file"]').setInputFiles({
+    name: "resource-proof.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Original uploaded bytes"),
+  });
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.files?.some(
+        (file: { name: string }) => file.name === "resource-proof.txt",
+      );
+    })
+    .toBe(true);
+  await page.reload();
+  await nav(page, w.desk.files);
+  await expect(
+    resources.getByRole("button", { name: /resource-proof.txt/ }),
+  ).toBeVisible();
+  const filesTree = page.locator(".folder-tree");
+  await filesTree
+    .getByRole("button", { name: w.desk.newFolder, exact: true })
+    .click();
+  await filesTree.getByLabel(w.desk.folderName).fill("Research archive");
+  await filesTree
+    .getByRole("button", { name: w.desk.createFolder, exact: true })
+    .click();
+  await expect(
+    filesTree.getByRole("button", { name: "Research archive", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("workspace-resources.png"),
+    fullPage: true,
+  });
+  await setTheme(page, "dark");
+  await page.reload();
+  await nav(page, w.desk.files);
+  await expect(page.locator(".workspace-resources")).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("workspace-resources-dark.png"),
+    fullPage: true,
+  });
+});
+
+test("note and folder emoji icons persist while selection stays behind an explicit toggle", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await unlock(page, workbench.url, workbench.secret, w);
+  await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      title: "Icon target",
+      bodyMd: "Icon body",
+      kind: "NOTE",
+      day: null,
+    },
+  });
+  await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      title: "Journal icon target",
+      bodyMd: "Journal body",
+      kind: "JOURNAL",
+      day: "2026-10-26",
+    },
+  });
+  await page.reload();
+  await nav(page, w.desk.notes);
+  const tree = page.locator(".folder-tree");
+  const card = () =>
+    page.locator(".note-card").filter({ hasText: "Icon target" });
+  // Selection is hidden until the explicit toggle: no per-row checkboxes.
+  await expect(page.locator(".note-selection input")).toHaveCount(0);
+  await card()
+    .getByRole("button", { name: w.desk.chooseIcon, exact: true })
+    .click();
+  await page.getByRole("button", { name: "🔬", exact: true }).click();
+  await expect(card().locator(".entity-emoji")).toHaveText("🔬");
+  await page.screenshot({
+    path: info.outputPath("note-icons.png"),
+    fullPage: true,
+  });
+  await waitForLocalReplay(page);
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await expect(card().locator(".entity-emoji")).toHaveText("🔬");
+  // Custom emoji and reset to the default glyph.
+  await card()
+    .getByRole("button", { name: w.desk.chooseIcon, exact: true })
+    .click();
+  await page.getByLabel(w.desk.customIcon).fill("🌊");
+  await page
+    .getByRole("button", { name: w.desk.applyIcon, exact: true })
+    .click();
+  await expect(card().locator(".entity-emoji")).toHaveText("🌊");
+  await card()
+    .getByRole("button", { name: w.desk.chooseIcon, exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: w.desk.defaultIcon, exact: true })
+    .click();
+  await expect(card().locator(".entity-emoji")).toHaveCount(0);
+  // Folder icons follow the same organization metadata path.
+  await tree
+    .getByRole("button", { name: w.desk.newFolder, exact: true })
+    .click();
+  await tree.getByLabel(w.desk.folderName).fill("Icons");
+  await tree
+    .getByRole("button", { name: w.desk.createFolder, exact: true })
+    .click();
+  const folderRow = () =>
+    tree.locator(".folder-tree-row").filter({ hasText: "Icons" });
+  await folderRow()
+    .getByRole("button", { name: w.desk.chooseIcon, exact: true })
+    .click();
+  await page.screenshot({
+    path: info.outputPath("icon-picker.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "🧪", exact: true }).click();
+  await expect(folderRow().locator(".entity-emoji")).toHaveText("🧪");
+  await waitForLocalReplay(page);
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await expect(
+    tree
+      .locator(".folder-tree-row")
+      .filter({ hasText: "Icons" })
+      .locator(".entity-emoji"),
+  ).toHaveText("🧪");
+  // The same explicit toggle gates selection on notes and journals.
+  const toggle = page.getByRole("button", {
+    name: w.desk.selectionMode,
+    exact: true,
+  });
+  await expect(page.locator(".note-selection input")).toHaveCount(0);
+  await toggle.click();
+  await expect(page.locator(".note-selection input")).toHaveCount(1);
+  await page.locator(".note-selection input").check();
+  await expect(
+    page.locator(".note-selection-toolbar [role=status]"),
+  ).toContainText("1");
+  await page
+    .getByRole("button", { name: w.desk.exitSelectionMode, exact: true })
+    .click();
+  await expect(page.locator(".note-selection input")).toHaveCount(0);
+  await nav(page, w.desk.journal);
+  await expect(page.locator(".note-selection input")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: w.desk.selectionMode, exact: true })
+    .click();
+  await expect(page.locator(".note-selection input")).toHaveCount(1);
+  await page.screenshot({
+    path: info.outputPath("icons-and-selection.png"),
+    fullPage: true,
+  });
+  expect(errors).toEqual([]);
+});
+
+test("server connectivity probe shows real latency and separates auth from network failure", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.settings);
+  const section = page.locator(".server-diagnostics");
+  await expect(section).toBeVisible();
+  const snapshot = async () =>
+    (await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json()) as {
+      items: unknown[];
+      notes: unknown[];
+      organization: unknown[];
+    };
+  const before = await snapshot();
+  const probe = section.getByRole("button", {
+    name: w.desk.testConnection,
+    exact: true,
+  });
+  const result = section.getByRole("status");
+  await probe.click();
+  await expect(result).toHaveAttribute("data-probe", "OK");
+  await expect(result).toContainText(w.desk.connectionOk);
+  await expect(result).toContainText(/ms|毫秒/);
+  await page.screenshot({
+    path: info.outputPath("server-connectivity.png"),
+    fullPage: true,
+  });
+  await page.route("**/api/health", (route) => route.abort("failed"));
+  await probe.click();
+  await expect(result).toHaveAttribute("data-probe", "NETWORK_FAILURE");
+  await expect(result).toContainText(w.desk.connectionNetwork);
+  await page.unroute("**/api/health");
+  await page.route("**/api/account/sessions", (route) =>
+    route.fulfill({
+      status: 403,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "FORBIDDEN" }),
+    }),
+  );
+  await probe.click();
+  await expect(result).toHaveAttribute("data-probe", "AUTH_REQUIRED");
+  await expect(result).toContainText(w.desk.connectionAuthRequired);
+  await page.unroute("**/api/account/sessions");
+  await probe.click();
+  await expect(result).toHaveAttribute("data-probe", "OK");
+  const after = await snapshot();
+  expect(after.items).toEqual(before.items);
+  expect(after.notes).toEqual(before.notes);
+  expect(after.organization).toEqual(before.organization);
+});
+
 test("inline and block math render while editing without changing source", async ({
   page,
   workbench,
@@ -5707,6 +6597,12 @@ for (const nativeImages of [false, true]) {
     // the explicit account/binding review rather than expecting a login wall.
     await unlock(page, workbench.url, workbench.secret, w);
     await nav(page, a.account);
+    await page
+      .getByRole("tab", {
+        name: zh ? "API 与模型" : "API & models",
+        exact: true,
+      })
+      .click();
     await page
       .getByLabel(a.tokenName, { exact: true })
       .fill("Local research AI");
@@ -7304,7 +8200,15 @@ async function mutation(page: Page, path: string, value: unknown) {
       "Idempotency-Key": randomUUID(),
     },
   });
-  expect(response.ok()).toBe(true);
+  if (!response.ok())
+    throw new Error(
+      "MUTATION_FAILED " +
+        path +
+        " " +
+        response.status() +
+        " " +
+        (await response.text()),
+    );
   return response.json();
 }
 async function taskScope(page: Page, name: string) {
@@ -7337,12 +8241,45 @@ async function taskMenu(page: Page, title: string) {
     .click();
   return page.getByRole("menu", { name: /^(更多操作：|More actions: )/ });
 }
+async function openAccountApiModels(page: Page, zh: boolean) {
+  await page.evaluate(() => {
+    location.hash = "account";
+  });
+  await expect(
+    page.getByRole("tablist", {
+      name: zh ? "账户分区" : "Account sections",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("tab", {
+      name: zh ? "API 与模型" : "API & models",
+      exact: true,
+    })
+    .click();
+}
+async function enterSelectionMode(page: Page, selectionLabel: string) {
+  const button = page.getByRole("button", {
+    name: selectionLabel,
+    exact: true,
+  });
+  if (await button.count()) await button.click();
+}
+async function openAdvancedSettings(page: Page) {
+  const details = page.locator("details.settings-advanced");
+  if (
+    (await details.count()) > 0 &&
+    !(await details.evaluate((node) => (node as HTMLDetailsElement).open))
+  )
+    await details.locator("summary").first().click();
+}
 async function nav(page: Page, name: string) {
   await expect(page.locator(".app-shell")).toBeVisible();
   for (const locale of ["en-US", "zh-CN"] as const) {
     const desk = resources[locale].desk;
     if (name === desk.knowledge) {
       await nav(page, desk.settings);
+      await openAdvancedSettings(page);
       await page.locator(".advanced-relations > summary").click();
       return;
     }
@@ -8150,6 +9087,7 @@ test("notes explorer compact columns and four view sizes preserve opening and se
     );
     expect(box.titleX).toBe(boxes[0]!.titleX);
   }
+  await enterSelectionMode(page, w.desk.selectionMode);
   const layout = page.getByLabel(/^(View layout|显示方式)$/);
   for (const mode of ["small", "medium", "large", "list"]) {
     await layout.selectOption(mode);
@@ -8218,6 +9156,7 @@ test("journal explorer year month week day folding preserves dates and search", 
   const groups = page.locator(".journal-group");
   await expect(grouping).toHaveValue("month");
   await expect(groups).toHaveCount(3);
+  await enterSelectionMode(page, w.desk.selectionMode);
   for (const [mode, count] of [
     ["year", 2],
     ["month", 3],
@@ -8411,6 +9350,7 @@ test("v3 upgrade notes open on one click with independent selection and details"
     });
   await page.reload();
   await nav(page, w.desk.notes);
+  await enterSelectionMode(page, w.desk.selectionMode);
   const row = page
     .locator(".note-card")
     .filter({ hasText: "Single click research" });
@@ -8465,14 +9405,30 @@ test("v3 upgrade legacy asset survives replica bootstrap and note reopen", async
     source.src = `data:image/png;base64,${png}`;
     await source.decode();
     const canvas = document.createElement("canvas");
-    canvas.width = 1;
-    canvas.height = 1;
-    canvas.getContext("2d")!.drawImage(source, 0, 0);
+    canvas.width = 640;
+    canvas.height = 480;
+    const context = canvas.getContext("2d")!;
+    const gradient = context.createLinearGradient(0, 0, 640, 480);
+    gradient.addColorStop(0, "#1e1b4b");
+    gradient.addColorStop(1, "#c7d2fe");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 640, 480);
+    for (let index = 0; index < 40; index += 1) {
+      context.fillStyle = `rgb(${index % 255},${(index * 7) % 255},${(index * 13) % 255})`;
+      context.fillRect((index * 37) % 640, (index * 53) % 480, 18, 18);
+    }
     return ["image/png", "image/jpeg", "image/webp"].map((mime) => ({
       mime,
-      base64: canvas.toDataURL(mime).split(",")[1]!,
+      base64: canvas.toDataURL(mime, 0.8).split(",")[1]!,
     }));
   }, png);
+  const byteRequests: string[] = [];
+  const metaRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = request.url();
+    if (url.includes("/api/library/asset/meta?")) metaRequests.push(url);
+    else if (url.includes("/api/library/asset?")) byteRequests.push(url);
+  });
   const references: string[] = [];
   for (const image of raster) {
     const asset = await mutation(page, "/api/library/upload", {
@@ -8482,7 +9438,17 @@ test("v3 upgrade legacy asset survives replica bootstrap and note reopen", async
     });
     references.push(`![Original ${image.mime}](${asset.url})`);
   }
-  const markdown = `# Legacy scientific note\n\n$Z=0$\n\n${references.join("\n\n")}`;
+  const markdown = `# Legacy scientific note
+
+Long-form research context that survives the v3 replica upgrade. The reading column stays calm while three original images revalidate.
+
+- Preserve original bytes
+- Keep the formula and table readable
+- Keep Markdown source intact
+
+$Z=0$
+
+${references.join("\n\n")}`;
   await mutation(page, "/api/note/save", {
     id: null,
     version: 0,
@@ -8496,6 +9462,8 @@ test("v3 upgrade legacy asset survives replica bootstrap and note reopen", async
   await prepareOfflineShell(page);
   for (let restart = 0; restart < 3; restart++) {
     if (restart === 2) await page.context().setOffline(true);
+    const byteStart = byteRequests.length;
+    const metaStart = metaRequests.length;
     await page.reload();
     await nav(page, w.desk.notes);
     await page
@@ -8506,8 +9474,28 @@ test("v3 upgrade legacy asset survives replica bootstrap and note reopen", async
     const images = pane(page).locator(".document-reading img");
     await expect(images).toHaveCount(3);
     for (const image of await images.all())
-      await expect(image).toHaveJSProperty("naturalWidth", 1);
+      await expect(image).toHaveJSProperty("naturalWidth", 640);
+    const bytes = byteRequests.length - byteStart;
+    const metas = metaRequests.length - metaStart;
+    if (restart === 0) {
+      // First authorized open has no local copy yet.
+      expect(bytes).toBe(3);
+      expect(metas).toBe(0);
+    } else if (restart === 1) {
+      // Online reopen revalidates the authorized cache instead of transferring bytes.
+      expect(bytes).toBe(0);
+      expect(metas).toBe(3);
+    } else {
+      // Offline reopen uses the derived cache without touching the network.
+      expect(bytes).toBe(0);
+      expect(metas).toBe(0);
+    }
     await expect(pane(page).locator(".document-reading .katex")).toBeVisible();
+    if (restart === 0)
+      await page.screenshot({
+        path: info.outputPath("legacy-image-reading.png"),
+        fullPage: true,
+      });
     await documentMode(page, /^(Source|源码)$/);
     await expect(
       pane(page).getByLabel(w.desk.noteBody, { exact: true }),
@@ -8518,6 +9506,19 @@ test("v3 upgrade legacy asset survives replica bootstrap and note reopen", async
     fullPage: true,
   });
   await page.context().setOffline(false);
+  await setTheme(page, "dark");
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await page
+    .locator(".note-card")
+    .filter({ hasText: "Legacy scientific note" })
+    .click();
+  await documentMode(page, w.desk.read);
+  await expect(pane(page).locator(".document-reading img")).toHaveCount(3);
+  await page.screenshot({
+    path: info.outputPath("legacy-image-reading-dark.png"),
+    fullPage: true,
+  });
 });
 
 test("notes, safe reading, revision restore, journal and export", async ({
@@ -8696,9 +9697,16 @@ test("v2.3 closing a document flushes latest text and retains an offline draft",
   await nav(page, w.desk.notes);
   await page.locator(".page-header .compact-create").click();
   await pane(page).getByLabel(w.desk.noteTitle).fill("Close flush note");
-  await pane(page)
-    .getByLabel(w.desk.noteBody)
-    .fill("Close before debounce\nSecond line");
+  const closeFlushBody = pane(page).getByLabel(w.desk.noteBody);
+  // Trace from the mobile failure showed Playwright fill inserting the new text
+  // before the existing CodeMirror lines. Drive the real editor input contract
+  // deterministically instead of treating that harness artifact as draft merging.
+  const replaceCloseFlushBody = async (text: string) => {
+    await closeFlushBody.click();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.insertText(text);
+  };
+  await replaceCloseFlushBody("Close before debounce\nSecond line");
   await page
     .locator(".document-tab")
     .getByRole("button", { name: /^(Close|关闭) / })
@@ -8718,7 +9726,7 @@ test("v2.3 closing a document flushes latest text and retains an offline draft",
     .filter({ hasText: "Close flush note" })
     .press("Enter");
   await setLocalCommandFailure(page, true);
-  await pane(page).getByLabel(w.desk.noteBody).fill("Offline final text");
+  await replaceCloseFlushBody("Offline final text");
   await page
     .locator(".document-tab")
     .getByRole("button", { name: /^(Close|关闭) / })
@@ -9667,6 +10675,17 @@ test("workspace timezone appearance density and mobile navigation persist", asyn
   const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.settings);
+  await page.screenshot({ path: info.outputPath("settings-navigation.png") });
+  await page
+    .locator(".settings-navigation")
+    .getByRole("button", {
+      name: info.project.name.endsWith("zh") ? "日历" : "Calendar",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.locator('[data-settings-section="calendar"]'),
+  ).toBeFocused();
   await page
     .getByLabel(w.desk.workspaceTimezone, { exact: true })
     .fill("Asia/Tokyo");
@@ -9705,7 +10724,7 @@ test("workspace timezone appearance density and mobile navigation persist", asyn
         style.getPropertyValue(name).trim(),
       );
     }),
-  ).toEqual(["#fff", "#6454ce"]);
+  ).toEqual(["#fff", "#5a5bd6"]);
   await page.emulateMedia({ media: "screen" });
   await expect(
     page.getByLabel(w.desk.workspaceTimezone, { exact: true }),
@@ -10140,7 +11159,7 @@ test("navigation long press uses a real touch gesture and commits only on releas
   const source = surface.locator(`[data-order-entity="${moving}"]`);
   const target = surface.locator(`[data-order-entity="${anchor}"]`);
   const sourceBounds = (await source.boundingBox())!;
-  const targetBounds = (await target.boundingBox())!;
+  let targetBounds = (await target.boundingBox())!;
   const before = (
     await (await page.request.get(workbench.url + "/api/snapshot")).json()
   ).navigationPreference;
@@ -10159,6 +11178,9 @@ test("navigation long press uses a real touch gesture and commits only on releas
     ],
   });
   await expect(source).toHaveAttribute("data-reordering", "true");
+  // Long press can reveal the drag handle and shift rows by a few pixels;
+  // resolve the target against the current layout before moving.
+  targetBounds = (await target.boundingBox())!;
   await session.send("Input.dispatchTouchEvent", {
     type: "touchMove",
     touchPoints: [
@@ -10200,6 +11222,7 @@ test("navigation preferences persist ordered mobile shortcuts and desktop visibi
   const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.settings);
+  await openAdvancedSettings(page);
   const panel = page.locator(".navigation-settings");
   await panel
     .locator(".navigation-choice")
@@ -10967,7 +11990,7 @@ test("current level hierarchy search is shared by Task filters and AI scope", as
   await browser.locator("li .ui-entity-picker-choice").click();
   await expect(page.locator(".task-card")).toHaveCount(1);
   await expect(page.locator(".task-card")).toContainText("Scoped child task");
-  await nav(page, w.desk.settings);
+  await openAccountApiModels(page, zh);
   await page
     .getByText(zh ? "添加项目 / 空间覆盖" : "Add project / space override", {
       exact: true,
@@ -11074,6 +12097,16 @@ test("Atlas main workspace is conversation with explicit context and no provider
   }
   await page.screenshot({
     path: info.outputPath("atlas-conversation.png"),
+    fullPage: true,
+  });
+  await setTheme(page, "dark");
+  await page.reload();
+  await page.evaluate(() => {
+    location.hash = "ai";
+  });
+  await expect(page.locator(".atlas-conversation")).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("atlas-conversation-dark.png"),
     fullPage: true,
   });
 });
@@ -11483,12 +12516,13 @@ test("hardening editors outside click retain dirty drafts settings borders and e
   );
   await task.getByRole("button", { name: w.desk.discard, exact: true }).click();
   await nav(page, w.desk.settings);
+  await openAdvancedSettings(page);
   expect(
     await page
       .locator(".settings-panel:visible")
       .last()
       .evaluate((node) => getComputedStyle(node).borderLeftWidth),
-  ).toBe("0px");
+  ).toBe("1px");
   for (const fieldset of await page.locator(".settings-panel fieldset").all())
     expect(
       await fieldset.evaluate((node) => getComputedStyle(node).borderLeftWidth),
@@ -11938,7 +12972,8 @@ test("Library snapshot sync and closed AI Activity have no independent polling",
   page,
   workbench,
 }, info) => {
-  const w = words(info.project.name);
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
   await unlock(page, workbench.url, workbench.secret, w);
   const libraryRequests: string[] = [];
   const activityRequests: string[] = [];
@@ -11950,8 +12985,7 @@ test("Library snapshot sync and closed AI Activity have no independent polling",
   await nav(page, w.spaces.library);
   await page.waitForTimeout(6500);
   expect(libraryRequests).toEqual([]);
-  await nav(page, w.desk.settings);
-  await expect(page.locator(".settings-panel:visible")).toBeVisible();
+  await openAccountApiModels(page, zh);
   await page.waitForTimeout(6500);
   expect(activityRequests).toEqual([]);
   await page.locator(".ai-activity > summary").click();
@@ -13243,7 +14277,14 @@ for (const [width, height] of [
       await go("#settings");
       await expect(page.locator(".settings-page")).toBeVisible();
       await capture("16-settings");
-      await page.locator(".model-settings").scrollIntoViewIfNeeded();
+      await go("#account");
+      await page
+        .getByRole("tab", {
+          name: zh ? "API 与模型" : "API & models",
+          exact: true,
+        })
+        .click();
+      await expect(page.locator(".model-settings").first()).toBeVisible();
       await capture("15-ai-settings");
       await go("#trash");
       await expect(page.locator(".page-header h1")).toHaveText(w.desk.trash);
@@ -13859,6 +14900,11 @@ test("Atlas paged history renders visible Markdown and preserves reading positio
     .toBeLessThan(80);
   await page.screenshot({
     path: info.outputPath("atlas-paged-history.png"),
+    fullPage: true,
+  });
+  await setTheme(page, "dark");
+  await page.screenshot({
+    path: info.outputPath("atlas-paged-history-dark.png"),
     fullPage: true,
   });
 });
@@ -16249,13 +17295,47 @@ test("local content imports into a newly created owned workspace before explicit
     .getByRole("button", { name: zh ? "新建任务" : "Create task", exact: true })
     .click();
   await expect(editor).toHaveCount(0);
-  await unlock(
-    page,
-    workbench.url,
-    workbench.secret,
-    words(info.project.name),
-    "prepare",
-  );
+  const w = words(info.project.name);
+  // A nested folder, a filed note and presentation icons must survive the merge copy.
+  await nav(page, w.desk.files);
+  const sourceTree = page.locator(".folder-tree");
+  await sourceTree
+    .getByRole("button", { name: w.desk.newFolder, exact: true })
+    .click();
+  await sourceTree.getByLabel(w.desk.folderName).fill("Imported folder");
+  await sourceTree
+    .getByRole("button", { name: w.desk.createFolder, exact: true })
+    .click();
+  const sourceFolderRow = () =>
+    sourceTree
+      .locator(".folder-tree-row")
+      .filter({ hasText: "Imported folder" });
+  await sourceFolderRow()
+    .getByRole("button", { name: w.desk.chooseIcon, exact: true })
+    .click();
+  await page.getByRole("button", { name: "🧪", exact: true }).click();
+  await sourceFolderRow()
+    .getByRole("button", {
+      name: new RegExp(`^(Folder actions|文件夹操作): Imported folder$`),
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: w.desk.newDocumentInFolder, exact: true })
+    .click();
+  await expect(
+    pane(page).getByLabel(w.desk.noteTitle, { exact: true }),
+  ).toHaveValue(w.desk.untitledNote);
+  await page
+    .getByRole("button", { name: /^(Workspace|工作台)$/, exact: true })
+    .click();
+  await nav(page, w.desk.files);
+  const sourceNote = () =>
+    page.locator(".note-card").filter({ hasText: w.desk.untitledNote });
+  await sourceNote()
+    .getByRole("button", { name: w.desk.chooseIcon, exact: true })
+    .click();
+  await page.getByRole("button", { name: "🔬", exact: true }).click();
+  await unlock(page, workbench.url, workbench.secret, w, "prepare");
   await page
     .getByText(zh ? "新建空的远程工作区" : "Create an empty remote workspace", {
       exact: true,
@@ -16340,6 +17420,23 @@ test("local content imports into a newly created owned workspace before explicit
   expect(target.items.map((item: { title: string }) => item.title)).toEqual([
     "New workspace original",
   ]);
+  const importedFolder = target.organization.find(
+    (entry: { kind: string; name?: string }) =>
+      entry.kind === "FOLDER" && entry.name === "Imported folder",
+  );
+  expect(importedFolder).toMatchObject({ icon: "🧪", parentId: "" });
+  const importedNote = target.organization.find(
+    (entry: { kind: string; id: string }) =>
+      entry.kind === "NOTE" &&
+      target.notes.some(
+        (note: { id: string; title: string }) =>
+          note.id === entry.id && note.title === w.desk.untitledNote,
+      ),
+  );
+  expect(importedNote).toMatchObject({
+    folderId: importedFolder.id,
+    icon: "🔬",
+  });
   expect(
     (await (await page.request.get(workbench.url + "/api/snapshot")).json())
       .items,
@@ -17330,9 +18427,13 @@ test("Markdown reconnect automatically merges disjoint lines without discarding 
     pane(page).getByLabel(w.desk.noteBody, { exact: true }),
   ).toHaveJSProperty("innerText", "first\nmiddle\nlast");
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
-  await pane(page)
-    .getByLabel(w.desk.noteBody, { exact: true })
-    .fill("device first\nmiddle\nlast");
+  // Session304 established that Playwright fill can append on an emulated touch
+  // CodeMirror surface. Exercise the same editor input contract deterministically
+  // so a test-harness duplication cannot masquerade as a body-merge defect.
+  const body = pane(page).getByLabel(w.desk.noteBody, { exact: true });
+  await body.click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.insertText("device first\nmiddle\nlast");
   await expect(
     pane(page).getByLabel(w.desk.noteBody, { exact: true }),
   ).toHaveJSProperty("innerText", "device first\nmiddle\nlast");

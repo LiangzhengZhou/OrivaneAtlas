@@ -75,6 +75,12 @@ export interface WorkItem {
   readonly activationPolicy: ActivationPolicy;
   readonly startDate: string | null;
   readonly dueDate: string | null;
+  /** Optional minute precision for the due date; null keeps date-only semantics. */
+  readonly dueTime?: string | null;
+  /** Running timer start instant; null while paused/stopped. */
+  readonly timerStartedAt?: string | null;
+  /** Completed timer milliseconds; running time is startedAt + accumulated. */
+  readonly timerAccumulatedMs?: number;
   readonly version: number;
   readonly createdBy: string;
   readonly updatedBy: string;
@@ -100,6 +106,17 @@ export function isGloballyActiveTask(item: WorkItem, today?: string): boolean {
 }
 export function planningTasks(items: readonly WorkItem[]): WorkItem[] {
   return items.filter((item) => item.type === "TASK" && !item.deletedAt);
+}
+/** Timestamp-based elapsed time; never persisted per second. */
+export function timerElapsedMs(
+  item: Pick<WorkItem, "timerStartedAt" | "timerAccumulatedMs">,
+  now = Date.now(),
+): number {
+  const accumulated = Math.max(0, Math.trunc(item.timerAccumulatedMs ?? 0));
+  const started = item.timerStartedAt ? Date.parse(item.timerStartedAt) : NaN;
+  return (
+    accumulated + (Number.isFinite(started) ? Math.max(0, now - started) : 0)
+  );
 }
 export const edgeTypes = [
   "BLOCKS",
@@ -172,12 +189,23 @@ export function requireDate(value: string | null): string | null {
     throw new DomainError("VALIDATION_ERROR", { field: "date" });
   return value;
 }
+/** Clock-only value for a calendar day, in the workspace timezone at display time. */
+export function requireTime(value: string | null): string | null {
+  if (value === null) return null;
+  if (typeof value !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value))
+    throw new DomainError("VALIDATION_ERROR", { field: "time" });
+  return value;
+}
 export function validateSchedule(
   startDate: string | null,
   dueDate: string | null,
+  dueTime: string | null = null,
 ): void {
   requireDate(startDate);
   requireDate(dueDate);
+  requireTime(dueTime);
+  if (dueTime && !dueDate)
+    throw new DomainError("VALIDATION_ERROR", { field: "dueTime" });
   if (startDate && dueDate && startDate > dueDate)
     throw new DomainError("VALIDATION_ERROR", { field: "dateRange" });
 }

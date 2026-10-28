@@ -1098,6 +1098,39 @@ export function AssistantPane({
                 void sendQuestion(prompt);
               }}
             >
+              {snapshot ? (
+                <ContextBar
+                  snapshot={snapshot}
+                  projectId={selectedProject}
+                  spaceId={selectedSpace}
+                  context={selectedContext}
+                  disabled={
+                    pending ||
+                    run?.status === "WAITING_APPROVAL" ||
+                    run?.status === "RUNNING"
+                  }
+                  onProject={setSelectedProject}
+                  onSpace={setSelectedSpace}
+                  onContext={setSelectedContext}
+                />
+              ) : (
+                <div className="context-bar">
+                  {selectedContext.map((item) => (
+                    <Button
+                      type="button"
+                      key={item.ref.id}
+                      variant="toggle"
+                      onClick={() =>
+                        setExcludedContext(
+                          (previous) => new Set([...previous, item.ref.id]),
+                        )
+                      }
+                    >
+                      {item.title}
+                    </Button>
+                  ))}
+                </div>
+              )}
               <textarea
                 required
                 aria-label={zh ? "向 Atlas 提问" : "Ask Atlas"}
@@ -1170,39 +1203,6 @@ export function AssistantPane({
                       )}
                   </Select>
                 </label>
-                {snapshot ? (
-                  <ContextBar
-                    snapshot={snapshot}
-                    projectId={selectedProject}
-                    spaceId={selectedSpace}
-                    context={selectedContext}
-                    disabled={
-                      pending ||
-                      run?.status === "WAITING_APPROVAL" ||
-                      run?.status === "RUNNING"
-                    }
-                    onProject={setSelectedProject}
-                    onSpace={setSelectedSpace}
-                    onContext={setSelectedContext}
-                  />
-                ) : (
-                  <div className="context-bar">
-                    {selectedContext.map((item) => (
-                      <Button
-                        type="button"
-                        key={item.ref.id}
-                        variant="toggle"
-                        onClick={() =>
-                          setExcludedContext(
-                            (previous) => new Set([...previous, item.ref.id]),
-                          )
-                        }
-                      >
-                        {item.title}
-                      </Button>
-                    ))}
-                  </div>
-                )}
                 <Button
                   variant="primary"
                   type="submit"

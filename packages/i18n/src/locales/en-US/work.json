@@ -41,5 +41,13 @@
   "prerequisites": "Prerequisites",
   "availability": "Availability",
   "waiting": "Waiting",
-  "paused": "Paused"
+  "paused": "Paused",
+  "timer": "Timer",
+  "timerStart": "Start timer",
+  "timerPause": "Pause timer",
+  "timerContinue": "Continue timer",
+  "timerEnd": "End timer",
+  "timerRunning": "Timing",
+  "timerPaused": "Paused",
+  "timerSaving": "Saving timer"
 }

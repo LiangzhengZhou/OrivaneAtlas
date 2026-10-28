@@ -21,6 +21,7 @@ export * from "./file-search-index";
 export * from "./local-canonical-file";
 export * from "./manual-order";
 export * from "./project-materials";
+export * from "./task-due";
 export * from "./workflows";
 
 import { requireStableUuid } from "./mutation-receipt";
@@ -227,6 +228,7 @@ export interface CreateWorkInput {
   readonly parentProjectId?: string | null;
   readonly startDate?: string | null;
   readonly dueDate?: string | null;
+  readonly dueTime?: string | null;
   readonly title: string;
   readonly type?: WorkType;
   readonly priority?: Priority;
@@ -246,17 +248,52 @@ export interface UpdateWorkInput {
   readonly parentProjectId?: string | null;
   readonly startDate?: string | null;
   readonly dueDate?: string | null;
+  readonly dueTime?: string | null;
   readonly title?: string;
   readonly status?: WorkStatus;
   readonly priority?: Priority;
   readonly descriptionMd?: string;
   readonly activationState?: ActivationState;
   readonly activationPolicy?: ActivationPolicy;
+  /** Timestamp-based task timer action; time is computed from stored instants. */
+  readonly timer?: "START" | "PAUSE" | "STOP";
   /** Canonical prerequisite task ids. Applied atomically with the task update. */
   readonly prerequisiteIds?: readonly string[];
   readonly expectedPrerequisiteIds?: readonly string[];
 }
 export class WorkService {
+  /**
+   * Timer transitions derive elapsed time from stored instants, so no per-second
+   * database writes are needed and pause/continue is stable across reloads.
+   */
+  private timerPatch(
+    previous: WorkItem,
+    action: "START" | "PAUSE" | "STOP",
+    now: string,
+  ): Pick<WorkItem, "timerStartedAt" | "timerAccumulatedMs"> {
+    if (previous.type !== "TASK")
+      throw new DomainError("VALIDATION_ERROR", { field: "timer" });
+    const startedAt = previous.timerStartedAt ?? null;
+    const accumulated = Math.max(
+      0,
+      Math.trunc(previous.timerAccumulatedMs ?? 0),
+    );
+    if (action === "START") {
+      if (startedAt)
+        throw new DomainError("VALIDATION_ERROR", { field: "timer" });
+      return { timerStartedAt: now, timerAccumulatedMs: accumulated };
+    }
+    if (!startedAt)
+      throw new DomainError("VALIDATION_ERROR", { field: "timer" });
+    const started = Date.parse(startedAt);
+    const elapsed = Number.isFinite(started)
+      ? Math.max(0, Date.parse(now) - started)
+      : 0;
+    return {
+      timerStartedAt: null,
+      timerAccumulatedMs: accumulated + elapsed,
+    };
+  }
   private assignee(value: string | null): string | null {
     if (
       value !== null &&
@@ -357,6 +394,9 @@ export class WorkService {
             }),
         startDate: input.startDate ?? null,
         dueDate: input.dueDate ?? null,
+        dueTime: input.dueTime ?? null,
+        timerStartedAt: null,
+        timerAccumulatedMs: 0,
         activationState: requireMember(
           input.activationState === undefined
             ? "ACTIVE"
@@ -524,6 +564,14 @@ export class WorkService {
         }
       }
       const now = this.clock.now();
+      const timer =
+        input.timer === undefined
+          ? {}
+          : this.timerPatch(
+              previous,
+              requireMember(input.timer, ["START", "PAUSE", "STOP"], "timer"),
+              now,
+            );
       const item: WorkItem = {
         ...previous,
         categoryId:
@@ -544,6 +592,13 @@ export class WorkService {
         startDate:
           input.startDate === undefined ? previous.startDate : input.startDate,
         dueDate: input.dueDate === undefined ? previous.dueDate : input.dueDate,
+        dueTime:
+          input.dueDate === null
+            ? null
+            : input.dueTime === undefined
+              ? (previous.dueTime ?? null)
+              : input.dueTime,
+        ...timer,
         activationState: requireMember(
           input.activationState === undefined
             ? previous.activationState
@@ -984,7 +1039,7 @@ export class WorkService {
     tx: WorkTransaction,
     item: WorkItem,
   ): Promise<void> {
-    validateSchedule(item.startDate, item.dueDate);
+    validateSchedule(item.startDate, item.dueDate, item.dueTime ?? null);
     if (item.type === "TASK" && item.parentProjectId !== null)
       throw new DomainError("VALIDATION_ERROR", { field: "parentProjectId" });
     if (

@@ -7,7 +7,9 @@ const identity = (value: unknown): string => {
     throw new Error("INVALID_SYNC_ENTITY");
   const entry = value as Record<string, unknown>;
   if (
-    (entry.kind === "WORK" || entry.kind === "NOTE") &&
+    (entry.kind === "WORK" ||
+      entry.kind === "NOTE" ||
+      entry.kind === "FOLDER") &&
     "archived" in entry &&
     typeof entry.id === "string"
   )

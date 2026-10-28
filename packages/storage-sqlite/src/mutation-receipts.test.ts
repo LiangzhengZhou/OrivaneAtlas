@@ -106,7 +106,7 @@ it("SQLite37 preserves old receipt bytes and restores the exact schema36 backup"
         "2026-10-13T00:00:00Z",
       );
     backup = (await migrate(raw, path, 2000)).backupPath!;
-    expect(inspectSchema(raw)).toBe(42);
+    expect(inspectSchema(raw)).toBe(migrations.length);
     expect(
       raw.prepare("SELECT result,device_id FROM request_receipt").get(),
     ).toMatchObject({ result, device_id: null });

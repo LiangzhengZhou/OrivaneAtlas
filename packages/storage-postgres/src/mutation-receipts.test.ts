@@ -100,7 +100,9 @@ it("PostgreSQL current receipt upgrade preserves workspace data and restores exa
     }),
   );
   expect(gated).toBe(true);
-  expect(await h.client(name, (client) => inspectSchema(client))).toBe(37);
+  expect(await h.client(name, (client) => inspectSchema(client))).toBe(
+    migrations.length,
+  );
   expect(
     (await h.query(name, "SELECT name FROM arclattice.workspace")).rows[0]
       ?.name,

@@ -4,6 +4,42 @@ import { localDto, localObject } from "./local-dto";
 import type { LocalWorkReplayRequest } from "./local-work-replay-request";
 import { requireStableUuid } from "./mutation-receipt";
 
+const organizationActionKeys = [
+  "kind",
+  "action",
+  "folder",
+  "folderId",
+  "name",
+  "parentId",
+  "id",
+  "icon",
+  "entries",
+] as const;
+function validFolderName(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    value === value.trim() &&
+    value.length > 0 &&
+    value.length <= 80 &&
+    !/[\x00-\x1f]/.test(value)
+  );
+}
+function validParent(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "string" &&
+      value.length <= 240 &&
+      !/[\x00-\x1f]/.test(value))
+  );
+}
+function validIcon(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    (value === "" || value.trim() !== "") &&
+    [...value].length <= 16 &&
+    !/[\x00-\x1f]/.test(value)
+  );
+}
 export function buildLocalOrganizationReplayRequest(
   input: LocalCommandPlan,
 ): LocalWorkReplayRequest | null {
@@ -22,27 +58,58 @@ export function buildLocalOrganizationReplayRequest(
   )
     return null;
   const original = localObject(plan.command.input);
-  const deleted = original.action === "delete";
+  const kind = String(original.kind);
+  const action = String(original.action);
+  // FOLDER deletion is a soft archive (organization UPSERT), not an entity delete.
+  const deleted = action === "delete" && kind !== "FOLDER";
+  // Folder creation has no entries; every other action targets existing rows.
+  const createsFolder = kind === "FOLDER" && action === "create";
+  const entries = createsFolder ? [] : original.entries;
   if (
     Object.keys(original).some(
-      (key) => !["kind", "action", "folder", "entries"].includes(key),
+      (key) =>
+        !organizationActionKeys.includes(
+          key as (typeof organizationActionKeys)[number],
+        ),
     ) ||
-    !["WORK", "NOTE"].includes(String(original.kind)) ||
-    !["archive", "unarchive", "move", "delete"].includes(
-      String(original.action),
-    ) ||
-    !Array.isArray(original.entries) ||
-    original.entries.length !== plan.mutations.length ||
-    (original.action === "move"
-      ? original.kind !== "NOTE" ||
-        typeof original.folder !== "string" ||
-        original.folder.length > 80 ||
-        /[\x00-\x1f]/.test(original.folder)
-      : !deleted && original.kind !== "WORK")
+    !["WORK", "NOTE", "FOLDER"].includes(kind) ||
+    ![
+      "archive",
+      "unarchive",
+      "move",
+      "delete",
+      "create",
+      "rename",
+      "icon",
+    ].includes(action) ||
+    !Array.isArray(entries) ||
+    (!createsFolder && entries.length !== plan.mutations.length) ||
+    (createsFolder &&
+      (plan.mutations.length !== 1 ||
+        !requireStableUuid(original.id, "folderId") ||
+        !validFolderName(original.name) ||
+        !validParent(original.parentId))) ||
+    (!createsFolder && original.id !== undefined) ||
+    (action === "create" && kind !== "FOLDER") ||
+    (action === "rename" &&
+      (kind !== "FOLDER" || !validFolderName(original.name))) ||
+    (action === "icon" && (kind === "WORK" || !validIcon(original.icon))) ||
+    (action === "delete" && original.name !== undefined) ||
+    (action === "move" &&
+      ((kind === "NOTE" &&
+        typeof original.folderId !== "string" &&
+        (typeof original.folder !== "string" ||
+          original.folder.length > 80 ||
+          /[\x00-\x1f]/.test(original.folder))) ||
+        (kind === "FOLDER" && !validParent(original.parentId)) ||
+        kind === "WORK")) ||
+    (action === "archive" && kind !== "WORK") ||
+    (action === "unarchive" && kind !== "WORK" && kind !== "FOLDER")
   )
     throw new DomainError("VALIDATION_ERROR", { field: "organizationCommand" });
   const versions = new Map<string, number>();
-  for (const input of original.entries) {
+  if (createsFolder) versions.set(`FOLDER:${original.id}`, 0);
+  for (const input of entries) {
     const entry = localObject(input);
     if (
       Object.keys(entry).some(
@@ -57,13 +124,13 @@ export function buildLocalOrganizationReplayRequest(
       typeof entry.organizationVersion !== "number" ||
       !Number.isSafeInteger(entry.organizationVersion) ||
       entry.organizationVersion < 0 ||
-      versions.has(`${original.kind}:${entry.id}`)
+      versions.has(deleted ? entry.id : `${kind}:${entry.id}`)
     )
       throw new DomainError("VALIDATION_ERROR", {
         field: "organizationCommand",
       });
     versions.set(
-      deleted ? entry.id : `${original.kind}:${entry.id}`,
+      deleted ? entry.id : `${kind}:${entry.id}`,
       deleted ? entry.version : entry.organizationVersion,
     );
   }
@@ -79,11 +146,7 @@ export function buildLocalOrganizationReplayRequest(
       mutation.workspaceId !== first.workspaceId ||
       mutation.principalId !== first.principalId ||
       mutation.entityType !==
-        (deleted
-          ? original.kind === "WORK"
-            ? "items"
-            : "notes"
-          : "organization") ||
+        (deleted ? (kind === "WORK" ? "items" : "notes") : "organization") ||
       !["PENDING", "SENDING"].includes(mutation.state) ||
       !["CREATE", "PATCH"].includes(mutation.operation) ||
       versions.get(mutation.entityId) !== (mutation.baseVersion ?? 0) ||
@@ -95,7 +158,7 @@ export function buildLocalOrganizationReplayRequest(
     seen.add(mutation.entityId);
     return {
       collection: deleted
-        ? original.kind === "WORK"
+        ? kind === "WORK"
           ? "items"
           : "notes"
         : "organization",

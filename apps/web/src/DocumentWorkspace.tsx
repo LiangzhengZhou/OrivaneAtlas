@@ -9,6 +9,7 @@ import {
 } from "@arclattice/application";
 import type { LibraryFile } from "@arclattice/domain";
 import type { EditorView } from "@codemirror/view";
+import { Save } from "lucide-react";
 import {
   type ComponentProps,
   memo,
@@ -766,6 +767,14 @@ function DocumentPane({
           : current.current.body,
       },
       previous = baseRef.current;
+    if (request.kind === "NOTE" && !draft.title.trim() && draft.body.trim()) {
+      draft.title = draft.body
+        .trim()
+        .split(/\r?\n/, 1)[0]!
+        .replace(/^#{1,6}\s+/, "")
+        .slice(0, 240);
+      setTitle(draft.title);
+    }
     if (previous?.deletedAt) {
       failed.current = true;
       setError("NOT_FOUND");
@@ -974,7 +983,19 @@ function DocumentPane({
   }
   if (!active && !busy) return null;
   return (
-    <article className="document-pane">
+    <article
+      className="document-pane"
+      onKeyDown={(event) => {
+        if (
+          !event.defaultPrevented &&
+          (event.ctrlKey || event.metaKey) &&
+          event.key.toLowerCase() === "s"
+        ) {
+          event.preventDefault();
+          void save(true);
+        }
+      }}
+    >
       <div className="document-toolbar no-print">
         <SegmentedControl
           label={zh ? "文档视图" : "Document view"}
@@ -985,7 +1006,11 @@ function DocumentPane({
           ]}
           onChange={(value) => setMode(value === "read" ? "read" : "live")}
         />
-        <DocumentPopover className="document-mode-menu" label={<>Markdown ▾</>}>
+        <DocumentPopover
+          className="document-mode-menu"
+          label={<>Markdown ▾</>}
+          closeOnClick
+        >
           {(["live", "source"] as const).map((value) => (
             <Button
               key={value}
@@ -1018,6 +1043,15 @@ function DocumentPane({
             {zh ? "询问 Atlas" : "Ask Atlas"}
           </Button>
         </span>
+        <Button
+          variant="ghost"
+          disabled={busy}
+          title={zh ? "保存 (Ctrl/⌘+S)" : "Save (Ctrl/⌘+S)"}
+          onClick={() => void save(true)}
+        >
+          <Save size={16} />
+          {zh ? "保存" : "Save"}
+        </Button>
         <DocumentSaveStatus
           runtime={runtime}
           id={base?.id}

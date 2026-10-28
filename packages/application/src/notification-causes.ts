@@ -3,6 +3,7 @@ import type { LocalMutation } from "./local-persistence";
 import type { NotificationCause } from "./notification-policy";
 import { notificationTimeResolver } from "./notifications";
 import { calendarDateOffset } from "./recurrence-lifecycle";
+import { taskDueInstant, taskDueOccasion } from "./task-due";
 import type { WorkflowRecord } from "./workflows";
 
 export interface NotificationSnapshot {
@@ -172,21 +173,28 @@ export function notificationCauses(
       reason: string,
       day: string,
       title: string,
-    ): NotificationCause => ({
-      workspaceId,
-      reason,
-      subjectId: item.id,
-      occasion: day,
-      title,
-      body: item.title,
-      target: { kind, id: item.id, route },
-      targetVersion: item.version,
-      timezone,
-      fireAt:
-        reason === "TASK_OVERDUE"
-          ? now
-          : new Date(localTime(day, timezone, 9)).toISOString(),
-    });
+    ): NotificationCause => {
+      const dueOccasion = reason === "TASK_DUE" ? taskDueOccasion(item) : null;
+      const dueInstant =
+        reason === "TASK_DUE" ? taskDueInstant(item, timezone) : null;
+      return {
+        workspaceId,
+        reason,
+        subjectId: item.id,
+        occasion: dueOccasion ?? day,
+        title,
+        body: item.title,
+        target: { kind, id: item.id, route },
+        targetVersion: item.version,
+        timezone,
+        fireAt:
+          reason === "TASK_OVERDUE"
+            ? now
+            : dueInstant !== null
+              ? new Date(dueInstant).toISOString()
+              : new Date(localTime(day, timezone, 9)).toISOString(),
+      };
+    };
     if (
       item.startDate &&
       item.startDate >= today &&

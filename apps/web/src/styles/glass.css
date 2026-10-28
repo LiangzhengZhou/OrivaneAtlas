@@ -11,9 +11,33 @@
   box-shadow: var(--shadow-floating);
   color: var(--text-primary);
 }
+/* Component classes compose with the material explicitly so a page-level
+   surface rule cannot silently fall back to an opaque white panel. */
+.ui-dialog.glass-surface,
+.ui-editor-shell.glass-surface,
+.ui-popover.glass-surface,
+.atlas-floating-surface.glass-surface,
+.command-palette.glass-surface,
+.mobile-more-sheet.glass-surface {
+  background: var(--glass-fallback-bg);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+.ui-dialog.glass-surface {
+  border-radius: var(--radius-lg);
+}
+.ui-editor-shell.glass-surface {
+  border-radius: var(--radius-lg);
+}
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   @media (prefers-reduced-transparency: no-preference) {
-    .glass-surface {
+    .glass-surface,
+    .ui-dialog.glass-surface,
+    .ui-editor-shell.glass-surface,
+    .ui-popover.glass-surface,
+    .atlas-floating-surface.glass-surface,
+    .command-palette.glass-surface,
+    .mobile-more-sheet.glass-surface {
       background: var(--glass-bg-strong);
       border-color: var(--glass-border);
       box-shadow: var(--glass-shadow);
@@ -28,14 +52,26 @@
 }
 /* Mobile compositing and low-power: keep it opaque. */
 @media (max-width: 720px), (prefers-reduced-data: reduce) {
-  .glass-surface {
+  .glass-surface,
+  .ui-dialog.glass-surface,
+  .ui-editor-shell.glass-surface,
+  .ui-popover.glass-surface,
+  .atlas-floating-surface.glass-surface,
+  .command-palette.glass-surface,
+  .mobile-more-sheet.glass-surface {
     background: var(--glass-fallback-bg);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
 }
 @media (prefers-contrast: more), (forced-colors: active) {
-  .glass-surface {
+  .glass-surface,
+  .ui-dialog.glass-surface,
+  .ui-editor-shell.glass-surface,
+  .ui-popover.glass-surface,
+  .atlas-floating-surface.glass-surface,
+  .command-palette.glass-surface,
+  .mobile-more-sheet.glass-surface {
     background: var(--glass-fallback-bg);
     border-color: var(--border-strong);
     -webkit-backdrop-filter: none;
@@ -46,7 +82,34 @@
  * budget as elevated surfaces. The document canvas itself remains opaque. */
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more),
   (forced-colors: active), (max-width: 720px) {
+  .task-dialog::backdrop,
+  .ui-dialog::backdrop,
+  .ui-editor-shell::backdrop {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Frosted dialog scrims share the glass elevation language with popovers. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  @media (prefers-reduced-transparency: no-preference) and (min-width: 721px) {
+    .ui-dialog::backdrop,
+    .ui-editor-shell::backdrop,
+    .task-dialog::backdrop {
+      background: color-mix(in srgb, #0b0b10 36%, transparent);
+      -webkit-backdrop-filter: blur(8px) saturate(115%);
+      backdrop-filter: blur(8px) saturate(115%);
+    }
+  }
+}
+
+/* Accessibility gates must win over the enhancement rule above. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more),
+  (forced-colors: active), (max-width: 720px) {
+  .ui-dialog::backdrop,
+  .ui-editor-shell::backdrop,
   .task-dialog::backdrop {
+    background: #0005;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

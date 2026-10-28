@@ -5612,6 +5612,66 @@
         ]
       }
     },
+    "/api/library/asset/meta": {
+      "get": {
+        "operationId": "imageMetadata",
+        "summary": "Authorized image metadata for cache revalidation without transferring bytes",
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized raster metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "type": "string" },
+                    "mime": {
+                      "type": "string",
+                      "enum": ["image/png", "image/jpeg", "image/webp"]
+                    },
+                    "size": { "type": "integer", "minimum": 0 },
+                    "contentHash": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  },
+                  "required": ["id", "mime", "size", "contentHash"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid input/key; 401 expired/revoked authentication; 403 permission; 404 scoped entity missing; 429 rate/concurrency; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/openapi.json": {
       "get": {
         "operationId": "openapi",
@@ -8741,6 +8801,66 @@
         ]
       }
     },
+    "/api/v1/library/asset/meta": {
+      "get": {
+        "operationId": "imageMetadataV1",
+        "summary": "Authorized image metadata for cache revalidation without transferring bytes",
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "integration": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized raster metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "type": "string" },
+                    "mime": {
+                      "type": "string",
+                      "enum": ["image/png", "image/jpeg", "image/webp"]
+                    },
+                    "size": { "type": "integer", "minimum": 0 },
+                    "contentHash": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  },
+                  "required": ["id", "mime", "size", "contentHash"]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "400 invalid input/key; 401 expired/revoked authentication; 403 permission; 404 scoped entity missing; 429 rate/concurrency; 500 unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/openapi.json": {
       "get": {
         "operationId": "openapiV1",
@@ -9105,7 +9225,7 @@
     "/api/organize": {
       "post": {
         "operationId": "organizeItems",
-        "summary": "Atomically archive/unarchive tasks or move/delete selected notes and journals",
+        "summary": "Atomically archive tasks or move/delete notes and manage stable note folders",
         "requestBody": {
           "required": true,
           "content": {
@@ -9116,15 +9236,49 @@
                 "properties": {
                   "kind": {
                     "type": "string",
-                    "enum": ["WORK", "NOTE"]
+                    "enum": ["WORK", "NOTE", "FOLDER"]
                   },
                   "action": {
                     "type": "string",
-                    "enum": ["archive", "unarchive", "move", "delete"]
+                    "enum": [
+                      "archive",
+                      "unarchive",
+                      "move",
+                      "delete",
+                      "create",
+                      "rename",
+                      "icon"
+                    ]
                   },
                   "folder": {
                     "type": "string",
-                    "maxLength": 80
+                    "maxLength": 80,
+                    "description": "Legacy NOTE move target by text; current clients send folderId."
+                  },
+                  "folderId": {
+                    "type": "string",
+                    "maxLength": 240,
+                    "description": "Stable folder identity for NOTE move; empty string is Unfiled."
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "description": "FOLDER display name for create and rename."
+                  },
+                  "parentId": {
+                    "type": "string",
+                    "maxLength": 240,
+                    "description": "FOLDER parent identity; empty string is top level."
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "description": "Client-generated stable FOLDER identity for create."
+                  },
+                  "icon": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "description": "Emoji presentation glyph for NOTE or FOLDER icon actions; empty string restores the default."
                   },
                   "entries": {
                     "type": "array",
@@ -9146,14 +9300,14 @@
                           "minimum": 0
                         }
                       },
-                      "required": ["id", "version", "organizationVersion"]
+                      "required": ["id", "version"]
                     }
                   },
                   "syncCommand": {
                     "$ref": "#/components/schemas/OrganizationReplayCommand"
                   }
                 },
-                "required": ["kind", "action", "entries"]
+                "required": ["kind", "action"]
               }
             }
           }
@@ -9245,13 +9399,13 @@
             "integration": []
           }
         ],
-        "description": "Cookie + CSRF or write/read-write Bearer. Idempotency-Key required. Entire batch rolls back on stale entity or organization version, missing/deleted entity, foreign workspace or invalid entry. Maximum100 distinct IDs. organizationVersion0 means no metadata. Archive/unarchive require WORK including PROJECT; preserve status, dependencies and descendant records. Descendants inherit ancestor archive in work-view projections; explicit descendant unarchive does not override an archived ancestor. Restore ancestors first. Move requires NOTE (including JOURNAL), folder up to80 characters trimmed; empty means Unfiled. Journal kind/day and all Markdown remain unchanged. Delete is recoverable soft deletion for non-project entries; project deletion uses the Work API with child protection. Snapshot includes organization metadata; use its version on subsequent operations. No autonomous Agent tool is added. Optional syncCommand invokes original guarded replay. commandId equals Idempotency-Key."
+        "description": "Cookie + CSRF or write/read-write Bearer. Idempotency-Key required. Entire batch rolls back on stale entity or organization version, missing/deleted entity, foreign workspace or invalid entry. Maximum100 distinct IDs. organizationVersion0 means no metadata. Archive requires WORK; unarchive supports WORK including PROJECT and deleted FOLDER with its original active parent; preserve status, dependencies and descendant records. Descendants inherit ancestor archive in work-view projections; explicit descendant unarchive does not override an archived ancestor. Restore ancestors first. Move requires NOTE (including JOURNAL), folder up to80 characters trimmed; empty means Unfiled. Journal kind/day and all Markdown remain unchanged. Delete is recoverable soft deletion for non-project entries; project deletion uses the Work API with child protection. Snapshot includes organization metadata; use its version on subsequent operations. No autonomous Agent tool is added. Optional syncCommand invokes original guarded replay. FOLDER create/rename/move/delete keeps stable identity, parentId and note membership via folderId; empty folders are first-class; deleting a non-empty folder is rejected. Icon actions change only NOTE/FOLDER emoji presentation metadata, never Markdown, file bytes or names. commandId equals Idempotency-Key."
       }
     },
     "/api/v1/organize": {
       "post": {
         "operationId": "organizeItemsV1",
-        "summary": "Atomically archive/unarchive tasks or move/delete selected notes and journals",
+        "summary": "Atomically archive tasks or move/delete notes and manage stable note folders",
         "requestBody": {
           "required": true,
           "content": {
@@ -9262,15 +9416,49 @@
                 "properties": {
                   "kind": {
                     "type": "string",
-                    "enum": ["WORK", "NOTE"]
+                    "enum": ["WORK", "NOTE", "FOLDER"]
                   },
                   "action": {
                     "type": "string",
-                    "enum": ["archive", "unarchive", "move", "delete"]
+                    "enum": [
+                      "archive",
+                      "unarchive",
+                      "move",
+                      "delete",
+                      "create",
+                      "rename",
+                      "icon"
+                    ]
                   },
                   "folder": {
                     "type": "string",
-                    "maxLength": 80
+                    "maxLength": 80,
+                    "description": "Legacy NOTE move target by text; current clients send folderId."
+                  },
+                  "folderId": {
+                    "type": "string",
+                    "maxLength": 240,
+                    "description": "Stable folder identity for NOTE move; empty string is Unfiled."
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "description": "FOLDER display name for create and rename."
+                  },
+                  "parentId": {
+                    "type": "string",
+                    "maxLength": 240,
+                    "description": "FOLDER parent identity; empty string is top level."
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "description": "Client-generated stable FOLDER identity for create."
+                  },
+                  "icon": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "description": "Emoji presentation glyph for NOTE or FOLDER icon actions; empty string restores the default."
                   },
                   "entries": {
                     "type": "array",
@@ -9292,14 +9480,14 @@
                           "minimum": 0
                         }
                       },
-                      "required": ["id", "version", "organizationVersion"]
+                      "required": ["id", "version"]
                     }
                   },
                   "syncCommand": {
                     "$ref": "#/components/schemas/OrganizationReplayCommand"
                   }
                 },
-                "required": ["kind", "action", "entries"]
+                "required": ["kind", "action"]
               }
             }
           }
@@ -9391,7 +9579,7 @@
             "integration": []
           }
         ],
-        "description": "Cookie + CSRF or write/read-write Bearer. Idempotency-Key required. Entire batch rolls back on stale entity or organization version, missing/deleted entity, foreign workspace or invalid entry. Maximum100 distinct IDs. organizationVersion0 means no metadata. Archive/unarchive require WORK including PROJECT; preserve status, dependencies and descendant records. Descendants inherit ancestor archive in work-view projections; explicit descendant unarchive does not override an archived ancestor. Restore ancestors first. Move requires NOTE (including JOURNAL), folder up to80 characters trimmed; empty means Unfiled. Journal kind/day and all Markdown remain unchanged. Delete is recoverable soft deletion for non-project entries; project deletion uses the Work API with child protection. Snapshot includes organization metadata; use its version on subsequent operations. No autonomous Agent tool is added. Optional syncCommand invokes original guarded replay. commandId equals Idempotency-Key."
+        "description": "Cookie + CSRF or write/read-write Bearer. Idempotency-Key required. Entire batch rolls back on stale entity or organization version, missing/deleted entity, foreign workspace or invalid entry. Maximum100 distinct IDs. organizationVersion0 means no metadata. Archive requires WORK; unarchive supports WORK including PROJECT and deleted FOLDER with its original active parent; preserve status, dependencies and descendant records. Descendants inherit ancestor archive in work-view projections; explicit descendant unarchive does not override an archived ancestor. Restore ancestors first. Move requires NOTE (including JOURNAL), folder up to80 characters trimmed; empty means Unfiled. Journal kind/day and all Markdown remain unchanged. Delete is recoverable soft deletion for non-project entries; project deletion uses the Work API with child protection. Snapshot includes organization metadata; use its version on subsequent operations. No autonomous Agent tool is added. Optional syncCommand invokes original guarded replay. FOLDER create/rename/move/delete keeps stable identity, parentId and note membership via folderId; empty folders are first-class; deleting a non-empty folder is rejected. Icon actions change only NOTE/FOLDER emoji presentation metadata, never Markdown, file bytes or names. commandId equals Idempotency-Key."
       }
     },
     "/api/ai/sessions": {
@@ -17127,7 +17315,7 @@
       "SavePrivateEntityMemo": {
         "post": {
           "summary": "Save, soft delete or restore the authenticated owner's private memo",
-          "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Exact version CAS; zero creates lazily on first nonempty body. UUIDv5 identity derives from canonical workspace, principal and target. No caller-supplied owner, id or stableId. Entity, private journal, Activity and Outbox commit atomically. Ordinary empty new memo returns null. Explicit reviewed import with X-Workspace-Precondition, deleted=false, version=0 and the exact syncCommand effect preserves even empty source Markdown through the Application import operation; an existing destination still fails CAS. Save never creates a Document or a revision. Optional original command sync envelope requires exactly one canonical UUIDv5 Memo effect with matching version; commandId equals Idempotency-Key. The device-scoped durable receipt preserves original accepted values after response loss, later edits and restart.",
+          "description": "Cookie + CSRF only; Bearer forbidden. Requires Idempotency-Key. Exact version CAS; zero creates lazily on first nonempty body. UUIDv5 identity derives from canonical workspace, principal and target. No caller-supplied owner, id or stableId. Entity, private journal, Activity and Outbox commit atomically. Ordinary empty new memo returns null. Explicit reviewed import with X-Workspace-Precondition, deleted=false, version=0 and the exact syncCommand effect preserves even empty source Markdown through the Application import operation; an existing destination still fails CAS. Save never creates a Document or a revision. Optional original command sync envelope requires exactly one canonical UUIDv5 Memo effect with matching version; FOLDER create/rename/move/delete keeps stable identity, parentId and note membership via folderId; empty folders are first-class; deleting a non-empty folder is rejected. Icon actions change only NOTE/FOLDER emoji presentation metadata, never Markdown, file bytes or names. commandId equals Idempotency-Key. The device-scoped durable receipt preserves original accepted values after response loss, later edits and restart.",
           "security": [
             {
               "ownerSession": []
@@ -18620,6 +18808,11 @@
             "type": ["string", "null"],
             "format": "date"
           },
+          "dueTime": {
+            "type": ["string", "null"],
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "description": "Optional minute precision for the due date; null keeps date-only semantics. Requires dueDate."
+          },
           "title": {
             "type": "string",
             "minLength": 1,
@@ -18711,6 +18904,16 @@
               "dueDate": {
                 "type": ["string", "null"],
                 "format": "date"
+              },
+              "dueTime": {
+                "type": ["string", "null"],
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                "description": "Optional minute precision for the due date; null keeps date-only semantics. Requires dueDate."
+              },
+              "timer": {
+                "type": "string",
+                "enum": ["START", "PAUSE", "STOP"],
+                "description": "Timestamp-based task timer transition. Elapsed time is derived from stored instants; no per-second database writes."
               },
               "title": {
                 "type": "string",
@@ -18882,6 +19085,22 @@
           "dueDate": {
             "type": ["string", "null"],
             "format": "date"
+          },
+          "dueTime": {
+            "type": ["string", "null"],
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "description": "Optional minute precision for the due date; null keeps date-only semantics. Requires dueDate."
+          },
+          "timerStartedAt": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "Running task timer start instant; null while paused or stopped."
+          },
+          "timerAccumulatedMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Completed timer milliseconds; running time is derived from timerStartedAt."
           },
           "id": {
             "type": "string",

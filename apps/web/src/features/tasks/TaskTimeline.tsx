@@ -34,7 +34,11 @@ export function TaskTimeline({ items, derived, onOpen }: WorkProps) {
             <small>{derived.projectTitlesByTaskId.get(task.id)}</small>
             <small>
               {task.startDate ?? "—"} →{" "}
-              {task.dueDate ?? (zh ? "未排期" : "Unscheduled")}
+              {task.dueDate
+                ? task.dueDate + (task.dueTime ? ` ${task.dueTime}` : "")
+                : zh
+                  ? "未排期"
+                  : "Unscheduled"}
             </small>
           </Button>
         )}

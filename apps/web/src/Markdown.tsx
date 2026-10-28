@@ -20,7 +20,7 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { visit } from "unist-util-visit";
 import { Button } from "./components/ui/Button";
-import { Dialog } from "./components/ui/Surfaces";
+import { ImageViewer } from "./features/documents/ImageViewer";
 import { FileLink } from "./features/files/FileLinkContext";
 import { parseFileHash } from "./features/files/fileRoute";
 import { ImageLoadError, imageFailureReason } from "./imageResponse";
@@ -123,28 +123,11 @@ function PrivateImage({ src, alt }: { src: string; alt: string }) {
         }}
       />
       {viewing && (
-        <Dialog
-          className="ui-dialog image-viewer"
-          aria-label={imageLabel}
-          onRequestClose={() => setViewing(false)}
-        >
-          <Button
-            variant="ghost"
-            aria-label={i18n.language.startsWith("zh") ? "关闭" : "Close"}
-            onClick={() => setViewing(false)}
-          >
-            ×
-          </Button>
-          <img
-            src={url}
-            alt={alt}
-            style={{
-              maxWidth: "100%",
-              maxHeight: "80dvh",
-              objectFit: "contain",
-            }}
-          />
-        </Dialog>
+        <ImageViewer
+          src={url}
+          alt={imageLabel}
+          onClose={() => setViewing(false)}
+        />
       )}
     </>
   ) : (

@@ -1,0 +1,57 @@
+.workspace-resources {
+  margin-block: 24px;
+  min-width: 0;
+}
+.files-route {
+  display: flex;
+  flex-direction: column;
+}
+.files-route > .workspace-resources {
+  order: -1;
+  margin-top: 0;
+}
+.workspace-resources-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.workspace-resources-toolbar h2 {
+  font-size: 16px;
+  margin: 0 auto 0 0;
+}
+.workspace-resources-toolbar small {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+.workspace-resources .workspace-resource-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) minmax(80px, 20%) 100px;
+  gap: 12px;
+  width: 100%;
+  text-align: start;
+  min-height: 44px;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.workspace-resource-name,
+.workspace-resource-location {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-resource-location,
+.workspace-resource-row time {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .workspace-resources .workspace-resource-row {
+    grid-template-columns: 20px minmax(0, 1fr) 80px;
+    gap: 8px;
+  }
+  .workspace-resource-location {
+    display: none;
+  }
+}

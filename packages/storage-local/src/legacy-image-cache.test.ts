@@ -109,6 +109,42 @@ it("persists original bytes across reopen and backup/restore, without an Outbox 
   }
 });
 
+it("reuses an authorized cache copy without redownloading and never falls back on online denial", async () => {
+  const { store, blobs, ports } = await fixture();
+  try {
+    await readLegacyImage(own, "asset", ports);
+    expect(ports.download).toHaveBeenCalledTimes(1);
+    const hash = (await blobs.digest!(bytes))!;
+    const reused = await readLegacyImage(own, "asset", {
+      ...ports,
+      revalidateCache: vi.fn(async (_binding, contentHash) => {
+        expect(contentHash).toBe(hash);
+        return true;
+      }),
+    });
+    expect(await reused.arrayBuffer()).toEqual(await bytes.arrayBuffer());
+    expect(ports.download).toHaveBeenCalledTimes(1);
+    await expect(
+      readLegacyImage(own, "asset", {
+        ...ports,
+        revalidateCache: async () => {
+          throw new Error("FORBIDDEN");
+        },
+      }),
+    ).rejects.toThrow("FORBIDDEN");
+    expect(ports.download).toHaveBeenCalledTimes(1);
+    const refreshed = await readLegacyImage(own, "asset", {
+      ...ports,
+      revalidateCache: async () => false,
+    });
+    expect(await refreshed.arrayBuffer()).toEqual(await bytes.arrayBuffer());
+    expect(ports.download).toHaveBeenCalledTimes(2);
+  } finally {
+    store.close();
+    blobs.close();
+  }
+});
+
 it("never falls back to private cached bytes after an online denial or across bindings", async () => {
   const { store, blobs, ports } = await fixture();
   try {

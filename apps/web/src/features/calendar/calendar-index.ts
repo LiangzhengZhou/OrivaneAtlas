@@ -2,6 +2,7 @@ import type {
   WorkspaceNote as Note,
   WorkflowRecord,
 } from "@arclattice/application";
+import { taskDueInstant } from "@arclattice/application";
 import {
   localCalendarDay,
   type Reminder,
@@ -24,6 +25,7 @@ export function buildCalendarIndex(
   timezone: string,
   today: string,
   reminders: readonly Reminder[] = [],
+  now = Date.now(),
 ) {
   const startsByDay = new Map<string, WorkItem[]>();
   const dueByDay = new Map<string, WorkItem[]>();
@@ -50,7 +52,13 @@ export function buildCalendarIndex(
     if (item.status === "DONE" && item.completedAt)
       add(completedByDay, localCalendarDay(item.completedAt, timezone), item);
     if (item.status === "DONE" || item.status === "CANCELED") continue;
-    if (item.dueDate && item.dueDate < today) overdue.push(item);
+    const dueInstant = taskDueInstant(item, timezone);
+    if (
+      item.dueDate &&
+      (item.dueDate < today ||
+        (item.dueDate === today && dueInstant !== null && dueInstant < now))
+    )
+      overdue.push(item);
     if (!item.startDate && !item.dueDate) unscheduled.push(item);
   }
   for (const note of notes)

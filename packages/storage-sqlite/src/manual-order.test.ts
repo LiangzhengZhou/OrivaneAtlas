@@ -48,7 +48,7 @@ test("v2.4 schema upgrades append-only and its pre-upgrade backup restores", asy
     await migrate(raw, file, 2000, migrations.slice(0, 33));
     raw.exec("INSERT INTO workspace VALUES('workspace-a','A')");
     backup = (await migrate(raw, file, 2000)).backupPath!;
-    expect(inspectSchema(raw)).toBe(42);
+    expect(inspectSchema(raw)).toBe(migrations.length);
     expect(
       raw.prepare("SELECT COUNT(*) n FROM manual_order_scope").get()?.n,
     ).toBe(0);

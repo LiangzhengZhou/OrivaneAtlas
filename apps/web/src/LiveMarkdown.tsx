@@ -41,6 +41,7 @@ import { Button } from "./components/ui/Button";
 import { Menu, Select } from "./components/ui/Surfaces";
 import { DocumentPopover } from "./features/documents/DocumentPopover";
 import { largeMarkdownLanguage } from "./features/documents/large-markdown-language";
+import { MarkdownCommandIcon } from "./features/documents/MarkdownCommandIcon";
 import {
   MarkdownCommandRegistry,
   runMarkdownCommand,
@@ -322,6 +323,10 @@ export function LiveMarkdown({
   });
   const [hasSelection, setHasSelection] = useState(false),
     [focused, setFocused] = useState(false),
+    [selectionPoint, setSelectionPoint] = useState<{
+      left: number;
+      top: number;
+    } | null>(null),
     [contextOpen, setContextOpen] = useState(false);
   const { i18n } = useTranslation();
   const language = useRef(i18n.language);
@@ -366,6 +371,22 @@ export function LiveMarkdown({
       published.current = text;
       callbacks.current.onChange(text);
       callbacks.current.onPendingChange?.(false);
+    };
+    const placeSelectionToolbar = (target: EditorView) => {
+      const selection = target.state.selection.main;
+      if (selection.empty) {
+        setSelectionPoint(null);
+        return;
+      }
+      const coords = target.coordsAtPos(selection.from);
+      if (!coords) {
+        setSelectionPoint(null);
+        return;
+      }
+      setSelectionPoint({
+        left: Math.max(8, Math.min(window.innerWidth - 260, coords.left)),
+        top: Math.max(8, coords.top - 52),
+      });
     };
     const view = new EditorView({
       parent: parent.current,
@@ -465,6 +486,7 @@ export function LiveMarkdown({
           EditorView.domEventHandlers({
             focus: () => {
               setFocused(true);
+              placeSelectionToolbar(view);
             },
             blur: (event) => {
               setFocused(
@@ -491,8 +513,10 @@ export function LiveMarkdown({
             },
           }),
           EditorView.updateListener.of((update) => {
-            if (update.selectionSet)
+            if (update.selectionSet) {
               setHasSelection(!update.state.selection.main.empty);
+              placeSelectionToolbar(update.view);
+            }
             if (
               update.docChanged &&
               !update.transactions.every((tr) => tr.annotation(externalValue))
@@ -512,8 +536,13 @@ export function LiveMarkdown({
       }),
     });
     editorRef.current = view;
+    const repositionSelectionToolbar = () => placeSelectionToolbar(view);
+    window.addEventListener("scroll", repositionSelectionToolbar, true);
+    window.addEventListener("resize", repositionSelectionToolbar);
     return () => {
       flush();
+      window.removeEventListener("scroll", repositionSelectionToolbar, true);
+      window.removeEventListener("resize", repositionSelectionToolbar);
       editorRef.current = null;
       view.destroy();
     };
@@ -573,7 +602,7 @@ export function LiveMarkdown({
       });
     setContextOpen(false);
   }
-  function controls(selection: boolean) {
+  function controls(selection: boolean, floating = false) {
     return (
       <div
         role="toolbar"
@@ -586,7 +615,12 @@ export function LiveMarkdown({
               ? "Markdown 工具栏"
               : "Markdown toolbar"
         }
-        className="markdown-command-toolbar"
+        className={`markdown-command-toolbar${floating ? " is-floating glass-surface" : ""}`}
+        style={
+          floating && selectionPoint
+            ? { left: selectionPoint.left, top: selectionPoint.top }
+            : undefined
+        }
       >
         {visibleCommands
           .filter((command) =>
@@ -596,10 +630,18 @@ export function LiveMarkdown({
             <Button
               key={command.id}
               variant="ghost"
+              className="markdown-format-button"
+              aria-label={zh ? command.zh : command.en}
+              title={
+                (zh ? command.zh : command.en) +
+                ("key" in command
+                  ? ` (${command.key.replace("Mod", "Ctrl/⌘")})`
+                  : "")
+              }
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => invoke(command)}
             >
-              {zh ? command.zh : command.en}
+              <MarkdownCommandIcon command={command.id} />
             </Button>
           ))}
         <DocumentPopover
@@ -613,6 +655,7 @@ export function LiveMarkdown({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => invoke(command)}
             >
+              <MarkdownCommandIcon command={command.id} />
               {zh ? command.zh : command.en}
             </Button>
           ))}
@@ -622,33 +665,39 @@ export function LiveMarkdown({
   }
   return (
     <div className="markdown-editor-surface" ref={surface}>
-      <Select
-        label={zh ? "编辑器工具栏" : "Editor toolbar"}
-        value={toolbarPreference}
-        onChange={(event) => {
-          const next =
-            event.target.value === "PINNED"
-              ? "PINNED"
-              : event.target.value === "HIDDEN"
-                ? "HIDDEN"
-                : "AUTO";
-          setToolbarPreference(next);
-          try {
-            localStorage.setItem("orivane.atlas.markdown-toolbar", next);
-          } catch {
-            /* Device UI preference only. */
-          }
-        }}
-      >
-        <option value="AUTO">{zh ? "自动工具栏" : "Automatic toolbar"}</option>
-        <option value="PINNED">
-          {zh ? "始终显示工具栏" : "Always show toolbar"}
-        </option>
-        <option value="HIDDEN">{zh ? "隐藏工具栏" : "Hide toolbar"}</option>
-      </Select>
-      {(toolbarPreference === "PINNED" ||
-        (toolbarPreference === "AUTO" && focused && hasSelection)) &&
-        controls(hasSelection)}
+      <div className="markdown-toolbar-preference">
+        <Select
+          label={zh ? "编辑器工具栏" : "Editor toolbar"}
+          value={toolbarPreference}
+          onChange={(event) => {
+            const next =
+              event.target.value === "PINNED"
+                ? "PINNED"
+                : event.target.value === "HIDDEN"
+                  ? "HIDDEN"
+                  : "AUTO";
+            setToolbarPreference(next);
+            try {
+              localStorage.setItem("orivane.atlas.markdown-toolbar", next);
+            } catch {
+              /* Device UI preference only. */
+            }
+          }}
+        >
+          <option value="AUTO">
+            {zh ? "自动工具栏" : "Automatic toolbar"}
+          </option>
+          <option value="PINNED">
+            {zh ? "始终显示工具栏" : "Always show toolbar"}
+          </option>
+          <option value="HIDDEN">{zh ? "隐藏工具栏" : "Hide toolbar"}</option>
+        </Select>
+      </div>
+      {toolbarPreference === "PINNED" && controls(hasSelection)}
+      {toolbarPreference === "AUTO" &&
+        focused &&
+        hasSelection &&
+        controls(true, true)}
       <div
         className={`live-markdown${source ? " markdown-source" : ""}`}
         ref={parent}
@@ -679,6 +728,7 @@ export function LiveMarkdown({
               variant="ghost"
               onClick={() => invoke(command)}
             >
+              <MarkdownCommandIcon command={command.id} />
               {zh ? command.zh : command.en}
             </Button>
           ))}

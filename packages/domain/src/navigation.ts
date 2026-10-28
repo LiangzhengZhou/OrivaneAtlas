@@ -8,6 +8,7 @@ export const navigationViews = [
   "calendar",
   "notes",
   "journal",
+  "files",
   "library",
   "knowledge",
   "ai",
@@ -20,7 +21,8 @@ export type NavigationViewId = (typeof navigationViews)[number];
 export function navigationGroup(view: NavigationViewId): string | undefined {
   if (["overview", "focus", "tasks", "projects", "calendar"].includes(view))
     return "workspace";
-  if (["notes", "journal", "library"].includes(view)) return "knowledge";
+  if (["notes", "journal", "files", "library"].includes(view))
+    return "knowledge";
   if (view === "ai") return "atlas";
   return undefined;
 }

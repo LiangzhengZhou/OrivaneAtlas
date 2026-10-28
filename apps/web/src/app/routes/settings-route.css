@@ -1,0 +1,255 @@
+.settings-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+  max-width: 1120px;
+  margin-inline: auto;
+}
+.settings-layout[hidden] {
+  display: none;
+}
+.settings-navigation {
+  position: sticky;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-block: 8px;
+}
+.settings-navigation .ui-button {
+  justify-content: flex-start;
+  text-align: start;
+  gap: 9px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+}
+.settings-navigation .ui-button:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.settings-navigation svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.settings-layout .settings-panel {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 26px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+.settings-layout [data-settings-section] {
+  scroll-margin-top: 20px;
+}
+.settings-layout .settings-panel > section,
+.settings-layout .settings-panel > div[data-settings-section],
+.settings-layout .settings-panel > .panel,
+.settings-layout .settings-panel [data-settings-section] > .panel {
+  padding-block: 22px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.settings-layout .settings-panel > section:last-of-type,
+.settings-layout .settings-panel > div[data-settings-section]:last-of-type,
+.settings-layout .settings-panel [data-settings-section]:last-of-type > .panel {
+  border-bottom: 0;
+}
+.settings-layout .settings-panel h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.015em;
+}
+.settings-layout .settings-panel h3 {
+  margin: 16px 0 6px;
+  font-size: 13.5px;
+  font-weight: var(--font-weight-semibold);
+}
+.settings-layout .settings-panel p {
+  font-size: 13px;
+  line-height: var(--line-body);
+  color: var(--text-secondary);
+}
+.settings-layout .settings-panel .field {
+  max-width: 640px;
+}
+.settings-layout .settings-panel > section section {
+  border: 0;
+  padding-bottom: 0;
+}
+.settings-advanced {
+  margin-top: 2px;
+  border-top: 1px solid var(--border-subtle);
+}
+.settings-advanced > summary {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 18px 28px 12px 0;
+  color: var(--text-primary);
+  list-style: none;
+  cursor: pointer;
+}
+.settings-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+.settings-advanced > summary::after {
+  content: "▾";
+  position: absolute;
+  inset-inline-end: 4px;
+  top: 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+}
+.settings-advanced:not([open]) > summary::after {
+  content: "▸";
+}
+.settings-advanced > summary span {
+  font-size: 17px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.015em;
+}
+.settings-advanced > summary small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.settings-advanced[open] > summary {
+  padding-bottom: 8px;
+}
+.settings-advanced-body > section,
+.settings-advanced-body > div[data-settings-section] {
+  padding-block: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.settings-advanced-body > :last-child {
+  border-bottom: 0;
+}
+.settings-advanced-body > section > h2 {
+  margin-top: 0;
+}
+.settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.settings-nav-group + .settings-nav-group {
+  margin-top: 14px;
+}
+.settings-nav-group-label {
+  margin: 0 0 4px;
+  padding-inline: 10px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+@media (max-width: 900px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .settings-navigation {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 4px;
+    overflow: visible;
+    padding-block: 4px 8px;
+  }
+  .settings-nav-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .settings-nav-group + .settings-nav-group {
+    margin-top: 0;
+    margin-left: 8px;
+  }
+  .settings-nav-group-label {
+    display: none;
+  }
+  .settings-navigation .ui-button {
+    flex: 0 0 auto;
+    min-height: 40px;
+  }
+  .settings-layout .settings-panel {
+    padding-inline: 18px;
+  }
+  .settings-advanced > summary {
+    padding: 14px 0 10px;
+  }
+  .settings-advanced > summary span {
+    font-size: 15px;
+  }
+  .settings-advanced-body > section,
+  .settings-advanced-body > div[data-settings-section] {
+    padding-block: 14px;
+  }
+  .notification-settings fieldset {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 10px;
+  }
+  .notification-settings fieldset legend {
+    grid-column: 1 / -1;
+  }
+  .notification-settings fieldset .checkbox-field {
+    min-height: 38px;
+  }
+}
+
+.server-diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.server-diagnostics dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 0;
+}
+.server-diagnostics dt {
+  color: var(--text-secondary);
+}
+.server-probe-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-hover);
+}
+.server-probe-result[data-probe="OK"] {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+}
+.server-probe-result[data-probe="NETWORK_FAILURE"],
+.server-probe-result[data-probe="TIMEOUT"],
+.server-probe-result[data-probe="SERVER_ERROR"] {
+  border-color: color-mix(in srgb, #b42318 40%, var(--border-subtle));
+}
+.server-probe-result time {
+  color: var(--text-secondary);
+  font-size: 12px;
+}

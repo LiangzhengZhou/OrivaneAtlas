@@ -56,7 +56,7 @@ export function Sidebar({
       label: t("workspace"),
       views: ["overview", "focus", "tasks", "projects", "calendar"],
     },
-    { label: t("knowledge"), views: ["notes", "journal", "library"] },
+    { label: t("knowledge"), views: ["files", "notes", "journal", "library"] },
     { label: "", views: ["ai"] },
   ];
   return (

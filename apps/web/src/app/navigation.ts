@@ -3,6 +3,7 @@ import {
   CalendarDays,
   Compass,
   FolderKanban,
+  FolderOpen,
   LayoutDashboard,
   ListTodo,
   NotebookPen,
@@ -24,6 +25,7 @@ export type View =
   | "calendar"
   | "notes"
   | "journal"
+  | "files"
   | "trash"
   | "settings";
 export const navigation = [
@@ -38,6 +40,7 @@ export const navigation = [
   { view: "calendar", icon: CalendarDays },
   { view: "notes", icon: BookOpen },
   { view: "journal", icon: NotebookPen },
+  { view: "files", icon: FolderOpen },
   { view: "trash", icon: Trash2 },
 ] as const;
 export type NavigationView = (typeof navigation)[number]["view"];

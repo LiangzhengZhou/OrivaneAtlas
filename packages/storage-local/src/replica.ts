@@ -380,7 +380,9 @@ export async function commitReplica(
             ("id" in canonical &&
               (accepted.entityType === "organization"
                 ? !("kind" in canonical) ||
-                  !["WORK", "NOTE"].includes(String(canonical.kind)) ||
+                  !["WORK", "NOTE", "FOLDER"].includes(
+                    String(canonical.kind),
+                  ) ||
                   `${canonical.kind}:${canonical.id}` !== accepted.entityId
                 : accepted.entityType === "entityMemos"
                   ? !("remoteId" in base) || canonical.id !== base.remoteId
