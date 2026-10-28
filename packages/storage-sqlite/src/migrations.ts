@@ -385,6 +385,14 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 46,
+    name: "folder-primary-links",
+    sql: readFileSync(
+      new URL("./migrations/0046-folder-primary-links.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {
@@ -472,6 +480,35 @@ export function inspectSchema(
       throw new StorageError("SCHEMA_OBJECT_MISSING");
     if (version >= 45 && !columns.includes("due_time"))
       throw new StorageError("SCHEMA_OBJECT_MISSING");
+  }
+  if (version >= 46) {
+    const noteColumns = db
+      .prepare("PRAGMA table_info(notebook)")
+      .all()
+      .map((column) => column.name);
+    const organizationColumns = db
+      .prepare("PRAGMA table_info(organization)")
+      .all()
+      .map((column) => column.name);
+    if (
+      !noteColumns.includes("primary_folder_id") ||
+      !organizationColumns.includes("scope")
+    )
+      throw new StorageError("SCHEMA_OBJECT_MISSING");
+    required.push(
+      "folder_link",
+      "space_folder_link",
+      "project_folder_link",
+      "sync_folder_link_insert",
+      "sync_folder_link_update",
+      "sync_folder_link_delete",
+      "sync_space_folder_link_insert",
+      "sync_space_folder_link_update",
+      "sync_space_folder_link_delete",
+      "sync_project_folder_link_insert",
+      "sync_project_folder_link_update",
+      "sync_project_folder_link_delete",
+    );
   }
   if (version >= 35)
     required.push(

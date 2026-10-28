@@ -6120,13 +6120,22 @@ export async function createHost(options: HostOptions) {
                   )
                     fail(400, "VALIDATION_ERROR");
                   const input = object(value.input);
-                  keys(input, ["title", "bodyMd", "kind", "day", "aiPolicy"]);
+                  keys(input, [
+                    "title",
+                    "bodyMd",
+                    "kind",
+                    "day",
+                    "aiPolicy",
+                    "primaryFolderId",
+                  ]);
                   if (credential && input.aiPolicy !== undefined)
                     fail(403, "FORBIDDEN");
                   string(input.title);
                   string(input.bodyMd, 200_000);
                   string(input.kind);
                   if (input.day !== null) string(input.day, 10);
+                  if (input.primaryFolderId !== undefined)
+                    string(input.primaryFolderId, 240);
                   if (value.restoreDeleted !== undefined) {
                     if (credential) fail(403, "FORBIDDEN");
                     if (

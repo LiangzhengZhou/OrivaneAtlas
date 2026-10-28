@@ -13,16 +13,26 @@ export function notebookStore(
   context: ActorContext,
   guard: () => void,
 ): NotebookStore {
+  const decode = (row: {
+    payload: string;
+    primary_folder_id?: string | null;
+  }): Note => {
+    const note = JSON.parse(row.payload) as Note;
+    if (typeof row.primary_folder_id === "string" && row.primary_folder_id)
+      note.primaryFolderId = row.primary_folder_id;
+    else delete note.primaryFolderId;
+    return note;
+  };
   const get = async (id: string): Promise<Note> => {
     guard();
     const row = (
       await client.query(
-        "SELECT payload FROM arclattice.notebook WHERE workspace_id=$1 AND id=$2",
+        "SELECT payload,primary_folder_id FROM arclattice.notebook WHERE workspace_id=$1 AND id=$2",
         [context.workspaceId, id],
       )
     ).rows[0];
     if (!row) throw new DomainError("NOT_FOUND");
-    return JSON.parse(row.payload) as Note;
+    return decode(row);
   };
   const event = async (id: string, version: number, now: string) => {
     const eventId = randomUUID();
@@ -50,27 +60,30 @@ export function notebookStore(
       guard();
       return (
         await client.query(
-          "SELECT payload::jsonb - 'bodyMd' metadata, length(payload::jsonb->>'bodyMd') characters FROM arclattice.notebook WHERE workspace_id=$1 ORDER BY payload::jsonb->>'updatedAt' DESC",
+          "SELECT payload::jsonb - 'bodyMd' metadata, length(payload::jsonb->>'bodyMd') characters, primary_folder_id FROM arclattice.notebook WHERE workspace_id=$1 ORDER BY payload::jsonb->>'updatedAt' DESC",
           [context.workspaceId],
         )
-      ).rows.map(
-        (row) =>
-          ({
-            ...(row.metadata as Omit<Note, "bodyMd">),
-            bodyState: "UNLOADED",
-            bodyCharacterCount: Number(row.characters),
-          }) satisfies BodyManifest<Note>,
-      );
+      ).rows.map((row) => {
+        const metadata = row.metadata as Omit<Note, "bodyMd">;
+        if (typeof row.primary_folder_id === "string" && row.primary_folder_id)
+          metadata.primaryFolderId = row.primary_folder_id;
+        else delete metadata.primaryFolderId;
+        return {
+          ...metadata,
+          bodyState: "UNLOADED",
+          bodyCharacterCount: Number(row.characters),
+        } satisfies BodyManifest<Note>;
+      });
     },
     get,
     async list() {
       guard();
       return (
         await client.query(
-          "SELECT payload FROM arclattice.notebook WHERE workspace_id=$1 ORDER BY payload::jsonb->>'updatedAt' DESC",
+          "SELECT payload,primary_folder_id FROM arclattice.notebook WHERE workspace_id=$1 ORDER BY payload::jsonb->>'updatedAt' DESC",
           [context.workspaceId],
         )
-      ).rows.map((row) => JSON.parse(row.payload) as Note);
+      ).rows.map(decode);
     },
     async revisions(id) {
       guard();
@@ -98,7 +111,7 @@ export function notebookStore(
       const result =
         expected === 0
           ? await client.query(
-              "INSERT INTO arclattice.notebook VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING",
+              "INSERT INTO arclattice.notebook(workspace_id,id,version,kind,day,deleted_at,payload,primary_folder_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING",
               [
                 context.workspaceId,
                 note.id,
@@ -107,14 +120,16 @@ export function notebookStore(
                 note.day,
                 note.deletedAt,
                 payload,
+                note.primaryFolderId ?? null,
               ],
             )
           : await client.query(
-              "UPDATE arclattice.notebook SET version=$1,deleted_at=$2,payload=$3 WHERE workspace_id=$4 AND id=$5 AND version=$6",
+              "UPDATE arclattice.notebook SET version=$1,deleted_at=$2,payload=$3,primary_folder_id=$4 WHERE workspace_id=$5 AND id=$6 AND version=$7",
               [
                 note.version,
                 note.deletedAt,
                 payload,
+                note.primaryFolderId ?? null,
                 context.workspaceId,
                 note.id,
                 expected,

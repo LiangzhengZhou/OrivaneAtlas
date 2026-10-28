@@ -19020,6 +19020,12 @@
           "day": {
             "type": ["string", "null"],
             "description": "NOTE requires null; JOURNAL requires a valid YYYY-MM-DD calendar day, unique among active journal entries. Kind/day immutable after creation."
+          },
+          "primaryFolderId": {
+            "type": "string",
+            "format": "uuid",
+            "maxLength": 240,
+            "description": "Authoritative note folder after the ADR0147 cutover. Omit to preserve the current location; empty string clears it."
           }
         },
         "required": ["title", "bodyMd", "kind", "day"]

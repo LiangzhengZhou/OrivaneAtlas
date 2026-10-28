@@ -73,6 +73,77 @@ describe("SQLite migrations and recovery", () => {
       raw.close();
     }
   });
+  it("backfills note primary folders and enforces active reusable folder links", async () => {
+    const path = harness.file();
+    const raw = new DatabaseSync(path);
+    try {
+      await migrate(raw, path, 100, migrations.slice(0, 45));
+      raw.exec(
+        "INSERT INTO workspace VALUES ('w','W'); INSERT INTO principal VALUES ('p','USER','P'); INSERT INTO workspace_principal VALUES ('w','p');",
+      );
+      const folderId = "11111111-1111-4111-8111-111111111111";
+      raw
+        .prepare(
+          "INSERT INTO organization(workspace_id,kind,id,version,payload) VALUES ('w','NOTE','note-1',1,?)",
+        )
+        .run(JSON.stringify({ folderId }));
+      raw
+        .prepare(
+          "INSERT INTO notebook(workspace_id,id,version,kind,day,deleted_at,payload) VALUES ('w','note-1',1,'NOTE',NULL,NULL,?)",
+        )
+        .run(JSON.stringify({ id: "note-1", bodyMd: "unchanged" }));
+      await migrate(raw, path, 100);
+      expect(
+        raw
+          .prepare("SELECT primary_folder_id FROM notebook WHERE id='note-1'")
+          .get()?.primary_folder_id,
+      ).toBe(folderId);
+      expect(
+        raw.prepare("SELECT scope FROM organization WHERE kind='FOLDER'").all(),
+      ).toEqual([]);
+      expect(
+        raw.prepare("SELECT scope FROM organization WHERE id='note-1'").get()
+          ?.scope,
+      ).toBe("NOTE");
+      raw
+        .prepare(
+          "INSERT INTO folder_link VALUES ('w','link-1',?,'NOTE','note-1',1,NULL,?)",
+        )
+        .run(folderId, JSON.stringify({ id: "link-1" }));
+      expect(
+        raw
+          .prepare(
+            "SELECT collection,entity_id,op FROM workspace_change ORDER BY seq DESC LIMIT 1",
+          )
+          .get(),
+      ).toMatchObject({
+        collection: "folderLinks",
+        entity_id: "link-1",
+        op: "UPSERT",
+      });
+      expect(() =>
+        raw
+          .prepare(
+            "INSERT INTO folder_link VALUES ('w','link-2',?,'NOTE','note-1',1,NULL,?)",
+          )
+          .run(folderId, JSON.stringify({ id: "link-2" })),
+      ).toThrow();
+      raw.exec(
+        "UPDATE folder_link SET deleted_at='2026-10-29T00:00:00.000Z',version=2 WHERE id='link-1'",
+      );
+      raw
+        .prepare(
+          "INSERT INTO folder_link VALUES ('w','link-2',?,'NOTE','note-1',1,NULL,?)",
+        )
+        .run(folderId, JSON.stringify({ id: "link-2" }));
+      expect(raw.prepare("SELECT COUNT(*) n FROM folder_link").get()?.n).toBe(
+        2,
+      );
+      expect(inspectSchema(raw)).toBe(migrations.length);
+    } finally {
+      raw.close();
+    }
+  });
   it("upgrades v17 event history with verified rollback backup and preserves outbox references", async () => {
     const path = harness.file();
     const raw = new DatabaseSync(path);

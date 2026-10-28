@@ -351,6 +351,14 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 41,
+    name: "folder-primary-links",
+    sql: readFileSync(
+      new URL("./migrations/0041-folder-primary-links.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")
@@ -388,23 +396,29 @@ export async function inspectSchema(
           "record_workspace_change",
           "mark_wiki_index_dirty",
           "capture_entity_memo_change",
+          "capture_folder_link_change",
+          "capture_space_folder_link_change",
+          "capture_project_folder_link_change",
         ].includes(routine.proname) ||
         routine.prosecdef ||
         routine.pronargs !== 0 ||
         routine.return_type !== "trigger" ||
-        routine.prosrc !==
-          plan
-            .find(
-              (step) =>
-                step.name ===
-                (routine.proname === "record_workspace_change"
-                  ? "workspace-changes"
-                  : routine.proname === "capture_entity_memo_change"
-                    ? "entity-memos"
-                    : "wiki-index-state"),
-            )
-            ?.sql.split("AS $$")[1]
-            ?.split("$$;")[0],
+        (routine.proname !== "capture_folder_link_change" &&
+          routine.proname !== "capture_space_folder_link_change" &&
+          routine.proname !== "capture_project_folder_link_change" &&
+          routine.prosrc !==
+            plan
+              .find(
+                (step) =>
+                  step.name ===
+                  (routine.proname === "record_workspace_change"
+                    ? "workspace-changes"
+                    : routine.proname === "capture_entity_memo_change"
+                      ? "entity-memos"
+                      : "wiki-index-state"),
+              )
+              ?.sql.split("AS $$")[1]
+              ?.split("$$;")[0]),
     )
   )
     throw new PostgresStorageError("UNRECOGNIZED_DATABASE");
@@ -479,6 +493,9 @@ export async function inspectSchema(
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
   }
   const knowledgeTables = [
+    ...(rows.length >= 41
+      ? ["folder_link", "space_folder_link", "project_folder_link"]
+      : []),
     ...(rows.length >= 36
       ? ["entity_memo", "entity_memo_activity", "entity_memo_outbox"]
       : []),
@@ -535,7 +552,16 @@ export async function inspectSchema(
     ...(rows.length >= 28 ? ["manual_order_scope"] : []),
   ];
   if (rows.length >= 24) {
-    if (routines.length !== (rows.length >= 36 ? 3 : rows.length >= 27 ? 2 : 1))
+    if (
+      routines.length !==
+      (rows.length >= 41
+        ? 6
+        : rows.length >= 36
+          ? 3
+          : rows.length >= 27
+            ? 2
+            : 1)
+    )
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
     const expected = [
       rows.length >= 29
@@ -598,6 +624,23 @@ export async function inspectSchema(
       trigger[0]?.tgenabled !== "O" ||
       trigger[0]?.proname !== "capture_entity_memo_change" ||
       trigger[0]?.relname !== "entity_memo"
+    )
+      throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
+  }
+  if (rows.length >= 41) {
+    const columns = await client.query(
+      "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='arclattice' AND ((table_name='notebook' AND column_name='primary_folder_id') OR (table_name='organization' AND column_name='scope'))",
+    );
+    if (columns.rowCount !== 2)
+      throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
+    const triggers = (
+      await client.query(
+        "SELECT t.tgname,t.tgenabled,p.proname,c.relname FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='arclattice' AND t.tgname IN ('sync_folder_link','sync_space_folder_link','sync_project_folder_link') AND NOT t.tgisinternal",
+      )
+    ).rows;
+    if (
+      triggers.length !== 3 ||
+      triggers.some((trigger) => trigger.tgenabled !== "O")
     )
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
   }

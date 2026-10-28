@@ -26,7 +26,9 @@ test("v42 organization rows survive the FOLDER kind migration and keep change tr
   try {
     await migrate(raw, path, 2000, migrations.slice(0, 42));
     raw.exec("INSERT INTO workspace VALUES('workspace-a','A')");
-    const insert = raw.prepare("INSERT INTO organization VALUES(?,?,?,?,?)");
+    const insert = raw.prepare(
+      "INSERT INTO organization(workspace_id,kind,id,version,payload) VALUES(?,?,?,?,?)",
+    );
     insert.run("workspace-a", "WORK", "task", 1, payload("WORK", "task"));
     insert.run("workspace-a", "NOTE", "note", 1, payload("NOTE", "note"));
     const before = raw

@@ -15,7 +15,13 @@ export function notebookStore(
 ): NotebookStore {
   const decode = (row: Record<string, unknown> | undefined): Note => {
     if (!row) throw new DomainError("NOT_FOUND");
-    return JSON.parse(String(row.payload)) as Note;
+    const note = JSON.parse(String(row.payload)) as Note;
+    if ("primary_folder_id" in row) {
+      const value = row.primary_folder_id;
+      if (typeof value === "string" && value) note.primaryFolderId = value;
+      else delete note.primaryFolderId;
+    }
+    return note;
   };
   return {
     async searchIds(query) {
@@ -32,23 +38,32 @@ export function notebookStore(
       guard();
       return db
         .prepare(
-          "SELECT json_remove(payload,'$.bodyMd') metadata, length(json_extract(payload,'$.bodyMd')) characters FROM notebook WHERE workspace_id=? ORDER BY json_extract(payload,'$.updatedAt') DESC",
+          "SELECT json_remove(payload,'$.bodyMd') metadata, length(json_extract(payload,'$.bodyMd')) characters, primary_folder_id FROM notebook WHERE workspace_id=? ORDER BY json_extract(payload,'$.updatedAt') DESC",
         )
         .all(context.workspaceId)
-        .map(
-          (row) =>
-            ({
-              ...(JSON.parse(String(row.metadata)) as Omit<Note, "bodyMd">),
-              bodyState: "UNLOADED",
-              bodyCharacterCount: Number(row.characters),
-            }) satisfies BodyManifest<Note>,
-        );
+        .map((row) => {
+          const metadata = JSON.parse(String(row.metadata)) as Omit<
+            Note,
+            "bodyMd"
+          >;
+          if (
+            typeof row.primary_folder_id === "string" &&
+            row.primary_folder_id
+          )
+            metadata.primaryFolderId = row.primary_folder_id;
+          else delete metadata.primaryFolderId;
+          return {
+            ...metadata,
+            bodyState: "UNLOADED",
+            bodyCharacterCount: Number(row.characters),
+          } satisfies BodyManifest<Note>;
+        });
     },
     async list() {
       guard();
       return db
         .prepare(
-          "SELECT payload FROM notebook WHERE workspace_id=? ORDER BY json_extract(payload,'$.updatedAt') DESC",
+          "SELECT payload, primary_folder_id FROM notebook WHERE workspace_id=? ORDER BY json_extract(payload,'$.updatedAt') DESC",
         )
         .all(context.workspaceId)
         .map(decode);
@@ -57,7 +72,9 @@ export function notebookStore(
       guard();
       return decode(
         db
-          .prepare("SELECT payload FROM notebook WHERE workspace_id=? AND id=?")
+          .prepare(
+            "SELECT payload, primary_folder_id FROM notebook WHERE workspace_id=? AND id=?",
+          )
           .get(context.workspaceId, id),
       );
     },
@@ -116,7 +133,7 @@ export function notebookStore(
         throw new DomainError("VERSION_CONFLICT");
       const payload = JSON.stringify(note);
       if (expectedVersion === 0)
-        db.prepare("INSERT INTO notebook VALUES (?,?,?,?,?,?,?)").run(
+        db.prepare("INSERT INTO notebook VALUES (?,?,?,?,?,?,?,?)").run(
           context.workspaceId,
           note.id,
           1,
@@ -124,16 +141,18 @@ export function notebookStore(
           note.day,
           note.deletedAt,
           payload,
+          note.primaryFolderId ?? null,
         );
       else if (
         db
           .prepare(
-            "UPDATE notebook SET version=?,deleted_at=?,payload=? WHERE workspace_id=? AND id=? AND version=?",
+            "UPDATE notebook SET version=?,deleted_at=?,payload=?,primary_folder_id=? WHERE workspace_id=? AND id=? AND version=?",
           )
           .run(
             note.version,
             note.deletedAt,
             payload,
+            note.primaryFolderId ?? null,
             context.workspaceId,
             note.id,
             expectedVersion,

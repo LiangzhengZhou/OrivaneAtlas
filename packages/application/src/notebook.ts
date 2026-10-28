@@ -26,6 +26,8 @@ export interface Note {
   boundary: "REMOTE";
   aiAccess: "ALLOW" | "ASK" | "DENY";
   provenance: "HUMAN" | "EXTERNAL_AI";
+  /** Authoritative note folder after the ADR0147 cutover; absent means unfiled. */
+  primaryFolderId?: string;
 }
 export interface NoteInput {
   aiPolicy?: ContentPolicy;
@@ -33,6 +35,7 @@ export interface NoteInput {
   bodyMd: string;
   kind: "NOTE" | "JOURNAL";
   day: string | null;
+  primaryFolderId?: string;
 }
 export interface NotebookStore {
   searchIds?(query: string): Promise<string[]>;
@@ -134,6 +137,20 @@ export class NotebookService {
     if (input.kind === "NOTE" && input.day !== null)
       throw new DomainError("VALIDATION_ERROR");
     const now = this.clock.now();
+    const primaryFolderId =
+      input.primaryFolderId === undefined
+        ? old?.primaryFolderId
+        : input.primaryFolderId === ""
+          ? undefined
+          : input.primaryFolderId;
+    if (
+      primaryFolderId !== undefined &&
+      (typeof primaryFolderId !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          primaryFolderId,
+        ))
+    )
+      throw new DomainError("VALIDATION_ERROR");
     const policy = contentPolicy(
       this.source === "HUMAN" ? input.aiPolicy : undefined,
       old?.aiPolicy,
@@ -156,6 +173,7 @@ export class NotebookService {
       aiAccess: policy.aiAccess,
       aiPolicy: policy,
       provenance: this.source,
+      ...(primaryFolderId === undefined ? {} : { primaryFolderId }),
     };
     await this.store.save(note, version);
     return note;

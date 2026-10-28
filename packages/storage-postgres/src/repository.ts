@@ -194,12 +194,16 @@ export function repository(client: PoolClient, workspaceId: string) {
     organizations: () =>
       schedule(async () => {
         const result = await client.query(
-          "SELECT payload FROM arclattice.organization WHERE workspace_id=$1 ORDER BY kind,id",
+          "SELECT payload,scope FROM arclattice.organization WHERE workspace_id=$1 ORDER BY kind,id",
           [workspaceId],
         );
-        return result.rows.map(
-          (row) => JSON.parse(String(row.payload)) as Organization,
-        );
+        return result.rows.map((row) => {
+          const value = JSON.parse(String(row.payload)) as Organization;
+          if (value.kind === "FOLDER" && row.scope === "GENERAL")
+            value.scope = "GENERAL";
+          else delete value.scope;
+          return value;
+        });
       }),
     saveOrganization: (value, expected) =>
       schedule(async () => {
@@ -210,20 +214,22 @@ export function repository(client: PoolClient, workspaceId: string) {
         const result =
           expected === 0
             ? await client.query(
-                "INSERT INTO arclattice.organization VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+                "INSERT INTO arclattice.organization(workspace_id,kind,id,version,payload,scope) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
                 [
                   workspaceId,
                   value.kind,
                   value.id,
                   value.version,
                   JSON.stringify(value),
+                  value.kind === "FOLDER" ? (value.scope ?? "NOTE") : "NOTE",
                 ],
               )
             : await client.query(
-                "UPDATE arclattice.organization SET version=$1,payload=$2 WHERE workspace_id=$3 AND kind=$4 AND id=$5 AND version=$6",
+                "UPDATE arclattice.organization SET version=$1,payload=$2,scope=$3 WHERE workspace_id=$4 AND kind=$5 AND id=$6 AND version=$7",
                 [
                   value.version,
                   JSON.stringify(value),
+                  value.kind === "FOLDER" ? (value.scope ?? "NOTE") : "NOTE",
                   workspaceId,
                   value.kind,
                   value.id,

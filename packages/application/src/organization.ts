@@ -36,6 +36,8 @@ export interface Organization {
   parentId?: string;
   /** Display name for FOLDER rows. */
   name?: string;
+  /** FOLDER only: NOTE is the primary note tree, GENERAL is reusable collections. */
+  scope?: "NOTE" | "GENERAL";
   /** Optional emoji presentation glyph for NOTE/FOLDER rows; "" restores the default. */
   icon?: string;
   /** Stable group identity shared by a folder subtree moved to trash together. */

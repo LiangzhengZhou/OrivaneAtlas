@@ -12,6 +12,47 @@ const harness = sqliteHarness();
 const auth = { require: async () => {} };
 const clock = { now: () => "2026-10-02T10:00:00.000Z" };
 const ids = { next: randomUUID };
+it("SQLite persists the ADR0147 note primary folder and preserves it on body-only saves", async () => {
+  const db = await harness.create();
+  const folderId = "22222222-2222-4222-8222-222222222222";
+  await db.request(context, null, async (_uow, notes) => {
+    const service = new NotebookService(notes, auth, clock, ids);
+    const created = await service.save(context, null, 0, {
+      kind: "NOTE",
+      day: null,
+      title: "Located",
+      bodyMd: "body",
+      primaryFolderId: folderId,
+    });
+    expect(created.primaryFolderId).toBe(folderId);
+    expect((await notes.get(created.id)).primaryFolderId).toBe(folderId);
+    const bodyOnly = await service.save(context, created.id, created.version, {
+      kind: "NOTE",
+      day: null,
+      title: "Located",
+      bodyMd: "body changed",
+    });
+    expect(bodyOnly.primaryFolderId).toBe(folderId);
+    expect((await notes.get(created.id)).primaryFolderId).toBe(folderId);
+    expect(await notes.listMetadata?.()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: created.id,
+          primaryFolderId: folderId,
+        }),
+      ]),
+    );
+    await expect(
+      service.save(context, null, 0, {
+        kind: "NOTE",
+        day: null,
+        title: "Bad location",
+        bodyMd: "",
+        primaryFolderId: "not-a-uuid",
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+  });
+});
 it("SQLite original Note promotion preserves identities and rolls back incomplete effects", async () => {
   const db = await harness.create();
   await noteKnowledgeReplayScenario((operation) =>
