@@ -37,6 +37,7 @@ import {
   type FileContextIdentity,
   FileExtractionError,
   type FileParser,
+  FolderLinkService,
   type KnowledgeReplayEffect,
   KnowledgeReplayEffects,
   type LibraryInput,
@@ -944,6 +945,7 @@ export async function createHost(options: HostOptions) {
             "/api/library/asset",
             "/api/library/asset/meta",
             "/api/openapi.json",
+            "/api/folders/links",
             "/api/projects/file",
             "/api/projects/activity",
           ];
@@ -957,6 +959,8 @@ export async function createHost(options: HostOptions) {
             "/api/note/delete",
             "/api/link/create",
             "/api/link/delete",
+            "/api/folders/link",
+            "/api/folders/unlink",
             "/api/edge/create",
             "/api/edge/delete",
             "/api/library/save",
@@ -2342,6 +2346,38 @@ export async function createHost(options: HostOptions) {
           json(res, 200, receipt);
           return;
         }
+        if (path === "/api/folders/links" && req.method === "GET") {
+          const folderId = url.searchParams.get("folderId") ?? undefined;
+          if (folderId !== undefined && (!folderId || folderId.length > 240))
+            fail(400, "VALIDATION_ERROR");
+          const links = await db.request(
+            context,
+            null,
+            async (
+              _uow,
+              _notes,
+              _connected,
+              _library,
+              _organization,
+              _projects,
+              _sessions,
+              _files,
+              _blobs,
+              _memos,
+              folderLinks,
+              folderTargets,
+            ) =>
+              new FolderLinkService(
+                folderLinks,
+                folderTargets,
+                authorization,
+                clock,
+                ids,
+              ).list(context, folderId),
+          );
+          json(res, 200, { links });
+          return;
+        }
         if (
           (path === "/api/snapshot" ||
             path === "/api/sync" ||
@@ -3470,6 +3506,8 @@ export async function createHost(options: HostOptions) {
             files,
             _blobs,
             memos,
+            folderLinks,
+            folderTargets,
           ) => {
             const purgeReplay = purgeEffects
               ? new PurgeReplayEffects(purgeEffects, {
@@ -4593,6 +4631,43 @@ export async function createHost(options: HostOptions) {
                     string(value.id),
                     version(value.version),
                   );
+                case "/api/folders/link": {
+                  keys(value, [
+                    "folderId",
+                    "targetKind",
+                    "targetId",
+                    "stableId",
+                  ]);
+                  return new FolderLinkService(
+                    folderLinks,
+                    folderTargets,
+                    authorization,
+                    clock,
+                    ids,
+                  ).create(
+                    context,
+                    {
+                      folderId: string(value.folderId, 240),
+                      targetKind: string(
+                        value.targetKind,
+                        16,
+                      ) as import("@arclattice/application").FolderLinkTargetKind,
+                      targetId: string(value.targetId, 240),
+                    },
+                    value.stableId === undefined
+                      ? undefined
+                      : string(value.stableId, 64),
+                  );
+                }
+                case "/api/folders/unlink":
+                  keys(value, ["id", "version"]);
+                  return new FolderLinkService(
+                    folderLinks,
+                    folderTargets,
+                    authorization,
+                    clock,
+                    ids,
+                  ).remove(context, string(value.id), version(value.version));
                 case "/api/ai/propose": {
                   if (credential) fail(403, "FORBIDDEN");
                   keys(value, [

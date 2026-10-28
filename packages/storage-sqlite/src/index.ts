@@ -52,6 +52,7 @@ import {
 import { entityMemoStore } from "./entity-memos";
 import { binaryStore } from "./file-binary";
 import { fileStore } from "./files";
+import { folderLinkStore, folderLinkTargets } from "./folder-links";
 import { libraryStore } from "./library";
 import { manualOrderPort } from "./manual-order";
 import { inspectSchema, migrate } from "./migrations";
@@ -852,6 +853,8 @@ export class SqliteUnitOfWork implements UnitOfWork {
       files: LibraryFileStore,
       fileBlobs: LocalChunkBlobStore,
       memos: EntityMemoTransaction,
+      folderLinks: import("@arclattice/application").FolderLinkStore,
+      folderTargets: import("@arclattice/application").FolderLinkTargetPort,
     ) => Promise<T>,
     authorize?: (store: AccountStore) => void,
   ): Promise<T> {
@@ -918,6 +921,8 @@ export class SqliteUnitOfWork implements UnitOfWork {
               fileStore(this.db, context, guard),
               binaryStore(this.db, context, guard),
               entityMemoStore(this.db, context, guard),
+              folderLinkStore(this.db, context, guard),
+              folderLinkTargets(this.db, context, guard),
             );
             if (receipt)
               this.db

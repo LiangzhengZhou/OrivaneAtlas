@@ -19,7 +19,7 @@ export function folderLinkStore(
       guard();
       return db
         .prepare(
-          "SELECT payload FROM folder_link WHERE workspace_id=? ORDER BY created_at,id",
+          "SELECT payload FROM folder_link WHERE workspace_id=? ORDER BY id",
         )
         .all(context.workspaceId)
         .map((row) => decode(String(row.payload)));

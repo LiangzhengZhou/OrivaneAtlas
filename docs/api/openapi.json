@@ -5633,12 +5633,17 @@
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "id": { "type": "string" },
+                    "id": {
+                      "type": "string"
+                    },
                     "mime": {
                       "type": "string",
                       "enum": ["image/png", "image/jpeg", "image/webp"]
                     },
-                    "size": { "type": "integer", "minimum": 0 },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "contentHash": {
                       "type": "string",
                       "pattern": "^[a-f0-9]{64}$"
@@ -8822,12 +8827,17 @@
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "id": { "type": "string" },
+                    "id": {
+                      "type": "string"
+                    },
                     "mime": {
                       "type": "string",
                       "enum": ["image/png", "image/jpeg", "image/webp"]
                     },
-                    "size": { "type": "integer", "minimum": 0 },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "contentHash": {
                       "type": "string",
                       "pattern": "^[a-f0-9]{64}$"
@@ -17247,6 +17257,294 @@
           }
         },
         "description": "Human-only versioned local-first move. Preserves identity and original Markdown. Does not create a relationship or duplicate a body. Destination and child constraints apply; syncCommand uses exact KnowledgeReplayCommand effects."
+      }
+    },
+    "/api/folders/links": {
+      "get": {
+        "operationId": "listFolderLinks",
+        "summary": "List reusable folder links",
+        "parameters": [
+          {
+            "name": "folderId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active folder links",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["links"],
+                  "properties": {
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/folders/link": {
+      "post": {
+        "operationId": "createFolderLink",
+        "summary": "Link a GENERAL folder to a workspace target",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["folderId", "targetKind", "targetId"],
+                "properties": {
+                  "folderId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "targetKind": {
+                    "type": "string",
+                    "enum": ["NOTE", "DOCUMENT", "FILE", "PROJECT", "SPACE"]
+                  },
+                  "targetId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created folder link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/folders/unlink": {
+      "post": {
+        "operationId": "removeFolderLink",
+        "summary": "Soft-remove a folder link",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Removed folder link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/folders/links": {
+      "get": {
+        "operationId": "listFolderLinksV1",
+        "summary": "List reusable folder links",
+        "parameters": [
+          {
+            "name": "folderId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active folder links",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["links"],
+                  "properties": {
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/folders/link": {
+      "post": {
+        "operationId": "createFolderLinkV1",
+        "summary": "Link a GENERAL folder to a workspace target",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["folderId", "targetKind", "targetId"],
+                "properties": {
+                  "folderId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "targetKind": {
+                    "type": "string",
+                    "enum": ["NOTE", "DOCUMENT", "FILE", "PROJECT", "SPACE"]
+                  },
+                  "targetId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created folder link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/folders/unlink": {
+      "post": {
+        "operationId": "removeFolderLinkV1",
+        "summary": "Soft-remove a folder link",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Removed folder link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },

@@ -6279,6 +6279,83 @@ it("background recurrence starts after restart without login and ignores disable
   await vi.waitFor(async () => expect(await tasks(account)).toHaveLength(1));
 });
 describe("atomic workbench organization", () => {
+  it("links GENERAL folders to workspace targets with scope and version guards", async () => {
+    await login();
+    const folderId = randomUUID();
+    expect(
+      (
+        await call("/api/organize", {
+          kind: "FOLDER",
+          action: "create",
+          id: folderId,
+          name: "Shared collection",
+          parentId: "",
+          scope: "GENERAL",
+        })
+      ).status,
+    ).toBe(200);
+    const linked = await note("Linked note");
+    const noteScoped = randomUUID();
+    await call("/api/organize", {
+      kind: "FOLDER",
+      action: "create",
+      id: noteScoped,
+      name: "Note only",
+      parentId: "",
+    });
+    expect(
+      (
+        await call("/api/folders/link", {
+          folderId: noteScoped,
+          targetKind: "NOTE",
+          targetId: linked.id,
+        })
+      ).status,
+    ).toBe(400);
+    const created = await call("/api/folders/link", {
+      folderId,
+      targetKind: "NOTE",
+      targetId: linked.id,
+    });
+    expect(created.status).toBe(200);
+    const link = await created.json();
+    expect(link).toMatchObject({
+      folderId,
+      targetKind: "NOTE",
+      targetId: linked.id,
+      version: 1,
+      deletedAt: null,
+    });
+    expect(
+      (
+        await call("/api/folders/link", {
+          folderId,
+          targetKind: "NOTE",
+          targetId: linked.id,
+        })
+      ).status,
+    ).toBe(409);
+    const listed = await (
+      await call(`/api/folders/links?folderId=${folderId}`)
+    ).json();
+    expect(listed.links).toHaveLength(1);
+    expect(listed.links[0].id).toBe(link.id);
+    expect(
+      (await call("/api/folders/unlink", { id: link.id, version: 9 })).status,
+    ).toBe(409);
+    expect(
+      (
+        await call("/api/folders/unlink", {
+          id: link.id,
+          version: link.version,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await (await call(`/api/folders/links?folderId=${folderId}`)).json())
+        .links,
+    ).toEqual([]);
+  });
   it("archives projects atomically without cascading writes and preserves independent child archive", async () => {
     await login();
     const project = await (
