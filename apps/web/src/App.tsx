@@ -94,6 +94,7 @@ import {
   folderCounts,
   folderKey,
   folderPath,
+  folderSubtreeIds,
   legacyFolderGroups,
   noteFolderKey,
   noteFolderLabel,
@@ -460,36 +461,18 @@ function Workbench({
     );
   }
   async function deleteFolder(folder: Organization): Promise<boolean> {
-    const referenced = snapshot.notes.some(
-      (note) =>
-        organizationByKey.get("NOTE:" + note.id)?.folderId === folder.id,
-    );
-    if (
-      referenced ||
-      folderRows.some((entry) => entry.parentId === folder.id)
-    ) {
-      showToast(t("folderNotEmpty"));
-      return false;
-    }
+    const subtree = folderSubtreeIds(folder.id, folderRows);
+    const entries = folderRows
+      .filter((entry) => subtree.has(entry.id) && !entry.archived)
+      .map(folderEntry);
     return run(
       () =>
         runtime.organize({
           kind: "FOLDER",
           action: "delete",
-          entries: [folderEntry(folder)],
+          entries,
         }),
       "folder:delete:" + folder.id,
-    );
-  }
-  async function restoreFolder(folder: Organization): Promise<boolean> {
-    return run(
-      () =>
-        runtime.organize({
-          kind: "FOLDER",
-          action: "unarchive",
-          entries: [folderEntry(folder)],
-        }),
-      "folder:restore:" + folder.id,
     );
   }
   function noteIcon(note: Note): string {
@@ -1375,7 +1358,6 @@ function Workbench({
         onRenameFolder={renameFolder}
         onMoveFolder={moveFolder}
         onDeleteFolder={deleteFolder}
-        onRestoreFolder={restoreFolder}
         onIconFolder={setFolderIcon}
         onCreateNote={(folderId) => void createNoteInFolder(folderId)}
         onConvertLegacy={convertLegacyFolders}

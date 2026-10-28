@@ -45,7 +45,6 @@ export function FolderTree({
   onRenameFolder,
   onMoveFolder,
   onDeleteFolder,
-  onRestoreFolder,
   onIconFolder,
   onCreateNote,
   onConvertLegacy,
@@ -61,7 +60,6 @@ export function FolderTree({
   onRenameFolder(folder: Organization, name: string): Promise<boolean>;
   onMoveFolder(folder: Organization, parentId: string): Promise<boolean>;
   onDeleteFolder(folder: Organization): Promise<boolean>;
-  onRestoreFolder(folder: Organization): Promise<boolean>;
   onIconFolder(folder: Organization, icon: string): Promise<boolean>;
   onCreateNote(folderId: string): void;
   onConvertLegacy(): Promise<void>;
@@ -504,27 +502,6 @@ export function FolderTree({
             {t("convertLegacyFolders")}
           </Button>
         </div>
-      )}
-      {folders.some((folder) => folder.archived) && (
-        <details className="folder-tree-deleted">
-          <summary>{t("deletedFolders")}</summary>
-          {folders
-            .filter((folder) => folder.archived)
-            .map((folder) => (
-              <div key={folder.id} className="folder-tree-row">
-                <Folder size={16} aria-hidden="true" />
-                <span className="folder-tree-name">{folder.name}</span>
-                <Button
-                  variant="ghost"
-                  disabled={busy || pending}
-                  onClick={() => void perform(() => onRestoreFolder(folder))}
-                >
-                  <Undo2 size={15} />
-                  {t("restoreFolder")}
-                </Button>
-              </div>
-            ))}
-        </details>
       )}
       <p className="folder-tree-hint">{t("foldersHint")}</p>
     </nav>

@@ -464,21 +464,8 @@ export class OrganizationService {
       return { changed: entries.length };
     }
     if (input.action === "delete") {
-      const referencedNotes = new Set(
-        metadata
-          .filter((entry) => entry.kind === "NOTE" && entry.folderId)
-          .map((entry) => entry.folderId!),
-      );
-      const childFolders = new Set(
-        metadata
-          .filter((entry) => entry.kind === "FOLDER" && entry.parentId)
-          .map((entry) => entry.parentId!),
-      );
-      for (const { entry, folder } of entries) {
-        if (referencedNotes.has(entry.id) || childFolders.has(entry.id))
-          throw new DomainError("VALIDATION_ERROR");
+      for (const { entry, folder } of entries)
         await save(folder!, entry.version, { archived: true });
-      }
       return { changed: entries.length };
     }
     throw new DomainError("VALIDATION_ERROR");

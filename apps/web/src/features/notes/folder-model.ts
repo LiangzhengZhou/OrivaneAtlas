@@ -84,7 +84,7 @@ export function folderMoveTargets(
     );
 }
 
-function folderSubtreeIds(
+export function folderSubtreeIds(
   id: string,
   folders: readonly Organization[],
 ): Set<string> {

@@ -5998,14 +5998,17 @@ test("note folders keep stable identity through nesting, rename, offline replay 
       (entry) => entry.kind === "FOLDER" && entry.name === "Offline",
     ),
   ).toBe(true);
-  // Non-empty folders are protected; empty folders can be deleted.
+  // Non-empty folders can be deleted; notes are retained and the folder tree
+  // reports the subtree through the unified trash route.
   await nav(page, w.desk.files);
   await openActions("Alpha");
   await page
     .getByRole("menuitem", { name: w.desk.deleteFolder, exact: true })
     .click();
   await answerConfirmation(page, true);
-  await expect(page.getByText(w.desk.folderNotEmpty)).toBeVisible();
+  await expect(
+    tree.getByRole("button", { name: "Alpha", exact: true }),
+  ).toHaveCount(0);
   await openActions("Empty");
   await page
     .getByRole("menuitem", { name: w.desk.deleteFolder, exact: true })
@@ -6014,14 +6017,19 @@ test("note folders keep stable identity through nesting, rename, offline replay 
   await expect(
     tree.getByRole("button", { name: "Empty", exact: true }),
   ).toHaveCount(0);
-  await tree.locator(".folder-tree-deleted summary").click();
-  await tree
-    .locator(".folder-tree-deleted")
-    .getByRole("button", { name: w.desk.restoreFolder, exact: true })
+  await page.goto(workbench.url + "/#trash?filter=folders");
+  await expect(page.locator(".trash-list")).toContainText("Alpha");
+  const trashAlpha = page.locator(".trash-list > div").filter({
+    hasText: "Alpha",
+  });
+  await trashAlpha
+    .getByRole("button", { name: w.common.restore, exact: true })
     .click();
+  await page.goto(workbench.url + "/#files");
   await expect(
-    tree.getByRole("button", { name: "Empty", exact: true }),
+    tree.getByRole("button", { name: "Alpha", exact: true }),
   ).toBeVisible();
+  await expect(page.locator(".note-card")).toContainText("Alpha");
   await page.screenshot({
     path: info.outputPath("note-folders.png"),
     fullPage: true,
@@ -6600,6 +6608,12 @@ for (const nativeImages of [false, true]) {
       fullPage: true,
     });
     await nav(page, w.desk.settings);
+    await page
+      .getByRole("button", {
+        name: zh ? "账户与安全" : "Account & security",
+        exact: true,
+      })
+      .click();
     await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
     // Signing out preserves the independent local workspace; reconnect through
     // the explicit account/binding review rather than expecting a login wall.
@@ -9991,6 +10005,14 @@ test("localized product layouts, unsaved draft guard and lock", async ({
     .click();
   await confirmation6;
   await nav(page, w.desk.settings);
+  await page
+    .getByRole("button", {
+      name: info.project.name.endsWith("zh")
+        ? "账户与安全"
+        : "Account & security",
+      exact: true,
+    })
+    .click();
   await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
   await page.goto(workbench.url + "/#account");
   await expect(page.getByLabel(w.spaces.username)).toBeVisible();
@@ -12933,6 +12955,14 @@ test("account experience: picker recent survives refresh and isolates workspace 
     ),
   ).toBe(true);
   await nav(page, w.desk.settings);
+  await page
+    .getByRole("button", {
+      name: info.project.name.endsWith("zh")
+        ? "账户与安全"
+        : "Account & security",
+      exact: true,
+    })
+    .click();
   await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
   await unlock(page, workbench.url, workbench.secret, w, false, "second-user");
   await nav(page, w.desk.tasks);

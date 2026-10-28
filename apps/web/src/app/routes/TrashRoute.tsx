@@ -48,6 +48,14 @@ export function TrashRoute({
         title: entry.name,
         bodyMd: "",
       })),
+    ...snapshot.organization
+      .filter((entry) => entry.kind === "FOLDER" && entry.archived)
+      .map((entry) => ({
+        ...entry,
+        kind: "FOLDER" as const,
+        title: entry.name ?? "",
+        bodyMd: "",
+      })),
   ]
     .filter(
       (entry) =>
@@ -56,9 +64,11 @@ export function TrashRoute({
           ? entry.kind === "WORK"
           : filter === "note"
             ? entry.kind === "NOTE"
-            : entry.kind === "SPACE" ||
-              entry.kind === "DOCUMENT" ||
-              entry.kind === "FILE"),
+            : filter === "folders"
+              ? entry.kind === "FOLDER"
+              : entry.kind === "SPACE" ||
+                entry.kind === "DOCUMENT" ||
+                entry.kind === "FILE"),
     )
     .filter((entry) =>
       (
@@ -85,6 +95,7 @@ export function TrashRoute({
             {zh ? "任务与项目" : "Tasks and projects"}
           </option>
           <option value="note">{t("notes")}</option>
+          <option value="folders">{zh ? "文件夹" : "Folders"}</option>
           <option value="library">{zh ? "知识库" : "Library"}</option>
         </Select>
       </label>
@@ -108,13 +119,25 @@ export function TrashRoute({
                     ? runtime.deleteNote(entry.id, entry.version, false)
                     : entry.kind === "FILE"
                       ? runtime.deleteFile(entry.id, entry.version, false)
-                      : runtime.deleteLibrary(entry.id, entry.version, false),
+                      : entry.kind === "FOLDER"
+                        ? runtime.organize({
+                            kind: "FOLDER",
+                            action: "unarchive",
+                            entries: [
+                              {
+                                id: entry.id,
+                                version: entry.version,
+                                organizationVersion: entry.version,
+                              },
+                            ],
+                          })
+                        : runtime.deleteLibrary(entry.id, entry.version, false),
               )
             }
           >
             {t("common:restore")}
           </Button>
-          {entry.kind !== "FILE" && (
+          {entry.kind !== "FILE" && entry.kind !== "FOLDER" && (
             <Button
               type="button"
               variant="danger"
