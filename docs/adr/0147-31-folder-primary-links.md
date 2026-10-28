@@ -51,6 +51,7 @@ The change spans two storage adapters and incremental sync, so it is staged. No 
 
 - Migration adds nullable/backfilled columns and empty tables; old code continues to work.
 - Application read/write cutover, storage repositories, sync replay, API and UI follow in separate checked increments.
+- Current increment (2026-10-29): note primary storage/API/backfill, FolderLink service + SQLite adapter, explicit GENERAL folder creation. Organization NOTE.folderId remains the UI write authority until note outbox/sync cutover and FolderLink replay are complete.
 - The old `organization(NOTE).folderId` is not deleted by automatic migration; permanent removal is a later, separately tested cleanup.
 
 ## Validation
