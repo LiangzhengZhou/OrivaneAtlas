@@ -6341,6 +6341,12 @@ describe("atomic workbench organization", () => {
     expect(listed.links).toHaveLength(1);
     expect(listed.links[0].id).toBe(link.id);
     expect(
+      (await (await call("/api/snapshot")).json()).folderLinks,
+    ).toMatchObject([{ id: link.id, folderId, targetKind: "NOTE" }]);
+    expect(
+      (await (await call("/api/bootstrap")).json()).workspace.folderLinks,
+    ).toMatchObject([{ id: link.id, folderId, targetKind: "NOTE" }]);
+    expect(
       (await call("/api/folders/unlink", { id: link.id, version: 9 })).status,
     ).toBe(409);
     expect(

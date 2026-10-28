@@ -247,12 +247,14 @@ export interface Snapshot extends WorkSnapshot {
   links: KnowledgeLink[];
   library: import("@arclattice/application").WorkspaceLibraryEntry[];
   organization: Organization[];
+  folderLinks?: import("@arclattice/application").FolderLink[];
 }
 function normalizeSnapshot(snapshot: Snapshot): Snapshot {
   return {
     ...snapshot,
     projectMaterials: snapshot.projectMaterials ?? [],
     manualOrders: snapshot.manualOrders ?? [],
+    folderLinks: snapshot.folderLinks ?? [],
   };
 }
 interface SyncResponse {

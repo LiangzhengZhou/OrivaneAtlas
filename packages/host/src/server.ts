@@ -2643,6 +2643,9 @@ export async function createHost(options: HostOptions) {
               projects,
               _sessions,
               files,
+              _blobs,
+              _memos,
+              folderLinks,
             ) => ({
               files: await files.list(),
               syncState: await uow.run(context.workspaceId, (tx) =>
@@ -2702,6 +2705,7 @@ export async function createHost(options: HostOptions) {
                     : (await library.list()).map(bodyManifest)
                   : await library.list(),
               wikiLinks: (await library.wikiLinks?.()) ?? [],
+              folderLinks: await folderLinks.list(),
             }),
             requireAccess,
           );

@@ -1,4 +1,5 @@
 import type { LibraryFile, Reminder } from "@arclattice/domain";
+import type { FolderLink } from "./folder-links";
 import type {
   DocumentWikiLink,
   KnowledgeLink,
@@ -42,6 +43,7 @@ export interface WorkspaceBootstrap extends WorkspaceManifest {
     workflows?: WorkflowRecord[];
     reminders?: Reminder[];
     wikiLinks?: DocumentWikiLink[];
+    folderLinks?: FolderLink[];
   };
 }
 
