@@ -38,6 +38,8 @@ export interface Organization {
   name?: string;
   /** Optional emoji presentation glyph for NOTE/FOLDER rows; "" restores the default. */
   icon?: string;
+  /** Stable group identity shared by a folder subtree moved to trash together. */
+  trashBatchId?: string | undefined;
   updatedAt: string;
   updatedBy: string;
 }
@@ -432,12 +434,19 @@ export class OrganizationService {
         throw new DomainError(folder ? "VERSION_CONFLICT" : "NOT_FOUND");
     }
     if (input.action === "unarchive") {
+      const restoring = new Set(entries.map(({ entry }) => entry.id));
       for (const { folder } of entries) {
-        folders.requireParent(folder!.parentId ?? "");
-        folders.requireDepth(folder!.parentId ?? "");
+        const parentId = folder!.parentId ?? "";
+        if (parentId && !restoring.has(parentId)) {
+          folders.requireParent(parentId);
+          folders.requireDepth(parentId, folder!.id);
+        }
       }
       for (const { entry, folder } of entries)
-        await save(folder!, entry.version, { archived: false });
+        await save(folder!, entry.version, {
+          archived: false,
+          trashBatchId: undefined,
+        });
       return { changed: entries.length };
     }
     if (input.action === "rename") {
@@ -464,8 +473,34 @@ export class OrganizationService {
       return { changed: entries.length };
     }
     if (input.action === "delete") {
+      const trashBatchId =
+        globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+      const deleting = new Set(entries.map(({ entry }) => entry.id));
+      const pending = [...deleting];
+      while (pending.length) {
+        const parentId = pending.pop()!;
+        for (const folder of metadata) {
+          if (
+            folder.kind !== "FOLDER" ||
+            folder.archived ||
+            folder.parentId !== parentId ||
+            deleting.has(folder.id)
+          )
+            continue;
+          deleting.add(folder.id);
+          pending.push(folder.id);
+          entries.push({
+            entry: {
+              id: folder.id,
+              version: folder.version,
+              organizationVersion: folder.version,
+            },
+            folder,
+          });
+        }
+      }
       for (const { entry, folder } of entries)
-        await save(folder!, entry.version, { archived: true });
+        await save(folder!, entry.version, { archived: true, trashBatchId });
       return { changed: entries.length };
     }
     throw new DomainError("VALIDATION_ERROR");

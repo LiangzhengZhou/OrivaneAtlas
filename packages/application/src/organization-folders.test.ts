@@ -245,7 +245,7 @@ describe("first-class note folders (ADR0138)", () => {
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
 
-  it("soft deletes only empty folders and keeps note membership explicit", async () => {
+  it("moves a non-empty folder subtree to trash without deleting note membership", async () => {
     const h = harness();
     await h.service.apply(context, {
       kind: "FOLDER",
@@ -274,7 +274,15 @@ describe("first-class note folders (ADR0138)", () => {
         action: "delete",
         entries: [{ id: uuid(2), version: 1, organizationVersion: 1 }],
       }),
-    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    ).resolves.toEqual({ changed: 2 });
+    expect(h.rows().find((entry) => entry.id === uuid(2))).toMatchObject({
+      archived: true,
+      version: 2,
+    });
+    expect(h.rows().find((entry) => entry.id === uuid(3))).toMatchObject({
+      archived: true,
+      version: 2,
+    });
     await h.service.apply(context, {
       kind: "FOLDER",
       action: "delete",

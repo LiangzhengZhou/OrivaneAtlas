@@ -123,13 +123,20 @@ export function TrashRoute({
                         ? runtime.organize({
                             kind: "FOLDER",
                             action: "unarchive",
-                            entries: [
-                              {
-                                id: entry.id,
-                                version: entry.version,
-                                organizationVersion: entry.version,
-                              },
-                            ],
+                            entries: snapshot.organization
+                              .filter(
+                                (folder) =>
+                                  folder.kind === "FOLDER" &&
+                                  folder.archived &&
+                                  (entry.trashBatchId
+                                    ? folder.trashBatchId === entry.trashBatchId
+                                    : folder.id === entry.id),
+                              )
+                              .map((folder) => ({
+                                id: folder.id,
+                                version: folder.version,
+                                organizationVersion: folder.version,
+                              })),
                           })
                         : runtime.deleteLibrary(entry.id, entry.version, false),
               )
