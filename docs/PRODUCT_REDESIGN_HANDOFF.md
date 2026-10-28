@@ -1,8 +1,8 @@
 # Orivane Atlas 产品与 UI 改造：多 Agent 当前执行基线
 
-更新：2026-10-28（Session317 接手收口）。适用范围：Session299–317 后续改造。最新用户请求优先；本文负责组织已授权工作，不新增发布或生产操作授权。
+更新：2026-10-28（Session318 发布 3.0.3）。适用范围：Session299–318 后续改造。最新用户请求优先；本文负责组织已授权工作，不新增发布或生产操作授权。
 
-最新状态优先于下方历史检查点：阶段A/B及Session314/317体验收尾已有实现；当前源码完整check 1527 passed/1 skipped、三配置浏览器738/738通过；Native Rust/Transport/Windows/Android证据通过（Session314等价前端，未改Rust/Tauri）。阶段C性能仍无14/14：controlled-r1仅13/14（Atlas列表+10.24%），当前源码低负载重跑仍7/14失败且批次不稳定；不能宣称性能通过。人工设备门槛与用户视觉签收未完成。具体见PROJECT_STATUS顶部、HANDOFF Session317、Session316/315认领历史。
+最新状态优先于下方历史检查点：阶段A/B及Session314/317体验收尾已有实现；当前源码完整check 1527 passed/1 skipped、三配置浏览器738/738通过；Native Windows/Android 3.0.3已构建并发布到 GitHub Release v3.0.3。阶段C性能仍无14/14：controlled-r1仅13/14（Atlas列表+10.24%），当前源码低负载重跑仍7/14失败且批次不稳定；已在3.0.3发布说明标注，不能宣称性能通过。人工设备门槛与用户视觉签收未完成。具体见PROJECT_STATUS顶部、HANDOFF Session318/317。
 
 ## 1. 接手顺序与事实来源
 
