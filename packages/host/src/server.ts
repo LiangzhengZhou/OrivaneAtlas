@@ -4299,6 +4299,7 @@ export async function createHost(options: HostOptions) {
                     "parentId",
                     "id",
                     "icon",
+                    "scope",
                     "entries",
                   ]);
                   if (value.entries !== undefined) {

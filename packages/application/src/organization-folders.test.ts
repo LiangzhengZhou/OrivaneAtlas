@@ -17,6 +17,7 @@ type FakeNote = {
   workspaceId: string;
   version: number;
   deletedAt: string | null;
+  primaryFolderId?: string;
 };
 
 function harness(options?: {
@@ -58,6 +59,20 @@ function harness(options?: {
         throw new DomainError("VERSION_CONFLICT");
       note.version += 1;
       note.deletedAt = deleted ? instant : null;
+      return structuredClone(note);
+    },
+    async move(
+      _context: unknown,
+      id: string,
+      version: number,
+      folderId: string,
+    ) {
+      const note = notes.find((entry) => entry.id === id);
+      if (!note || note.version !== version)
+        throw new DomainError("VERSION_CONFLICT");
+      note.version += 1;
+      if (folderId) note.primaryFolderId = folderId;
+      else delete note.primaryFolderId;
       return structuredClone(note);
     },
   };
@@ -330,19 +345,23 @@ describe("first-class note folders (ADR0138)", () => {
       folderId: uuid(1),
       entries: [{ id: "note-1", version: 2, organizationVersion: 1 }],
     });
+    expect(h.notes()[0]).toMatchObject({
+      id: "note-1",
+      primaryFolderId: uuid(1),
+      version: 3,
+    });
     expect(h.rows()[0]).toMatchObject({
       kind: "NOTE",
       id: "note-1",
-      folder: "",
-      folderId: uuid(1),
-      version: 2,
+      folder: "Legacy",
+      version: 1,
     });
     await expect(
       h.service.apply(context, {
         kind: "NOTE",
         action: "move",
         folderId: uuid(9),
-        entries: [{ id: "note-1", version: 2, organizationVersion: 2 }],
+        entries: [{ id: "note-1", version: 3, organizationVersion: 1 }],
       }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });

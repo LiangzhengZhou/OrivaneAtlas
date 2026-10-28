@@ -178,6 +178,36 @@ export class NotebookService {
     await this.store.save(note, version);
     return note;
   }
+  /** Move a note's authoritative primary folder without touching its body/day. */
+  async move(
+    context: ActorContext,
+    id: string,
+    version: number,
+    folderId: string,
+  ): Promise<Note> {
+    await this.authorization.require(context, "work:update");
+    const old = await this.store.get(id);
+    if (old.workspaceId !== context.workspaceId || old.deletedAt)
+      throw new DomainError("NOT_FOUND");
+    if (old.version !== version) throw new DomainError("VERSION_CONFLICT");
+    if (
+      folderId !== "" &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        folderId,
+      )
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    const note: Note = {
+      ...old,
+      version: version + 1,
+      updatedAt: this.clock.now(),
+      updatedBy: context.principalId,
+      ...(folderId ? { primaryFolderId: folderId } : {}),
+    };
+    if (!folderId) delete note.primaryFolderId;
+    await this.store.save(note, version);
+    return note;
+  }
   /** Explicit human recovery; caller must provide one transaction for both existing writes. */
   async restoreAndSave(
     context: ActorContext,

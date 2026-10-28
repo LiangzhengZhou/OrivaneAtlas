@@ -520,20 +520,8 @@ function Workbench({
         title: t("untitledNote"),
         bodyMd: "",
         aiPolicy: privateContentPolicy,
+        ...(folderId ? { primaryFolderId: folderId } : {}),
       });
-      if (folderId)
-        await runtime.organize({
-          kind: "NOTE",
-          action: "move",
-          folderId,
-          entries: [
-            {
-              id: created.id,
-              version: created.version,
-              organizationVersion: 0,
-            },
-          ],
-        });
       openNote(created);
     });
   }

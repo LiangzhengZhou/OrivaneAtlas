@@ -30,6 +30,7 @@ import type { WorkflowRecord } from "./workflows";
 export * from "./calendar-replay-effects";
 export * from "./category-replay-effects";
 export * from "./connected";
+export * from "./folder-links";
 export * from "./local-calendar-replay-request";
 export * from "./local-category-replay-request";
 export * from "./local-manual-order-replay-request";

@@ -5965,14 +5965,10 @@ test("note folders keep stable identity through nesting, rename, offline replay 
           entry.kind === "FOLDER" && entry.name === "Alpha",
       );
       const note = snapshot.notes.find(
-        (entry: { title: string }) => entry.title === w.desk.untitledNote,
+        (entry: { title: string; primaryFolderId?: string }) =>
+          entry.title === w.desk.untitledNote,
       );
-      return snapshot.organization.some(
-        (entry: { kind: string; id: string; folderId?: string }) =>
-          entry.kind === "NOTE" &&
-          entry.id === note?.id &&
-          entry.folderId === alpha?.id,
-      );
+      return note?.primaryFolderId === alpha?.id;
     })
     .toBe(true);
   await page
