@@ -18,19 +18,26 @@ export function AccountView({
   snapshot,
   onLogout,
   confirmLeave,
+  embedded = false,
+  initialTab = "account",
+  enabled = true,
 }: {
   runtime: Runtime;
   snapshot: Snapshot;
   onLogout: () => void;
   confirmLeave: () => Promise<boolean>;
+  embedded?: boolean;
+  initialTab?: "account" | "api";
+  enabled?: boolean;
 }) {
   const { t, i18n } = useTranslation("spaces");
   const zh = i18n.language.startsWith("zh");
-  const [tab, setTab] = useState<"account" | "api">("account");
+  const [tab, setTab] = useState<"account" | "api">(initialTab);
   const [days, setDays] = useState<30 | 90 | 365 | null>(30);
   const [, accountChanged] = useState(0);
   const [sessions, setSessions] = useState<AccountSession[]>([]);
   useEffect(() => {
+    if (!enabled || tab !== "account") return;
     let active = true;
     if (runtime.account)
       void runtime
@@ -44,7 +51,7 @@ export function AccountView({
     return () => {
       active = false;
     };
-  }, [runtime, runtime.account?.id]);
+  }, [runtime, runtime.account?.id, enabled, tab]);
   const [tokens, setTokens] = useState<ApiCredential[]>([]),
     [name, setName] = useState("");
   const [scope, setScope] = useState<ApiCredential["scope"]>("write"),
@@ -56,12 +63,13 @@ export function AccountView({
     [error, setError] = useState(false),
     [notice, setNotice] = useState("");
   useEffect(() => {
+    if (!enabled || tab !== "api") return;
     if (runtime.account)
       void runtime
         .tokens()
         .then(setTokens)
         .catch(() => setError(true));
-  }, [runtime, runtime.account?.id]);
+  }, [runtime, runtime.account?.id, enabled, tab]);
   async function run(action: () => Promise<void>) {
     if (busy) return;
     setBusy(true);
@@ -75,30 +83,32 @@ export function AccountView({
     }
   }
   return (
-    <div className="account-grid">
-      <nav
-        className="account-tabs"
-        role="tablist"
-        aria-label={zh ? "账户分区" : "Account sections"}
-      >
-        {(
-          [
-            ["account", zh ? "账户与安全" : "Account & security"],
-            ["api", zh ? "API 与模型" : "API & models"],
-          ] as const
-        ).map(([id, label]) => (
-          <Button
-            key={id}
-            type="button"
-            role="tab"
-            variant={tab === id ? "primary" : "ghost"}
-            aria-selected={tab === id}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </Button>
-        ))}
-      </nav>
+    <div className={embedded ? "account-settings-content" : "account-grid"}>
+      {!embedded && (
+        <nav
+          className="account-tabs"
+          role="tablist"
+          aria-label={zh ? "账户分区" : "Account sections"}
+        >
+          {(
+            [
+              ["account", zh ? "账户与安全" : "Account & security"],
+              ["api", zh ? "API 与模型" : "API & models"],
+            ] as const
+          ).map(([id, label]) => (
+            <Button
+              key={id}
+              type="button"
+              role="tab"
+              variant={tab === id ? "primary" : "ghost"}
+              aria-selected={tab === id}
+              onClick={() => setTab(id)}
+            >
+              {label}
+            </Button>
+          ))}
+        </nav>
+      )}
       {error && (
         <p className="error" role="alert">
           {t("error")}

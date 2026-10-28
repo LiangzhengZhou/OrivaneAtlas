@@ -1779,10 +1779,6 @@ function Workbench({
                     pinnedNavigation={navigationPreference.desktop.pinned}
                     reorderPending={isPending("navigation-order")}
                     onReorder={reorderNavigation}
-                    taskCount={count(taskSelection.openActiveTasks.length)}
-                    noteCount={count(
-                      notes.filter((note) => note.kind === "NOTE").length,
-                    )}
                     label={viewLabel}
                     onNavigate={navigate}
                     onToggleMobile={() =>
@@ -1913,7 +1909,13 @@ function Workbench({
                             if (ok) onLogout();
                           });
                         }}
-                        onOpenAccount={() => void navigate("account")}
+                        confirmLeave={async () =>
+                          !(
+                            documentDirty.current ||
+                            libraryDraft.current ||
+                            editor
+                          ) || (await confirmAction(t("discardHint")))
+                        }
                       />
 
                       {loading ? (

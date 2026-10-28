@@ -28,6 +28,8 @@
   "reopenTask": "Reopen: {{title}}",
   "confirmCompleteTask": "Confirm completion: {{title}}",
   "confirmReopenTask": "Confirm reopen: {{title}}",
+  "confirmCompleteAction": "Confirm complete",
+  "confirmReopenAction": "Confirm reopen",
   "taskCompleted": "Task completed",
   "taskReopened": "Task reopened",
   "addDescription": "+ Add description",

@@ -2,6 +2,8 @@ import type { Organization } from "@arclattice/application";
 import {
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Folder,
   FolderPlus,
   MoreHorizontal,
@@ -64,8 +66,9 @@ export function FolderTree({
   onCreateNote(folderId: string): void;
   onConvertLegacy(): Promise<void>;
 }) {
-  const { t } = useTranslation("desk");
+  const { t, i18n } = useTranslation("desk");
   const { t: c } = useTranslation("common");
+  const zh = i18n.language.startsWith("zh");
   const treeId = useId();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [creating, setCreating] = useState<{ parentId: string } | null>(null);
@@ -330,17 +333,43 @@ export function FolderTree({
     <nav className="folder-tree" aria-label={t("folders")} id={treeId}>
       <div className="folder-tree-header">
         <span>{t("folders")}</span>
-        <IconButton
-          label={t("newFolder")}
-          disabled={busy || pending}
-          onClick={() => {
-            setCreating({ parentId: selectedParent });
-            setDraft("");
-            requestAnimationFrame(() => createInput.current?.focus());
-          }}
-        >
-          <FolderPlus />
-        </IconButton>
+        <span className="folder-tree-header-actions">
+          <IconButton
+            label={zh ? "全部展开" : "Expand all"}
+            disabled={busy || pending}
+            onClick={() => setCollapsed(new Set())}
+          >
+            <ChevronsUpDown size={15} />
+          </IconButton>
+          <IconButton
+            label={zh ? "全部折叠" : "Collapse all"}
+            disabled={busy || pending}
+            onClick={() =>
+              setCollapsed(
+                new Set(
+                  folders
+                    .filter(
+                      (folder) => folder.kind === "FOLDER" && !folder.archived,
+                    )
+                    .map((folder) => folder.id),
+                ),
+              )
+            }
+          >
+            <ChevronsDownUp size={15} />
+          </IconButton>
+          <IconButton
+            label={t("newFolder")}
+            disabled={busy || pending}
+            onClick={() => {
+              setCreating({ parentId: selectedParent });
+              setDraft("");
+              requestAnimationFrame(() => createInput.current?.focus());
+            }}
+          >
+            <FolderPlus />
+          </IconButton>
+        </span>
       </div>
       <ul role="tree" aria-label={t("folders")}>
         <li role="treeitem" aria-level={1} aria-selected={selected === null}>

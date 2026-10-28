@@ -164,6 +164,11 @@ function Task({
               : "confirmCompleteTask",
             { title: item.title },
           )}
+          actionLabel={t(
+            item.status === "DONE"
+              ? "confirmReopenAction"
+              : "confirmCompleteAction",
+          )}
           disabled={busy}
           onConfirm={() => {
             void onStatus(item, item.status === "DONE" ? "TODO" : "DONE");

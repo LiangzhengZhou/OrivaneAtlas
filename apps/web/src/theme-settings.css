@@ -1,0 +1,109 @@
+.appearance-settings {
+  display: grid;
+  gap: 18px;
+  max-width: 720px;
+}
+
+.appearance-palette-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.appearance-palette-field legend {
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: var(--font-meta-size);
+  font-weight: var(--font-weight-medium);
+}
+
+.appearance-palette-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.appearance-palette-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast),
+    background var(--motion-fast);
+}
+
+.appearance-palette-option:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.appearance-palette-option[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-subtle);
+}
+
+.appearance-palette-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.appearance-palette-copy strong {
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.appearance-palette-copy small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.appearance-palette-swatch {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-rows: 12px 10px;
+  gap: 2px;
+  width: 34px;
+  height: 26px;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 5px;
+}
+
+.appearance-palette-swatch span:first-child {
+  background: var(--canvas);
+}
+
+.appearance-palette-swatch span:last-child {
+  background: var(--accent);
+}
+
+.appearance-palette-option[data-palette="warm-green"] {
+  --canvas: #f8f9f6;
+  --accent: #316b5d;
+}
+
+.appearance-palette-option[data-palette="warm-violet"] {
+  --canvas: #f7f5f2;
+  --accent: #5a5bd6;
+}
+
+.appearance-palette-option[data-palette="cool-neutral"] {
+  --canvas: #f6f7f9;
+  --accent: #5a5bd6;
+}
+
+@media (max-width: 640px) {
+  .appearance-palette-grid {
+    grid-template-columns: 1fr;
+  }
+}

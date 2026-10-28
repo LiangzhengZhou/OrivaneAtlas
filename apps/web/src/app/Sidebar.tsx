@@ -20,8 +20,6 @@ export function Sidebar({
   pinnedNavigation,
   reorderPending,
   onReorder,
-  taskCount,
-  noteCount,
   label,
   onNavigate,
   onToggleMobile,
@@ -40,8 +38,6 @@ export function Sidebar({
     anchorId: string,
     placement: "BEFORE" | "AFTER",
   ): void;
-  taskCount: string;
-  noteCount: string;
   label(value: string): string;
   onNavigate(view: View): void;
   onToggleMobile(): void;
@@ -139,12 +135,6 @@ export function Sidebar({
                       >
                         <Icon size={18} />
                         <span>{label(next)}</span>
-                        {next === "tasks" && (
-                          <span className="nav-count">{taskCount}</span>
-                        )}
-                        {next === "notes" && (
-                          <span className="nav-count">{noteCount}</span>
-                        )}
                       </Button>
                       {!collapsed && peers.length > 1 && (
                         <DragHandle

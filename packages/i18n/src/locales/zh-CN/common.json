@@ -28,6 +28,8 @@
   "reopenTask": "重新打开：{{title}}",
   "confirmCompleteTask": "确认完成：{{title}}",
   "confirmReopenTask": "确认重新打开：{{title}}",
+  "confirmCompleteAction": "确认完成",
+  "confirmReopenAction": "确认重新打开",
   "taskCompleted": "任务已完成",
   "taskReopened": "任务已重新打开",
   "addDescription": "+ 添加描述",

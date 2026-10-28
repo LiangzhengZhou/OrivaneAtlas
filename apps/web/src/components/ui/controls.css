@@ -2,9 +2,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 7px;
   min-height: var(--control-height);
-  padding: 7px 12px;
+  padding: 6px 11px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -52,13 +52,13 @@
   border-color: var(--border-default);
 }
 .ui-icon-button {
-  width: 36px;
-  padding: 8px;
+  width: 32px;
+  padding: 6px;
   flex-shrink: 0;
 }
 .ui-icon-button svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 .ui-segmented {
   display: inline-flex;
@@ -117,8 +117,8 @@
   background: #0005;
 }
 .ui-select {
-  min-height: 36px;
-  padding: 7px 12px;
+  min-height: var(--control-height);
+  padding: 6px 10px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
@@ -680,9 +680,44 @@ textarea:hover {
 .ui-settings-identity small {
   line-height: var(--line-body);
 }
+
+/* Accessible-only text. This is a global utility: several controls use it to
+   expose their current state without adding a visual row. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ui-inline-state-confirm-wrap {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.ui-inline-state-confirm-action {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 @media (pointer: coarse) {
   .ui-icon-button {
     width: 44px;
     min-height: 44px;
+  }
+  .ui-inline-state-confirm-action {
+    min-height: 36px;
+    height: 36px;
   }
 }

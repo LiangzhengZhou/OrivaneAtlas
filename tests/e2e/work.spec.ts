@@ -1181,7 +1181,20 @@ test("quick completion and restore arm without mutation and support cancellation
   const label = (zh ? "完成：" : "Complete: ") + "Confirm safely";
   const confirmation =
     (zh ? "确认完成：" : "Confirm completion: ") + "Confirm safely";
+  const beforeHeight = await row.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
   await row.getByRole("button", { name: label, exact: true }).click();
+  await expect(
+    row.getByRole("button", {
+      name: zh ? "确认完成" : "Confirm complete",
+      exact: true,
+    }),
+  ).toBeVisible();
+  const afterHeight = await row.evaluate(
+    (element) => element.getBoundingClientRect().height,
+  );
+  expect(Math.abs(afterHeight - beforeHeight)).toBeLessThanOrEqual(2);
   await page
     .getByRole("button", {
       name: (zh ? "完成：" : "Complete: ") + "Another confirmation",
@@ -5783,7 +5796,7 @@ test("settings preferences are separated from account, API and model hierarchy",
   await expect(
     page.locator(".settings-navigation .settings-nav-group-label"),
   ).toHaveCount(3);
-  // API/model configuration is no longer a preference sub-section.
+  // API/model configuration is loaded lazily when the settings section opens.
   await expect(page.locator(".settings-page .model-settings")).toHaveCount(0);
   await page.screenshot({
     path: info.outputPath("settings-grouped.png"),
@@ -5791,39 +5804,34 @@ test("settings preferences are separated from account, API and model hierarchy",
   });
   await page
     .getByRole("button", {
-      name: zh ? "账户、API 与模型" : "Account, API & models",
-      exact: true,
-    })
-    .click();
-  await expect(page).toHaveURL(/#account/);
-  const tabs = page.getByRole("tablist", {
-    name: zh ? "账户分区" : "Account sections",
-    exact: true,
-  });
-  await expect(tabs).toBeVisible();
-  await page
-    .getByRole("tab", { name: zh ? "API 与模型" : "API & models", exact: true })
-    .click();
-  await expect(page.locator(".model-settings").first()).toBeVisible();
-  await page.screenshot({
-    path: info.outputPath("account-api-models.png"),
-    fullPage: true,
-  });
-  await page
-    .getByRole("tab", {
       name: zh ? "账户与安全" : "Account & security",
       exact: true,
     })
     .click();
+  await expect(
+    page.locator('[data-settings-section="account"] .account-settings-content'),
+  ).toBeVisible();
   await expect(
     page.getByRole("button", {
       name: zh ? "查看同步选项" : "Review sync options",
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.locator(".model-settings")).toHaveCount(0);
   await page.screenshot({
     path: info.outputPath("account-security.png"),
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", {
+      name: zh ? "API 与模型" : "API & models",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.locator('[data-settings-section="api"] .model-settings').first(),
+  ).toBeVisible();
+  await page.screenshot({
+    path: info.outputPath("account-api-models.png"),
     fullPage: true,
   });
   await setTheme(page, "dark");
@@ -10724,7 +10732,7 @@ test("workspace timezone appearance density and mobile navigation persist", asyn
         style.getPropertyValue(name).trim(),
       );
     }),
-  ).toEqual(["#fff", "#5a5bd6"]);
+  ).toEqual(["#fff", "#316b5d"]);
   await page.emulateMedia({ media: "screen" });
   await expect(
     page.getByLabel(w.desk.workspaceTimezone, { exact: true }),

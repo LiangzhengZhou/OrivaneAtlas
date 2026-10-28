@@ -36,6 +36,28 @@
   gap: 20px;
 }
 
+.account-settings-content {
+  display: grid;
+  gap: 28px;
+  max-width: 760px;
+}
+
+.account-settings-content .account-panel {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.account-settings-content .account-panel h2 {
+  margin-bottom: 10px;
+}
+
+.account-settings-content .account-panel form {
+  max-width: 560px;
+}
+
 .account-grid .account-panel {
   padding: 20px;
   margin-bottom: 0;

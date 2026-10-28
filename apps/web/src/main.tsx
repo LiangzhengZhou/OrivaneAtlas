@@ -4,8 +4,10 @@ import { I18nextProvider } from "react-i18next";
 import { App } from "./App";
 import { bootstrap } from "./bootstrap";
 import { ConfirmationHost } from "./components/ui/ConfirmationHost";
+import { applyThemePreferences } from "./theme";
 import "./styles/tokens.css";
 import "./styles/themes.css";
+import "./styles/palettes.css";
 import "./styles/reset.css";
 import "./components/ui/controls.css";
 import "./styles.css";
@@ -18,6 +20,7 @@ import "./styles/utilities.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element missing");
+applyThemePreferences();
 const runtime = await bootstrap();
 createRoot(root).render(
   <StrictMode>

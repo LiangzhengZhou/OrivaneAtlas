@@ -279,6 +279,15 @@
   align-items: start;
   min-width: 0;
 }
+.note-browser-shell[data-folder-panel="false"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.note-folder-toggle {
+  flex: 0 0 auto;
+}
+.note-browser-shell[data-folder-panel="false"] .note-folder-toggle {
+  color: var(--text-secondary);
+}
 .note-browser-shell > .note-browser {
   min-width: 0;
   padding: 2px 18px 14px;
@@ -326,6 +335,11 @@
   gap: 4px;
   min-width: 0;
   font-size: 13px;
+}
+.folder-tree-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 .folder-tree-header {
   display: flex;

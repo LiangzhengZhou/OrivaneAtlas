@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AccountView } from "../../AccountViews";
 import { AppUpdater } from "../../AppUpdater";
 import type { Runtime, Snapshot } from "../../bootstrap";
 import { CalendarSettings } from "../../CalendarSettings";
@@ -47,7 +48,7 @@ interface Props {
   onWork(item: WorkItem): void;
   openDocument(request: DocumentRequest): void;
   onLogout(): void;
-  onOpenAccount(): void;
+  confirmLeave(): Promise<boolean>;
 }
 export function SettingsRoute({
   active,
@@ -67,7 +68,7 @@ export function SettingsRoute({
   onWork,
   openDocument,
   onLogout,
-  onOpenAccount,
+  confirmLeave,
 }: Props) {
   const { t, i18n } = useTranslation("desk");
   const zh = i18n.language.startsWith("zh");
@@ -75,13 +76,15 @@ export function SettingsRoute({
   const [advancedOpen, setAdvancedOpen] = useState(
     () => typeof window === "undefined" || window.innerWidth > 760,
   );
+  const [accountSection, setAccountSection] = useState<
+    "account" | "api" | null
+  >(null);
   const groups: {
     label: string;
     items: {
       id: string;
       label: string;
       icon: typeof Palette;
-      onOpen?: boolean;
     }[];
   }[] = [
     {
@@ -133,15 +136,14 @@ export function SettingsRoute({
       label: zh ? "账户与 API" : "Account & API",
       items: [
         {
-          id: "session",
-          label: zh ? "登录会话" : "Session",
+          id: "account",
+          label: zh ? "账户与安全" : "Account & security",
           icon: LogOut,
         },
         {
-          id: "account-api",
-          label: zh ? "账户、API 与模型" : "Account, API & models",
+          id: "api",
+          label: zh ? "API 与模型" : "API & models",
           icon: KeyRound,
-          onOpen: true,
         },
       ],
     },
@@ -155,16 +157,13 @@ export function SettingsRoute({
         {groups.map((group) => (
           <div className="settings-nav-group" key={group.label}>
             <p className="settings-nav-group-label">{group.label}</p>
-            {group.items.map(({ id, label, icon: Icon, onOpen }) => (
+            {group.items.map(({ id, label, icon: Icon }) => (
               <Button
                 key={id}
                 variant="ghost"
                 type="button"
                 onClick={() => {
-                  if (onOpen) {
-                    onOpenAccount();
-                    return;
-                  }
+                  if (id === "account" || id === "api") setAccountSection(id);
                   const target = content.current?.querySelector<HTMLElement>(
                     `[data-settings-section="${id}"]`,
                   );
@@ -212,6 +211,34 @@ export function SettingsRoute({
         </section>
         {active && (
           <>
+            <section data-settings-section="account" tabIndex={-1}>
+              <h2>{zh ? "账户与安全" : "Account & security"}</h2>
+              {accountSection === "account" && (
+                <AccountView
+                  runtime={runtime}
+                  snapshot={snapshot}
+                  onLogout={onLogout}
+                  confirmLeave={confirmLeave}
+                  embedded
+                  initialTab="account"
+                  enabled={active}
+                />
+              )}
+            </section>
+            <section data-settings-section="api" tabIndex={-1}>
+              <h2>{zh ? "API 与模型" : "API & models"}</h2>
+              {accountSection === "api" && (
+                <AccountView
+                  runtime={runtime}
+                  snapshot={snapshot}
+                  onLogout={onLogout}
+                  confirmLeave={confirmLeave}
+                  embedded
+                  initialTab="api"
+                  enabled={active}
+                />
+              )}
+            </section>
             <section data-settings-section="server" tabIndex={-1}>
               <ServerConnectionTest runtime={runtime} />
             </section>
@@ -290,19 +317,6 @@ export function SettingsRoute({
               >
                 <Download size={17} />
                 {t("exportData")}
-              </Button>
-            </section>
-            <section data-settings-section="session" tabIndex={-1}>
-              <h2>{zh ? "登录会话" : "Session"}</h2>
-              <p>{t("scope")}</p>
-              <Button
-                variant="secondary"
-                type="button"
-                disabled={busy}
-                onClick={onLogout}
-              >
-                <LogOut size={17} />
-                {t("lock")}
               </Button>
             </section>
             <details

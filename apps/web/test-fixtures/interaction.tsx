@@ -118,6 +118,7 @@ function Fixture() {
         intent="COMPLETE"
         label="Complete"
         confirmLabel="Confirm completion"
+        actionLabel="Confirm"
         onConfirm={() => record("commit")}
       >
         ○

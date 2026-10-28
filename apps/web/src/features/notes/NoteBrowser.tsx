@@ -5,8 +5,16 @@ import {
   ChevronDown,
   LockKeyhole,
   NotebookPen,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useId, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/Button";
 import { EntityRow } from "../../components/ui/Content";
@@ -67,6 +75,20 @@ export function NoteBrowser({
   searching: boolean;
 }) {
   const { t, i18n } = useTranslation("desk");
+  const zh = i18n.language.startsWith("zh");
+  const folderStorageKey = "orivane-atlas.note-folders-open";
+  const [folderOpen, setFolderOpen] = useState(() => {
+    try {
+      return localStorage.getItem(folderStorageKey) !== "false";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(folderStorageKey, String(folderOpen));
+    } catch {}
+  }, [folderOpen]);
   const [selecting, setSelecting] = useState(false);
   const groupId = useId();
   const { layout, grouping, sort, collapsed } = presentation;
@@ -209,8 +231,11 @@ export function NoteBrowser({
     </div>
   );
   return (
-    <div className={folderPanel ? "note-browser-shell" : undefined}>
-      {folderPanel && (
+    <div
+      className={folderPanel ? "note-browser-shell" : undefined}
+      data-folder-panel={folderOpen ? "true" : "false"}
+    >
+      {folderPanel && folderOpen && (
         <aside className="note-folder-panel">{folderPanel}</aside>
       )}
       <div
@@ -220,6 +245,39 @@ export function NoteBrowser({
         onKeyDown={moveFocus}
       >
         <div className="organization-toolbar note-view-toolbar">
+          {folderPanel && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="ui-icon-button note-folder-toggle"
+              aria-label={
+                folderOpen
+                  ? zh
+                    ? "隐藏文件夹"
+                    : "Hide folders"
+                  : zh
+                    ? "显示文件夹"
+                    : "Show folders"
+              }
+              aria-pressed={!folderOpen}
+              title={
+                folderOpen
+                  ? zh
+                    ? "隐藏文件夹"
+                    : "Hide folders"
+                  : zh
+                    ? "显示文件夹"
+                    : "Show folders"
+              }
+              onClick={() => setFolderOpen((value) => !value)}
+            >
+              {folderOpen ? (
+                <PanelLeftClose size={16} />
+              ) : (
+                <PanelLeftOpen size={16} />
+              )}
+            </Button>
+          )}
           <label>
             {t("noteBrowser.view")}
             <Select
