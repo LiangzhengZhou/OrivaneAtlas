@@ -309,6 +309,31 @@ describe("first-class note folders (ADR0138)", () => {
     });
   });
 
+  it("creates a GENERAL folder for reusable links without changing default note scope", async () => {
+    const h = harness();
+    await h.service.apply(context, {
+      kind: "FOLDER",
+      action: "create",
+      id: uuid(7),
+      name: "Shared",
+      parentId: "",
+      scope: "GENERAL",
+    });
+    await h.service.apply(context, {
+      kind: "FOLDER",
+      action: "create",
+      id: uuid(8),
+      name: "Notes",
+      parentId: "",
+    });
+    expect(h.rows().find((entry) => entry.id === uuid(7))).toMatchObject({
+      scope: "GENERAL",
+    });
+    expect(h.rows().find((entry) => entry.id === uuid(8))).not.toHaveProperty(
+      "scope",
+    );
+  });
+
   it("moves notes by stable folder identity and clears the legacy label", async () => {
     const h = harness({
       notes: [
@@ -345,23 +370,19 @@ describe("first-class note folders (ADR0138)", () => {
       folderId: uuid(1),
       entries: [{ id: "note-1", version: 2, organizationVersion: 1 }],
     });
-    expect(h.notes()[0]).toMatchObject({
-      id: "note-1",
-      primaryFolderId: uuid(1),
-      version: 3,
-    });
     expect(h.rows()[0]).toMatchObject({
       kind: "NOTE",
       id: "note-1",
-      folder: "Legacy",
-      version: 1,
+      folder: "",
+      folderId: uuid(1),
+      version: 2,
     });
     await expect(
       h.service.apply(context, {
         kind: "NOTE",
         action: "move",
         folderId: uuid(9),
-        entries: [{ id: "note-1", version: 3, organizationVersion: 1 }],
+        entries: [{ id: "note-1", version: 2, organizationVersion: 2 }],
       }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });

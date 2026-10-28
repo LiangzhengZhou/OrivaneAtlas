@@ -5,7 +5,6 @@ import type {
   NotebookService,
   WorkService,
 } from "./index";
-import { LocalBodyUnavailableError } from "./local-body-availability";
 import { requireStableUuid } from "./mutation-receipt";
 
 export const organizationKinds = ["WORK", "NOTE", "FOLDER"] as const;
@@ -206,10 +205,7 @@ export class OrganizationService {
   constructor(
     private readonly store: OrganizationStore,
     private readonly work: Pick<WorkService, "snapshot" | "setDeleted">,
-    private readonly notes: Pick<
-      NotebookService,
-      "list" | "setDeleted" | "move"
-    > &
+    private readonly notes: Pick<NotebookService, "list" | "setDeleted"> &
       Partial<Pick<NotebookService, "manifest">>,
     private readonly authorization: AuthorizationService,
     private readonly clock: Clock,
@@ -293,28 +289,6 @@ export class OrganizationService {
         throw new DomainError("VERSION_CONFLICT");
     }
     for (const entry of entries) {
-      if (
-        input.action === "move" &&
-        input.kind === "NOTE" &&
-        input.folderId !== undefined
-      ) {
-        // ADR0147 cutover: the note's primaryFolderId is authoritative. Do not
-        // write the legacy organization NOTE.folderId from this path.
-        try {
-          await this.notes.move(
-            context,
-            entry.id,
-            entry.version,
-            move!.folderId,
-          );
-          continue;
-        } catch (error) {
-          // A metadata-only replica can list a note without hydrating its body.
-          // Keep the legacy organization row for that lazy case; hydration/save
-          // writes primaryFolderId and completes the cutover.
-          if (!(error instanceof LocalBodyUnavailableError)) throw error;
-        }
-      }
       if (input.action === "delete") {
         if (input.kind === "NOTE")
           await this.notes.setDeleted(context, entry.id, entry.version, true);
@@ -448,7 +422,7 @@ export class OrganizationService {
           folder: "",
           name: requireFolderName(input.name),
           parentId,
-          scope: input.scope === "GENERAL" ? "GENERAL" : "NOTE",
+          ...(input.scope === undefined ? {} : { scope: input.scope }),
           updatedAt: this.clock.now(),
           updatedBy: context.principalId,
         },

@@ -112,7 +112,6 @@ export function legacyFolderGroups(
 ): LegacyFolderGroup[] {
   const groups = new Map<string, string[]>();
   for (const note of notes) {
-    if (note.primaryFolderId) continue;
     const entry = organizationByKey.get("NOTE:" + note.id);
     if (!entry || (entry.folderId ?? "")) continue;
     const name = (entry.folder ?? "").trim();
@@ -129,7 +128,6 @@ export function noteFolderKey(
   note: WorkspaceNote,
   organizationByKey: ReadonlyMap<string, Organization>,
 ): string {
-  if (note.primaryFolderId) return folderKey(note.primaryFolderId);
   const entry = organizationByKey.get("NOTE:" + note.id);
   if (!entry) return unfiledKey;
   if (entry.folderId) return folderKey(entry.folderId);
@@ -143,12 +141,8 @@ export function noteFolderLabel(
   unfiledLabel: string,
   legacyLabel: string,
 ): string {
-  if (note.primaryFolderId) {
-    const path = folderPath(note.primaryFolderId, folders);
-    if (path) return path;
-  }
   const entry = organizationByKey.get("NOTE:" + note.id);
-  if (!note.primaryFolderId && entry?.folderId) {
+  if (entry?.folderId) {
     const path = folderPath(entry.folderId, folders);
     if (path) return path;
   }

@@ -13,6 +13,7 @@ const organizationActionKeys = [
   "parentId",
   "id",
   "icon",
+  "scope",
   "entries",
 ] as const;
 function validFolderName(value: unknown): boolean {
@@ -88,7 +89,10 @@ export function buildLocalOrganizationReplayRequest(
       (plan.mutations.length !== 1 ||
         !requireStableUuid(original.id, "folderId") ||
         !validFolderName(original.name) ||
-        !validParent(original.parentId))) ||
+        !validParent(original.parentId) ||
+        (original.scope !== undefined &&
+          original.scope !== "NOTE" &&
+          original.scope !== "GENERAL"))) ||
     (!createsFolder && original.id !== undefined) ||
     (action === "create" && kind !== "FOLDER") ||
     (action === "rename" &&
