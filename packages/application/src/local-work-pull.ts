@@ -59,6 +59,9 @@ interface Effect {
     | "workflows"
     | "links"
     | "files"
+    | "folderLinks"
+    | "spaceFolderLinks"
+    | "projectFolderLinks"
     | "entityMemos";
   id: string;
   version: number;
@@ -303,6 +306,9 @@ async function prepareProjection(
           "workflows",
           "links",
           "files",
+          "folderLinks",
+          "spaceFolderLinks",
+          "projectFolderLinks",
           ...(memoIdentity ? ["entityMemos"] : []),
         ].includes(collection),
     )
@@ -349,6 +355,9 @@ async function prepareProjection(
       record.collection !== "workflows" &&
       record.collection !== "links" &&
       record.collection !== "files" &&
+      record.collection !== "folderLinks" &&
+      record.collection !== "spaceFolderLinks" &&
+      record.collection !== "projectFolderLinks" &&
       !(memoIdentity && record.collection === "entityMemos")
     )
       throw new DomainError("VALIDATION_ERROR", {
@@ -534,7 +543,35 @@ async function prepareProjection(
           version,
           value,
         );
-      else if (collection === "wikiLinks") {
+      else if (
+        collection === "folderLinks" ||
+        collection === "spaceFolderLinks" ||
+        collection === "projectFolderLinks"
+      ) {
+        const parent =
+          collection === "spaceFolderLinks"
+            ? "spaceId"
+            : collection === "projectFolderLinks"
+              ? "projectId"
+              : "targetKind";
+        if (
+          entity.workspaceId !== binding.remoteWorkspaceId ||
+          entity.version !== version ||
+          typeof entity.folderId !== "string" ||
+          !entity.folderId ||
+          typeof entity[parent] !== "string" ||
+          (collection === "folderLinks" &&
+            !["NOTE", "DOCUMENT", "FILE", "PROJECT", "SPACE"].includes(
+              String(entity.targetKind),
+            )) ||
+          (collection === "folderLinks" &&
+            typeof entity.targetId !== "string") ||
+          (entity.deletedAt !== null &&
+            (typeof entity.deletedAt !== "string" ||
+              !Number.isFinite(Date.parse(entity.deletedAt))))
+        )
+          invalid();
+      } else if (collection === "wikiLinks") {
         if (
           entity.workspaceId !== binding.remoteWorkspaceId ||
           entity.version !== version ||

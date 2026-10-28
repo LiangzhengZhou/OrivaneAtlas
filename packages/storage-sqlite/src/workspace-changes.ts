@@ -18,6 +18,9 @@ const tables: Record<string, string> = {
   reminders: "reminder",
   navigationPreference: "user_navigation",
   calendarSettings: "workspace_calendar",
+  folderLinks: "folder_link",
+  spaceFolderLinks: "space_folder_link",
+  projectFolderLinks: "project_folder_link",
 };
 export function workspaceChangePort(
   db: DatabaseSync,

@@ -6312,6 +6312,7 @@ describe("atomic workbench organization", () => {
         })
       ).status,
     ).toBe(400);
+    const head = await (await call("/api/bootstrap")).json();
     const created = await call("/api/folders/link", {
       folderId,
       targetKind: "NOTE",
@@ -6319,6 +6320,16 @@ describe("atomic workbench organization", () => {
     });
     expect(created.status).toBe(200);
     const link = await created.json();
+    const incremental = await (
+      await call(
+        `/api/v1/sync?after=${head.cursor}&epoch=${encodeURIComponent(head.epoch)}&bodyMode=metadata&relationMode=canonical&privateMemos=include`,
+      )
+    ).json();
+    expect(
+      incremental.changes.collections.folderLinks.upserts.some(
+        (entry: { id: string }) => entry.id === link.id,
+      ),
+    ).toBe(true);
     expect(link).toMatchObject({
       folderId,
       targetKind: "NOTE",
