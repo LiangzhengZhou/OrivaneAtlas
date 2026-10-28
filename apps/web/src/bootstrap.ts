@@ -248,6 +248,8 @@ export interface Snapshot extends WorkSnapshot {
   library: import("@arclattice/application").WorkspaceLibraryEntry[];
   organization: Organization[];
   folderLinks?: import("@arclattice/application").FolderLink[];
+  spaceFolderLinks?: import("@arclattice/application").SpaceFolderLink[];
+  projectFolderLinks?: import("@arclattice/application").ProjectFolderLink[];
 }
 function normalizeSnapshot(snapshot: Snapshot): Snapshot {
   return {
@@ -255,6 +257,8 @@ function normalizeSnapshot(snapshot: Snapshot): Snapshot {
     projectMaterials: snapshot.projectMaterials ?? [],
     manualOrders: snapshot.manualOrders ?? [],
     folderLinks: snapshot.folderLinks ?? [],
+    spaceFolderLinks: snapshot.spaceFolderLinks ?? [],
+    projectFolderLinks: snapshot.projectFolderLinks ?? [],
   };
 }
 interface SyncResponse {

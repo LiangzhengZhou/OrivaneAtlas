@@ -60,6 +60,11 @@ import { notebookStore } from "./notebook";
 import { organizationStore } from "./organization";
 import { projectStore } from "./project-materials";
 import { purgeRelations } from "./purge";
+import {
+  projectFolderLinkStore,
+  scopedFolderTargets,
+  spaceFolderLinkStore,
+} from "./scoped-folder-links";
 import { workflowPort } from "./workflows";
 import { workspaceChangePort } from "./workspace-changes";
 
@@ -855,6 +860,9 @@ export class SqliteUnitOfWork implements UnitOfWork {
       memos: EntityMemoTransaction,
       folderLinks: import("@arclattice/application").FolderLinkStore,
       folderTargets: import("@arclattice/application").FolderLinkTargetPort,
+      spaceFolderLinks: import("@arclattice/application").SpaceFolderLinkStore,
+      projectFolderLinks: import("@arclattice/application").ProjectFolderLinkStore,
+      scopedFolderTargets: import("@arclattice/application").ScopedFolderTargetPort,
     ) => Promise<T>,
     authorize?: (store: AccountStore) => void,
   ): Promise<T> {
@@ -923,6 +931,9 @@ export class SqliteUnitOfWork implements UnitOfWork {
               entityMemoStore(this.db, context, guard),
               folderLinkStore(this.db, context, guard),
               folderLinkTargets(this.db, context, guard),
+              spaceFolderLinkStore(this.db, context, guard),
+              projectFolderLinkStore(this.db, context, guard),
+              scopedFolderTargets(this.db, context, guard),
             );
             if (receipt)
               this.db

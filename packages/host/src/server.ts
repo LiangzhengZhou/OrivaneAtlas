@@ -72,6 +72,7 @@ import {
   PlanKnowledgeReplayEffects,
   type PlanReplayEffect,
   PlanReplayUnitOfWork,
+  ProjectFolderLinkService,
   type ProjectKnowledgeReplayEffect,
   ProjectKnowledgeReplayEffects,
   ProjectService,
@@ -102,6 +103,7 @@ import {
   requireWorkspaceMutationPrecondition,
   resolveProjectKnowledgeScope,
   reviewedWorkspaceMutationResult,
+  SpaceFolderLinkService,
   selectFileContext,
   type TrustedAiEndpoint,
   type UpdateWorkInput,
@@ -946,6 +948,8 @@ export async function createHost(options: HostOptions) {
             "/api/library/asset/meta",
             "/api/openapi.json",
             "/api/folders/links",
+            "/api/space-folders/links",
+            "/api/project-folders/links",
             "/api/projects/file",
             "/api/projects/activity",
           ];
@@ -961,6 +965,10 @@ export async function createHost(options: HostOptions) {
             "/api/link/delete",
             "/api/folders/link",
             "/api/folders/unlink",
+            "/api/space-folders/link",
+            "/api/space-folders/unlink",
+            "/api/project-folders/link",
+            "/api/project-folders/unlink",
             "/api/edge/create",
             "/api/edge/delete",
             "/api/library/save",
@@ -2378,6 +2386,76 @@ export async function createHost(options: HostOptions) {
           json(res, 200, { links });
           return;
         }
+        if (path === "/api/space-folders/links" && req.method === "GET") {
+          const spaceId = url.searchParams.get("spaceId") ?? undefined;
+          if (spaceId !== undefined && (!spaceId || spaceId.length > 240))
+            fail(400, "VALIDATION_ERROR");
+          const links = await db.request(
+            context,
+            null,
+            async (
+              _uow,
+              _notes,
+              _connected,
+              _library,
+              _organization,
+              _projects,
+              _sessions,
+              _files,
+              _blobs,
+              _memos,
+              _folderLinks,
+              _folderTargets,
+              spaceFolderLinks,
+              _projectFolderLinks,
+              scopedFolderTargets,
+            ) =>
+              new SpaceFolderLinkService(
+                spaceFolderLinks,
+                scopedFolderTargets,
+                authorization,
+                clock,
+                ids,
+              ).list(context, spaceId),
+          );
+          json(res, 200, { links });
+          return;
+        }
+        if (path === "/api/project-folders/links" && req.method === "GET") {
+          const projectId = url.searchParams.get("projectId") ?? undefined;
+          if (projectId !== undefined && (!projectId || projectId.length > 240))
+            fail(400, "VALIDATION_ERROR");
+          const links = await db.request(
+            context,
+            null,
+            async (
+              _uow,
+              _notes,
+              _connected,
+              _library,
+              _organization,
+              _projects,
+              _sessions,
+              _files,
+              _blobs,
+              _memos,
+              _folderLinks,
+              _folderTargets,
+              _spaceFolderLinks,
+              projectFolderLinks,
+              scopedFolderTargets,
+            ) =>
+              new ProjectFolderLinkService(
+                projectFolderLinks,
+                scopedFolderTargets,
+                authorization,
+                clock,
+                ids,
+              ).list(context, projectId),
+          );
+          json(res, 200, { links });
+          return;
+        }
         if (
           (path === "/api/snapshot" ||
             path === "/api/sync" ||
@@ -2646,6 +2724,9 @@ export async function createHost(options: HostOptions) {
               _blobs,
               _memos,
               folderLinks,
+              _folderTargets,
+              spaceFolderLinks,
+              projectFolderLinks,
             ) => ({
               files: await files.list(),
               syncState: await uow.run(context.workspaceId, (tx) =>
@@ -2706,6 +2787,8 @@ export async function createHost(options: HostOptions) {
                   : await library.list(),
               wikiLinks: (await library.wikiLinks?.()) ?? [],
               folderLinks: await folderLinks.list(),
+              spaceFolderLinks: await spaceFolderLinks.list(),
+              projectFolderLinks: await projectFolderLinks.list(),
             }),
             requireAccess,
           );
@@ -3512,6 +3595,9 @@ export async function createHost(options: HostOptions) {
             memos,
             folderLinks,
             folderTargets,
+            spaceFolderLinks,
+            projectFolderLinks,
+            scopedFolderTargets,
           ) => {
             const purgeReplay = purgeEffects
               ? new PurgeReplayEffects(purgeEffects, {
@@ -4668,6 +4754,60 @@ export async function createHost(options: HostOptions) {
                   return new FolderLinkService(
                     folderLinks,
                     folderTargets,
+                    authorization,
+                    clock,
+                    ids,
+                  ).remove(context, string(value.id), version(value.version));
+                case "/api/space-folders/link":
+                  keys(value, ["spaceId", "folderId", "stableId"]);
+                  return new SpaceFolderLinkService(
+                    spaceFolderLinks,
+                    scopedFolderTargets,
+                    authorization,
+                    clock,
+                    ids,
+                  ).create(
+                    context,
+                    {
+                      spaceId: string(value.spaceId, 240),
+                      folderId: string(value.folderId, 240),
+                    },
+                    value.stableId === undefined
+                      ? undefined
+                      : string(value.stableId, 64),
+                  );
+                case "/api/space-folders/unlink":
+                  keys(value, ["id", "version"]);
+                  return new SpaceFolderLinkService(
+                    spaceFolderLinks,
+                    scopedFolderTargets,
+                    authorization,
+                    clock,
+                    ids,
+                  ).remove(context, string(value.id), version(value.version));
+                case "/api/project-folders/link":
+                  keys(value, ["projectId", "folderId", "stableId"]);
+                  return new ProjectFolderLinkService(
+                    projectFolderLinks,
+                    scopedFolderTargets,
+                    authorization,
+                    clock,
+                    ids,
+                  ).create(
+                    context,
+                    {
+                      projectId: string(value.projectId, 240),
+                      folderId: string(value.folderId, 240),
+                    },
+                    value.stableId === undefined
+                      ? undefined
+                      : string(value.stableId, 64),
+                  );
+                case "/api/project-folders/unlink":
+                  keys(value, ["id", "version"]);
+                  return new ProjectFolderLinkService(
+                    projectFolderLinks,
+                    scopedFolderTargets,
                     authorization,
                     clock,
                     ids,

@@ -46,6 +46,7 @@ export * from "./organization-replay-effects";
 export * from "./project-knowledge-replay-effects";
 export * from "./reminder-replay-effects";
 export * from "./reminders";
+export * from "./scoped-folder-links";
 export * from "./workspace-change-log";
 
 import type {

@@ -11,6 +11,7 @@ import type {
 } from "./index";
 import type { LibraryEntry } from "./library";
 import type { Note } from "./notebook";
+import type { ProjectFolderLink, SpaceFolderLink } from "./scoped-folder-links";
 import type { WorkspaceChanges } from "./workspace-changes";
 
 export type BodyManifest<T extends Note | LibraryEntry> = Omit<T, "bodyMd"> & {
@@ -44,6 +45,8 @@ export interface WorkspaceBootstrap extends WorkspaceManifest {
     reminders?: Reminder[];
     wikiLinks?: DocumentWikiLink[];
     folderLinks?: FolderLink[];
+    spaceFolderLinks?: SpaceFolderLink[];
+    projectFolderLinks?: ProjectFolderLink[];
   };
 }
 

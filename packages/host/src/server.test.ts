@@ -6361,6 +6361,69 @@ describe("atomic workbench organization", () => {
       (await (await call(`/api/folders/links?folderId=${folderId}`)).json())
         .links,
     ).toEqual([]);
+    const space = await (
+      await call("/api/library/save", {
+        id: null,
+        version: 0,
+        input: {
+          kind: "SPACE",
+          spaceId: null,
+          title: "Linked space",
+          bodyMd: "",
+        },
+      })
+    ).json();
+    const project = await (
+      await call("/api/work/create", {
+        title: "Linked project",
+        type: "PROJECT",
+      })
+    ).json();
+    const spaceLink = await (
+      await call("/api/space-folders/link", {
+        spaceId: space.id,
+        folderId,
+      })
+    ).json();
+    expect(spaceLink).toMatchObject({
+      spaceId: space.id,
+      folderId,
+      version: 1,
+    });
+    expect(
+      (
+        await (
+          await call(`/api/space-folders/links?spaceId=${space.id}`)
+        ).json()
+      ).links,
+    ).toHaveLength(1);
+    const projectLink = await (
+      await call("/api/project-folders/link", {
+        projectId: project.id,
+        folderId,
+      })
+    ).json();
+    expect(projectLink).toMatchObject({
+      projectId: project.id,
+      folderId,
+      version: 1,
+    });
+    expect(
+      (
+        await call("/api/project-folders/unlink", {
+          id: projectLink.id,
+          version: projectLink.version,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("/api/space-folders/unlink", {
+          id: spaceLink.id,
+          version: spaceLink.version,
+        })
+      ).status,
+    ).toBe(200);
   });
   it("archives projects atomically without cascading writes and preserves independent child archive", async () => {
     await login();
