@@ -246,9 +246,19 @@ export function ProjectWorkspace({
       .filter((link) => link.projectId === project.id && !link.deletedAt)
       .map((link) => ({
         id: link.id,
+        version: link.version,
         name: folders.get(link.folderId) || link.folderId,
       }));
   }, [project.id, snapshot.organization, snapshot.projectFolderLinks]);
+  const generalFolders = useMemo(
+    () =>
+      snapshot.organization.filter(
+        (entry) => entry.kind === "FOLDER" && entry.scope === "GENERAL",
+      ),
+    [snapshot.organization],
+  );
+  const [folderLinkChoice, setFolderLinkChoice] = useState("");
+  const [folderLinkName, setFolderLinkName] = useState("");
   const materials = useMemo(() => {
     if (tab !== "knowledge") return [];
     const liveSpaces = new Set(
@@ -584,18 +594,87 @@ export function ProjectWorkspace({
               busy={busy}
               onSave={onBriefSave}
             />
-            {linkedFolders.length > 0 && (
-              <section className="project-linked-folders">
-                <h2>{t("projectHub.linkedFolders")}</h2>
-                <div className="project-linked-folder-list">
-                  {linkedFolders.map((folder) => (
-                    <span key={folder.id} className="project-linked-folder">
+            <section className="project-linked-folders">
+              <h2>{t("projectHub.linkedFolders")}</h2>
+              <div className="project-linked-folder-list">
+                {linkedFolders.map((folder) => (
+                  <span key={folder.id} className="project-linked-folder">
+                    {folder.name}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      aria-label={`${t("projectHub.unlinkFolder")}: ${folder.name}`}
+                      onClick={() =>
+                        void run(() =>
+                          runtime.unlinkProjectFolder(
+                            folder.id,
+                            folder.version,
+                          ),
+                        )
+                      }
+                    >
+                      ×
+                    </Button>
+                  </span>
+                ))}
+              </div>
+              <div className="project-link-folder-actions">
+                <Select
+                  aria-label={t("projectHub.chooseFolder")}
+                  value={folderLinkChoice}
+                  onChange={(event) =>
+                    setFolderLinkChoice(event.currentTarget.value)
+                  }
+                >
+                  <option value="">{t("projectHub.chooseFolder")}</option>
+                  {generalFolders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
                       {folder.name}
-                    </span>
+                    </option>
                   ))}
-                </div>
-              </section>
-            )}
+                </Select>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={!folderLinkChoice}
+                  onClick={() =>
+                    void run(() =>
+                      runtime.linkProjectFolder(project.id, folderLinkChoice),
+                    )
+                  }
+                >
+                  {t("projectHub.linkFolder")}
+                </Button>
+                <input
+                  aria-label={t("projectHub.newFolderName")}
+                  placeholder={t("projectHub.newFolderName")}
+                  value={folderLinkName}
+                  onChange={(event) => setFolderLinkName(event.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={!folderLinkName.trim()}
+                  onClick={() =>
+                    void run(async () => {
+                      const id = crypto.randomUUID();
+                      await runtime.organize({
+                        kind: "FOLDER",
+                        action: "create",
+                        id,
+                        name: folderLinkName.trim(),
+                        parentId: "",
+                        scope: "GENERAL",
+                      });
+                      await runtime.linkProjectFolder(project.id, id);
+                      setFolderLinkName("");
+                    })
+                  }
+                >
+                  {t("projectHub.createAndLinkFolder")}
+                </Button>
+              </div>
+            </section>
             {recentKnowledge.length > 0 && (
               <section className="project-recent-knowledge">
                 <h2>{t("projectHub.knowledge")}</h2>

@@ -720,3 +720,27 @@ body {
   color: var(--text-secondary);
   font-size: 12px;
 }
+
+.project-linked-folder {
+  gap: 4px;
+}
+.project-linked-folder .ui-button {
+  min-height: 20px;
+  padding: 0 2px;
+  color: var(--text-tertiary);
+}
+.project-link-folder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.project-link-folder-actions input {
+  min-height: var(--control-height);
+  min-width: 160px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}

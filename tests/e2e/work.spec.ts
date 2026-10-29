@@ -18657,3 +18657,48 @@ test("FINAL project destination single click opens without an intermediate Inspe
   await expect(page.locator(".context-pane")).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp("#projects/" + project.id));
 });
+
+test("project linked folders can be created and persist after reload", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "Linked folder project",
+    type: "PROJECT",
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await page
+    .locator(".project-card")
+    .filter({ hasText: project.title })
+    .locator(".project-title")
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: w.desk.projectHub.linkedFolders,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByLabel(w.desk.projectHub.newFolderName, { exact: true })
+    .fill("Linked research");
+  await page
+    .getByRole("button", {
+      name: w.desk.projectHub.createAndLinkFolder,
+      exact: true,
+    })
+    .click();
+  await expect(
+    page
+      .locator(".project-linked-folder")
+      .filter({ hasText: "Linked research" }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page
+      .locator(".project-linked-folder")
+      .filter({ hasText: "Linked research" }),
+  ).toBeVisible();
+});

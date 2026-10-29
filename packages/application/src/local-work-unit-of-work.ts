@@ -24,6 +24,12 @@ import { localDto, localObject } from "./local-dto";
 import { localEntityMemoTransaction } from "./local-entity-memos";
 import { LocalFileStore } from "./local-file-store";
 import {
+  localFolderLinkStore,
+  localFolderLinkTargets,
+  localProjectFolderLinkStore,
+  localSpaceFolderLinkStore,
+} from "./local-folder-links";
+import {
   type LocalLibraryAssets,
   LocalLibraryStore,
   type LocalWikiIndexer,
@@ -53,6 +59,11 @@ export interface LocalDataPorts {
   connected: ConnectedStore;
   projects: ProjectStore;
   organization: OrganizationStore;
+  folderLinks: import("./folder-links").FolderLinkStore;
+  spaceFolderLinks: import("./scoped-folder-links").SpaceFolderLinkStore;
+  projectFolderLinks: import("./scoped-folder-links").ProjectFolderLinkStore;
+  folderLinkTargets: import("./folder-links").FolderLinkTargetPort;
+  scopedFolderTargets: import("./scoped-folder-links").ScopedFolderTargetPort;
   images: LocalLibraryAssets;
 }
 
@@ -180,6 +191,11 @@ export class LocalWorkUnitOfWork implements UnitOfWork {
             list: () => tx.organizations(),
             save: (value, expected) => tx.saveOrganization(value, expected),
           },
+          folderLinks: localFolderLinkStore(records),
+          spaceFolderLinks: localSpaceFolderLinkStore(records),
+          projectFolderLinks: localProjectFolderLinkStore(records),
+          folderLinkTargets: localFolderLinkTargets(tx, records),
+          scopedFolderTargets: localFolderLinkTargets(tx, records),
           images,
         });
       },

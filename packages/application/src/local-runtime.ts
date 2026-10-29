@@ -172,6 +172,47 @@ export class LocalRuntime {
     };
   }
 
+  linkFolder(input: {
+    folderId: string;
+    targetKind: import("./folder-links").FolderLinkTargetKind;
+    targetId: string;
+  }) {
+    const captured = structuredClone(input);
+    return this.workspace.run((services) =>
+      services.folderLinks.create(this.context, captured),
+    );
+  }
+
+  unlinkFolder(id: string, version: number) {
+    return this.workspace.run((services) =>
+      services.folderLinks.remove(this.context, id, version),
+    );
+  }
+
+  linkSpaceFolder(spaceId: string, folderId: string) {
+    return this.workspace.run((services) =>
+      services.spaceFolderLinks.create(this.context, { spaceId, folderId }),
+    );
+  }
+
+  unlinkSpaceFolder(id: string, version: number) {
+    return this.workspace.run((services) =>
+      services.spaceFolderLinks.remove(this.context, id, version),
+    );
+  }
+
+  linkProjectFolder(projectId: string, folderId: string) {
+    return this.workspace.run((services) =>
+      services.projectFolderLinks.create(this.context, { projectId, folderId }),
+    );
+  }
+
+  unlinkProjectFolder(id: string, version: number) {
+    return this.workspace.run((services) =>
+      services.projectFolderLinks.remove(this.context, id, version),
+    );
+  }
+
   getEntityMemo(target: EntityMemoTarget) {
     if (!this.memoIdentity)
       throw new Error("LOCAL_MEMO_IDENTITY_PORT_INCOMPLETE");

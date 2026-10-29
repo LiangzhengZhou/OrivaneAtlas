@@ -3605,6 +3605,18 @@ export async function bootstrap() {
       await prepareKnowledgeLifecycle("notes", id, version);
       return local.deleteNote(id, version, deleted);
     },
+    linkFolder: (input: import("@arclattice/application").FolderLinkInput) =>
+      local.linkFolder(input),
+    unlinkFolder: (id: string, version: number) =>
+      local.unlinkFolder(id, version),
+    linkSpaceFolder: (spaceId: string, folderId: string) =>
+      local.linkSpaceFolder(spaceId, folderId),
+    unlinkSpaceFolder: (id: string, version: number) =>
+      local.unlinkSpaceFolder(id, version),
+    linkProjectFolder: (projectId: string, folderId: string) =>
+      local.linkProjectFolder(projectId, folderId),
+    unlinkProjectFolder: (id: string, version: number) =>
+      local.unlinkProjectFolder(id, version),
     logout: async () => {
       logoutWarning = false;
       try {

@@ -3,6 +3,7 @@ import { CategoryService } from "./categories";
 import { ConnectedService } from "./connected";
 import { type EntityMemoIdentity, EntityMemoService } from "./entity-memos";
 import { FileService } from "./files";
+import { FolderLinkService } from "./folder-links";
 import {
   type AuthorizationService,
   type Clock,
@@ -33,6 +34,10 @@ import { OrganizationService } from "./organization";
 import { planDocumentPublisher } from "./plan-documents";
 import { ProjectService } from "./project-materials";
 import { ReminderService } from "./reminders";
+import {
+  ProjectFolderLinkService,
+  SpaceFolderLinkService,
+} from "./scoped-folder-links";
 import { WorkflowService } from "./workflows";
 import type {
   WorkspaceBootstrap,
@@ -54,6 +59,9 @@ export interface LocalServices {
   readonly connected: ConnectedService;
   readonly noteKnowledge: NoteKnowledgeService;
   readonly organization: OrganizationService;
+  readonly folderLinks: import("./folder-links").FolderLinkService;
+  readonly spaceFolderLinks: import("./scoped-folder-links").SpaceFolderLinkService;
+  readonly projectFolderLinks: import("./scoped-folder-links").ProjectFolderLinkService;
   readonly ports: LocalDataPorts;
 }
 export type LocalWorkspaceSnapshot = WorkspaceBootstrap["workspace"] & {
@@ -278,6 +286,27 @@ export class LocalWorkspace {
             this.authorization,
             this.clock,
           ),
+          folderLinks: new FolderLinkService(
+            ports.folderLinks,
+            ports.folderLinkTargets,
+            this.authorization,
+            this.clock,
+            this.ids,
+          ),
+          spaceFolderLinks: new SpaceFolderLinkService(
+            ports.spaceFolderLinks,
+            ports.scopedFolderTargets,
+            this.authorization,
+            this.clock,
+            this.ids,
+          ),
+          projectFolderLinks: new ProjectFolderLinkService(
+            ports.projectFolderLinks,
+            ports.scopedFolderTargets,
+            this.authorization,
+            this.clock,
+            this.ids,
+          ),
           ports,
         });
         if (capture) ports.recordCommand(capture(result));
@@ -322,6 +351,9 @@ export class LocalWorkspace {
           reminders,
           wikiLinks,
           manualOrders,
+          folderLinks,
+          spaceFolderLinks,
+          projectFolderLinks,
         ] = await Promise.all([
           services.ports.files.list(),
           services.work.snapshot(context, true),
@@ -335,6 +367,9 @@ export class LocalWorkspace {
           services.reminders.list(context),
           services.ports.library.wikiLinks(),
           services.orders.list(context),
+          services.ports.folderLinks.list(),
+          services.ports.spaceFolderLinks.list(),
+          services.ports.projectFolderLinks.list(),
         ]);
         return {
           files,
@@ -349,6 +384,9 @@ export class LocalWorkspace {
           reminders,
           wikiLinks,
           manualOrders,
+          folderLinks,
+          spaceFolderLinks,
+          projectFolderLinks,
         };
       },
       undefined,
