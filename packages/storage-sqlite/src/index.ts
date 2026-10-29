@@ -85,6 +85,7 @@ const workFields = {
   parentProjectId: "parent_project_id",
   lifecycle: "lifecycle",
   categoryId: "category_id",
+  projectCoverAssetId: "project_cover_asset_id",
   activationState: "activation_state",
   activationPolicy: "activation_policy",
   startDate: "start_date",

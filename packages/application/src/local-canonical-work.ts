@@ -66,12 +66,17 @@ export function validateLocalCanonicalWorkValue(
       "assigneePrincipalId",
       "parentProjectId",
       "categoryId",
+      "projectCoverAssetId",
       "startDate",
       "dueDate",
       "completedAt",
       "deletedAt",
     ]) {
-      if (entity[field] !== null && typeof entity[field] !== "string")
+      if (
+        entity[field] !== undefined &&
+        entity[field] !== null &&
+        typeof entity[field] !== "string"
+      )
         invalid();
     }
     if (

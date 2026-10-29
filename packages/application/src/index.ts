@@ -240,6 +240,8 @@ export interface CreateWorkInput {
 }
 export interface UpdateWorkInput {
   readonly categoryId?: string | null;
+  /** PROJECT only: library asset id for the banner; null/"" removes it. */
+  readonly projectCoverAssetId?: string | null;
   readonly completionResolution?: {
     action: "KEEP" | "CANCEL" | "INBOX" | "MOVE";
     projectId?: string;
@@ -496,6 +498,17 @@ export class WorkService {
         throw new DomainError("VALIDATION_ERROR", {
           field: "projectLifecycle",
         });
+      if (input.projectCoverAssetId !== undefined) {
+        if (previous.type !== "PROJECT")
+          throw new DomainError("VALIDATION_ERROR", {
+            field: "projectCoverAssetId",
+          });
+        if (
+          input.projectCoverAssetId !== null &&
+          input.projectCoverAssetId !== ""
+        )
+          requireStableUuid(input.projectCoverAssetId, "coverAssetId");
+      }
       if (input.status !== undefined)
         requireMember(input.status, workStatuses, "status");
       const lifecycle: Partial<WorkItem> =
@@ -580,6 +593,9 @@ export class WorkService {
           input.categoryId === undefined
             ? previous.categoryId
             : input.categoryId,
+        ...(input.projectCoverAssetId === undefined
+          ? {}
+          : { projectCoverAssetId: input.projectCoverAssetId || null }),
         assigneePrincipalId:
           input.assigneePrincipalId === undefined
             ? previous.assigneePrincipalId

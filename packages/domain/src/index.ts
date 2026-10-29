@@ -70,6 +70,8 @@ export interface WorkItem {
   readonly parentProjectId: string | null;
   readonly lifecycle: import("./project-lifecycle").ProjectLifecycle | null;
   readonly categoryId: string | null;
+  /** PROJECT only: optional library asset used as the project banner. */
+  readonly projectCoverAssetId?: string | null;
   readonly projectIds?: readonly string[];
   readonly activationState: ActivationState;
   readonly activationPolicy: ActivationPolicy;
