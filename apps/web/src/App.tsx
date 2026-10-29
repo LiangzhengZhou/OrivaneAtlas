@@ -534,6 +534,21 @@ function Workbench({
       });
     }, "folder:cover:" + folder.id);
   }
+  async function chooseFolderCover(
+    folder: Organization,
+    coverAssetId: string,
+  ): Promise<boolean> {
+    return run(
+      () =>
+        runtime.organize({
+          kind: "FOLDER",
+          action: "cover",
+          coverAssetId,
+          entries: [folderEntry(folder)],
+        }),
+      "folder:cover:" + folder.id,
+    );
+  }
   async function clearFolderCover(folder: Organization): Promise<boolean> {
     return run(
       () =>
@@ -1397,6 +1412,11 @@ function Workbench({
         onIconFolder={setFolderIcon}
         onCoverFolder={setFolderCover}
         onClearCover={clearFolderCover}
+        onChooseCover={chooseFolderCover}
+        coverOptions={(snapshot.files ?? [])
+          .filter((file) => !file.deletedAt && file.mime.startsWith("image/"))
+          .slice(0, 8)
+          .map((file) => ({ id: file.id, name: file.name }))}
         onCreateNote={(folderId) => void createNoteInFolder(folderId)}
         onConvertLegacy={convertLegacyFolders}
       />

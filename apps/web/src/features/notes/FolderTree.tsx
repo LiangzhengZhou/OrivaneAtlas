@@ -50,6 +50,8 @@ export function FolderTree({
   onIconFolder,
   onCoverFolder,
   onClearCover,
+  coverOptions,
+  onChooseCover,
   onCreateNote,
   onConvertLegacy,
 }: {
@@ -67,6 +69,8 @@ export function FolderTree({
   onIconFolder(folder: Organization, icon: string): Promise<boolean>;
   onCoverFolder?(folder: Organization, file: File): Promise<boolean>;
   onClearCover?(folder: Organization): Promise<boolean>;
+  coverOptions?: readonly { id: string; name: string }[];
+  onChooseCover?(folder: Organization, assetId: string): Promise<boolean>;
   onCreateNote(folderId: string): void;
   onConvertLegacy(): Promise<void>;
 }) {
@@ -249,6 +253,13 @@ export function FolderTree({
                     setCoverTarget(folder);
                     coverInput.current?.click();
                   },
+                  ...(onChooseCover && coverOptions?.length
+                    ? {
+                        coverOptions,
+                        onChooseCover: (assetId: string) =>
+                          void perform(() => onChooseCover(folder, assetId)),
+                      }
+                    : {}),
                   ...(onClearCover && folder.coverAssetId
                     ? {
                         onClearCover: () =>
@@ -561,6 +572,8 @@ function FolderActions({
   onDelete,
   onCover,
   onClearCover,
+  coverOptions,
+  onChooseCover,
 }: {
   name: string;
   disabled: boolean;
@@ -571,6 +584,8 @@ function FolderActions({
   onDelete(): void;
   onCover?(): void;
   onClearCover?(): void;
+  coverOptions?: readonly { id: string; name: string }[];
+  onChooseCover?(assetId: string): void;
 }) {
   const { t } = useTranslation("desk");
   const anchor = useRef<HTMLButtonElement>(null);
@@ -633,6 +648,22 @@ function FolderActions({
               <ImagePlus size={15} /> {t("setFolderCover")}
             </MenuItem>
           )}
+          {onChooseCover && coverOptions?.length ? (
+            <>
+              <p className="ui-menu-label">{t("chooseFromLibrary")}</p>
+              {coverOptions.map((option) => (
+                <MenuItem
+                  key={option.id}
+                  onClick={() => {
+                    setOpen(false);
+                    onChooseCover(option.id);
+                  }}
+                >
+                  {option.name}
+                </MenuItem>
+              ))}
+            </>
+          ) : null}
           {onClearCover && (
             <MenuItem
               onClick={() => {

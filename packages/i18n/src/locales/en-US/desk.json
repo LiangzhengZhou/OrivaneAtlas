@@ -156,6 +156,7 @@
   "moveSelected": "Move selected",
   "deleteSelected": "Delete selected",
   "folders": "Folders",
+  "chooseFromLibrary": "Choose from library",
   "foldersHint": "Folders group notes without changing Markdown. Select notes, then move them into a folder.",
   "newFolder": "New folder",
   "folderName": "Folder name",

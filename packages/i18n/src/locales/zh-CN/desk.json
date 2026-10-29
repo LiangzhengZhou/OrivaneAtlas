@@ -160,6 +160,7 @@
   "moveSelected": "移动所选",
   "deleteSelected": "删除所选",
   "folders": "文件夹",
+  "chooseFromLibrary": "从文件库选择",
   "foldersHint": "文件夹只组织笔记，不改 Markdown。选中笔记后可用移动按钮放入文件夹。",
   "newFolder": "新建文件夹",
   "folderName": "文件夹名称",
