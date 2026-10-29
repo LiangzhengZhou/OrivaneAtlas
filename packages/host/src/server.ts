@@ -4535,7 +4535,7 @@ export async function createHost(options: HostOptions) {
                     "aiPolicy",
                     "parentDocumentId",
                     "aliases",
-                    "projectCoverAssetId",
+                    "coverAssetId",
                   ]);
                   if (credential && input.aiPolicy !== undefined)
                     fail(403, "FORBIDDEN");

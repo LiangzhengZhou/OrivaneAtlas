@@ -404,6 +404,7 @@ export function ProjectWorkspace({
           <input
             hidden
             ref={projectCoverInput}
+            className="project-cover-input"
             type="file"
             accept="image/*"
             onChange={(event) => {

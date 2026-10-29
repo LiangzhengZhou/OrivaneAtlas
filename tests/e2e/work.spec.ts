@@ -2484,11 +2484,13 @@ test("project knowledge documents files and overview summaries persist", async (
       .getByRole("button", { name: "Owned research note", exact: true })
       .first(),
   ).toBeVisible();
-  await page.locator('.project-workspace input[type="file"]').setInputFiles({
-    name: "experiment.csv",
-    mimeType: "text/csv",
-    buffer: Buffer.from("name,value\nsample,42\n"),
-  });
+  await page
+    .locator('.project-workspace input[type="file"]:not(.project-cover-input)')
+    .setInputFiles({
+      name: "experiment.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("name,value\nsample,42\n"),
+    });
   const fileRow = page
     .locator(".project-material")
     .filter({ hasText: "experiment.csv" });
