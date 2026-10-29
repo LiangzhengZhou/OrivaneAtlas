@@ -13,7 +13,7 @@ import {
   type WorkItem,
   type WorkStatus,
 } from "@arclattice/domain";
-import { ImagePlus, MoreHorizontal, X } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useEntitySelection } from "./app/EntitySelection";
@@ -110,7 +110,6 @@ export function ProjectWorkspace({
   const { t, i18n } = useTranslation("desk");
   const selection = useEntitySelection();
   const headerMenuAnchor = useRef<HTMLButtonElement>(null);
-  const projectCoverInput = useRef<HTMLInputElement>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const taskFilterAnchor = useRef<HTMLButtonElement>(null);
   const [taskFilterOpen, setTaskFilterOpen] = useState(false);
@@ -340,79 +339,9 @@ export function ProjectWorkspace({
       ),
   );
   const parent = workIndex.projectsById.get(project.parentProjectId ?? "");
-  async function updateProjectCover(file: File | null) {
-    if (file && !file.type.startsWith("image/")) return;
-    await run(async () => {
-      let projectCoverAssetId: string | null = null;
-      if (file) {
-        const uploaded = await runtime.uploadFile(
-          {
-            name: file.name,
-            spaceId: null,
-            mime: file.type || "application/octet-stream",
-          },
-          file,
-        );
-        projectCoverAssetId = uploaded.id;
-      }
-      await runtime.service.update(
-        runtime.context,
-        project.id,
-        project.version,
-        { projectCoverAssetId },
-      );
-    });
-  }
   return (
     <section className="project-workspace">
       <div className="panel project-summary">
-        <div className="space-cover project-cover">
-          <div className="space-cover-media">
-            {project.projectCoverAssetId ? (
-              <img
-                src={`/api/library/asset?id=${encodeURIComponent(project.projectCoverAssetId)}`}
-                alt=""
-              />
-            ) : (
-              <span>{t("projectCover")}</span>
-            )}
-          </div>
-          <div className="space-cover-actions">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => projectCoverInput.current?.click()}
-            >
-              <ImagePlus size={14} />
-              {project.projectCoverAssetId
-                ? t("changeProjectCover")
-                : t("setProjectCover")}
-            </Button>
-            {project.projectCoverAssetId && (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={busy}
-                aria-label={t("removeProjectCover")}
-                onClick={() => void updateProjectCover(null)}
-              >
-                <X size={14} />
-              </Button>
-            )}
-          </div>
-          <input
-            hidden
-            ref={projectCoverInput}
-            type="file"
-            accept="image/*"
-            onChange={(event) => {
-              const file = event.target.files?.[0] ?? null;
-              event.target.value = "";
-              if (file) void updateProjectCover(file);
-            }}
-          />
-        </div>
         <h1>{project.title}</h1>
         <p>{t("projectLifecycles." + projectLifecycle(project))}</p>
         <p>

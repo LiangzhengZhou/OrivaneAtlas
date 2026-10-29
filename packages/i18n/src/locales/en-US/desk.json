@@ -337,10 +337,6 @@
   "scopeDirect": "This project only",
   "scopeSubtree": "Include subprojects",
   "projectProgress": "{{completed}} completed · {{canceled}} canceled · {{unfinished}} unfinished",
-  "projectCover": "Project cover",
-  "setProjectCover": "Set cover",
-  "changeProjectCover": "Change cover",
-  "removeProjectCover": "Remove cover",
   "projectLifecycle": "Project lifecycle",
   "projectLifecycles": {
     "PLANNED": "Planned",
