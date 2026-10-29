@@ -431,5 +431,7 @@
     "collapseAll": "全部收起",
     "undated": "无日期",
     "count": "{{count}} 篇"
-  }
+  },
+  "openFileLibrary": "打开文件库",
+  "fileLibrary": "文件库"
 }

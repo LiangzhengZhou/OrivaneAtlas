@@ -19044,3 +19044,23 @@ test("project cover uploads and can be removed", async ({
     .click();
   await expect(cover.locator("img")).toHaveCount(0);
 });
+
+test("sidebar opens the independent file library", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const zh = info.project.name.includes("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await page
+    .getByRole("button", {
+      name: zh ? "打开文件库" : "Open file library",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator(".files-resource-heading h2")).toContainText(
+    zh ? "文件库" : "File library",
+  );
+  await expect(page.locator(".files-folder-panel")).toHaveCount(0);
+  await expect(page).toHaveURL(/library=1/);
+});

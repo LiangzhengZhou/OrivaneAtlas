@@ -1,5 +1,5 @@
 import { navigationGroup, navigationViews } from "@arclattice/domain";
-import { LogOut, PanelLeft, Settings2 } from "lucide-react";
+import { FolderOpen, LogOut, PanelLeft, Settings2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/ui/Button";
@@ -22,6 +22,7 @@ export function Sidebar({
   onReorder,
   label,
   onNavigate,
+  onFileLibrary,
   onToggleMobile,
   onToggleCollapsed,
   onLogout,
@@ -40,6 +41,7 @@ export function Sidebar({
   ): void;
   label(value: string): string;
   onNavigate(view: View): void;
+  onFileLibrary?(): void;
   onToggleMobile(): void;
   onToggleCollapsed(): void;
   onLogout(): void;
@@ -167,6 +169,18 @@ export function Sidebar({
           </section>
         ))}
       </nav>
+      {onFileLibrary && (
+        <Button
+          type="button"
+          variant="ghost"
+          className="nav-item"
+          aria-label={t("openFileLibrary")}
+          onClick={onFileLibrary}
+        >
+          <FolderOpen size={18} />
+          <span>{t("fileLibrary")}</span>
+        </Button>
+      )}
       <div className="sidebar-bottom">
         <Button
           variant="ghost"

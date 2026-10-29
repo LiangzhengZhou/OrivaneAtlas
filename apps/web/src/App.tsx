@@ -1187,6 +1187,10 @@ function Workbench({
     setSelectedNotes([]);
     if (requestedStatus && next === view) setStatus(requestedStatus);
   }
+  async function openFileLibrary() {
+    await navigate("files");
+    location.hash = "files?library=1";
+  }
   function open(item: WorkItem | "new") {
     setError(null);
     if (item === "new")
@@ -1821,6 +1825,7 @@ function Workbench({
                     onReorder={reorderNavigation}
                     label={viewLabel}
                     onNavigate={navigate}
+                    onFileLibrary={() => void openFileLibrary()}
                     onToggleMobile={() =>
                       setMobileNavigationOpen((value) => !value)
                     }

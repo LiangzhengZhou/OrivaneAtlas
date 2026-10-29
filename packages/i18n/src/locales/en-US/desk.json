@@ -431,5 +431,7 @@
     "collapseAll": "Collapse all",
     "undated": "Undated",
     "count": "{{count}} entries"
-  }
+  },
+  "openFileLibrary": "Open file library",
+  "fileLibrary": "File library"
 }

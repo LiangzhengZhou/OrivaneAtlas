@@ -80,6 +80,22 @@ export function FilesWorkspace({
   const [kind, setKind] = useState<ResourceKind>("ALL");
   const [sort, setSort] = useState<"updated" | "name">("updated");
   const [libraryOnly, setLibraryOnly] = useState(false);
+  function setLibraryMode(value: boolean) {
+    setLibraryOnly(value);
+    const base = location.hash.split("?")[0] || "#files";
+    history.replaceState(null, "", value ? `${base}?library=1` : base);
+  }
+  useEffect(() => {
+    const sync = () =>
+      setLibraryOnly(
+        new URLSearchParams(location.hash.split("?")[1] ?? "").get(
+          "library",
+        ) === "1",
+      );
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
   useEffect(() => {
     if (libraryOnly && kind === "NOTE") setKind("ALL");
   }, [kind, libraryOnly]);
@@ -242,7 +258,7 @@ export function FilesWorkspace({
                 type="button"
                 variant="ghost"
                 aria-pressed={!libraryOnly}
-                onClick={() => setLibraryOnly(false)}
+                onClick={() => setLibraryMode(false)}
               >
                 {zh ? "全部资源" : "All resources"}
               </Button>
@@ -250,7 +266,7 @@ export function FilesWorkspace({
                 type="button"
                 variant="ghost"
                 aria-pressed={libraryOnly}
-                onClick={() => setLibraryOnly(true)}
+                onClick={() => setLibraryMode(true)}
               >
                 {zh ? "文件库" : "File library"}
               </Button>
