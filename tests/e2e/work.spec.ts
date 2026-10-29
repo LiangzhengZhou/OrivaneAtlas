@@ -18809,4 +18809,9 @@ test("task list groups by priority and collapses groups", async ({
   await expect(
     high.getByText("Grouped high task", { exact: true }),
   ).toBeVisible();
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await expect(
+    page.getByLabel(w.desk.taskWorkspace.groupBy, { exact: true }),
+  ).toHaveValue("priority");
 });
