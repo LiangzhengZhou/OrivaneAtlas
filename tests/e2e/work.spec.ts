@@ -2786,6 +2786,13 @@ test("navigation collapses independently on desktop and mobile", async ({
   const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   await page.setViewportSize({ width: 1280, height: 850 });
+  const navigationLabels = await page
+    .locator(".sidebar .nav-item")
+    .evaluateAll((items) =>
+      items.map((item) => item.textContent?.trim() ?? ""),
+    );
+  expect(navigationLabels.length).toBeGreaterThan(0);
+  expect(navigationLabels.every((label) => !/\d/.test(label))).toBe(true);
   const sidebarBounds = await page.locator(".sidebar").boundingBox();
   const collapseBounds = await page
     .locator(".sidebar-collapse-button")
