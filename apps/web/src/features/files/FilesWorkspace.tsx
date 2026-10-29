@@ -79,27 +79,33 @@ export function FilesWorkspace({
   const input = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState<ResourceKind>("ALL");
   const [sort, setSort] = useState<"updated" | "name">("updated");
+  const [libraryOnly, setLibraryOnly] = useState(false);
+  useEffect(() => {
+    if (libraryOnly && kind === "NOTE") setKind("ALL");
+  }, [kind, libraryOnly]);
 
   // Selecting a folder is inherently a notes operation; move the type view to
   // notes so the result is not an empty "all" list beside a highlighted folder.
   useEffect(() => {
-    if (folderFilter !== null) setKind("NOTE");
-  }, [folderFilter]);
+    if (!libraryOnly && folderFilter !== null) setKind("NOTE");
+  }, [folderFilter, libraryOnly]);
 
   const spaces = new Map(library.map((entry) => [entry.id, entry]));
   const rows: ResourceRow[] = [
-    ...notes
-      .filter((note) => !note.deletedAt && note.kind === "NOTE")
-      .map((note) => ({
-        key: `NOTE:${note.id}`,
-        kind: "NOTE" as const,
-        title: note.title || (zh ? "未命名笔记" : "Untitled note"),
-        location: getFolderLabel(note) || (zh ? "未归档" : "Unfiled"),
-        updatedAt: note.updatedAt,
-        icon: getIcon(note),
-        folderKey: getFolderKey(note),
-        note,
-      })),
+    ...(!libraryOnly
+      ? notes
+          .filter((note) => !note.deletedAt && note.kind === "NOTE")
+          .map((note) => ({
+            key: `NOTE:${note.id}`,
+            kind: "NOTE" as const,
+            title: note.title || (zh ? "未命名笔记" : "Untitled note"),
+            location: getFolderLabel(note) || (zh ? "未归档" : "Unfiled"),
+            updatedAt: note.updatedAt,
+            icon: getIcon(note),
+            folderKey: getFolderKey(note),
+            note,
+          }))
+      : []),
     ...library
       .filter((entry) => entry.kind === "DOCUMENT" && !entry.deletedAt)
       .map((entry) => ({
@@ -164,7 +170,9 @@ export function FilesWorkspace({
   };
   const tabs: { value: ResourceKind; label: string }[] = [
     { value: "ALL", label: zh ? "全部" : "All" },
-    { value: "NOTE", label: zh ? "笔记" : "Notes" },
+    ...(!libraryOnly
+      ? [{ value: "NOTE" as const, label: zh ? "笔记" : "Notes" }]
+      : []),
     { value: "DOCUMENT", label: zh ? "文档" : "Documents" },
     { value: "FILE", label: zh ? "文件" : "Files" },
   ];
@@ -185,8 +193,11 @@ export function FilesWorkspace({
     else if (row.ref) onOpenResource(row.ref);
   };
   return (
-    <div className="note-browser-shell files-workspace">
-      {folderPanel && (
+    <div
+      className="note-browser-shell files-workspace"
+      data-folder-panel={!libraryOnly && folderPanel ? "true" : "false"}
+    >
+      {folderPanel && !libraryOnly && (
         <aside className="note-folder-panel files-folder-panel">
           <p className="files-rail-label">
             <FolderOpen size={13} aria-hidden="true" />
@@ -202,16 +213,48 @@ export function FilesWorkspace({
         <header className="files-resource-header">
           <div className="files-resource-heading">
             <h2 id={titleId}>
-              {zh ? "工作区资源" : "Workspace resources"}
+              {libraryOnly
+                ? zh
+                  ? "文件库"
+                  : "File library"
+                : zh
+                  ? "工作区资源"
+                  : "Workspace resources"}
               <small>{visible.length}</small>
             </h2>
             <p>
-              {zh
-                ? "笔记、文档与文件在同一处浏览；笔记文件夹只组织笔记。"
-                : "Notes, documents and files in one place; note folders only organize notes."}
+              {libraryOnly
+                ? zh
+                  ? "独立浏览文档与文件；上传不要求选择知识空间。"
+                  : "Browse documents and files independently; uploads do not require a knowledge space."
+                : zh
+                  ? "笔记、文档与文件在同一处浏览；笔记文件夹只组织笔记。"
+                  : "Notes, documents and files in one place; note folders only organize notes."}
             </p>
           </div>
           <div className="files-resource-actions">
+            <div
+              className="files-kind-tabs"
+              role="group"
+              aria-label={zh ? "浏览模式" : "Browse mode"}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                aria-pressed={!libraryOnly}
+                onClick={() => setLibraryOnly(false)}
+              >
+                {zh ? "全部资源" : "All resources"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-pressed={libraryOnly}
+                onClick={() => setLibraryOnly(true)}
+              >
+                {zh ? "文件库" : "File library"}
+              </Button>
+            </div>
             <div
               className="files-kind-tabs"
               role="group"

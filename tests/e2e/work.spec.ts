@@ -6066,6 +6066,22 @@ test("files page opens real documents and uploads original files", async ({
   await page.reload();
   await nav(page, w.desk.files);
   const resources = page.locator(".workspace-resources");
+  const libraryMode = page.getByRole("button", {
+    name: info.project.name.includes("zh") ? "文件库" : "File library",
+    exact: true,
+  });
+  await libraryMode.click();
+  await expect(page.locator(".files-folder-panel")).toHaveCount(0);
+  await expect(resources.getByText(/Field notes — 量子场论/)).toHaveCount(0);
+  await expect(
+    resources.getByRole("button", { name: /Resource document/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", {
+      name: info.project.name.includes("zh") ? "全部资源" : "All resources",
+      exact: true,
+    })
+    .click();
   await resources.getByRole("button", { name: /Resource document/ }).click();
   await expect(page.locator(".files-detail-panel")).toContainText(
     "Resource document",
