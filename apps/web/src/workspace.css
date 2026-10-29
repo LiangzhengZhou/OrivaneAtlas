@@ -192,6 +192,13 @@
 .live-markdown .cm-line {
   padding: 0;
 }
+.md-math-delimiter {
+  color: var(--math-delimiter);
+  font-weight: 600;
+}
+.md-math-content {
+  color: var(--math-content);
+}
 .md-live-atxheading1 {
   font-size: 1.7em;
   font-weight: 700;

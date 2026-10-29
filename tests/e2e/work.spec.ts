@@ -6308,6 +6308,8 @@ test("inline and block math render while editing without changing source", async
   await expect(body).toHaveCSS("font-size", "18px");
   await pane(page).locator(".md-live-math").first().click();
   await expect(body).toContainText("$E=mc^2$");
+  await expect(pane(page).locator(".md-math-delimiter").first()).toBeVisible();
+  await expect(pane(page).locator(".md-math-content").first()).toBeVisible();
   await page.keyboard.press("ArrowRight");
   await page.keyboard.insertText("0");
   await expect(

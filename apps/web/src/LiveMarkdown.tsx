@@ -216,6 +216,86 @@ const blockPreview = StateField.define<DecorationSet>({
   },
   provide: (field) => EditorView.decorations.from(field),
 });
+// Keep inline and block formula source legible while editing: delimiters and
+// formula body get independent semantic colors, matching the rendered math.
+function mathMarks(
+  state: EditorState,
+  from: number,
+  to: number,
+): { from: number; to: number; decoration: Decoration }[] {
+  if (state.doc.length > 50000) return [];
+  const text = state.sliceDoc(from, to);
+  const pattern =
+    /(?<![\\$])\$\$([\s\S]+?)\$\$(?!\$)|(?<![\\$])\$(?![\s$])([^$\n]*?[^\s\\$])\$(?!\$)/g;
+  const ranges: { from: number; to: number; decoration: Decoration }[] = [];
+  for (const match of text.matchAll(pattern)) {
+    const start = from + (match.index ?? 0);
+    const end = start + match[0].length;
+    const block = match[1] !== undefined;
+    const delimiter = block ? 2 : 1;
+    let excluded = false;
+    syntaxTree(state).iterate({
+      from: start,
+      to: end,
+      enter(node) {
+        if (
+          /^(InlineCode|FencedCode|CodeBlock|Link|Image|Autolink)$/.test(
+            node.name,
+          )
+        )
+          excluded = true;
+      },
+    });
+    if (excluded) continue;
+    const contentFrom = start + delimiter,
+      contentTo = end - delimiter;
+    ranges.push({
+      from: start,
+      to: contentFrom,
+      decoration: Decoration.mark({ class: "md-math-delimiter" }),
+    });
+    ranges.push({
+      from: contentTo,
+      to: end,
+      decoration: Decoration.mark({ class: "md-math-delimiter" }),
+    });
+    if (contentTo > contentFrom)
+      ranges.push({
+        from: contentFrom,
+        to: contentTo,
+        decoration: Decoration.mark({ class: "md-math-content" }),
+      });
+  }
+  return ranges;
+}
+function mathDecorationSet(view: EditorView): DecorationSet {
+  const ranges = mathMarks(
+    view.state,
+    view.viewport.from,
+    view.viewport.to,
+  ).sort(
+    (a, b) =>
+      a.from - b.from || a.decoration.startSide - b.decoration.startSide,
+  );
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const range of ranges)
+    builder.add(range.from, range.to, range.decoration);
+  return builder.finish();
+}
+const mathHighlight = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = mathDecorationSet(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged)
+        this.decorations = mathDecorationSet(update.view);
+    }
+  },
+  { decorations: (value) => value.decorations },
+);
+
 // Decorations never alter Markdown or undo history. Reveal syntax on selected lines.
 function decorate(view: EditorView): DecorationSet {
   // The incremental language supplies its own highlighting and has no rich
@@ -418,6 +498,7 @@ export function LiveMarkdown({
           loaderConfig.current.of(imageLoader.of(initialLoader.current)),
           history(),
           pendingImage,
+          mathHighlight,
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({
             "aria-label": initial.current.label,
