@@ -4427,7 +4427,8 @@ export async function createHost(options: HostOptions) {
                     "parentId",
                     "id",
                     "icon",
-                    "projectCoverAssetId",
+                    "coverAssetId",
+                    "coverFocus",
                     "scope",
                     "entries",
                   ]);
