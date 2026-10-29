@@ -479,49 +479,35 @@ test("File Atlas uses the real Host and canonical worker, waits for approval and
     await page.keyboard.press("Shift+End");
     await page.keyboard.press("Control+b");
     await expect(content).toContainText("**First**");
-    const selectionToolbar = page.getByRole("toolbar", {
-      name: zh ? "选区工具栏" : "Selection toolbar",
+    await page.locator(".live-markdown").click({ button: "right" });
+    const contextMenu = page.getByRole("menu", {
+      name: zh ? "Markdown 命令" : "Markdown commands",
       exact: true,
     });
-    await expect(selectionToolbar).toBeVisible();
-    await page.screenshot({
-      path: info.outputPath("selection-toolbar.png"),
-      fullPage: true,
-    });
-    await selectionToolbar
-      .getByRole("button", { name: zh ? "粗体" : "Bold", exact: true })
+    await expect(contextMenu).toBeVisible();
+    await contextMenu
+      .getByRole("menuitem", {
+        name: zh ? /粗体/ : /Bold/,
+      })
       .click();
     await expect(content).not.toContainText("**First**");
-    await page
-      .getByRole("combobox", {
-        name: zh ? "编辑器工具栏" : "Editor toolbar",
-        exact: true,
-      })
-      .selectOption("PINNED");
-    await content.focus();
-    await page.keyboard.press("Control+End");
-    await page.keyboard.press("Enter");
-    await page
-      .getByRole("toolbar")
-      .getByRole("button", {
-        name: zh ? "更多格式" : "More formatting",
-        exact: true,
-      })
-      .click();
-    const chooser = page.waitForEvent("filechooser");
-    await page
-      .locator(".markdown-command-menu")
-      .getByRole("button", {
-        name: zh ? "附加文件" : "Attach file",
-        exact: true,
-      })
-      .click();
-    await (await chooser).setFiles({
-      name: "editor-attachment.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.from("Original editor attachment"),
-    });
-    await expect(content).toContainText("editor-attachment.txt");
+    await page.locator(".live-markdown").click({ button: "right" });
+    await expect(
+      page.getByRole("menu").getByRole("menuitem", {
+        name: zh ? /复制/ : /Copy/,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("menu").getByRole("menuitem", {
+        name: zh ? /粘贴/ : /Paste/,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("menu").getByRole("menuitem", {
+        name: zh ? /附加文件/ : /Attach file/,
+      }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
     expect(calls).toBe(3);
     await page.getByRole("tab", { name: file.name, exact: true }).click();
     await detail

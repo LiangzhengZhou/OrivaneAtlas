@@ -136,7 +136,7 @@
   display: block;
   width: 100%;
   max-width: 800px;
-  margin: 30px auto 10px;
+  margin: 16px auto 4px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -163,7 +163,7 @@
 .live-markdown,
 .document-reading {
   max-width: 800px;
-  margin: 18px auto;
+  margin: 8px auto;
 }
 .document-reading {
   max-width: 800px;
@@ -186,7 +186,7 @@
   font-family: ui-monospace, "Cascadia Code", monospace;
 }
 .live-markdown .cm-content {
-  padding: 12px 0 100px;
+  padding: 8px 0 100px;
   caret-color: var(--accent);
 }
 .live-markdown .cm-line {

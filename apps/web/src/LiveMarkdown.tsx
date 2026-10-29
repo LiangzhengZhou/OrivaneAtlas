@@ -37,9 +37,6 @@ import {
 } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { useTranslation } from "react-i18next";
-import { Button } from "./components/ui/Button";
-import { Menu, Select } from "./components/ui/Surfaces";
-import { DocumentPopover } from "./features/documents/DocumentPopover";
 import { largeMarkdownLanguage } from "./features/documents/large-markdown-language";
 import { MarkdownCommandIcon } from "./features/documents/MarkdownCommandIcon";
 import {
@@ -311,23 +308,12 @@ export function LiveMarkdown({
 }) {
   const parent = useRef<HTMLDivElement>(null);
   const surface = useRef<HTMLDivElement>(null);
-  const [toolbarPreference, setToolbarPreference] = useState<
-    "AUTO" | "PINNED" | "HIDDEN"
-  >(() => {
-    try {
-      const value = localStorage.getItem("orivane.atlas.markdown-toolbar");
-      return value === "PINNED" || value === "HIDDEN" ? value : "AUTO";
-    } catch {
-      return "AUTO";
-    }
-  });
-  const [hasSelection, setHasSelection] = useState(false),
-    [focused, setFocused] = useState(false),
-    [selectionPoint, setSelectionPoint] = useState<{
-      left: number;
-      top: number;
-    } | null>(null),
-    [contextOpen, setContextOpen] = useState(false);
+  const contextRef = useRef<HTMLDivElement>(null);
+  const contextSelection = useRef<{ anchor: number; head: number } | null>(
+    null,
+  );
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextPoint, setContextPoint] = useState({ left: 0, top: 0 });
   const { i18n } = useTranslation();
   const language = useRef(i18n.language);
   language.current = i18n.language;
@@ -371,22 +357,6 @@ export function LiveMarkdown({
       published.current = text;
       callbacks.current.onChange(text);
       callbacks.current.onPendingChange?.(false);
-    };
-    const placeSelectionToolbar = (target: EditorView) => {
-      const selection = target.state.selection.main;
-      if (selection.empty) {
-        setSelectionPoint(null);
-        return;
-      }
-      const coords = target.coordsAtPos(selection.from);
-      if (!coords) {
-        setSelectionPoint(null);
-        return;
-      }
-      setSelectionPoint({
-        left: Math.max(8, Math.min(window.innerWidth - 260, coords.left)),
-        top: Math.max(8, coords.top - 52),
-      });
     };
     const view = new EditorView({
       parent: parent.current,
@@ -484,16 +454,16 @@ export function LiveMarkdown({
             ...historyKeymap,
           ]),
           EditorView.domEventHandlers({
-            focus: () => {
-              setFocused(true);
-              placeSelectionToolbar(view);
+            mousedown: (event, view) => {
+              if (event.button !== 2) return false;
+              const selection = view.state.selection.main;
+              contextSelection.current = {
+                anchor: selection.anchor,
+                head: selection.head,
+              };
+              return false;
             },
-            blur: (event) => {
-              setFocused(
-                !!event.relatedTarget &&
-                  surface.current?.contains(event.relatedTarget as Node) ===
-                    true,
-              );
+            blur: () => {
               flush();
             },
             paste: (event) => {
@@ -513,10 +483,6 @@ export function LiveMarkdown({
             },
           }),
           EditorView.updateListener.of((update) => {
-            if (update.selectionSet) {
-              setHasSelection(!update.state.selection.main.empty);
-              placeSelectionToolbar(update.view);
-            }
             if (
               update.docChanged &&
               !update.transactions.every((tr) => tr.annotation(externalValue))
@@ -536,13 +502,8 @@ export function LiveMarkdown({
       }),
     });
     editorRef.current = view;
-    const repositionSelectionToolbar = () => placeSelectionToolbar(view);
-    window.addEventListener("scroll", repositionSelectionToolbar, true);
-    window.addEventListener("resize", repositionSelectionToolbar);
     return () => {
       flush();
-      window.removeEventListener("scroll", repositionSelectionToolbar, true);
-      window.removeEventListener("resize", repositionSelectionToolbar);
       editorRef.current = null;
       view.destroy();
     };
@@ -593,116 +554,153 @@ export function LiveMarkdown({
   const visibleCommands = MarkdownCommandRegistry.filter(
     (command) => command.id !== "file" || onAttachFile,
   );
+  const commandById = (id: string) =>
+    visibleCommands.find((command) => command.id === id);
+  function restoreContextSelection(view: EditorView) {
+    if (contextSelection.current)
+      view.dispatch({ selection: contextSelection.current });
+  }
   function invoke(command: (typeof MarkdownCommandRegistry)[number]) {
     const view = editorRef.current;
-    if (view)
+    if (view) {
+      restoreContextSelection(view);
       runMarkdownCommand(view, command.id, {
         askAtlas: onAtlas,
         attachFile: onAttachFile,
       });
-    setContextOpen(false);
+    }
+    closeContext();
   }
-  function controls(selection: boolean, floating = false) {
+  function closeContext() {
+    setContextOpen(false);
+    editorRef.current?.focus();
+  }
+  async function copySelection(cut: boolean) {
+    const view = editorRef.current;
+    if (!view) return;
+    restoreContextSelection(view);
+    const { from, to } = view.state.selection.main;
+    const text = view.state.sliceDoc(from, to);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      view.focus();
+      document.execCommand("copy");
+    }
+    if (cut)
+      view.dispatch({
+        changes: { from, to, insert: "" },
+        selection: { anchor: from },
+        userEvent: "delete.cut",
+      });
+    closeContext();
+  }
+  async function pasteClipboard() {
+    const view = editorRef.current;
+    if (!view) return;
+    restoreContextSelection(view);
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      const { from, to } = view.state.selection.main;
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+        userEvent: "input.paste",
+      });
+    } catch {
+      // Clipboard read can be denied by the host; leave the document unchanged.
+    }
+    closeContext();
+  }
+  function selectAll() {
+    const view = editorRef.current;
+    if (!view) return;
+    view.dispatch({
+      selection: { anchor: 0, head: view.state.doc.length },
+    });
+    closeContext();
+  }
+  function menuItem(
+    label: string,
+    action: () => void,
+    options: {
+      command?: string | undefined;
+      shortcut?: string | undefined;
+    } = {},
+  ) {
+    const command = options.command ? commandById(options.command) : undefined;
     return (
-      <div
-        role="toolbar"
-        aria-label={
-          selection
-            ? zh
-              ? "选区工具栏"
-              : "Selection toolbar"
-            : zh
-              ? "Markdown 工具栏"
-              : "Markdown toolbar"
-        }
-        className={`markdown-command-toolbar${floating ? " is-floating glass-surface" : ""}`}
-        style={
-          floating && selectionPoint
-            ? { left: selectionPoint.left, top: selectionPoint.top }
-            : undefined
-        }
+      <button
+        key={label + (options.command ?? "")}
+        type="button"
+        role="menuitem"
+        className="markdown-context-item"
+        onClick={action}
       >
-        {visibleCommands
-          .filter((command) =>
-            ["bold", "italic", "link", "atlas"].includes(command.id),
-          )
-          .map((command) => (
-            <Button
-              key={command.id}
-              variant="ghost"
-              className="markdown-format-button"
-              aria-label={zh ? command.zh : command.en}
-              title={
-                (zh ? command.zh : command.en) +
-                ("key" in command
-                  ? ` (${command.key.replace("Mod", "Ctrl/⌘")})`
-                  : "")
-              }
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => invoke(command)}
-            >
-              <MarkdownCommandIcon command={command.id} />
-            </Button>
-          ))}
-        <DocumentPopover
-          className="markdown-command-menu"
-          label={zh ? "更多格式" : "More formatting"}
-        >
-          {visibleCommands.map((command) => (
-            <Button
-              key={command.id}
-              variant="ghost"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => invoke(command)}
-            >
-              <MarkdownCommandIcon command={command.id} />
-              {zh ? command.zh : command.en}
-            </Button>
-          ))}
-        </DocumentPopover>
-      </div>
+        {command && <MarkdownCommandIcon command={command.id} />}
+        <span>{label}</span>
+        {options.shortcut && <kbd>{options.shortcut}</kbd>}
+      </button>
     );
   }
+  function commandItem(id: string) {
+    const command = commandById(id);
+    if (!command) return null;
+    return menuItem(zh ? command.zh : command.en, () => invoke(command), {
+      command: command.id,
+      shortcut:
+        "key" in command ? command.key.replace("Mod", "Ctrl/⌘") : undefined,
+    });
+  }
+  useEffect(() => {
+    if (!contextOpen) return;
+    const close = (event: Event) => {
+      if (
+        event.target instanceof Node &&
+        contextRef.current?.contains(event.target)
+      )
+        return;
+      setContextOpen(false);
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setContextOpen(false);
+    };
+    window.addEventListener("pointerdown", close, true);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("pointerdown", close, true);
+      window.removeEventListener("keydown", key);
+    };
+  }, [contextOpen]);
+  useEffect(() => {
+    const capture = (event: PointerEvent) => {
+      if (event.button !== 2) return;
+      const view = editorRef.current;
+      if (!view) return;
+      const selection = view.state.selection.main;
+      contextSelection.current = {
+        anchor: selection.anchor,
+        head: selection.head,
+      };
+    };
+    window.addEventListener("pointerdown", capture, true);
+    return () => window.removeEventListener("pointerdown", capture, true);
+  }, []);
   return (
     <div className="markdown-editor-surface" ref={surface}>
-      <div className="markdown-toolbar-preference">
-        <Select
-          label={zh ? "编辑器工具栏" : "Editor toolbar"}
-          value={toolbarPreference}
-          onChange={(event) => {
-            const next =
-              event.target.value === "PINNED"
-                ? "PINNED"
-                : event.target.value === "HIDDEN"
-                  ? "HIDDEN"
-                  : "AUTO";
-            setToolbarPreference(next);
-            try {
-              localStorage.setItem("orivane.atlas.markdown-toolbar", next);
-            } catch {
-              /* Device UI preference only. */
-            }
-          }}
-        >
-          <option value="AUTO">
-            {zh ? "自动工具栏" : "Automatic toolbar"}
-          </option>
-          <option value="PINNED">
-            {zh ? "始终显示工具栏" : "Always show toolbar"}
-          </option>
-          <option value="HIDDEN">{zh ? "隐藏工具栏" : "Hide toolbar"}</option>
-        </Select>
-      </div>
-      {toolbarPreference === "PINNED" && controls(hasSelection)}
-      {toolbarPreference === "AUTO" &&
-        focused &&
-        hasSelection &&
-        controls(true, true)}
       <div
         className={`live-markdown${source ? " markdown-source" : ""}`}
         ref={parent}
         onContextMenu={(event) => {
           event.preventDefault();
+          const view = editorRef.current;
+          if (view && contextSelection.current)
+            view.dispatch({ selection: contextSelection.current });
+          setContextPoint({
+            left: Math.max(8, Math.min(window.innerWidth - 248, event.clientX)),
+            top: Math.max(8, Math.min(window.innerHeight - 420, event.clientY)),
+          });
           setContextOpen(true);
         }}
         onKeyDown={(event) => {
@@ -711,28 +709,52 @@ export function LiveMarkdown({
             (event.shiftKey && event.key === "F10")
           ) {
             event.preventDefault();
+            setContextPoint({
+              left: Math.max(8, window.innerWidth / 2 - 120),
+              top: Math.max(8, window.innerHeight / 2 - 180),
+            });
             setContextOpen(true);
           }
         }}
       />
       {contextOpen && (
-        <Menu
-          anchorRef={parent}
-          label={zh ? "Markdown 命令" : "Markdown commands"}
-          onDismiss={() => setContextOpen(false)}
+        <div
+          ref={contextRef}
+          className="markdown-context-menu glass-surface"
+          role="menu"
+          aria-label={zh ? "Markdown 命令" : "Markdown commands"}
+          style={{ left: contextPoint.left, top: contextPoint.top }}
+          onContextMenu={(event) => event.preventDefault()}
         >
-          {visibleCommands.map((command) => (
-            <Button
-              key={command.id}
-              role="menuitem"
-              variant="ghost"
-              onClick={() => invoke(command)}
-            >
-              <MarkdownCommandIcon command={command.id} />
-              {zh ? command.zh : command.en}
-            </Button>
-          ))}
-        </Menu>
+          {menuItem(zh ? "剪切" : "Cut", () => void copySelection(true))}
+          {menuItem(zh ? "复制" : "Copy", () => void copySelection(false))}
+          {menuItem(zh ? "粘贴" : "Paste", () => void pasteClipboard())}
+          {menuItem(zh ? "全选" : "Select all", selectAll)}
+          <div className="markdown-context-separator" />
+          {(
+            ["bold", "italic", "strike", "inline-code", "formula"] as const
+          ).map(commandItem)}
+          <div className="markdown-context-separator" />
+          {(["heading", "bullet", "numbered", "task", "quote"] as const).map(
+            commandItem,
+          )}
+          <div className="markdown-context-separator" />
+          {(["link", "wiki", "table", "divider", "code", "image"] as const).map(
+            commandItem,
+          )}
+          {onAttachFile && (
+            <>
+              <div className="markdown-context-separator" />
+              {commandItem("file")}
+            </>
+          )}
+          {onAtlas && (
+            <>
+              <div className="markdown-context-separator" />
+              {commandItem("atlas")}
+            </>
+          )}
+        </div>
       )}
     </div>
   );
