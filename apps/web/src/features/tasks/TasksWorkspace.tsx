@@ -1,4 +1,5 @@
 import type { Priority } from "@arclattice/domain";
+import { Bookmark, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, SegmentedControl, Toolbar } from "../../components/ui/Button";
@@ -11,6 +12,12 @@ import {
   WorkBoard,
   type WorkProps,
 } from "../../WorkViews";
+import {
+  loadSavedTaskViews,
+  type SavedTaskView,
+  savedTaskViewId,
+  saveSavedTaskViews,
+} from "./saved-task-views";
 import { TaskGantt } from "./TaskGantt";
 import { TaskTimeline } from "./TaskTimeline";
 export type TaskPresentation = {
@@ -119,6 +126,38 @@ export function TasksWorkspace({
     if (!presentation) setLocalGroup(next);
     onPresentationChange?.({ tab, view, group: next });
   };
+  const [savedViews, setSavedViews] =
+    useState<readonly SavedTaskView[]>(loadSavedTaskViews);
+  const [savedViewsOpen, setSavedViewsOpen] = useState(false);
+  const savedViewsAnchor = useRef<HTMLButtonElement>(null);
+  const applyPresentation = (next: TaskPresentation) => {
+    setTab(next.tab);
+    setView(next.view);
+    setLocalGroup(next.group ?? "none");
+    onPresentationChange?.(next);
+  };
+  const saveCurrentView = () => {
+    const name = globalThis.prompt?.(
+      i18n.language.startsWith("zh") ? "视图名称" : "View name",
+    );
+    if (!name?.trim()) return;
+    const next = [
+      ...savedViews,
+      {
+        id: savedTaskViewId(),
+        name: name.trim().slice(0, 60),
+        presentation: { tab, view, group },
+      },
+    ].slice(0, 12);
+    setSavedViews(next);
+    saveSavedTaskViews(next);
+    setSavedViewsOpen(false);
+  };
+  const removeSavedView = (id: string) => {
+    const next = savedViews.filter((entry) => entry.id !== id);
+    setSavedViews(next);
+    saveSavedTaskViews(next);
+  };
   const zh = i18n.language.startsWith("zh");
   const chooseTab = (next: TaskPresentation["tab"]) => {
     if (!presentation) setTab(next);
@@ -216,6 +255,51 @@ export function TasksWorkspace({
               <option value="status">{t("taskWorkspace.groupStatus")}</option>
             </Select>
           </label>
+        )}
+        {view === "list" && (
+          <Button
+            ref={savedViewsAnchor}
+            type="button"
+            variant="ghost"
+            aria-expanded={savedViewsOpen}
+            aria-haspopup="menu"
+            onClick={() => setSavedViewsOpen((value) => !value)}
+          >
+            <Bookmark size={14} />
+            {t("taskWorkspace.savedViews")}
+          </Button>
+        )}
+        {savedViewsOpen && (
+          <Menu
+            anchorRef={savedViewsAnchor}
+            label={t("taskWorkspace.savedViews")}
+            onDismiss={() => setSavedViewsOpen(false)}
+          >
+            <MenuItem onClick={saveCurrentView}>
+              <Bookmark size={14} /> {t("taskWorkspace.saveCurrentView")}
+            </MenuItem>
+            {savedViews.map((entry) => (
+              <MenuItem
+                key={entry.id}
+                onClick={() => {
+                  applyPresentation(entry.presentation);
+                  setSavedViewsOpen(false);
+                }}
+              >
+                {entry.name}
+              </MenuItem>
+            ))}
+            {savedViews.map((entry) => (
+              <MenuItem
+                key={`delete:${entry.id}`}
+                className="ui-menu-item-danger"
+                onClick={() => removeSavedView(entry.id)}
+              >
+                <Trash2 size={14} /> {t("taskWorkspace.deleteView")}:{" "}
+                {entry.name}
+              </MenuItem>
+            ))}
+          </Menu>
         )}
         {filterControls}
         {view === "list" && (

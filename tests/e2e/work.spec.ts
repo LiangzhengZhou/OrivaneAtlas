@@ -18950,3 +18950,49 @@ test("space cover uploads and can be removed", async ({
     .click();
   await expect(cover.locator("img")).toHaveCount(0);
 });
+
+test("task saved views apply a named grouping", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.tasks);
+  const group = page.getByLabel(w.desk.taskWorkspace.groupBy, { exact: true });
+  await group.selectOption("priority");
+  page.once("dialog", (dialog) => void dialog.accept("Priority view"));
+  await page
+    .getByRole("button", {
+      name: w.desk.taskWorkspace.savedViews,
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", {
+      name: w.desk.taskWorkspace.saveCurrentView,
+      exact: true,
+    })
+    .click();
+  await group.selectOption("none");
+  await page
+    .getByRole("button", {
+      name: w.desk.taskWorkspace.savedViews,
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: "Priority view", exact: true })
+    .click();
+  await expect(group).toHaveValue("priority");
+  await page
+    .getByRole("button", {
+      name: w.desk.taskWorkspace.savedViews,
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("menuitem", {
+      name: new RegExp(`${w.desk.taskWorkspace.deleteView}: Priority view`),
+    })
+    .click();
+});

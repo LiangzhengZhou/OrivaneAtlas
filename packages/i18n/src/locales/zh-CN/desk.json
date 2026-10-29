@@ -373,7 +373,10 @@
     "groupProject": "项目",
     "groupPriority": "优先级",
     "groupStatus": "状态",
-    "unfinished": "未完成"
+    "unfinished": "未完成",
+    "savedViews": "保存的视图",
+    "saveCurrentView": "保存当前视图",
+    "deleteView": "删除视图"
   },
   "milestones": "里程碑",
   "newMilestone": "添加里程碑",

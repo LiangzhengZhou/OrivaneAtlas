@@ -373,7 +373,10 @@
     "groupProject": "Project",
     "groupPriority": "Priority",
     "groupStatus": "Status",
-    "unfinished": "unfinished"
+    "unfinished": "unfinished",
+    "savedViews": "Saved views",
+    "saveCurrentView": "Save current view",
+    "deleteView": "Delete view"
   },
   "milestones": "Milestones",
   "newMilestone": "Add milestone",
