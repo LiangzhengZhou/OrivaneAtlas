@@ -18996,3 +18996,49 @@ test("task saved views apply a named grouping", async ({
     })
     .click();
 });
+
+test("project cover uploads and can be removed", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "Cover project",
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await page
+    .getByRole("button", { name: "Cover project", exact: true })
+    .click();
+  await expect(page.locator(".project-workspace")).toBeVisible();
+  const cover = page.locator(".project-cover");
+  await cover
+    .getByRole("button", { name: w.desk.setProjectCover, exact: true })
+    .click();
+  await cover.locator('input[type="file"]').setInputFiles({
+    name: "project-cover.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+pF4sAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await expect(cover.locator("img")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.items.some(
+        (item: { title: string; projectCoverAssetId?: string }) =>
+          item.title === "Cover project" && !!item.projectCoverAssetId,
+      );
+    })
+    .toBe(true);
+  await cover
+    .getByRole("button", { name: w.desk.removeProjectCover, exact: true })
+    .click();
+  await expect(cover.locator("img")).toHaveCount(0);
+});
