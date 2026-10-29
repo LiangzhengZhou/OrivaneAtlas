@@ -4535,12 +4535,15 @@ export async function createHost(options: HostOptions) {
                     "aiPolicy",
                     "parentDocumentId",
                     "aliases",
+                    "coverAssetId",
                   ]);
                   if (credential && input.aiPolicy !== undefined)
                     fail(403, "FORBIDDEN");
                   string(input.title);
                   string(input.bodyMd, 200000);
                   string(input.kind);
+                  if (input.coverAssetId !== undefined)
+                    string(input.coverAssetId);
                   if (input.spaceId !== null) string(input.spaceId);
                   const knowledge = new LibraryService(
                     library,

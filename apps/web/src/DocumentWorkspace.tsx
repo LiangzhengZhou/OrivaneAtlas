@@ -9,7 +9,7 @@ import {
 } from "@arclattice/application";
 import type { LibraryFile } from "@arclattice/domain";
 import type { EditorView } from "@codemirror/view";
-import { ChevronRight, Save } from "lucide-react";
+import { ChevronRight, ImagePlus, Save, X } from "lucide-react";
 import {
   type ComponentProps,
   memo,
@@ -614,6 +614,7 @@ function DocumentPane({
     failed = useRef(false),
     baseRef = useRef(base);
   const attachmentInput = useRef<HTMLInputElement | null>(null);
+  const spaceCoverInput = useRef<HTMLInputElement | null>(null);
   async function attachOriginal(file: File) {
     const view = editor.current,
       document = view?.state.doc,
@@ -867,6 +868,42 @@ function DocumentPane({
       return false;
     } finally {
       gate.current = false;
+      setBusy(false);
+    }
+  }
+  async function updateSpaceCover(file: File | null): Promise<void> {
+    const current = baseRef.current;
+    if (!current || current.kind !== "SPACE" || busy) return;
+    if (file && !file.type.startsWith("image/")) return;
+    setBusy(true);
+    setError("");
+    try {
+      let coverAssetId = "";
+      if (file) {
+        const uploaded = await runtime.uploadFile(
+          {
+            name: file.name,
+            spaceId: null,
+            mime: file.type || "application/octet-stream",
+          },
+          file,
+        );
+        coverAssetId = uploaded.id;
+      }
+      const saved = await runtime.saveLibrary(current.id, current.version, {
+        kind: "SPACE",
+        spaceId: null,
+        title,
+        bodyMd: body,
+        aiPolicy,
+        coverAssetId,
+      });
+      baseRef.current = saved;
+      setBase(saved);
+      callbacks.current.onSaved();
+    } catch (cause) {
+      setError((cause as { code?: string }).code ?? "UNAVAILABLE");
+    } finally {
       setBusy(false);
     }
   }
@@ -1449,6 +1486,59 @@ function DocumentPane({
             {title || (zh ? "未命名笔记" : "Untitled note")}
           </span>
         </nav>
+      )}
+      {request.kind === "SPACE" && base && base.kind === "SPACE" && (
+        <div className="space-cover no-print">
+          <div className="space-cover-media">
+            {base.coverAssetId ? (
+              <img
+                src={`/api/library/asset?id=${encodeURIComponent(base.coverAssetId)}`}
+                alt=""
+              />
+            ) : (
+              <span>{zh ? "知识空间封面" : "Knowledge space cover"}</span>
+            )}
+          </div>
+          <div className="space-cover-actions">
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => spaceCoverInput.current?.click()}
+            >
+              <ImagePlus size={14} />
+              {base.coverAssetId
+                ? zh
+                  ? "更换封面"
+                  : "Change cover"
+                : zh
+                  ? "设置封面"
+                  : "Set cover"}
+            </Button>
+            {base.coverAssetId && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                aria-label={zh ? "移除封面" : "Remove cover"}
+                onClick={() => void updateSpaceCover(null)}
+              >
+                <X size={14} />
+              </Button>
+            )}
+          </div>
+          <input
+            hidden
+            ref={spaceCoverInput}
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              event.target.value = "";
+              if (file) void updateSpaceCover(file);
+            }}
+          />
+        </div>
       )}
       <input
         className="document-title no-print"

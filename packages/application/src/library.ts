@@ -6,6 +6,7 @@ import {
 } from "@arclattice/domain";
 import { type ContentPolicy, contentPolicy } from "./content-policy";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
+import { requireStableUuid } from "./mutation-receipt";
 import { stableEntityIds } from "./stable-entity-ids";
 import type { BodyManifest } from "./workspace-bootstrap";
 
@@ -26,6 +27,8 @@ export interface LibraryEntry {
   workspaceId: string;
   kind: "SPACE" | "DOCUMENT";
   spaceId: string | null;
+  /** SPACE only: library asset used as the space cover; ""/undefined removes it. */
+  coverAssetId?: string;
   title: string;
   bodyMd: string;
   version: number;
@@ -43,6 +46,8 @@ export interface LibraryInput {
   aiPolicy?: ContentPolicy;
   kind: LibraryEntry["kind"];
   spaceId: string | null;
+  /** SPACE only: library asset used as the space cover; "" removes it. */
+  coverAssetId?: string;
   title: string;
   bodyMd: string;
 }
@@ -195,6 +200,12 @@ export class LibraryService {
       )
         throw new DomainError("NOT_FOUND");
     }
+    const coverAssetId =
+      input.coverAssetId === undefined ? old?.coverAssetId : input.coverAssetId;
+    if (coverAssetId !== undefined) {
+      if (input.kind !== "SPACE") throw new DomainError("VALIDATION_ERROR");
+      if (coverAssetId !== "") requireStableUuid(coverAssetId, "coverAssetId");
+    }
     const parentDocumentId =
       input.parentDocumentId === undefined
         ? (old?.parentDocumentId ?? null)
@@ -271,6 +282,7 @@ export class LibraryService {
     const now = this.clock.now();
     const entry: LibraryEntry = {
       ...input,
+      ...(coverAssetId ? { coverAssetId } : {}),
       parentDocumentId,
       aliases,
       aiPolicy: contentPolicy(

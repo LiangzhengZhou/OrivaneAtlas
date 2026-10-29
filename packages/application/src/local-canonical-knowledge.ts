@@ -122,7 +122,9 @@ function validateMetadata(
         typeof entity.parentDocumentId !== "string") ||
       (entity.aliases !== undefined &&
         (!Array.isArray(entity.aliases) ||
-          entity.aliases.some((alias) => typeof alias !== "string")))
+          entity.aliases.some((alias) => typeof alias !== "string"))) ||
+      (entity.coverAssetId !== undefined &&
+        typeof entity.coverAssetId !== "string")
     )
       invalid();
   }

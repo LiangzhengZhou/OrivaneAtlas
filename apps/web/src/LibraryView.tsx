@@ -1,5 +1,12 @@
 import type { WorkspaceLibraryEntry as LibraryEntry } from "@arclattice/application";
-import { BookOpen, File as FileIcon, Plus, Upload } from "lucide-react";
+import {
+  BookOpen,
+  File as FileIcon,
+  ImagePlus,
+  Plus,
+  Upload,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useEntitySelection } from "./app/EntitySelection";
@@ -66,6 +73,7 @@ export function LibraryView({
   const selection = useEntitySelection();
   const [graphOpen, setGraphOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
+  const spaceCoverRef = useRef<HTMLInputElement>(null);
   const [fileIndexRevision, setFileIndexRevision] = useState(0);
   useEffect(
     () =>
@@ -188,6 +196,33 @@ export function LibraryView({
     } finally {
       setBusy(false);
     }
+  }
+  async function updateSpaceCover(file: File | null) {
+    if (!space || busy) return;
+    if (file && !file.type.startsWith("image/")) return;
+    await run(async () => {
+      let coverAssetId = "";
+      if (file) {
+        const uploaded = await runtime.uploadFile(
+          {
+            name: file.name,
+            spaceId: null,
+            mime: file.type || "application/octet-stream",
+          },
+          file,
+        );
+        coverAssetId = uploaded.id;
+      }
+      const full = await runtime.readDocumentBody(space);
+      await runtime.saveLibrary(space.id, space.version, {
+        kind: "SPACE",
+        spaceId: null,
+        title: space.title,
+        bodyMd: full.bodyMd,
+        ...(space.aiPolicy ? { aiPolicy: space.aiPolicy } : {}),
+        coverAssetId,
+      });
+    });
   }
   const [folderLinkChoice, setFolderLinkChoice] = useState("");
   const [folderLinkName, setFolderLinkName] = useState("");
@@ -411,6 +446,57 @@ export function LibraryView({
       </label>
       {space ? (
         <>
+          <div className="space-cover library-space-cover">
+            <div className="space-cover-media">
+              {space.coverAssetId ? (
+                <img
+                  src={`/api/library/asset?id=${encodeURIComponent(space.coverAssetId)}`}
+                  alt=""
+                />
+              ) : (
+                <span>{zh ? "知识空间封面" : "Knowledge space cover"}</span>
+              )}
+            </div>
+            <div className="space-cover-actions">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => spaceCoverRef.current?.click()}
+              >
+                <ImagePlus size={14} />
+                {space.coverAssetId
+                  ? zh
+                    ? "更换封面"
+                    : "Change cover"
+                  : zh
+                    ? "设置封面"
+                    : "Set cover"}
+              </Button>
+              {space.coverAssetId && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy}
+                  aria-label={zh ? "移除封面" : "Remove cover"}
+                  onClick={() => void updateSpaceCover(null)}
+                >
+                  <X size={14} />
+                </Button>
+              )}
+            </div>
+            <input
+              hidden
+              ref={spaceCoverRef}
+              type="file"
+              accept="image/*"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                event.target.value = "";
+                if (file) void updateSpaceCover(file);
+              }}
+            />
+          </div>
           <section className="panel account-panel">
             <p className="eyebrow">{t("library")}</p>
             <h2>{space.title}</h2>

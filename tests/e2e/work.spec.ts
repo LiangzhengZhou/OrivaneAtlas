@@ -18895,3 +18895,58 @@ test("folder cover uploads, persists and can be removed", async ({
       .locator(".folder-tree-cover"),
   ).toHaveCount(0);
 });
+
+test("space cover uploads and can be removed", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const zh = info.project.name.includes("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.spaces.library);
+  await page
+    .getByRole("button", { name: w.spaces.newSpace, exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: zh ? "新建知识空间" : "Create knowledge space",
+    exact: true,
+  });
+  await dialog
+    .getByLabel(zh ? "空间名称" : "Space name", { exact: true })
+    .fill("Cover space");
+  await dialog
+    .getByRole("button", { name: zh ? "创建" : "Create", exact: true })
+    .click();
+  await expect(page.locator(".library-view h2")).toHaveText("Cover space");
+  const cover = page.locator(".library-space-cover");
+  await cover
+    .getByRole("button", { name: zh ? "设置封面" : "Set cover", exact: true })
+    .click();
+  await cover.locator('input[type="file"]').setInputFiles({
+    name: "space-cover.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+pF4sAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await expect(cover.locator("img")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.library.some(
+        (entry: { title: string; coverAssetId?: string }) =>
+          entry.title === "Cover space" && !!entry.coverAssetId,
+      );
+    })
+    .toBe(true);
+  await cover
+    .getByRole("button", {
+      name: zh ? "移除封面" : "Remove cover",
+      exact: true,
+    })
+    .click();
+  await expect(cover.locator("img")).toHaveCount(0);
+});
