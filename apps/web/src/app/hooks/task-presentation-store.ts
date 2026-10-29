@@ -11,11 +11,12 @@ export function createTaskPresentationStore(
     const stored = globalThis.localStorage?.getItem(storageKey);
     if (stored) {
       const value = JSON.parse(stored) as Partial<TaskPresentation>;
-      const tabs = ["now", "later", "scheduled", "completed", "all"];
       const views = ["list", "board", "timeline"];
       const groups = ["none", "project", "priority", "status"];
       starting = {
-        tab: tabs.includes(value.tab ?? "") ? value.tab! : initial.tab,
+        // Tab is intentionally session-scoped: reload returns to the URL/default
+        // scope, while layout choices are device preferences.
+        tab: initial.tab,
         view: views.includes(value.view ?? "") ? value.view! : initial.view,
         group: groups.includes(value.group ?? "")
           ? value.group!
