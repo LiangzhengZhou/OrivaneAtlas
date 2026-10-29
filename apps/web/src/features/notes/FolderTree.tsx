@@ -52,6 +52,7 @@ export function FolderTree({
   onClearCover,
   coverOptions,
   onChooseCover,
+  onCoverFocus,
   onCreateNote,
   onConvertLegacy,
 }: {
@@ -71,6 +72,7 @@ export function FolderTree({
   onClearCover?(folder: Organization): Promise<boolean>;
   coverOptions?: readonly { id: string; name: string }[];
   onChooseCover?(folder: Organization, assetId: string): Promise<boolean>;
+  onCoverFocus?(folder: Organization, focus: number): Promise<boolean>;
   onCreateNote(folderId: string): void;
   onConvertLegacy(): Promise<void>;
 }) {
@@ -256,8 +258,15 @@ export function FolderTree({
                   ...(onChooseCover && coverOptions?.length
                     ? {
                         coverOptions,
+                        coverFocus: folder.coverFocus ?? 50,
                         onChooseCover: (assetId: string) =>
                           void perform(() => onChooseCover(folder, assetId)),
+                        ...(onCoverFocus
+                          ? {
+                              onCoverFocus: (focus: number) =>
+                                void perform(() => onCoverFocus(folder, focus)),
+                            }
+                          : {}),
                       }
                     : {}),
                   ...(onClearCover && folder.coverAssetId
@@ -574,6 +583,8 @@ function FolderActions({
   onClearCover,
   coverOptions,
   onChooseCover,
+  onCoverFocus,
+  coverFocus,
 }: {
   name: string;
   disabled: boolean;
@@ -586,6 +597,8 @@ function FolderActions({
   onClearCover?(): void;
   coverOptions?: readonly { id: string; name: string }[];
   onChooseCover?(assetId: string): void;
+  onCoverFocus?(focus: number): void;
+  coverFocus?: number;
 }) {
   const { t } = useTranslation("desk");
   const anchor = useRef<HTMLButtonElement>(null);
@@ -664,6 +677,23 @@ function FolderActions({
               ))}
             </>
           ) : null}
+          {onCoverFocus && coverFocus !== undefined && (
+            <label className="cover-focus-control menu-cover-focus">
+              {t("coverFocus")}
+              <input
+                type="range"
+                min="0"
+                max="100"
+                defaultValue={coverFocus}
+                onPointerUp={(event) =>
+                  onCoverFocus(Number(event.currentTarget.value))
+                }
+                onKeyUp={(event) =>
+                  onCoverFocus(Number(event.currentTarget.value))
+                }
+              />
+            </label>
+          )}
           {onClearCover && (
             <MenuItem
               onClick={() => {

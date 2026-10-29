@@ -549,6 +549,22 @@ function Workbench({
       "folder:cover:" + folder.id,
     );
   }
+  async function focusFolderCover(
+    folder: Organization,
+    coverFocus: number,
+  ): Promise<boolean> {
+    return run(
+      () =>
+        runtime.organize({
+          kind: "FOLDER",
+          action: "cover",
+          coverAssetId: folder.coverAssetId ?? "",
+          coverFocus,
+          entries: [folderEntry(folder)],
+        }),
+      "folder:cover:" + folder.id,
+    );
+  }
   async function clearFolderCover(folder: Organization): Promise<boolean> {
     return run(
       () =>
@@ -1417,6 +1433,7 @@ function Workbench({
         onCoverFolder={setFolderCover}
         onClearCover={clearFolderCover}
         onChooseCover={chooseFolderCover}
+        onCoverFocus={focusFolderCover}
         coverOptions={(snapshot.files ?? [])
           .filter((file) => !file.deletedAt && file.mime.startsWith("image/"))
           .slice(0, 8)

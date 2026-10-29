@@ -14,6 +14,7 @@ const organizationActionKeys = [
   "id",
   "icon",
   "coverAssetId",
+  "coverFocus",
   "scope",
   "entries",
 ] as const;
@@ -110,7 +111,13 @@ export function buildLocalOrganizationReplayRequest(
       (kind !== "FOLDER" || !validFolderName(original.name))) ||
     (action === "icon" && (kind === "WORK" || !validIcon(original.icon))) ||
     (action === "cover" &&
-      (kind !== "FOLDER" || !validCoverAssetId(original.coverAssetId))) ||
+      (kind !== "FOLDER" ||
+        !validCoverAssetId(original.coverAssetId) ||
+        (original.coverFocus !== undefined &&
+          (typeof original.coverFocus !== "number" ||
+            !Number.isInteger(original.coverFocus) ||
+            original.coverFocus < 0 ||
+            original.coverFocus > 100)))) ||
     (action === "delete" && original.name !== undefined) ||
     (action === "move" &&
       ((kind === "NOTE" &&

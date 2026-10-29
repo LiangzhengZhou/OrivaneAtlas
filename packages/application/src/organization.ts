@@ -44,6 +44,8 @@ export interface Organization {
   icon?: string;
   /** FOLDER only: library asset used as the folder cover; "" removes it. */
   coverAssetId?: string;
+  /** FOLDER only: horizontal cover focal point 0-100. */
+  coverFocus?: number;
   /** Stable group identity shared by a folder subtree moved to trash together. */
   trashBatchId?: string | undefined;
   updatedAt: string;
@@ -75,6 +77,8 @@ export interface OrganizeInput {
   icon?: string;
   /** FOLDER cover asset identity; "" removes the cover. */
   coverAssetId?: string;
+  /** FOLDER horizontal cover focal point, 0-100. */
+  coverFocus?: number;
   /** FOLDER create only: NOTE primary tree or GENERAL reusable collection. */
   scope?: "NOTE" | "GENERAL";
   entries?: OrganizeEntry[];
@@ -426,6 +430,9 @@ export class OrganizationService {
           ...(folder.coverAssetId === undefined
             ? {}
             : { coverAssetId: folder.coverAssetId }),
+          ...(folder.coverFocus === undefined
+            ? {}
+            : { coverFocus: folder.coverFocus }),
           updatedAt: this.clock.now(),
           updatedBy: context.principalId,
           ...patch,
@@ -508,8 +515,17 @@ export class OrganizationService {
     }
     if (input.action === "cover") {
       const coverAssetId = requireCoverAssetId(input.coverAssetId);
+      const coverFocus = input.coverFocus;
+      if (
+        coverFocus !== undefined &&
+        (!Number.isInteger(coverFocus) || coverFocus < 0 || coverFocus > 100)
+      )
+        throw new DomainError("VALIDATION_ERROR", { field: "coverFocus" });
       for (const { entry, folder } of entries)
-        await save(folder!, entry.version, { coverAssetId });
+        await save(folder!, entry.version, {
+          coverAssetId,
+          ...(coverFocus === undefined ? {} : { coverFocus }),
+        });
       return { changed: entries.length };
     }
     if (input.action === "move") {

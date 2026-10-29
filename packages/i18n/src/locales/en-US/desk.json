@@ -433,5 +433,6 @@
     "count": "{{count}} entries"
   },
   "openFileLibrary": "Open file library",
+  "coverFocus": "Cover focus",
   "fileLibrary": "File library"
 }

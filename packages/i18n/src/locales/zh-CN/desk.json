@@ -433,5 +433,6 @@
     "count": "{{count}} 篇"
   },
   "openFileLibrary": "打开文件库",
+  "coverFocus": "封面焦点",
   "fileLibrary": "文件库"
 }
