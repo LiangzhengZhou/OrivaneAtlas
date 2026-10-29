@@ -236,6 +236,19 @@ export function ProjectWorkspace({
     items: liveItems.filter((item) => graphIds.has(item.id)),
     edges,
   };
+  const linkedFolders = useMemo(() => {
+    const folders = new Map(
+      snapshot.organization
+        .filter((entry) => entry.kind === "FOLDER")
+        .map((entry) => [entry.id, entry.name ?? ""]),
+    );
+    return (snapshot.projectFolderLinks ?? [])
+      .filter((link) => link.projectId === project.id && !link.deletedAt)
+      .map((link) => ({
+        id: link.id,
+        name: folders.get(link.folderId) || link.folderId,
+      }));
+  }, [project.id, snapshot.organization, snapshot.projectFolderLinks]);
   const materials = useMemo(() => {
     if (tab !== "knowledge") return [];
     const liveSpaces = new Set(
@@ -571,6 +584,18 @@ export function ProjectWorkspace({
               busy={busy}
               onSave={onBriefSave}
             />
+            {linkedFolders.length > 0 && (
+              <section className="project-linked-folders">
+                <h2>{t("projectHub.linkedFolders")}</h2>
+                <div className="project-linked-folder-list">
+                  {linkedFolders.map((folder) => (
+                    <span key={folder.id} className="project-linked-folder">
+                      {folder.name}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            )}
             {recentKnowledge.length > 0 && (
               <section className="project-recent-knowledge">
                 <h2>{t("projectHub.knowledge")}</h2>
