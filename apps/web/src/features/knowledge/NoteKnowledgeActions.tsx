@@ -39,6 +39,22 @@ export function NoteKnowledgeActions({
       link.from.id === note.id &&
       link.to.kind === "SPACE",
   );
+  const folderNames = new Map(
+    snapshot.organization
+      .filter((entry) => entry.kind === "FOLDER")
+      .map((entry) => [entry.id, entry.name ?? ""]),
+  );
+  const linkedFolders = (snapshot.folderLinks ?? [])
+    .filter(
+      (link) =>
+        !link.deletedAt &&
+        link.targetKind === "NOTE" &&
+        link.targetId === note.id,
+    )
+    .map((link) => ({
+      id: link.id,
+      name: folderNames.get(link.folderId) || link.folderId,
+    }));
   return (
     <section
       className="note-knowledge-actions no-print"
@@ -66,6 +82,15 @@ export function NoteKnowledgeActions({
           {snapshot.library.find((entry) => entry.id === link.to.id)?.title}
         </p>
       ))}
+      {linkedFolders.length > 0 && (
+        <div className="project-linked-folder-list">
+          {linkedFolders.map((folder) => (
+            <span key={folder.id} className="project-linked-folder">
+              {folder.name}
+            </span>
+          ))}
+        </div>
+      )}
       {noteWikiReferences([note], snapshot.library).length > 0 && (
         <div className="capture-wiki-references">
           <h4>{zh ? "Wiki 引用" : "Wiki references"}</h4>
