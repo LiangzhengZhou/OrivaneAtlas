@@ -119,6 +119,7 @@ function Task({
         event.dataTransfer.effectAllowed = "move";
       }}
       className={`task-card ${compact ? "task-action-row" : ""} ${item.status === "DONE" ? "completed" : ""}`}
+      data-project={!!item.projectIds?.length || undefined}
       selected={
         (selection?.selected?.kind === "WORK" &&
           selection.selected.id === item.id) ||
@@ -241,13 +242,12 @@ function Task({
             )}
           </span>
         )}
-        {!compact &&
-          (item.priority === "HIGH" || item.priority === "URGENT") && (
-            <PrioritySignal
-              priority={item.priority}
-              label={t(`work:priorities.${item.priority}`)}
-            />
-          )}
+        {!compact && (
+          <PrioritySignal
+            priority={item.priority}
+            label={t(`work:priorities.${item.priority}`)}
+          />
+        )}
         <IconButton
           ref={menuAnchor}
           label={moreLabel}
