@@ -72,6 +72,8 @@ export interface WorkItem {
   readonly categoryId: string | null;
   /** PROJECT only: optional library asset used as the project banner. */
   readonly projectCoverAssetId?: string | null;
+  /** PROJECT only: horizontal cover focal point 0-100. */
+  readonly projectCoverFocus?: number | null;
   readonly projectIds?: readonly string[];
   readonly activationState: ActivationState;
   readonly activationPolicy: ActivationPolicy;

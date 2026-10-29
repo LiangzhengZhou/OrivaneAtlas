@@ -367,6 +367,14 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 43,
+    name: "project-cover-focus",
+    sql: readFileSync(
+      new URL("./migrations/0043-project-cover-focus.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")

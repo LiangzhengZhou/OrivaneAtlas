@@ -6165,6 +6165,7 @@ export async function createHost(options: HostOptions) {
                     "projectLifecycle",
                     "categoryId",
                     "projectCoverAssetId",
+                    "projectCoverFocus",
                     "completionResolution",
                     "parentProjectId",
                     "projectIds",
@@ -6179,6 +6180,7 @@ export async function createHost(options: HostOptions) {
                     if (
                       [
                         "projectIds",
+                        "projectCoverFocus",
                         "completionResolution",
                         "prerequisiteIds",
                         "expectedPrerequisiteIds",
@@ -6186,10 +6188,20 @@ export async function createHost(options: HostOptions) {
                     )
                       continue;
                     if (
+                      input.projectCoverFocus !== undefined &&
+                      input.projectCoverFocus !== null &&
+                      (typeof input.projectCoverFocus !== "number" ||
+                        !Number.isInteger(input.projectCoverFocus) ||
+                        input.projectCoverFocus < 0 ||
+                        input.projectCoverFocus > 100)
+                    )
+                      fail(400, "VALIDATION_ERROR");
+                    if (
                       [
                         "parentProjectId",
                         "categoryId",
                         "projectCoverAssetId",
+                        "projectCoverFocus",
                         "startDate",
                         "dueDate",
                         "dueTime",

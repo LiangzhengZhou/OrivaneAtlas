@@ -14,6 +14,7 @@ export const workFields = {
   lifecycle: "lifecycle",
   categoryId: "category_id",
   projectCoverAssetId: "project_cover_asset_id",
+  projectCoverFocus: "project_cover_focus",
   activationState: "activation_state",
   activationPolicy: "activation_policy",
   startDate: "start_date",

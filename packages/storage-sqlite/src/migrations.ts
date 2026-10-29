@@ -401,6 +401,14 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 48,
+    name: "project-cover-focus",
+    sql: readFileSync(
+      new URL("./migrations/0048-project-cover-focus.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {

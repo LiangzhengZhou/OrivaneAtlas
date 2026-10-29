@@ -113,6 +113,9 @@ export function ProjectWorkspace({
   const projectCoverInput = useRef<HTMLInputElement>(null);
   const projectCoverMenu = useRef<HTMLButtonElement>(null);
   const [projectCoverMenuOpen, setProjectCoverMenuOpen] = useState(false);
+  const [projectCoverFocus, setProjectCoverFocus] = useState(
+    project.projectCoverFocus ?? 50,
+  );
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const taskFilterAnchor = useRef<HTMLButtonElement>(null);
   const [taskFilterOpen, setTaskFilterOpen] = useState(false);
@@ -342,13 +345,16 @@ export function ProjectWorkspace({
       ),
   );
   const parent = workIndex.projectsById.get(project.parentProjectId ?? "");
-  async function saveProjectCover(projectCoverAssetId: string | null) {
+  async function saveProjectCover(
+    projectCoverAssetId: string | null,
+    focus = projectCoverFocus,
+  ) {
     await run(async () => {
       await runtime.service.update(
         runtime.context,
         project.id,
         project.version,
-        { projectCoverAssetId },
+        { projectCoverAssetId, projectCoverFocus: focus },
       );
     });
   }
@@ -377,6 +383,7 @@ export function ProjectWorkspace({
               <img
                 src={`/api/library/asset?id=${encodeURIComponent(project.projectCoverAssetId)}`}
                 alt=""
+                style={{ objectPosition: `${projectCoverFocus}% 50%` }}
               />
             ) : (
               <span>{t("projectCover")}</span>
@@ -441,6 +448,32 @@ export function ProjectWorkspace({
                   </MenuItem>
                 )}
               </Menu>
+            )}
+            {project.projectCoverAssetId && (
+              <label className="cover-focus-control">
+                <span>{t("coverFocus")}</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={projectCoverFocus}
+                  onChange={(event) =>
+                    setProjectCoverFocus(Number(event.target.value))
+                  }
+                  onPointerUp={() =>
+                    void saveProjectCover(
+                      project.projectCoverAssetId ?? null,
+                      projectCoverFocus,
+                    )
+                  }
+                  onKeyUp={() =>
+                    void saveProjectCover(
+                      project.projectCoverAssetId ?? null,
+                      projectCoverFocus,
+                    )
+                  }
+                />
+              </label>
             )}
             {project.projectCoverAssetId && (
               <Button

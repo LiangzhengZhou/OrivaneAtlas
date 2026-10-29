@@ -242,6 +242,7 @@ export interface UpdateWorkInput {
   readonly categoryId?: string | null;
   /** PROJECT only: library asset id for the banner; null/"" removes it. */
   readonly projectCoverAssetId?: string | null;
+  readonly projectCoverFocus?: number | null;
   readonly completionResolution?: {
     action: "KEEP" | "CANCEL" | "INBOX" | "MOVE";
     projectId?: string;
@@ -498,6 +499,21 @@ export class WorkService {
         throw new DomainError("VALIDATION_ERROR", {
           field: "projectLifecycle",
         });
+      if (input.projectCoverFocus !== undefined) {
+        if (previous.type !== "PROJECT")
+          throw new DomainError("VALIDATION_ERROR", {
+            field: "projectCoverFocus",
+          });
+        if (
+          input.projectCoverFocus !== null &&
+          (!Number.isInteger(input.projectCoverFocus) ||
+            input.projectCoverFocus < 0 ||
+            input.projectCoverFocus > 100)
+        )
+          throw new DomainError("VALIDATION_ERROR", {
+            field: "projectCoverFocus",
+          });
+      }
       if (input.projectCoverAssetId !== undefined) {
         if (previous.type !== "PROJECT")
           throw new DomainError("VALIDATION_ERROR", {
@@ -596,6 +612,9 @@ export class WorkService {
         ...(input.projectCoverAssetId === undefined
           ? {}
           : { projectCoverAssetId: input.projectCoverAssetId || null }),
+        ...(input.projectCoverFocus === undefined
+          ? {}
+          : { projectCoverFocus: input.projectCoverFocus }),
         assigneePrincipalId:
           input.assigneePrincipalId === undefined
             ? previous.assigneePrincipalId
