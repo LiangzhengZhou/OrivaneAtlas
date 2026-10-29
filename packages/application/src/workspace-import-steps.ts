@@ -304,6 +304,38 @@ export function planWorkspaceImportSteps(
           copy.collection === "library"
             ? ownedKnowledge.get(copy.targetId)
             : undefined;
+        if (copy.collection === "notes") {
+          const sourcePrimary =
+            typeof value.primaryFolderId === "string"
+              ? value.primaryFolderId
+              : undefined;
+          const folderCopy = sourcePrimary
+            ? copies.find(
+                (entry) =>
+                  entry.collection === "organization" &&
+                  entry.sourceId === "FOLDER:" + sourcePrimary,
+              )
+            : undefined;
+          const primaryFolderId = folderCopy
+            ? localObject(folderCopy.value).id
+            : undefined;
+          if (typeof primaryFolderId === "string" && primaryFolderId)
+            input.primaryFolderId = primaryFolderId;
+          if (input.primaryFolderId === undefined) {
+            const organizationCopy = copies.find(
+              (entry) =>
+                entry.collection === "organization" &&
+                localObject(entry.value).kind === "NOTE" &&
+                (localObject(entry.value).id === copy.targetId ||
+                  entry.sourceId === "NOTE:" + copy.sourceId),
+            );
+            const folderId = organizationCopy
+              ? localObject(organizationCopy.value).folderId
+              : undefined;
+            if (typeof folderId === "string" && folderId)
+              input.primaryFolderId = folderId;
+          }
+        }
         if (owner) {
           const binding = values.get(owner.targetId)!;
           if (
@@ -676,6 +708,7 @@ export function planWorkspaceImportSteps(
       });
     if (value.kind === "NOTE") {
       let organizationVersion = 0;
+      let noteVersion = version;
       if (typeof value.folderId === "string" && value.folderId) {
         if (!emittedFolders.has(value.folderId))
           throw new DomainError("VALIDATION_ERROR", {
@@ -687,7 +720,7 @@ export function planWorkspaceImportSteps(
           folderId: value.folderId,
           entries: [{ id: value.id, version, organizationVersion: 0 }],
         });
-        organizationVersion = 1;
+        noteVersion = version + 1;
       } else if (value.folder !== "") {
         add(copy, "/api/organize", {
           kind: "NOTE",
@@ -695,6 +728,7 @@ export function planWorkspaceImportSteps(
           folder: value.folder,
           entries: [{ id: value.id, version, organizationVersion: 0 }],
         });
+        noteVersion = version + 1;
         organizationVersion = 1;
       }
       if (typeof value.icon === "string" && value.icon)
@@ -705,7 +739,7 @@ export function planWorkspaceImportSteps(
           entries: [
             {
               id: value.id,
-              version,
+              version: noteVersion,
               organizationVersion,
             },
           ],

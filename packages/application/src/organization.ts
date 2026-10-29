@@ -5,6 +5,7 @@ import type {
   NotebookService,
   WorkService,
 } from "./index";
+import { LocalBodyUnavailableError } from "./local-body-availability";
 import { requireStableUuid } from "./mutation-receipt";
 
 export const organizationKinds = ["WORK", "NOTE", "FOLDER"] as const;
@@ -205,7 +206,10 @@ export class OrganizationService {
   constructor(
     private readonly store: OrganizationStore,
     private readonly work: Pick<WorkService, "snapshot" | "setDeleted">,
-    private readonly notes: Pick<NotebookService, "list" | "setDeleted"> &
+    private readonly notes: Pick<
+      NotebookService,
+      "list" | "setDeleted" | "move"
+    > &
       Partial<Pick<NotebookService, "manifest">>,
     private readonly authorization: AuthorizationService,
     private readonly clock: Clock,
@@ -289,6 +293,23 @@ export class OrganizationService {
         throw new DomainError("VERSION_CONFLICT");
     }
     for (const entry of entries) {
+      if (
+        input.action === "move" &&
+        input.kind === "NOTE" &&
+        input.folderId !== undefined
+      ) {
+        try {
+          await this.notes.move(
+            context,
+            entry.id,
+            entry.version,
+            move!.folderId,
+          );
+          continue;
+        } catch (error) {
+          if (!(error instanceof LocalBodyUnavailableError)) throw error;
+        }
+      }
       if (input.action === "delete") {
         if (input.kind === "NOTE")
           await this.notes.setDeleted(context, entry.id, entry.version, true);

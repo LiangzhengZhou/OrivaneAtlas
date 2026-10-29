@@ -5968,12 +5968,7 @@ test("note folders keep stable identity through nesting, rename, offline replay 
         (entry: { title: string; primaryFolderId?: string }) =>
           entry.title === w.desk.untitledNote,
       );
-      return snapshot.organization.some(
-        (entry: { kind: string; id: string; folderId?: string }) =>
-          entry.kind === "NOTE" &&
-          entry.id === note?.id &&
-          entry.folderId === alpha?.id,
-      );
+      return note?.primaryFolderId === alpha?.id;
     })
     .toBe(true);
   await page
@@ -17464,18 +17459,17 @@ test("local content imports into a newly created owned workspace before explicit
       entry.kind === "FOLDER" && entry.name === "Imported folder",
   );
   expect(importedFolder).toMatchObject({ icon: "🧪", parentId: "" });
-  const importedNote = target.organization.find(
-    (entry: { kind: string; id: string }) =>
-      entry.kind === "NOTE" &&
-      target.notes.some(
-        (note: { id: string; title: string }) =>
-          note.id === entry.id && note.title === w.desk.untitledNote,
-      ),
+  const importedNote = target.notes.find(
+    (note: { id: string; title: string }) => note.title === w.desk.untitledNote,
   );
-  expect(importedNote).toMatchObject({
-    folderId: importedFolder.id,
-    icon: "🔬",
-  });
+  const importedOrganizationNote = target.organization.find(
+    (entry: { kind: string; id: string; folderId?: string }) =>
+      entry.kind === "NOTE" && entry.id === importedNote?.id,
+  );
+  expect(
+    importedNote?.primaryFolderId ?? importedOrganizationNote?.folderId,
+  ).toBe(importedFolder.id);
+  expect(importedOrganizationNote).toMatchObject({ icon: "🔬" });
   expect(
     (await (await page.request.get(workbench.url + "/api/snapshot")).json())
       .items,

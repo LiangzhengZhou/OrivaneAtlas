@@ -481,9 +481,22 @@ test("folder create order, folder icons and note membership replay before note i
       kind: "NOTE",
       action: "icon",
       icon: "🔬",
-      entries: [{ id: note, version: 1, organizationVersion: 1 }],
+      entries: [{ id: note, version: 2, organizationVersion: 0 }],
     },
   ]);
+  const noteSave = steps.find(
+    (step) =>
+      step.path === "/api/note/save" &&
+      (step.payload as { id?: unknown } | null)?.id === null,
+  );
+  expect(
+    (
+      noteSave?.payload as
+        | { input?: { primaryFolderId?: string } }
+        | null
+        | undefined
+    )?.input?.primaryFolderId,
+  ).toBe(folderB);
   expect(() =>
     planWorkspaceImportSteps(
       [
