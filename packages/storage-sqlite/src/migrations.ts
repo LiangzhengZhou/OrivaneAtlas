@@ -393,14 +393,6 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
-  {
-    version: 47,
-    name: "project-cover",
-    sql: readFileSync(
-      new URL("./migrations/0047-project-cover.sql", import.meta.url),
-      "utf8",
-    ),
-  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {

@@ -4427,7 +4427,7 @@ export async function createHost(options: HostOptions) {
                     "parentId",
                     "id",
                     "icon",
-                    "projectCoverAssetId",
+                    "coverAssetId",
                     "scope",
                     "entries",
                   ]);
@@ -4535,7 +4535,7 @@ export async function createHost(options: HostOptions) {
                     "aiPolicy",
                     "parentDocumentId",
                     "aliases",
-                    "projectCoverAssetId",
+                    "coverAssetId",
                   ]);
                   if (credential && input.aiPolicy !== undefined)
                     fail(403, "FORBIDDEN");
@@ -6156,7 +6156,6 @@ export async function createHost(options: HostOptions) {
                     "status",
                     "projectLifecycle",
                     "categoryId",
-                    "projectCoverAssetId",
                     "completionResolution",
                     "parentProjectId",
                     "projectIds",
@@ -6181,7 +6180,6 @@ export async function createHost(options: HostOptions) {
                       [
                         "parentProjectId",
                         "categoryId",
-                        "projectCoverAssetId",
                         "startDate",
                         "dueDate",
                         "dueTime",

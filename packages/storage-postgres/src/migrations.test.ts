@@ -12,7 +12,6 @@ const legacyWork = (rows: Record<string, unknown>[]) =>
     delete copy.timer_started_at;
     delete copy.timer_accumulated_ms;
     delete copy.due_time;
-    delete copy.project_cover_asset_id;
     return copy;
   });
 const latest = migrations[migrations.length - 1]!.version;
