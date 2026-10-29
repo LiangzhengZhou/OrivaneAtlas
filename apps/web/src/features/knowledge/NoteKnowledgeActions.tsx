@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Runtime, Snapshot } from "../../bootstrap";
 import { Button } from "../../components/ui/Button";
+import { Select } from "../../components/ui/Surfaces";
 import { DocumentDrilldownPicker } from "../documents/DocumentDrilldownPicker";
 import { noteWikiReferences } from "./note-wiki-references";
 import { SpacePicker } from "./SpacePicker";
@@ -32,6 +33,8 @@ export function NoteKnowledgeActions({
   const [archive, setArchive] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [folderLinkChoice, setFolderLinkChoice] = useState("");
+  const [folderLinkName, setFolderLinkName] = useState("");
   const linked = snapshot.links.filter(
     (link) =>
       !link.deletedAt &&
@@ -53,8 +56,23 @@ export function NoteKnowledgeActions({
     )
     .map((link) => ({
       id: link.id,
+      version: link.version,
       name: folderNames.get(link.folderId) || link.folderId,
     }));
+  const generalFolders = snapshot.organization.filter(
+    (entry) => entry.kind === "FOLDER" && entry.scope === "GENERAL",
+  );
+  async function changeFolderLink(action: () => Promise<unknown>) {
+    setPending(true);
+    try {
+      await action();
+      onChanged();
+    } catch {
+      setError("UNAVAILABLE");
+    } finally {
+      setPending(false);
+    }
+  }
   return (
     <section
       className="note-knowledge-actions no-print"
@@ -82,15 +100,88 @@ export function NoteKnowledgeActions({
           {snapshot.library.find((entry) => entry.id === link.to.id)?.title}
         </p>
       ))}
-      {linkedFolders.length > 0 && (
-        <div className="project-linked-folder-list">
-          {linkedFolders.map((folder) => (
-            <span key={folder.id} className="project-linked-folder">
+      <div className="project-linked-folder-list">
+        {linkedFolders.map((folder) => (
+          <span key={folder.id} className="project-linked-folder">
+            {folder.name}
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={pending}
+              aria-label={`${zh ? "解除关联" : "Unlink"}: ${folder.name}`}
+              onClick={() =>
+                void changeFolderLink(() =>
+                  runtime.unlinkFolder(folder.id, folder.version),
+                )
+              }
+            >
+              ×
+            </Button>
+          </span>
+        ))}
+      </div>
+      <div className="project-link-folder-actions">
+        <Select
+          aria-label={zh ? "选择资料夹" : "Choose folder"}
+          value={folderLinkChoice}
+          onChange={(event) => setFolderLinkChoice(event.currentTarget.value)}
+        >
+          <option value="">{zh ? "选择资料夹" : "Choose folder"}</option>
+          {generalFolders.map((folder) => (
+            <option key={folder.id} value={folder.id}>
               {folder.name}
-            </span>
+            </option>
           ))}
-        </div>
-      )}
+        </Select>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={!folderLinkChoice || pending}
+          onClick={() =>
+            void changeFolderLink(() =>
+              runtime.linkFolder({
+                folderId: folderLinkChoice,
+                targetKind: "NOTE",
+                targetId: note.id,
+              }),
+            )
+          }
+        >
+          {zh ? "关联资料夹" : "Link folder"}
+        </Button>
+        <input
+          aria-label={zh ? "新资料夹名称" : "New folder name"}
+          placeholder={zh ? "新资料夹名称" : "New folder name"}
+          value={folderLinkName}
+          onChange={(event) => setFolderLinkName(event.target.value)}
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={!folderLinkName.trim() || pending}
+          onClick={() =>
+            void changeFolderLink(async () => {
+              const id = crypto.randomUUID();
+              await runtime.organize({
+                kind: "FOLDER",
+                action: "create",
+                id,
+                name: folderLinkName.trim(),
+                parentId: "",
+                scope: "GENERAL",
+              });
+              await runtime.linkFolder({
+                folderId: id,
+                targetKind: "NOTE",
+                targetId: note.id,
+              });
+              setFolderLinkName("");
+            })
+          }
+        >
+          {zh ? "新建并关联" : "Create and link"}
+        </Button>
+      </div>
       {noteWikiReferences([note], snapshot.library).length > 0 && (
         <div className="capture-wiki-references">
           <h4>{zh ? "Wiki 引用" : "Wiki references"}</h4>

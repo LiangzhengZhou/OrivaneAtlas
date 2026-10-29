@@ -189,8 +189,25 @@ export function LibraryView({
       setBusy(false);
     }
   }
+  const [folderLinkChoice, setFolderLinkChoice] = useState("");
+  const [folderLinkName, setFolderLinkName] = useState("");
   const spaces = entries.filter((e) => e.kind === "SPACE" && !e.deletedAt),
     space = spaces.find((e) => e.id === spaceId);
+  const folderNames = new Map(
+    snapshot.organization
+      .filter((entry) => entry.kind === "FOLDER")
+      .map((entry) => [entry.id, entry.name ?? ""]),
+  );
+  const generalFolders = snapshot.organization.filter(
+    (entry) => entry.kind === "FOLDER" && entry.scope === "GENERAL",
+  );
+  const linkedSpaceFolders = (snapshot.spaceFolderLinks ?? [])
+    .filter((link) => link.spaceId === spaceId && !link.deletedAt)
+    .map((link) => ({
+      id: link.id,
+      version: link.version,
+      name: folderNames.get(link.folderId) || link.folderId,
+    }));
   const [matches, setMatches] = useState<{
     query: string;
     spaceId: string;
@@ -398,28 +415,86 @@ export function LibraryView({
             <p className="eyebrow">{t("library")}</p>
             <h2>{space.title}</h2>
             <SpaceBodyPreview entry={space} runtime={runtime} />
-            {(() => {
-              const folders = new Map(
-                snapshot.organization
-                  .filter((entry) => entry.kind === "FOLDER")
-                  .map((entry) => [entry.id, entry.name ?? ""]),
-              );
-              const linked = (snapshot.spaceFolderLinks ?? [])
-                .filter((link) => link.spaceId === space.id && !link.deletedAt)
-                .map((link) => ({
-                  id: link.id,
-                  name: folders.get(link.folderId) || link.folderId,
-                }));
-              return linked.length ? (
-                <div className="project-linked-folder-list">
-                  {linked.map((folder) => (
-                    <span key={folder.id} className="project-linked-folder">
+            <section className="project-linked-folders">
+              <h3>{zh ? "关联文件夹" : "Linked folders"}</h3>
+              <div className="project-linked-folder-list">
+                {linkedSpaceFolders.map((folder) => (
+                  <span key={folder.id} className="project-linked-folder">
+                    {folder.name}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      aria-label={`${zh ? "解除关联" : "Unlink"}: ${folder.name}`}
+                      onClick={() =>
+                        void run(() =>
+                          runtime.unlinkSpaceFolder(folder.id, folder.version),
+                        )
+                      }
+                    >
+                      ×
+                    </Button>
+                  </span>
+                ))}
+              </div>
+              <div className="project-link-folder-actions">
+                <Select
+                  aria-label={zh ? "选择资料夹" : "Choose folder"}
+                  value={folderLinkChoice}
+                  onChange={(event) =>
+                    setFolderLinkChoice(event.currentTarget.value)
+                  }
+                >
+                  <option value="">
+                    {zh ? "选择资料夹" : "Choose folder"}
+                  </option>
+                  {generalFolders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
                       {folder.name}
-                    </span>
+                    </option>
                   ))}
-                </div>
-              ) : null;
-            })()}
+                </Select>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={!folderLinkChoice || busy}
+                  onClick={() =>
+                    void run(() =>
+                      runtime.linkSpaceFolder(space.id, folderLinkChoice),
+                    )
+                  }
+                >
+                  {zh ? "关联资料夹" : "Link folder"}
+                </Button>
+                <input
+                  aria-label={zh ? "新资料夹名称" : "New folder name"}
+                  placeholder={zh ? "新资料夹名称" : "New folder name"}
+                  value={folderLinkName}
+                  onChange={(event) => setFolderLinkName(event.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={!folderLinkName.trim() || busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const id = crypto.randomUUID();
+                      await runtime.organize({
+                        kind: "FOLDER",
+                        action: "create",
+                        id,
+                        name: folderLinkName.trim(),
+                        parentId: "",
+                        scope: "GENERAL",
+                      });
+                      await runtime.linkSpaceFolder(space.id, id);
+                      setFolderLinkName("");
+                    })
+                  }
+                >
+                  {zh ? "新建并关联" : "Create and link"}
+                </Button>
+              </div>
+            </section>
             <div className="action-row">
               <Button
                 variant="secondary"
