@@ -13,9 +13,9 @@ import { useEntitySelection } from "./app/EntitySelection";
 import { showToast } from "./app/ToastHost";
 import type { Runtime, Snapshot } from "./bootstrap";
 import { Button, SegmentedControl } from "./components/ui/Button";
-import { ListRow, ListSurface } from "./components/ui/Content";
+import { ListRow, ListSurface, MenuItem } from "./components/ui/Content";
 import { EntityMenu } from "./components/ui/EntityMenu";
-import { Select } from "./components/ui/Surfaces";
+import { Menu, Select } from "./components/ui/Surfaces";
 import type { WorkspaceRequest } from "./DocumentWorkspace";
 import { SpaceBodyPreview } from "./features/documents/SpaceBodyPreview";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
@@ -74,6 +74,8 @@ export function LibraryView({
   const [graphOpen, setGraphOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
   const spaceCoverRef = useRef<HTMLInputElement>(null);
+  const coverMenuRef = useRef<HTMLButtonElement>(null);
+  const [coverMenuOpen, setCoverMenuOpen] = useState(false);
   const [fileIndexRevision, setFileIndexRevision] = useState(0);
   useEffect(
     () =>
@@ -197,22 +199,9 @@ export function LibraryView({
       setBusy(false);
     }
   }
-  async function updateSpaceCover(file: File | null) {
-    if (!space || busy) return;
-    if (file && !file.type.startsWith("image/")) return;
+  async function saveSpaceCover(coverAssetId: string) {
+    if (!space) return;
     await run(async () => {
-      let coverAssetId = "";
-      if (file) {
-        const uploaded = await runtime.uploadFile(
-          {
-            name: file.name,
-            spaceId: null,
-            mime: file.type || "application/octet-stream",
-          },
-          file,
-        );
-        coverAssetId = uploaded.id;
-      }
       const full = await runtime.readDocumentBody(space);
       await runtime.saveLibrary(space.id, space.version, {
         kind: "SPACE",
@@ -223,6 +212,23 @@ export function LibraryView({
         coverAssetId,
       });
     });
+  }
+  async function updateSpaceCover(file: File | null) {
+    if (!space || busy) return;
+    if (file && !file.type.startsWith("image/")) return;
+    let coverAssetId = "";
+    if (file) {
+      const uploaded = await runtime.uploadFile(
+        {
+          name: file.name,
+          spaceId: null,
+          mime: file.type || "application/octet-stream",
+        },
+        file,
+      );
+      coverAssetId = uploaded.id;
+    }
+    await saveSpaceCover(coverAssetId);
   }
   const [folderLinkChoice, setFolderLinkChoice] = useState("");
   const [folderLinkName, setFolderLinkName] = useState("");
@@ -473,6 +479,49 @@ export function LibraryView({
                     ? "设置封面"
                     : "Set cover"}
               </Button>
+              <Button
+                ref={coverMenuRef}
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                aria-expanded={coverMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setCoverMenuOpen((value) => !value)}
+              >
+                {zh ? "从文件库选择" : "Choose from library"}
+              </Button>
+              {coverMenuOpen && (
+                <Menu
+                  anchorRef={coverMenuRef}
+                  label={zh ? "选择封面" : "Choose cover"}
+                  onDismiss={() => setCoverMenuOpen(false)}
+                >
+                  {(snapshot.files ?? [])
+                    .filter(
+                      (file) =>
+                        !file.deletedAt && file.mime.startsWith("image/"),
+                    )
+                    .slice(0, 12)
+                    .map((file) => (
+                      <MenuItem
+                        key={file.id}
+                        onClick={() => {
+                          setCoverMenuOpen(false);
+                          void saveSpaceCover(file.id);
+                        }}
+                      >
+                        {file.name}
+                      </MenuItem>
+                    ))}
+                  {(snapshot.files ?? []).every(
+                    (file) => file.deletedAt || !file.mime.startsWith("image/"),
+                  ) && (
+                    <MenuItem disabled>
+                      {zh ? "文件库暂无图片" : "No images in the library"}
+                    </MenuItem>
+                  )}
+                </Menu>
+              )}
               {space.coverAssetId && (
                 <Button
                   type="button"
