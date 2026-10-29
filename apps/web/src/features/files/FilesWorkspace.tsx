@@ -29,6 +29,8 @@ interface ResourceRow {
   location: string;
   updatedAt: string;
   icon: string;
+  size?: number;
+  mime?: string;
   /** Folder key for notes; the resource browser keeps folders as a note filter. */
   folderKey: string | null;
   note?: WorkspaceNote;
@@ -122,6 +124,8 @@ export function FilesWorkspace({
         updatedAt: entry.updatedAt,
         icon: "",
         folderKey: null,
+        size: entry.size,
+        mime: entry.mime,
         ref: { kind: "FILE" as const, id: entry.id },
       })),
   ];
@@ -149,6 +153,14 @@ export function FilesWorkspace({
     NOTE: rows.filter((row) => row.kind === "NOTE").length,
     DOCUMENT: rows.filter((row) => row.kind === "DOCUMENT").length,
     FILE: rows.filter((row) => row.kind === "FILE").length,
+  };
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const selectedRow = visible.find((row) => row.key === selectedKey) ?? null;
+  const formatSize = (bytes: number | undefined) => {
+    if (!bytes) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
   const tabs: { value: ResourceKind; label: string }[] = [
     { value: "ALL", label: zh ? "全部" : "All" },
@@ -253,95 +265,162 @@ export function FilesWorkspace({
             />
           </div>
         </header>
-        {visible.length > 0 ? (
-          <div className="files-resource-list">
-            {visible.map((row) => {
-              const content = (
-                <>
-                  {row.kind === "NOTE" ? (
-                    <EntityIcon
-                      className="files-resource-icon note-file-icon"
-                      icon={row.icon}
-                      fallback={<BookOpen size={17} />}
-                      label={t("chooseIcon")}
-                      defaultLabel={t("defaultIcon")}
-                      customLabel={t("customIcon")}
-                      applyLabel={t("applyIcon")}
-                      onChange={(icon) => {
-                        if (row.note) onIcon(row.note, icon);
-                      }}
-                    />
-                  ) : (
-                    <span className="files-resource-icon" aria-hidden="true">
-                      {row.kind === "DOCUMENT" ? (
-                        <FileText size={17} />
-                      ) : (
-                        <File size={17} />
-                      )}
+        <div className="files-resource-body">
+          {visible.length > 0 ? (
+            <div className="files-resource-list">
+              {visible.map((row) => {
+                const content = (
+                  <>
+                    {row.kind === "NOTE" ? (
+                      <EntityIcon
+                        className="files-resource-icon note-file-icon"
+                        icon={row.icon}
+                        fallback={<BookOpen size={17} />}
+                        label={t("chooseIcon")}
+                        defaultLabel={t("defaultIcon")}
+                        customLabel={t("customIcon")}
+                        applyLabel={t("applyIcon")}
+                        onChange={(icon) => {
+                          if (row.note) onIcon(row.note, icon);
+                        }}
+                      />
+                    ) : (
+                      <span className="files-resource-icon" aria-hidden="true">
+                        {row.kind === "DOCUMENT" ? (
+                          <FileText size={17} />
+                        ) : (
+                          <File size={17} />
+                        )}
+                      </span>
+                    )}
+                    <span className="files-resource-title" title={row.title}>
+                      {row.title}
                     </span>
-                  )}
-                  <span className="files-resource-title" title={row.title}>
-                    {row.title}
-                  </span>
-                  <span className="files-resource-kind">
-                    {kindLabel(row.kind)}
-                  </span>
-                  <span
-                    className={
-                      row.kind === "NOTE"
-                        ? "files-resource-location note-folder"
-                        : "files-resource-location"
-                    }
-                    title={row.location}
-                  >
-                    {row.location || (zh ? "工作区" : "Workspace")}
-                  </span>
-                  <time dateTime={row.updatedAt}>
-                    {new Date(row.updatedAt).toLocaleDateString(i18n.language)}
-                  </time>
-                </>
-              );
-              if (row.kind === "NOTE" && row.note)
+                    <span className="files-resource-kind">
+                      {kindLabel(row.kind)}
+                    </span>
+                    <span
+                      className={
+                        row.kind === "NOTE"
+                          ? "files-resource-location note-folder"
+                          : "files-resource-location"
+                      }
+                      title={row.location}
+                    >
+                      {row.location || (zh ? "工作区" : "Workspace")}
+                    </span>
+                    <time dateTime={row.updatedAt}>
+                      {new Date(row.updatedAt).toLocaleDateString(
+                        i18n.language,
+                      )}
+                    </time>
+                  </>
+                );
+                if (row.kind === "NOTE" && row.note)
+                  return (
+                    <EntityRow
+                      key={row.key}
+                      className="files-resource-row note-card"
+                      intent="NAVIGATE"
+                      aria-label={`${row.title} · ${kindLabel(row.kind)}`}
+                      onOpen={() => setSelectedKey(row.key)}
+                    >
+                      {content}
+                    </EntityRow>
+                  );
                 return (
-                  <EntityRow
+                  <Button
                     key={row.key}
-                    className="files-resource-row note-card"
-                    intent="NAVIGATE"
+                    type="button"
+                    variant="ghost"
+                    className="files-resource-row"
                     aria-label={`${row.title} · ${kindLabel(row.kind)}`}
-                    onOpen={() => open(row)}
+                    aria-pressed={selectedKey === row.key}
+                    onClick={() => setSelectedKey(row.key)}
+                    onDoubleClick={() => open(row)}
                   >
                     {content}
-                  </EntityRow>
+                  </Button>
                 );
-              return (
-                <Button
-                  key={row.key}
-                  type="button"
-                  variant="ghost"
-                  className="files-resource-row"
-                  aria-label={`${row.title} · ${kindLabel(row.kind)}`}
-                  onClick={() => open(row)}
-                >
-                  {content}
-                </Button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="files-resource-empty">
-            <NotebookPen size={20} aria-hidden="true" />
-            <span>
-              {searched
-                ? t("noResults")
-                : folderFilter !== null && kind === "NOTE"
-                  ? zh
-                    ? "这个文件夹还没有笔记。"
-                    : "This folder has no notes yet."
-                  : zh
-                    ? "这里还没有匹配的资源。"
-                    : "No matching resources yet."}
-            </span>
-          </div>
+              })}
+            </div>
+          ) : (
+            <div className="files-resource-empty">
+              <NotebookPen size={20} aria-hidden="true" />
+              <span>
+                {searched
+                  ? t("noResults")
+                  : folderFilter !== null && kind === "NOTE"
+                    ? zh
+                      ? "这个文件夹还没有笔记。"
+                      : "This folder has no notes yet."
+                    : zh
+                      ? "这里还没有匹配的资源。"
+                      : "No matching resources yet."}
+              </span>
+            </div>
+          )}
+        </div>
+        {selectedRow && (
+          <aside
+            className="files-detail-panel"
+            aria-label={zh ? "资源详情" : "Resource details"}
+          >
+            <div className="files-detail-heading">
+              <span className="files-resource-icon" aria-hidden="true">
+                {selectedRow.kind === "NOTE" ? (
+                  <BookOpen size={17} />
+                ) : selectedRow.kind === "DOCUMENT" ? (
+                  <FileText size={17} />
+                ) : (
+                  <File size={17} />
+                )}
+              </span>
+              <div>
+                <h3>{selectedRow.title}</h3>
+                <p>
+                  {kindLabel(selectedRow.kind)}
+                  {selectedRow.size ? ` · ${formatSize(selectedRow.size)}` : ""}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                type="button"
+                aria-label={zh ? "关闭详情" : "Close details"}
+                onClick={() => setSelectedKey(null)}
+              >
+                ×
+              </Button>
+            </div>
+            <dl className="files-detail-facts">
+              <div>
+                <dt>{zh ? "更新时间" : "Updated"}</dt>
+                <dd>
+                  {new Date(selectedRow.updatedAt).toLocaleDateString(
+                    i18n.language,
+                    { month: "short", day: "numeric" },
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>{zh ? "关联位置" : "Linked location"}</dt>
+                <dd>{selectedRow.location || (zh ? "工作区" : "Workspace")}</dd>
+              </div>
+              {selectedRow.mime && (
+                <div>
+                  <dt>{zh ? "类型" : "Type"}</dt>
+                  <dd>{selectedRow.mime}</dd>
+                </div>
+              )}
+            </dl>
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => open(selectedRow)}
+            >
+              {zh ? "打开" : "Open"}
+            </Button>
+          </aside>
         )}
       </section>
     </div>

@@ -6067,6 +6067,16 @@ test("files page opens real documents and uploads original files", async ({
   await nav(page, w.desk.files);
   const resources = page.locator(".workspace-resources");
   await resources.getByRole("button", { name: /Resource document/ }).click();
+  await expect(page.locator(".files-detail-panel")).toContainText(
+    "Resource document",
+  );
+  await page
+    .locator(".files-detail-panel")
+    .getByRole("button", {
+      name: info.project.name.includes("zh") ? "打开" : "Open",
+      exact: true,
+    })
+    .click();
   await expect(page.locator(".document-pane")).toBeVisible();
   await nav(page, w.desk.files);
   await resources.locator('input[type="file"]').setInputFiles({
