@@ -6,7 +6,9 @@ export function createTaskPresentationStore(initial: TaskPresentation) {
   return createViewStore(
     initial,
     (previous, next) =>
-      previous.tab === next.tab && previous.view === next.view,
+      previous.tab === next.tab &&
+      previous.view === next.view &&
+      (previous.group ?? "none") === (next.group ?? "none"),
   );
 }
 export type TaskPresentationStore = ReturnType<

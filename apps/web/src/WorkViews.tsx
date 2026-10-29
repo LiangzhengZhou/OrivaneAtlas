@@ -12,6 +12,8 @@ import {
   ArchiveRestore,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Circle,
   GitBranch,
   LockKeyhole,
@@ -42,6 +44,8 @@ export interface TaskSelection {
   selected: ReadonlySet<string>;
   toggle(id: string): void;
 }
+
+export type TaskGrouping = "none" | "project" | "priority" | "status";
 
 export interface WorkProps {
   manualOrder?:
@@ -398,6 +402,113 @@ export function TaskList({ items, ...props }: WorkProps) {
         />
       </div>
     </TouchReorderScope>
+  );
+}
+export function TaskGroups({
+  grouping,
+  ...props
+}: WorkProps & { grouping: Exclude<TaskGrouping, "none"> }) {
+  const { t, i18n } = useTranslation("desk");
+  const { t: tWork } = useTranslation("work");
+  const zh = i18n.language.startsWith("zh");
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const { manualOrder: _manualOrder, items, ...taskProps } = props;
+  const projectTitles = new Map(
+    props.allItems
+      .filter((item) => item.type === "PROJECT")
+      .map((item) => [item.id, item.title]),
+  );
+  const priorityOrder = ["URGENT", "HIGH", "MEDIUM", "LOW"] as const;
+  const buckets = new Map<
+    string,
+    { label: string; order: number; items: WorkItem[] }
+  >();
+  for (const item of items) {
+    const key =
+      grouping === "project"
+        ? (item.projectIds?.[0] ?? "")
+        : grouping === "priority"
+          ? item.priority
+          : item.status;
+    const existing = buckets.get(key);
+    if (existing) existing.items.push(item);
+    else
+      buckets.set(key, {
+        label:
+          grouping === "project"
+            ? (projectTitles.get(key) ?? t("noProject"))
+            : grouping === "priority"
+              ? tWork(`priorities.${key as Priority}`)
+              : tWork(`statuses.${item.status}`),
+        order:
+          grouping === "priority"
+            ? priorityOrder.indexOf(key as (typeof priorityOrder)[number])
+            : grouping === "status"
+              ? workStatuses.indexOf(item.status)
+              : 0,
+        items: [item],
+      });
+  }
+  const groups = [...buckets.entries()].sort(
+    (a, b) =>
+      a[1].order - b[1].order ||
+      a[1].label.localeCompare(b[1].label, i18n.language),
+  );
+  const toggle = (key: string) =>
+    setCollapsed((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  return (
+    <div className="task-groups">
+      {groups.map(([key, group]) => {
+        const open = !collapsed.has(key);
+        const unfinished = group.items.filter(
+          (item) => item.status !== "DONE",
+        ).length;
+        return (
+          <section className="task-group" key={key || "unfiled"}>
+            <Button
+              type="button"
+              variant="ghost"
+              className="task-group-header"
+              aria-expanded={open}
+              onClick={() => toggle(key)}
+            >
+              {open ? (
+                <ChevronDown size={15} aria-hidden="true" />
+              ) : (
+                <ChevronRight size={15} aria-hidden="true" />
+              )}
+              <strong>{group.label}</strong>
+              <span>
+                {unfinished} {t("taskWorkspace.unfinished")} /{" "}
+                {group.items.length}
+              </span>
+            </Button>
+            {open && (
+              <div className="task-list" role="list">
+                {group.items.map((item) => (
+                  <Task
+                    item={item}
+                    {...taskProps}
+                    derived={props.derived}
+                    key={item.id}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
+      {groups.length === 0 && (
+        <div className="empty-state compact">
+          <p>{zh ? "当前分组没有任务。" : "No tasks in this group."}</p>
+        </div>
+      )}
+    </div>
   );
 }
 export function WorkBoard({ items, ...props }: WorkProps) {

@@ -365,7 +365,13 @@
     "selectAll": "Select all",
     "clearSelection": "Clear",
     "batchPriority": "Set priority",
-    "completeSelected": "Mark complete"
+    "completeSelected": "Mark complete",
+    "groupBy": "Group by",
+    "groupNone": "None",
+    "groupProject": "Project",
+    "groupPriority": "Priority",
+    "groupStatus": "Status",
+    "unfinished": "unfinished"
   },
   "milestones": "Milestones",
   "newMilestone": "Add milestone",

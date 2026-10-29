@@ -792,3 +792,42 @@ body {
   accent-color: var(--accent);
   flex: 0 0 auto;
 }
+
+.task-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.task-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 6px;
+  color: var(--text-secondary);
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.task-group-header strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.task-group-header span {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.task-group .task-list {
+  border-radius: 8px;
+}
+.task-group-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.task-group-control .ui-select {
+  min-width: 120px;
+}

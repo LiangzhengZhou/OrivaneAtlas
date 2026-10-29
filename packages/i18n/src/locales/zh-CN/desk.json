@@ -365,7 +365,13 @@
     "selectAll": "全选",
     "clearSelection": "清空",
     "batchPriority": "设置优先级",
-    "completeSelected": "标记完成"
+    "completeSelected": "标记完成",
+    "groupBy": "分组",
+    "groupNone": "不分组",
+    "groupProject": "项目",
+    "groupPriority": "优先级",
+    "groupStatus": "状态",
+    "unfinished": "未完成"
   },
   "milestones": "里程碑",
   "newMilestone": "添加里程碑",

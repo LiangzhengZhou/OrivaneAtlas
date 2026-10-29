@@ -4,12 +4,19 @@ import { useTranslation } from "react-i18next";
 import { Button, SegmentedControl, Toolbar } from "../../components/ui/Button";
 import { MenuItem } from "../../components/ui/Content";
 import { Menu, Select } from "../../components/ui/Surfaces";
-import { TaskList, WorkBoard, type WorkProps } from "../../WorkViews";
+import {
+  type TaskGrouping,
+  TaskGroups,
+  TaskList,
+  WorkBoard,
+  type WorkProps,
+} from "../../WorkViews";
 import { TaskGantt } from "./TaskGantt";
 import { TaskTimeline } from "./TaskTimeline";
 export type TaskPresentation = {
   tab: "now" | "later" | "scheduled" | "completed" | "all";
   view: "list" | "board" | "timeline";
+  group?: TaskGrouping;
 };
 
 function TaskScopeMenu({
@@ -100,12 +107,18 @@ export function TasksWorkspace({
   const [localView, setView] = useState<"list" | "board" | "timeline">(
     initialBoard ? "board" : "list",
   );
+  const [localGroup, setLocalGroup] = useState<TaskGrouping>("none");
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
   const tab = presentation?.tab ?? localTab;
   const view = presentation?.view ?? localView;
+  const group = presentation?.group ?? localGroup;
+  const chooseGroup = (next: TaskGrouping) => {
+    if (!presentation) setLocalGroup(next);
+    onPresentationChange?.({ tab, view, group: next });
+  };
   const zh = i18n.language.startsWith("zh");
   const chooseTab = (next: TaskPresentation["tab"]) => {
     if (!presentation) setTab(next);
@@ -185,6 +198,25 @@ export function TasksWorkspace({
           onChoose={chooseTab}
           onDependencies={onDependencies}
         />
+        {view === "list" && (
+          <label className="task-group-control">
+            <span>{t("taskWorkspace.groupBy")}</span>
+            <Select
+              aria-label={t("taskWorkspace.groupBy")}
+              value={group}
+              onChange={(event) =>
+                chooseGroup(event.target.value as TaskGrouping)
+              }
+            >
+              <option value="none">{t("taskWorkspace.groupNone")}</option>
+              <option value="project">{t("taskWorkspace.groupProject")}</option>
+              <option value="priority">
+                {t("taskWorkspace.groupPriority")}
+              </option>
+              <option value="status">{t("taskWorkspace.groupStatus")}</option>
+            </Select>
+          </label>
+        )}
         {filterControls}
         {view === "list" && (
           <Button
@@ -302,10 +334,18 @@ export function TasksWorkspace({
           items={items}
           derived={props.derived ?? selected.derived}
         />
-      ) : (
+      ) : group === "none" ? (
         <TaskList
           {...props}
           items={items}
+          derived={props.derived ?? selected.derived}
+          taskSelection={taskSelection}
+        />
+      ) : (
+        <TaskGroups
+          {...props}
+          items={items}
+          grouping={group}
           derived={props.derived ?? selected.derived}
           taskSelection={taskSelection}
         />

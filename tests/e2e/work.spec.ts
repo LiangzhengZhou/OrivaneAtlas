@@ -18764,3 +18764,39 @@ test("task selection mode batches priority and completion", async ({
     .toEqual(["DONE", "DONE"]);
   await expect(page.locator(".task-selection-bar")).toHaveCount(0);
 });
+
+test("task list groups by priority and collapses groups", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await mutation(page, "/api/work/create", {
+    title: "Grouped high task",
+    priority: "HIGH",
+  });
+  await mutation(page, "/api/work/create", {
+    title: "Grouped low task",
+    priority: "LOW",
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await page
+    .getByLabel(w.desk.taskWorkspace.groupBy, { exact: true })
+    .selectOption("priority");
+  await expect(page.locator(".task-group")).toHaveCount(2);
+  const high = page.locator(".task-group").filter({
+    has: page
+      .locator(".task-group-header strong")
+      .filter({ hasText: w.work.priorities.HIGH }),
+  });
+  await expect(high).toContainText(w.work.priorities.HIGH);
+  await high.locator(".task-group-header").click();
+  await expect(
+    high.getByText("Grouped high task", { exact: true }),
+  ).toHaveCount(0);
+  await high.locator(".task-group-header").click();
+  await expect(
+    high.getByText("Grouped high task", { exact: true }),
+  ).toBeVisible();
+});
