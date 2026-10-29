@@ -162,6 +162,8 @@
   "createFolder": "Create folder",
   "renameFolder": "Rename folder",
   "moveFolder": "Move folder",
+  "setFolderCover": "Set cover",
+  "removeFolderCover": "Remove cover",
   "deleteFolder": "Delete folder",
   "deletedFolders": "Deleted folders",
   "restoreFolder": "Restore",

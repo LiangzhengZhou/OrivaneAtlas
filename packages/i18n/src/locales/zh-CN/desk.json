@@ -166,6 +166,8 @@
   "createFolder": "创建文件夹",
   "renameFolder": "重命名文件夹",
   "moveFolder": "移动文件夹",
+  "setFolderCover": "设置封面",
+  "removeFolderCover": "移除封面",
   "deleteFolder": "删除文件夹",
   "deletedFolders": "已删除文件夹",
   "restoreFolder": "恢复",

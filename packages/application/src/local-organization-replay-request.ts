@@ -13,6 +13,7 @@ const organizationActionKeys = [
   "parentId",
   "id",
   "icon",
+  "coverAssetId",
   "scope",
   "entries",
 ] as const;
@@ -39,6 +40,15 @@ function validIcon(value: unknown): boolean {
     (value === "" || value.trim() !== "") &&
     [...value].length <= 16 &&
     !/[\x00-\x1f]/.test(value)
+  );
+}
+function validCoverAssetId(value: unknown): boolean {
+  return (
+    value === "" ||
+    (typeof value === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value,
+      ))
   );
 }
 export function buildLocalOrganizationReplayRequest(
@@ -82,6 +92,7 @@ export function buildLocalOrganizationReplayRequest(
       "create",
       "rename",
       "icon",
+      "cover",
     ].includes(action) ||
     !Array.isArray(entries) ||
     (!createsFolder && entries.length !== plan.mutations.length) ||
@@ -98,6 +109,8 @@ export function buildLocalOrganizationReplayRequest(
     (action === "rename" &&
       (kind !== "FOLDER" || !validFolderName(original.name))) ||
     (action === "icon" && (kind === "WORK" || !validIcon(original.icon))) ||
+    (action === "cover" &&
+      (kind !== "FOLDER" || !validCoverAssetId(original.coverAssetId))) ||
     (action === "delete" && original.name !== undefined) ||
     (action === "move" &&
       ((kind === "NOTE" &&

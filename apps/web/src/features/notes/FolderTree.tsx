@@ -6,6 +6,8 @@ import {
   ChevronsUpDown,
   Folder,
   FolderPlus,
+  ImageOff,
+  ImagePlus,
   MoreHorizontal,
   NotebookPen,
   Pencil,
@@ -46,6 +48,8 @@ export function FolderTree({
   onMoveFolder,
   onDeleteFolder,
   onIconFolder,
+  onCoverFolder,
+  onClearCover,
   onCreateNote,
   onConvertLegacy,
 }: {
@@ -61,6 +65,8 @@ export function FolderTree({
   onMoveFolder(folder: Organization, parentId: string): Promise<boolean>;
   onDeleteFolder(folder: Organization): Promise<boolean>;
   onIconFolder(folder: Organization, icon: string): Promise<boolean>;
+  onCoverFolder?(folder: Organization, file: File): Promise<boolean>;
+  onClearCover?(folder: Organization): Promise<boolean>;
   onCreateNote(folderId: string): void;
   onConvertLegacy(): Promise<void>;
 }) {
@@ -78,6 +84,8 @@ export function FolderTree({
   const [pending, setPending] = useState(false);
   const [converting, setConverting] = useState(false);
   const createInput = useRef<HTMLInputElement>(null);
+  const coverInput = useRef<HTMLInputElement>(null);
+  const [coverTarget, setCoverTarget] = useState<Organization | null>(null);
   const tree = buildFolderTree(folders);
   const countsFor = (id: string) => counts.get(folderKey(id)) ?? 0;
   const legacyCount = legacy.reduce(
@@ -179,6 +187,13 @@ export function FolderTree({
           ) : (
             <span className="folder-tree-toggle" aria-hidden="true" />
           )}
+          {folder.coverAssetId && (
+            <img
+              className="folder-tree-cover"
+              src={`/api/library/asset?id=${encodeURIComponent(folder.coverAssetId)}`}
+              alt=""
+            />
+          )}
           <EntityIcon
             className="folder-tree-icon"
             icon={folder.icon ?? ""}
@@ -228,6 +243,20 @@ export function FolderTree({
             onRename={() => startRename(folder)}
             onMove={() => startMove(folder)}
             onDelete={() => void commitDelete(folder)}
+            {...(onCoverFolder
+              ? {
+                  onCover: () => {
+                    setCoverTarget(folder);
+                    coverInput.current?.click();
+                  },
+                  ...(onClearCover && folder.coverAssetId
+                    ? {
+                        onClearCover: () =>
+                          void perform(() => onClearCover(folder)),
+                      }
+                    : {}),
+                }
+              : {})}
           />
         </div>
         {renaming === folder.id && (
@@ -503,6 +532,20 @@ export function FolderTree({
           </Button>
         </div>
       )}
+      <input
+        hidden
+        ref={coverInput}
+        type="file"
+        accept="image/*"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          const target = coverTarget;
+          setCoverTarget(null);
+          if (file && target && onCoverFolder)
+            void perform(() => onCoverFolder(target, file));
+        }}
+      />
       <p className="folder-tree-hint">{t("foldersHint")}</p>
     </nav>
   );
@@ -516,6 +559,8 @@ function FolderActions({
   onRename,
   onMove,
   onDelete,
+  onCover,
+  onClearCover,
 }: {
   name: string;
   disabled: boolean;
@@ -524,6 +569,8 @@ function FolderActions({
   onRename(): void;
   onMove(): void;
   onDelete(): void;
+  onCover?(): void;
+  onClearCover?(): void;
 }) {
   const { t } = useTranslation("desk");
   const anchor = useRef<HTMLButtonElement>(null);
@@ -576,6 +623,26 @@ function FolderActions({
           >
             <ChevronRight size={15} /> {t("moveFolder")}
           </MenuItem>
+          {onCover && (
+            <MenuItem
+              onClick={() => {
+                setOpen(false);
+                onCover();
+              }}
+            >
+              <ImagePlus size={15} /> {t("setFolderCover")}
+            </MenuItem>
+          )}
+          {onClearCover && (
+            <MenuItem
+              onClick={() => {
+                setOpen(false);
+                onClearCover();
+              }}
+            >
+              <ImageOff size={15} /> {t("removeFolderCover")}
+            </MenuItem>
+          )}
           <hr className="ui-menu-separator" />
           <MenuItem
             className="ui-menu-item-danger"

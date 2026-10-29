@@ -18,6 +18,7 @@ export const organizeActions = [
   "create",
   "rename",
   "icon",
+  "cover",
 ] as const;
 export type OrganizeAction = (typeof organizeActions)[number];
 /** Folder nesting bound shared by Application validation and the explorer UI. */
@@ -41,6 +42,8 @@ export interface Organization {
   scope?: "NOTE" | "GENERAL";
   /** Optional emoji presentation glyph for NOTE/FOLDER rows; "" restores the default. */
   icon?: string;
+  /** FOLDER only: library asset used as the folder cover; "" removes it. */
+  coverAssetId?: string;
   /** Stable group identity shared by a folder subtree moved to trash together. */
   trashBatchId?: string | undefined;
   updatedAt: string;
@@ -70,6 +73,8 @@ export interface OrganizeInput {
   id?: string;
   /** Emoji presentation glyph for NOTE/FOLDER icon actions; "" restores the default. */
   icon?: string;
+  /** FOLDER cover asset identity; "" removes the cover. */
+  coverAssetId?: string;
   /** FOLDER create only: NOTE primary tree or GENERAL reusable collection. */
   scope?: "NOTE" | "GENERAL";
   entries?: OrganizeEntry[];
@@ -81,6 +86,10 @@ export function requireIcon(value: unknown): string {
   if ([...value].length > 16 || /[\x00-\x1f]/.test(value))
     throw new DomainError("VALIDATION_ERROR");
   return value;
+}
+function requireCoverAssetId(value: unknown): string {
+  if (value === "") return "";
+  return requireStableUuid(value, "coverAssetId");
 }
 
 /** Trimmed, printable folder name; empty, overlong and control names are rejected. */
@@ -238,6 +247,7 @@ export class OrganizationService {
     if (
       (input.action === "move" && input.kind !== "NOTE") ||
       (input.action === "icon" && input.kind !== "NOTE") ||
+      input.action === "cover" ||
       (["archive", "unarchive"].includes(input.action) && input.kind !== "WORK")
     )
       throw new DomainError("VALIDATION_ERROR");
@@ -413,6 +423,9 @@ export class OrganizationService {
           name: folder.name,
           parentId: folder.parentId ?? "",
           icon: folder.icon,
+          ...(folder.coverAssetId === undefined
+            ? {}
+            : { coverAssetId: folder.coverAssetId }),
           updatedAt: this.clock.now(),
           updatedBy: context.principalId,
           ...patch,
@@ -491,6 +504,12 @@ export class OrganizationService {
       const icon = requireIcon(input.icon);
       for (const { entry, folder } of entries)
         await save(folder!, entry.version, { icon });
+      return { changed: entries.length };
+    }
+    if (input.action === "cover") {
+      const coverAssetId = requireCoverAssetId(input.coverAssetId);
+      for (const { entry, folder } of entries)
+        await save(folder!, entry.version, { coverAssetId });
       return { changed: entries.length };
     }
     if (input.action === "move") {

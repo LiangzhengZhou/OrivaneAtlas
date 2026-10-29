@@ -18831,3 +18831,67 @@ test("task list groups by priority and collapses groups", async ({
     page.getByLabel(w.desk.taskWorkspace.groupBy, { exact: true }),
   ).toHaveValue("priority");
 });
+
+test("folder cover uploads, persists and can be removed", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.files);
+  const tree = page.locator(".folder-tree");
+  await tree
+    .getByRole("button", { name: w.desk.newFolder, exact: true })
+    .click();
+  await tree.getByLabel(w.desk.folderName).fill("Cover folder");
+  await tree
+    .getByRole("button", { name: w.desk.createFolder, exact: true })
+    .click();
+  const row = tree
+    .locator(".folder-tree-row")
+    .filter({ hasText: "Cover folder" });
+  await row
+    .getByRole("button", {
+      name: new RegExp(`^(Folder actions|文件夹操作): Cover folder$`),
+    })
+    .click();
+  await page
+    .getByRole("menuitem", { name: w.desk.setFolderCover, exact: true })
+    .click();
+  await tree.locator('input[type="file"]').setInputFiles({
+    name: "cover.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+pF4sAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await expect(row.locator(".folder-tree-cover")).toBeVisible();
+  await page.reload();
+  await nav(page, w.desk.files);
+  await expect(
+    tree
+      .locator(".folder-tree-row")
+      .filter({ hasText: "Cover folder" })
+      .locator(".folder-tree-cover"),
+  ).toBeVisible();
+  await tree
+    .locator(".folder-tree-row")
+    .filter({ hasText: "Cover folder" })
+    .getByRole("button", {
+      name: new RegExp(`^(Folder actions|文件夹操作): Cover folder$`),
+    })
+    .click();
+  await page
+    .getByRole("menuitem", {
+      name: w.desk.removeFolderCover,
+      exact: true,
+    })
+    .click();
+  await expect(
+    tree
+      .locator(".folder-tree-row")
+      .filter({ hasText: "Cover folder" })
+      .locator(".folder-tree-cover"),
+  ).toHaveCount(0);
+});

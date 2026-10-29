@@ -512,6 +512,40 @@ function Workbench({
       "folder:icon:" + folder.id,
     );
   }
+  async function setFolderCover(
+    folder: Organization,
+    file: File,
+  ): Promise<boolean> {
+    if (!file.type.startsWith("image/")) return false;
+    return run(async () => {
+      const uploaded = await runtime.uploadFile(
+        {
+          name: file.name,
+          spaceId: null,
+          mime: file.type || "application/octet-stream",
+        },
+        file,
+      );
+      await runtime.organize({
+        kind: "FOLDER",
+        action: "cover",
+        coverAssetId: uploaded.id,
+        entries: [folderEntry(folder)],
+      });
+    }, "folder:cover:" + folder.id);
+  }
+  async function clearFolderCover(folder: Organization): Promise<boolean> {
+    return run(
+      () =>
+        runtime.organize({
+          kind: "FOLDER",
+          action: "cover",
+          coverAssetId: "",
+          entries: [folderEntry(folder)],
+        }),
+      "folder:cover:" + folder.id,
+    );
+  }
   async function createNoteInFolder(folderId: string | null) {
     void run(async () => {
       const created = await runtime.saveNote(null, 0, {
@@ -1361,6 +1395,8 @@ function Workbench({
         onMoveFolder={moveFolder}
         onDeleteFolder={deleteFolder}
         onIconFolder={setFolderIcon}
+        onCoverFolder={setFolderCover}
+        onClearCover={clearFolderCover}
         onCreateNote={(folderId) => void createNoteInFolder(folderId)}
         onConvertLegacy={convertLegacyFolders}
       />

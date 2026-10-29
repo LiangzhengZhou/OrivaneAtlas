@@ -60,15 +60,20 @@ export function requireCanonicalOrganization(
         !/[\x00-\x1f]/.test(value.parentId) &&
         (value.parentId === "" || stableFolderId.test(value.parentId)) &&
         value.folderId === undefined &&
-        validIcon(value.icon)
+        validIcon(value.icon) &&
+        (value.coverAssetId === undefined ||
+          value.coverAssetId === "" ||
+          stableFolderId.test(value.coverAssetId))
       : value.kind === "NOTE"
         ? value.name === undefined &&
           value.parentId === undefined &&
+          value.coverAssetId === undefined &&
           validOptionalIdentity(value.folderId) &&
           validIcon(value.icon)
         : value.name === undefined &&
           value.parentId === undefined &&
           value.folderId === undefined &&
+          value.coverAssetId === undefined &&
           value.icon === undefined;
   if (
     !kindValid ||
