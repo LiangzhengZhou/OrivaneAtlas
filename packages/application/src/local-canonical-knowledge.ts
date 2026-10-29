@@ -124,7 +124,12 @@ function validateMetadata(
         (!Array.isArray(entity.aliases) ||
           entity.aliases.some((alias) => typeof alias !== "string"))) ||
       (entity.coverAssetId !== undefined &&
-        typeof entity.coverAssetId !== "string")
+        typeof entity.coverAssetId !== "string") ||
+      (entity.coverFocus !== undefined &&
+        (typeof entity.coverFocus !== "number" ||
+          !Number.isInteger(entity.coverFocus) ||
+          entity.coverFocus < 0 ||
+          entity.coverFocus > 100))
     )
       invalid();
   }

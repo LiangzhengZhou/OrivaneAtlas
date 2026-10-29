@@ -4536,6 +4536,7 @@ export async function createHost(options: HostOptions) {
                     "parentDocumentId",
                     "aliases",
                     "coverAssetId",
+                    "coverFocus",
                   ]);
                   if (credential && input.aiPolicy !== undefined)
                     fail(403, "FORBIDDEN");
@@ -4544,6 +4545,12 @@ export async function createHost(options: HostOptions) {
                   string(input.kind);
                   if (input.coverAssetId !== undefined)
                     string(input.coverAssetId);
+                  if (
+                    input.coverFocus !== undefined &&
+                    (typeof input.coverFocus !== "number" ||
+                      !Number.isInteger(input.coverFocus))
+                  )
+                    fail(400, "VALIDATION_ERROR");
                   if (input.spaceId !== null) string(input.spaceId);
                   const knowledge = new LibraryService(
                     library,

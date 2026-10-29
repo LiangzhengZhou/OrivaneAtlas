@@ -76,6 +76,7 @@ export function LibraryView({
   const spaceCoverRef = useRef<HTMLInputElement>(null);
   const coverMenuRef = useRef<HTMLButtonElement>(null);
   const [coverMenuOpen, setCoverMenuOpen] = useState(false);
+  const [coverFocus, setCoverFocus] = useState(50);
   const [fileIndexRevision, setFileIndexRevision] = useState(0);
   useEffect(
     () =>
@@ -199,7 +200,7 @@ export function LibraryView({
       setBusy(false);
     }
   }
-  async function saveSpaceCover(coverAssetId: string) {
+  async function saveSpaceCover(coverAssetId: string, focus = coverFocus) {
     if (!space) return;
     await run(async () => {
       const full = await runtime.readDocumentBody(space);
@@ -210,6 +211,7 @@ export function LibraryView({
         bodyMd: full.bodyMd,
         ...(space.aiPolicy ? { aiPolicy: space.aiPolicy } : {}),
         coverAssetId,
+        coverFocus: focus,
       });
     });
   }
@@ -234,6 +236,10 @@ export function LibraryView({
   const [folderLinkName, setFolderLinkName] = useState("");
   const spaces = entries.filter((e) => e.kind === "SPACE" && !e.deletedAt),
     space = spaces.find((e) => e.id === spaceId);
+  useEffect(() => {
+    setCoverFocus(space?.coverFocus ?? 50);
+  }, [space?.id, space?.coverFocus]);
+
   const folderNames = new Map(
     snapshot.organization
       .filter((entry) => entry.kind === "FOLDER")
@@ -458,6 +464,7 @@ export function LibraryView({
                 <img
                   src={`/api/library/asset?id=${encodeURIComponent(space.coverAssetId)}`}
                   alt=""
+                  style={{ objectPosition: `${coverFocus}% 50%` }}
                 />
               ) : (
                 <span>{zh ? "知识空间封面" : "Knowledge space cover"}</span>
@@ -534,6 +541,24 @@ export function LibraryView({
                 </Button>
               )}
             </div>
+            {space.coverAssetId && (
+              <label className="cover-focus-control">
+                <span>{zh ? "封面焦点" : "Cover focus"}</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={coverFocus}
+                  onChange={(event) =>
+                    setCoverFocus(Number(event.target.value))
+                  }
+                  onPointerUp={() =>
+                    void saveSpaceCover(space.coverAssetId ?? "")
+                  }
+                  onKeyUp={() => void saveSpaceCover(space.coverAssetId ?? "")}
+                />
+              </label>
+            )}
             <input
               hidden
               ref={spaceCoverRef}

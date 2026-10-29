@@ -29,6 +29,8 @@ export interface LibraryEntry {
   spaceId: string | null;
   /** SPACE only: library asset used as the space cover; ""/undefined removes it. */
   coverAssetId?: string;
+  /** SPACE only: horizontal cover focal point, 0-100 (default 50). */
+  coverFocus?: number;
   title: string;
   bodyMd: string;
   version: number;
@@ -48,6 +50,8 @@ export interface LibraryInput {
   spaceId: string | null;
   /** SPACE only: library asset used as the space cover; "" removes it. */
   coverAssetId?: string;
+  /** SPACE only: horizontal cover focal point, 0-100. */
+  coverFocus?: number;
   title: string;
   bodyMd: string;
 }
@@ -206,6 +210,17 @@ export class LibraryService {
       if (input.kind !== "SPACE") throw new DomainError("VALIDATION_ERROR");
       if (coverAssetId !== "") requireStableUuid(coverAssetId, "coverAssetId");
     }
+    const coverFocus =
+      input.coverFocus === undefined
+        ? (old?.coverFocus ?? 50)
+        : input.coverFocus;
+    if (
+      input.kind === "SPACE" &&
+      (!Number.isInteger(coverFocus) || coverFocus < 0 || coverFocus > 100)
+    )
+      throw new DomainError("VALIDATION_ERROR", { field: "coverFocus" });
+    if (input.kind !== "SPACE" && input.coverFocus !== undefined)
+      throw new DomainError("VALIDATION_ERROR", { field: "coverFocus" });
     const parentDocumentId =
       input.parentDocumentId === undefined
         ? (old?.parentDocumentId ?? null)
@@ -283,6 +298,7 @@ export class LibraryService {
     const entry: LibraryEntry = {
       ...input,
       ...(coverAssetId ? { coverAssetId } : {}),
+      ...(input.kind === "SPACE" ? { coverFocus } : {}),
       parentDocumentId,
       aliases,
       aiPolicy: contentPolicy(
