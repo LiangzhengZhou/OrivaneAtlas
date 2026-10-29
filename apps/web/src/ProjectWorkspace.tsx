@@ -111,6 +111,8 @@ export function ProjectWorkspace({
   const selection = useEntitySelection();
   const headerMenuAnchor = useRef<HTMLButtonElement>(null);
   const projectCoverInput = useRef<HTMLInputElement>(null);
+  const projectCoverMenu = useRef<HTMLButtonElement>(null);
+  const [projectCoverMenuOpen, setProjectCoverMenuOpen] = useState(false);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const taskFilterAnchor = useRef<HTMLButtonElement>(null);
   const [taskFilterOpen, setTaskFilterOpen] = useState(false);
@@ -340,21 +342,8 @@ export function ProjectWorkspace({
       ),
   );
   const parent = workIndex.projectsById.get(project.parentProjectId ?? "");
-  async function updateProjectCover(file: File | null) {
-    if (file && !file.type.startsWith("image/")) return;
+  async function saveProjectCover(projectCoverAssetId: string | null) {
     await run(async () => {
-      let projectCoverAssetId: string | null = null;
-      if (file) {
-        const uploaded = await runtime.uploadFile(
-          {
-            name: file.name,
-            spaceId: null,
-            mime: file.type || "application/octet-stream",
-          },
-          file,
-        );
-        projectCoverAssetId = uploaded.id;
-      }
       await runtime.service.update(
         runtime.context,
         project.id,
@@ -362,6 +351,22 @@ export function ProjectWorkspace({
         { projectCoverAssetId },
       );
     });
+  }
+  async function updateProjectCover(file: File | null) {
+    if (file && !file.type.startsWith("image/")) return;
+    let projectCoverAssetId: string | null = null;
+    if (file) {
+      const uploaded = await runtime.uploadFile(
+        {
+          name: file.name,
+          spaceId: null,
+          mime: file.type || "application/octet-stream",
+        },
+        file,
+      );
+      projectCoverAssetId = uploaded.id;
+    }
+    await saveProjectCover(projectCoverAssetId);
   }
   return (
     <section className="project-workspace">
@@ -389,6 +394,54 @@ export function ProjectWorkspace({
                 ? t("changeProjectCover")
                 : t("setProjectCover")}
             </Button>
+            <Button
+              ref={projectCoverMenu}
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              aria-expanded={projectCoverMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => setProjectCoverMenuOpen((value) => !value)}
+            >
+              {i18n.language.startsWith("zh")
+                ? "从文件库选择"
+                : "Choose from library"}
+            </Button>
+            {projectCoverMenuOpen && (
+              <Menu
+                anchorRef={projectCoverMenu}
+                label={
+                  i18n.language.startsWith("zh") ? "选择封面" : "Choose cover"
+                }
+                onDismiss={() => setProjectCoverMenuOpen(false)}
+              >
+                {(snapshot.files ?? [])
+                  .filter(
+                    (file) => !file.deletedAt && file.mime.startsWith("image/"),
+                  )
+                  .slice(0, 12)
+                  .map((file) => (
+                    <MenuItem
+                      key={file.id}
+                      onClick={() => {
+                        setProjectCoverMenuOpen(false);
+                        void saveProjectCover(file.id);
+                      }}
+                    >
+                      {file.name}
+                    </MenuItem>
+                  ))}
+                {(snapshot.files ?? []).every(
+                  (file) => file.deletedAt || !file.mime.startsWith("image/"),
+                ) && (
+                  <MenuItem disabled>
+                    {i18n.language.startsWith("zh")
+                      ? "文件库暂无图片"
+                      : "No images in the library"}
+                  </MenuItem>
+                )}
+              </Menu>
+            )}
             {project.projectCoverAssetId && (
               <Button
                 type="button"
