@@ -1,6 +1,7 @@
 import {
   dependency,
   isExecutionActive,
+  type Priority,
   type WorkEdge,
   type WorkItem,
   type WorkStatus,
@@ -36,6 +37,12 @@ import type { TaskWorkspaceIndex } from "./features/tasks/task-selectors";
 import { TaskTimerControl } from "./features/tasks/task-timer";
 import { VirtualTaskCollection } from "./features/tasks/VirtualTaskCollection";
 
+export interface TaskSelection {
+  active: boolean;
+  selected: ReadonlySet<string>;
+  toggle(id: string): void;
+}
+
 export interface WorkProps {
   manualOrder?:
     | {
@@ -63,6 +70,11 @@ export interface WorkProps {
   isArchived(item: WorkItem): boolean;
   archiveSource(item: WorkItem): WorkItem | undefined;
   onOrganize(item: WorkItem, action: "archive" | "unarchive" | "delete"): void;
+  taskSelection?: TaskSelection;
+  onBatch?(
+    items: readonly WorkItem[],
+    patch: { priority?: Priority; status?: WorkStatus },
+  ): void;
 }
 function Task({
   compact = false,
@@ -79,6 +91,7 @@ function Task({
   statusDragScope,
   manualOrder,
   onManualStep,
+  taskSelection,
 }: Omit<WorkProps, "items"> & {
   item: WorkItem;
   derived: ReturnType<typeof taskDerivedIndex>;
@@ -99,8 +112,12 @@ function Task({
     <ListRow
       as="article"
       role="article"
-      intent="NAVIGATE"
-      onSelect={() => selection?.select({ kind: "WORK", id: item.id })}
+      intent={taskSelection?.active ? "SELECT" : "NAVIGATE"}
+      onSelect={() =>
+        taskSelection?.active
+          ? taskSelection.toggle(item.id)
+          : selection?.select({ kind: "WORK", id: item.id })
+      }
       onOpen={() => onOpen(item)}
       draggable={!busy && !!statusDragScope}
       onDragStart={(event) => {
@@ -137,6 +154,20 @@ function Task({
       }
     >
       <div className="task-main">
+        {taskSelection?.active && (
+          <input
+            type="checkbox"
+            className="task-select-checkbox"
+            checked={taskSelection.selected.has(item.id)}
+            aria-label={
+              (i18n.language.startsWith("zh")
+                ? "选择任务："
+                : "Select task: ") + item.title
+            }
+            onClick={(event) => event.stopPropagation()}
+            onChange={() => taskSelection.toggle(item.id)}
+          />
+        )}
         {manualOrder && onManualStep && (
           <DragHandle
             input={{
@@ -190,7 +221,8 @@ function Task({
           aria-label={t("openTask", { title: item.title })}
           onClick={(event) => {
             event.stopPropagation();
-            onOpen(item);
+            if (taskSelection?.active) taskSelection.toggle(item.id);
+            else onOpen(item);
           }}
           onDoubleClick={(event) => {
             event.stopPropagation();

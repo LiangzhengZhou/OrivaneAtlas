@@ -357,7 +357,15 @@
     "completed": "Completed",
     "all": "All",
     "list": "List",
-    "board": "Board"
+    "board": "Board",
+    "select": "Select",
+    "exitSelection": "Done selecting",
+    "selection": "Task selection",
+    "selectedCount": "{{count}} selected",
+    "selectAll": "Select all",
+    "clearSelection": "Clear",
+    "batchPriority": "Set priority",
+    "completeSelected": "Mark complete"
   },
   "milestones": "Milestones",
   "newMilestone": "Add milestone",

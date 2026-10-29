@@ -763,3 +763,32 @@ body {
   font-weight: var(--font-weight-semibold);
   color: var(--text-secondary);
 }
+
+.task-selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--surface-subtle);
+}
+.task-selection-bar strong {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.task-selection-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.task-select-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}

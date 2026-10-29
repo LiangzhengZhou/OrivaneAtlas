@@ -1,8 +1,9 @@
+import type { Priority } from "@arclattice/domain";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, SegmentedControl, Toolbar } from "../../components/ui/Button";
 import { MenuItem } from "../../components/ui/Content";
-import { Menu } from "../../components/ui/Surfaces";
+import { Menu, Select } from "../../components/ui/Surfaces";
 import { TaskList, WorkBoard, type WorkProps } from "../../WorkViews";
 import { TaskGantt } from "./TaskGantt";
 import { TaskTimeline } from "./TaskTimeline";
@@ -93,10 +94,15 @@ export function TasksWorkspace({
   filterControls?: ReactNode;
 }) {
   const { t, i18n } = useTranslation("desk");
+  const { t: tWork } = useTranslation("work");
   const [localTab, setTab] = useState(initialTab);
   useEffect(() => setTab(initialTab), [initialTab]);
   const [localView, setView] = useState<"list" | "board" | "timeline">(
     initialBoard ? "board" : "list",
+  );
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
   );
   const tab = presentation?.tab ?? localTab;
   const view = presentation?.view ?? localView;
@@ -129,6 +135,31 @@ export function TasksWorkspace({
     };
   }, [selected, props.items]);
   const items = scopedCollections[tab];
+  const selectedItems = items.filter((item) => selectedIds.has(item.id));
+  const toggleSelection = (id: string) =>
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const taskSelection = {
+    active: selecting,
+    selected: selectedIds,
+    toggle: toggleSelection,
+  };
+  function applyBatch(patch: { priority?: Priority; status?: "DONE" }) {
+    if (!props.onBatch || !selectedItems.length) return;
+    props.onBatch(selectedItems, patch);
+    setSelectedIds(new Set());
+    setSelecting(false);
+  }
+  useEffect(() => {
+    if (view !== "list") {
+      setSelecting(false);
+      setSelectedIds(new Set());
+    }
+  }, [view]);
   return (
     <section className="tasks-workspace">
       <Toolbar
@@ -155,6 +186,21 @@ export function TasksWorkspace({
           onDependencies={onDependencies}
         />
         {filterControls}
+        {view === "list" && (
+          <Button
+            type="button"
+            variant={selecting ? "secondary" : "ghost"}
+            aria-pressed={selecting}
+            onClick={() => {
+              setSelecting((value) => !value);
+              setSelectedIds(new Set());
+            }}
+          >
+            {selecting
+              ? t("taskWorkspace.exitSelection")
+              : t("taskWorkspace.select")}
+          </Button>
+        )}
         <span
           className="muted"
           data-testid="task-scope-count"
@@ -186,6 +232,64 @@ export function TasksWorkspace({
           onPresentationChange?.({ tab, view: next });
         }}
       />
+      {selecting && (
+        <div
+          className="task-selection-bar"
+          role="region"
+          aria-label={t("taskWorkspace.selection")}
+        >
+          <strong>
+            {t("taskWorkspace.selectedCount", {
+              count: selectedItems.length,
+            })}
+          </strong>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() =>
+              setSelectedIds(new Set(items.map((item) => item.id)))
+            }
+          >
+            {t("taskWorkspace.selectAll")}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setSelectedIds(new Set())}
+          >
+            {t("taskWorkspace.clearSelection")}
+          </Button>
+          <label>
+            <span>{t("taskWorkspace.batchPriority")}</span>
+            <Select
+              aria-label={t("taskWorkspace.batchPriority")}
+              value=""
+              disabled={!selectedItems.length}
+              onChange={(event) => {
+                const priority = event.target.value as Priority;
+                if (priority) applyBatch({ priority });
+              }}
+            >
+              <option value="">—</option>
+              {(["LOW", "MEDIUM", "HIGH", "URGENT"] as const).map(
+                (priority) => (
+                  <option key={priority} value={priority}>
+                    {tWork("priorities." + priority)}
+                  </option>
+                ),
+              )}
+            </Select>
+          </label>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={!selectedItems.length}
+            onClick={() => applyBatch({ status: "DONE" })}
+          >
+            {t("taskWorkspace.completeSelected")}
+          </Button>
+        </div>
+      )}
       {view === "timeline" ? (
         timelineMode === "gantt" ? (
           <TaskGantt {...props} items={items} />
@@ -203,6 +307,7 @@ export function TasksWorkspace({
           {...props}
           items={items}
           derived={props.derived ?? selected.derived}
+          taskSelection={taskSelection}
         />
       )}
     </section>

@@ -357,7 +357,15 @@
     "completed": "已完成",
     "all": "全部",
     "list": "列表",
-    "board": "看板"
+    "board": "看板",
+    "select": "选择",
+    "exitSelection": "结束选择",
+    "selection": "任务选择",
+    "selectedCount": "已选 {{count}} 项",
+    "selectAll": "全选",
+    "clearSelection": "清空",
+    "batchPriority": "设置优先级",
+    "completeSelected": "标记完成"
   },
   "milestones": "里程碑",
   "newMilestone": "添加里程碑",

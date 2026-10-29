@@ -18677,3 +18677,75 @@ test("project linked folders can be created and persist after reload", async ({
       .filter({ hasText: "Linked research" }),
   ).toBeVisible();
 });
+
+test("task selection mode batches priority and completion", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const first = await mutation(page, "/api/work/create", {
+    title: "Batch selection one",
+    priority: "LOW",
+  });
+  const second = await mutation(page, "/api/work/create", {
+    title: "Batch selection two",
+    priority: "LOW",
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await page
+    .getByRole("button", {
+      name: w.desk.taskWorkspace.select,
+      exact: true,
+    })
+    .click();
+  const selection = page.locator(".task-selection-bar");
+  await expect(selection).toBeVisible();
+  await page.getByRole("checkbox", { name: /Batch selection one/ }).check();
+  await page.getByRole("checkbox", { name: /Batch selection two/ }).check();
+  await expect(selection).toContainText("2");
+  await page
+    .getByLabel(w.desk.taskWorkspace.batchPriority, { exact: true })
+    .selectOption("HIGH");
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.items
+        .filter((item: { id: string }) =>
+          [first.id, second.id].includes(item.id),
+        )
+        .map((item: { priority: string }) => item.priority);
+    })
+    .toEqual(["HIGH", "HIGH"]);
+  await expect(selection).toHaveCount(0);
+  await page
+    .getByRole("button", {
+      name: w.desk.taskWorkspace.select,
+      exact: true,
+    })
+    .click();
+  await page.getByRole("checkbox", { name: /Batch selection one/ }).check();
+  await page.getByRole("checkbox", { name: /Batch selection two/ }).check();
+  await page
+    .getByRole("button", {
+      name: w.desk.taskWorkspace.completeSelected,
+      exact: true,
+    })
+    .click();
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.items
+        .filter((item: { id: string }) =>
+          [first.id, second.id].includes(item.id),
+        )
+        .map((item: { status: string }) => item.status);
+    })
+    .toEqual(["DONE", "DONE"]);
+  await expect(page.locator(".task-selection-bar")).toHaveCount(0);
+});

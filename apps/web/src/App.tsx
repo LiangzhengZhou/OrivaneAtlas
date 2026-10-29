@@ -1318,6 +1318,20 @@ function Workbench({
         ],
       });
     },
+    onBatch: (
+      batchItems: readonly WorkItem[],
+      patch: {
+        priority?: WorkItem["priority"];
+        status?: WorkItem["status"];
+      },
+    ) => {
+      const ids = new Set(batchItems.map((item) => item.id));
+      const current = allItems.filter((item) => ids.has(item.id));
+      void run(async () => {
+        for (const item of current)
+          await service.update(context, item.id, item.version, patch);
+      }, "batch:" + crypto.randomUUID());
+    },
   };
   async function switchLanguage(value: LocalePreference) {
     setPreference(value);
