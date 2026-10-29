@@ -1698,53 +1698,28 @@ test("v2.3 feature navigation preserves task query priority scope and presentati
   await expect(page.locator(".board")).toBeVisible();
 });
 
-test("v2.3 task single selection Inspector Enter open and shared Atlas context pane", async ({
+test("task single click opens the editable task surface without an Inspector", async ({
   page,
   workbench,
 }, info) => {
-  const w = words(info.project.name),
-    zh = info.project.name.endsWith("zh");
+  const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
-  await mutation(page, "/api/work/create", { title: "Selected task" });
+  await mutation(page, "/api/work/create", { title: "Single-click edit task" });
   await page.reload();
   await nav(page, w.desk.tasks);
   const title = page
     .locator(".task-title")
-    .filter({ hasText: "Selected task" });
+    .filter({ hasText: "Single-click edit task" });
   const row = page.locator(".task-card").filter({ has: title });
+  const editor = page.locator(".task-editor-surface");
   await row.click({ position: { x: 8, y: 8 } });
   await expect(row).toHaveAttribute("tabindex", "0");
-  await expect(page.locator(".task-editor-surface")).toHaveCount(0);
-  const context = page.locator(".context-pane");
-  await expect(
-    context.getByRole("heading", { name: "Selected task" }),
-  ).toBeVisible();
-  await expect(page.locator(".task-card[data-selected=true]")).toHaveCount(1);
-  if (info.project.name.startsWith("mobile")) {
-    await context
-      .getByRole("button", { name: zh ? "打开" : "Open", exact: true })
-      .click();
-  } else {
-    await row.press("Enter");
-  }
-  await expect(page.locator(".task-editor-surface")).toBeVisible();
+  await expect(editor).toBeVisible();
+  await expect(page.locator(".context-pane")).toHaveCount(0);
+  await expect(page.locator(".task-card[data-selected=true]")).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(page.locator(".task-editor-surface")).toHaveCount(0);
-  // Selection != Inspector, and Atlas is never an Inspector tab.
-  await expect(
-    context.getByRole("button", { name: "Atlas", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    context.getByRole("button", { name: zh ? "详情" : "Details", exact: true }),
-  ).toHaveCount(0);
-  await expect(context.locator(".assistant-pane")).toHaveCount(0);
-  await context
-    .getByRole("button", {
-      name: zh ? "关闭上下文" : "Close context",
-      exact: true,
-    })
-    .click();
-  await expect(context).toHaveCount(0);
+  await expect(editor).toHaveCount(0);
+  await expect(page.locator(".context-pane")).toHaveCount(0);
 });
 
 test("command palette contextual create and document trash undo preserve content", async ({

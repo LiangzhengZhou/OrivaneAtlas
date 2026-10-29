@@ -99,6 +99,7 @@ function Task({
     <ListRow
       as="article"
       role="article"
+      intent="NAVIGATE"
       onSelect={() => selection?.select({ kind: "WORK", id: item.id })}
       onOpen={() => onOpen(item)}
       draggable={!busy && !!statusDragScope}
@@ -189,9 +190,7 @@ function Task({
           aria-label={t("openTask", { title: item.title })}
           onClick={(event) => {
             event.stopPropagation();
-            // Single click only inspects; opening is Enter or double click. Without
-            // a selection context (standalone render) the click does nothing.
-            selection?.select({ kind: "WORK", id: item.id });
+            onOpen(item);
           }}
           onDoubleClick={(event) => {
             event.stopPropagation();
