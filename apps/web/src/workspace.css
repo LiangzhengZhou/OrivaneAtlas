@@ -469,7 +469,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 160px;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  max-height: 280px;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
