@@ -337,6 +337,10 @@
   "scopeDirect": "仅此项目",
   "scopeSubtree": "包含子项目",
   "projectProgress": "{{completed}} 已完成 · {{canceled}} 已取消 · {{unfinished}} 未完成",
+  "projectCover": "项目封面",
+  "setProjectCover": "设置封面",
+  "changeProjectCover": "更换封面",
+  "removeProjectCover": "移除封面",
   "projectLifecycle": "项目生命周期",
   "projectLifecycles": {
     "PLANNED": "计划中",
