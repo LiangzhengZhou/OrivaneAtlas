@@ -135,7 +135,7 @@
 .document-title {
   display: block;
   width: 100%;
-  max-width: 800px;
+  max-width: 760px;
   margin: 16px auto 4px;
   padding: 0;
   border: 0;
@@ -162,11 +162,38 @@
 }
 .live-markdown,
 .document-reading {
-  max-width: 800px;
+  max-width: 760px;
   margin: 8px auto;
 }
 .document-reading {
-  max-width: 800px;
+  max-width: 760px;
+}
+.document-breadcrumb,
+.document-meta-line {
+  max-width: 760px;
+  margin-inline: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.document-breadcrumb {
+  margin-top: 12px;
+}
+.document-breadcrumb > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.document-breadcrumb > span:last-child {
+  color: var(--text-secondary);
+}
+.document-meta-line {
+  gap: 12px;
+  margin-top: 2px;
 }
 .document-reading > .markdown {
   min-height: 0;

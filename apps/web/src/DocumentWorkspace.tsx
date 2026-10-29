@@ -9,7 +9,7 @@ import {
 } from "@arclattice/application";
 import type { LibraryFile } from "@arclattice/domain";
 import type { EditorView } from "@codemirror/view";
-import { Save } from "lucide-react";
+import { ChevronRight, Save } from "lucide-react";
 import {
   type ComponentProps,
   memo,
@@ -544,6 +544,26 @@ function DocumentPane({
     [body, setBody] = useState(request.entity?.bodyMd ?? "");
   const [editorPending, setEditorPending] = useState(false);
   const editorPendingRef = useRef(false);
+  const folderTrail = (() => {
+    if (!base || !("primaryFolderId" in base) || !base.primaryFolderId)
+      return [];
+    const folders = new Map(
+      snapshot.organization
+        .filter((entry) => entry.kind === "FOLDER")
+        .map((entry) => [entry.id, entry]),
+    );
+    const trail: { id: string; name: string }[] = [];
+    const seen = new Set<string>();
+    let current = base.primaryFolderId;
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      const folder = folders.get(current);
+      if (!folder) break;
+      trail.unshift({ id: folder.id, name: folder.name ?? "" });
+      current = folder.parentId ?? "";
+    }
+    return trail;
+  })();
   const [printing, setPrinting] = useState(false);
   const readingBody = useRef<string | null>(null);
   useEffect(() => {
@@ -1412,6 +1432,24 @@ function DocumentPane({
           )}
         </div>
       )}
+      {request.kind === "NOTE" && (
+        <nav
+          className="document-breadcrumb no-print"
+          aria-label={zh ? "笔记路径" : "Note path"}
+        >
+          <span>{zh ? "笔记" : "Notes"}</span>
+          {folderTrail.map((folder) => (
+            <span key={folder.id}>
+              <ChevronRight size={12} aria-hidden="true" />
+              {folder.name}
+            </span>
+          ))}
+          <span>
+            <ChevronRight size={12} aria-hidden="true" />
+            {title || (zh ? "未命名笔记" : "Untitled note")}
+          </span>
+        </nav>
+      )}
       <input
         className="document-title no-print"
         aria-label={
@@ -1448,6 +1486,25 @@ function DocumentPane({
           }
         }}
       />
+      {request.kind === "NOTE" && base && (
+        <div className="document-meta-line no-print">
+          <span>
+            {(zh ? "更新于 " : "Updated ") +
+              new Date(base.updatedAt).toLocaleDateString(i18n.language, {
+                month: "short",
+                day: "numeric",
+              })}
+          </span>
+          <span>
+            {zh ? "主文件夹" : "Main folder"} ·{" "}
+            {folderTrail.length
+              ? folderTrail.map((folder) => folder.name).join(" / ")
+              : zh
+                ? "未归档"
+                : "Unfiled"}
+          </span>
+        </div>
+      )}
 
       {imageError && (
         <p className="error" role="alert">

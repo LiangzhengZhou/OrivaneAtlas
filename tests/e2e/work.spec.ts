@@ -6311,6 +6311,12 @@ test("inline and block math render while editing without changing source", async
     "\n\n~~~tex\n$notmath$\n~~~\n\nEnd";
   await body.fill(text);
   await body.press("Control+End");
+  await expect(pane(page).locator(".document-breadcrumb")).toContainText(
+    "Math live",
+  );
+  await expect(pane(page).locator(".document-meta-line")).toContainText(
+    info.project.name.includes("zh") ? "主文件夹" : "Main folder",
+  );
   await expect(pane(page).locator(".md-live-math .katex")).toHaveCount(3);
   await expect(body).toHaveCSS("font-size", "18px");
   await pane(page).locator(".md-live-math").first().click();
