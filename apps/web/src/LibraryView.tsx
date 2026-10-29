@@ -398,6 +398,28 @@ export function LibraryView({
             <p className="eyebrow">{t("library")}</p>
             <h2>{space.title}</h2>
             <SpaceBodyPreview entry={space} runtime={runtime} />
+            {(() => {
+              const folders = new Map(
+                snapshot.organization
+                  .filter((entry) => entry.kind === "FOLDER")
+                  .map((entry) => [entry.id, entry.name ?? ""]),
+              );
+              const linked = (snapshot.spaceFolderLinks ?? [])
+                .filter((link) => link.spaceId === space.id && !link.deletedAt)
+                .map((link) => ({
+                  id: link.id,
+                  name: folders.get(link.folderId) || link.folderId,
+                }));
+              return linked.length ? (
+                <div className="project-linked-folder-list">
+                  {linked.map((folder) => (
+                    <span key={folder.id} className="project-linked-folder">
+                      {folder.name}
+                    </span>
+                  ))}
+                </div>
+              ) : null;
+            })()}
             <div className="action-row">
               <Button
                 variant="secondary"
