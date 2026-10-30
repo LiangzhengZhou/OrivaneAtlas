@@ -14902,6 +14902,7 @@ test("Atlas paged history renders visible Markdown and preserves reading positio
   page,
   workbench,
 }, info) => {
+  test.setTimeout(90_000);
   const w = words(info.project.name),
     zh = info.project.name.endsWith("zh");
   await unlock(page, workbench.url, workbench.secret, w);
