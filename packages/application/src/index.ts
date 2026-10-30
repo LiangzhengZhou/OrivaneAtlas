@@ -397,7 +397,6 @@ export class WorkService {
         title: requireTitle(input.title),
         descriptionMd: input.descriptionMd ?? "",
         type: requireMember(input.type ?? "TASK", workTypes, "type"),
-        ...((input.type ?? "TASK") === "TASK" ? { steps: [] } : {}),
         priority: requireMember(
           input.priority ?? "MEDIUM",
           priorities,
