@@ -49,7 +49,5 @@
   "timerEnd": "结束计时",
   "timerRunning": "计时中",
   "timerPaused": "已暂停",
-  "timerSaving": "正在保存计时",
-  "steps": "步骤",
-  "newStep": "添加步骤"
+  "timerSaving": "正在保存计时"
 }

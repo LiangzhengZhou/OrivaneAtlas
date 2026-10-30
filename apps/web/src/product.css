@@ -831,28 +831,3 @@ body {
 .task-group-control .ui-select {
   min-width: 120px;
 }
-
-.task-steps-editor {
-  display: grid;
-  gap: 6px;
-  margin: 0 0 10px;
-  padding: 0;
-  list-style: none;
-}
-.task-steps-editor li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.task-steps-editor li span {
-  flex: 1;
-  min-width: 0;
-}
-.task-step-create {
-  display: flex;
-  gap: 8px;
-}
-.task-step-create input {
-  flex: 1;
-  min-width: 0;
-}

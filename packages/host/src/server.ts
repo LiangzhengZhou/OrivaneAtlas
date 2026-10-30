@@ -6196,7 +6196,6 @@ export async function createHost(options: HostOptions) {
                     "categoryId",
                     "projectCoverAssetId",
                     "projectCoverFocus",
-                    "steps",
                     "completionResolution",
                     "parentProjectId",
                     "projectIds",
@@ -6207,29 +6206,11 @@ export async function createHost(options: HostOptions) {
                     "dueTime",
                     "timer",
                   ]);
-                  if (input.steps !== undefined) {
-                    if (
-                      !Array.isArray(input.steps) ||
-                      input.steps.length > 50 ||
-                      input.steps.some(
-                        (step) =>
-                          !step ||
-                          typeof step !== "object" ||
-                          Array.isArray(step) ||
-                          typeof step.id !== "string" ||
-                          typeof step.title !== "string" ||
-                          !step.title.trim() ||
-                          typeof step.done !== "boolean",
-                      )
-                    )
-                      fail(400, "VALIDATION_ERROR");
-                  }
                   for (const [key, val] of Object.entries(input)) {
                     if (
                       [
                         "projectIds",
                         "projectCoverFocus",
-                        "steps",
                         "completionResolution",
                         "prerequisiteIds",
                         "expectedPrerequisiteIds",

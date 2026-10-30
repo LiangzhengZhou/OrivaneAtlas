@@ -375,14 +375,6 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
-  {
-    version: 44,
-    name: "task-steps",
-    sql: readFileSync(
-      new URL("./migrations/0044-task-steps.sql", import.meta.url),
-      "utf8",
-    ),
-  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")

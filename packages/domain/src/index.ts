@@ -57,11 +57,6 @@ export type ActivationPolicy = (typeof activationPolicies)[number];
 export const priorities = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 export type Priority = (typeof priorities)[number];
 export type ExecutionMode = "MANUAL" | "AI" | "AUTOMATIC" | "HYBRID";
-export interface TaskStep {
-  readonly id: string;
-  readonly title: string;
-  readonly done: boolean;
-}
 export interface WorkItem {
   readonly id: string;
   readonly workspaceId: string;
@@ -79,8 +74,6 @@ export interface WorkItem {
   readonly projectCoverAssetId?: string | null;
   /** PROJECT only: horizontal cover focal point 0-100. */
   readonly projectCoverFocus?: number | null;
-  /** TASK only: bounded ordered execution steps. */
-  readonly steps?: readonly TaskStep[];
   readonly projectIds?: readonly string[];
   readonly activationState: ActivationState;
   readonly activationPolicy: ActivationPolicy;

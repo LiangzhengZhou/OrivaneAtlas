@@ -11,7 +11,6 @@ import {
   projectSubtreeHeight,
   requireCalendarTimezone,
   requireNavigationPreference,
-  type TaskStep,
 } from "@arclattice/domain";
 
 export * from "./categories";
@@ -246,8 +245,6 @@ export interface UpdateWorkInput {
   /** PROJECT only: library asset id for the banner; null/"" removes it. */
   readonly projectCoverAssetId?: string | null;
   readonly projectCoverFocus?: number | null;
-  /** TASK only: ordered execution steps; [] clears. */
-  readonly steps?: readonly TaskStep[];
   readonly completionResolution?: {
     action: "KEEP" | "CANCEL" | "INBOX" | "MOVE";
     projectId?: string;
@@ -270,26 +267,6 @@ export interface UpdateWorkInput {
   /** Canonical prerequisite task ids. Applied atomically with the task update. */
   readonly prerequisiteIds?: readonly string[];
   readonly expectedPrerequisiteIds?: readonly string[];
-}
-function requireTaskSteps(value: readonly TaskStep[]): void {
-  if (!Array.isArray(value) || value.length > 50)
-    throw new DomainError("VALIDATION_ERROR", { field: "steps" });
-  const ids = new Set<string>();
-  for (const step of value) {
-    if (
-      !step ||
-      typeof step !== "object" ||
-      !requireStableUuid(step.id, "stepId") ||
-      ids.has(step.id) ||
-      typeof step.title !== "string" ||
-      !step.title.trim() ||
-      step.title !== step.title.trim() ||
-      step.title.length > 240 ||
-      typeof step.done !== "boolean"
-    )
-      throw new DomainError("VALIDATION_ERROR", { field: "steps" });
-    ids.add(step.id);
-  }
 }
 export class WorkService {
   /**
@@ -524,11 +501,6 @@ export class WorkService {
         throw new DomainError("VALIDATION_ERROR", {
           field: "projectLifecycle",
         });
-      if (input.steps !== undefined) {
-        if (previous.type !== "TASK")
-          throw new DomainError("VALIDATION_ERROR", { field: "steps" });
-        requireTaskSteps(input.steps);
-      }
       if (input.projectCoverFocus !== undefined) {
         if (previous.type !== "PROJECT")
           throw new DomainError("VALIDATION_ERROR", {
@@ -645,9 +617,6 @@ export class WorkService {
         ...(input.projectCoverFocus === undefined
           ? {}
           : { projectCoverFocus: input.projectCoverFocus }),
-        ...(input.steps === undefined
-          ? {}
-          : { steps: input.steps.map((step) => ({ ...step })) }),
         assigneePrincipalId:
           input.assigneePrincipalId === undefined
             ? previous.assigneePrincipalId
