@@ -831,3 +831,22 @@ body {
 .task-group-control .ui-select {
   min-width: 120px;
 }
+
+.task-checklist {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.task-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-step-create {
+  display: flex;
+  gap: 8px;
+}
+.task-step-create input {
+  flex: 1;
+  min-width: 0;
+}

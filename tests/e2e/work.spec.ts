@@ -19065,3 +19065,53 @@ test("sidebar opens the independent file library", async ({
   await expect(page.locator(".files-folder-panel")).toHaveCount(0);
   await expect(page).toHaveURL(/library=1/);
 });
+
+test("task checklist steps persist as structured markdown", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const zh = info.project.name.includes("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const task = await mutation(page, "/api/work/create", {
+    title: "Checklist task",
+  });
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await page
+    .locator(".task-card")
+    .filter({ hasText: "Checklist task" })
+    .locator(".task-title")
+    .click();
+  const dialog = page.getByRole("dialog");
+  const stepInput = dialog.getByLabel(zh ? "添加步骤" : "Add step", {
+    exact: true,
+  });
+  await stepInput.fill("Inspect source data");
+  await stepInput.press("Enter");
+  await dialog
+    .getByRole("button", { name: w.common.save, exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.items.find((item: { id: string }) => item.id === task.id)
+        ?.descriptionMd;
+    })
+    .toContain("- [ ] Inspect source data");
+  await page.reload();
+  await nav(page, w.desk.tasks);
+  await page
+    .locator(".task-card")
+    .filter({ hasText: "Checklist task" })
+    .locator(".task-title")
+    .click();
+  await expect(
+    page.getByRole("dialog").getByRole("checkbox", {
+      name: "Inspect source data",
+    }),
+  ).toBeVisible();
+});

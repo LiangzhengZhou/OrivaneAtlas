@@ -10,6 +10,27 @@ import {
   workStatuses,
 } from "@arclattice/domain";
 import { useEffect, useId, useRef, useState } from "react";
+
+function checklistEntries(markdown: string) {
+  const entries: { index: number; text: string; done: boolean }[] = [];
+  markdown.split("\n").forEach((line, index) => {
+    const match = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/.exec(line);
+    if (match)
+      entries.push({
+        index,
+        text: match[2]!.trim(),
+        done: match[1]!.toLowerCase() === "x",
+      });
+  });
+  return entries;
+}
+function toggleChecklist(markdown: string, index: number, done: boolean) {
+  const lines = markdown.split("\n");
+  if (!lines[index]) return markdown;
+  lines[index] = lines[index]!.replace(/\[([ xX])\]/, done ? "[x]" : "[ ]");
+  return lines.join("\n");
+}
+
 import { useTranslation } from "react-i18next";
 import { DateField } from "./components/DateField";
 import {
@@ -137,6 +158,7 @@ function TaskEditorSurface({
     today,
   );
   const [descriptionMd, setDescription] = useState(item?.descriptionMd ?? "");
+  const [stepDraft, setStepDraft] = useState("");
   const [priority, setPriority] = useState<Priority>(
     item?.priority ?? "MEDIUM",
   );
@@ -528,6 +550,62 @@ function TaskEditorSurface({
           <Button variant="ghost" onClick={() => setMore(!more)}>
             {t(more ? "hideMoreSettings" : "moreSettings")}
           </Button>
+        )}
+        {more && (item?.type ?? createType) === "TASK" && (
+          <FormSection title={t("work:steps") || "Steps"}>
+            <div className="task-checklist">
+              {checklistEntries(descriptionMd).map((entry) => (
+                <label key={entry.index}>
+                  <input
+                    type="checkbox"
+                    checked={entry.done}
+                    aria-label={entry.text}
+                    onChange={() =>
+                      setDescription((current) =>
+                        toggleChecklist(current, entry.index, !entry.done),
+                      )
+                    }
+                  />
+                  <span>{entry.text}</span>
+                </label>
+              ))}
+            </div>
+            <div className="task-step-create">
+              <input
+                aria-label={t("work:newStep") || "New step"}
+                value={stepDraft}
+                maxLength={240}
+                onChange={(event) => setStepDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  const title = stepDraft.trim();
+                  if (!title) return;
+                  setDescription(
+                    (current) =>
+                      `${current.trimEnd()}${current.trim() ? "\n" : ""}- [ ] ${title}`,
+                  );
+                  setStepDraft("");
+                }}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!stepDraft.trim()}
+                onClick={() => {
+                  const title = stepDraft.trim();
+                  if (!title) return;
+                  setDescription(
+                    (current) =>
+                      `${current.trimEnd()}${current.trim() ? "\n" : ""}- [ ] ${title}`,
+                  );
+                  setStepDraft("");
+                }}
+              >
+                + {t("work:newStep") || "Add step"}
+              </Button>
+            </div>
+          </FormSection>
         )}
         {more && (
           <FormSection title={t("taskRelationships")}>
