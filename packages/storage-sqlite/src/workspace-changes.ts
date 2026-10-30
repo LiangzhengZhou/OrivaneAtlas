@@ -168,15 +168,6 @@ export function workspaceChangePort(
         value.payload = JSON.parse(String(row.payload));
         delete value.kind;
       }
-      if (collection === "items") {
-        const rawSteps = value.stepsJson;
-        delete value.stepsJson;
-        if (value.type === "TASK")
-          value.steps =
-            (typeof rawSteps === "string" ? JSON.parse(rawSteps) : rawSteps) ??
-            [];
-        else delete value.steps;
-      }
       if (collection === "items" && value.type === "TASK")
         value.projectIds = db
           .prepare(
