@@ -6,6 +6,7 @@ import {
   dependency,
   type Priority,
   priorities,
+  type TaskStep,
   type WorkStatus,
   workStatuses,
 } from "@arclattice/domain";
@@ -137,6 +138,10 @@ function TaskEditorSurface({
     today,
   );
   const [descriptionMd, setDescription] = useState(item?.descriptionMd ?? "");
+  const [steps, setSteps] = useState<TaskStep[]>(() => [
+    ...(item?.steps ?? []),
+  ]);
+  const [stepDraft, setStepDraft] = useState("");
   const [priority, setPriority] = useState<Priority>(
     item?.priority ?? "MEDIUM",
   );
@@ -190,6 +195,8 @@ function TaskEditorSurface({
     startDate !== (item ? (item.startDate ?? "") : (initialStartDate ?? "")) ||
     dueDate !== (item?.dueDate ?? "") ||
     dueTime !== (item?.dueTime ?? "") ||
+    (item?.type === "TASK" &&
+      JSON.stringify(steps) !== JSON.stringify(item?.steps ?? [])) ||
     JSON.stringify([...prerequisiteIds].sort()) !==
       JSON.stringify(initialPrerequisites);
   function changeEditScope(action: () => void) {
@@ -297,6 +304,7 @@ function TaskEditorSurface({
                     ? "INACTIVE"
                     : activationState,
                 activationPolicy,
+                ...(item?.type === "TASK" ? { steps } : {}),
               };
               if ((repeat || seriesEditing) && onSaveRepeat) {
                 const rule =
@@ -528,6 +536,82 @@ function TaskEditorSurface({
           <Button variant="ghost" onClick={() => setMore(!more)}>
             {t(more ? "hideMoreSettings" : "moreSettings")}
           </Button>
+        )}
+        {more && item?.type === "TASK" && (
+          <FormSection title={t("work:steps") || "Steps"}>
+            <ol className="task-steps-editor">
+              {steps.map((step, index) => (
+                <li key={step.id}>
+                  <input
+                    type="checkbox"
+                    checked={step.done}
+                    aria-label={step.title}
+                    onChange={() =>
+                      setSteps((current) =>
+                        current.map((entry) =>
+                          entry.id === step.id
+                            ? { ...entry, done: !entry.done }
+                            : entry,
+                        ),
+                      )
+                    }
+                  />
+                  <span>{step.title}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-label={`${t("common:delete")} ${index + 1}`}
+                    onClick={() =>
+                      setSteps((current) =>
+                        current.filter((entry) => entry.id !== step.id),
+                      )
+                    }
+                  >
+                    ×
+                  </Button>
+                </li>
+              ))}
+            </ol>
+            <div className="task-step-create">
+              <input
+                aria-label={t("work:newStep") || "New step"}
+                maxLength={240}
+                value={stepDraft}
+                onChange={(event) => setStepDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  const title = stepDraft.trim();
+                  if (!title || steps.length >= 50) return;
+                  setSteps((current) => [
+                    ...current,
+                    {
+                      id: crypto.randomUUID(),
+                      title,
+                      done: false,
+                    },
+                  ]);
+                  setStepDraft("");
+                }}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!stepDraft.trim() || steps.length >= 50}
+                onClick={() => {
+                  const title = stepDraft.trim();
+                  if (!title || steps.length >= 50) return;
+                  setSteps((current) => [
+                    ...current,
+                    { id: crypto.randomUUID(), title, done: false },
+                  ]);
+                  setStepDraft("");
+                }}
+              >
+                + {t("work:newStep") || "Add step"}
+              </Button>
+            </div>
+          </FormSection>
         )}
         {more && (
           <FormSection title={t("taskRelationships")}>
