@@ -28,7 +28,9 @@ function values<T extends object>(
   return (Object.keys(fields) as (keyof T)[]).map((key) => {
     const value = entity[key];
     if (String(key) === "steps")
-      return value === undefined ? null : JSON.stringify(value);
+      return value === undefined || value === null
+        ? null
+        : JSON.stringify(value);
     if (value !== undefined) return value;
     // Legacy callers/tests omit the optional timer fields; persist defaults.
     return String(key) === "timerAccumulatedMs" ? 0 : null;
