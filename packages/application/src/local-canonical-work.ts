@@ -67,7 +67,6 @@ export function validateLocalCanonicalWorkValue(
       "parentProjectId",
       "categoryId",
       "projectCoverAssetId",
-      "projectCoverFocus",
       "startDate",
       "dueDate",
       "completedAt",
@@ -86,7 +85,7 @@ export function validateLocalCanonicalWorkValue(
         entity.projectIds.some((id) => typeof id !== "string"))
     )
       invalid();
-    if (entity.steps !== undefined) {
+    if (entity.steps !== undefined && entity.steps !== null) {
       if (
         entity.type !== "TASK" ||
         !Array.isArray(entity.steps) ||

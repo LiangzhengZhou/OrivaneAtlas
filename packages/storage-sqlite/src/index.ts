@@ -143,7 +143,9 @@ function values<T extends object>(
   return (Object.keys(fields) as (keyof T)[]).map((key) => {
     const value = entity[key] as SQLInputValue | undefined;
     if (String(key) === "steps")
-      return value === undefined ? null : JSON.stringify(value);
+      return value === undefined || value === null
+        ? null
+        : JSON.stringify(value);
     if (value !== undefined) return value;
     // Legacy callers/tests omit the optional timer fields; persist defaults.
     return String(key) === "timerAccumulatedMs" ? 0 : null;
@@ -476,9 +478,9 @@ export class SqliteUnitOfWork implements UnitOfWork {
         : {
             ...row,
             steps:
-              typeof (row as unknown as { steps: unknown }).steps === "string"
+              (typeof (row as unknown as { steps: unknown }).steps === "string"
                 ? JSON.parse((row as unknown as { steps: string }).steps)
-                : ((row as unknown as { steps?: unknown }).steps ?? []),
+                : (row as unknown as { steps?: unknown }).steps) ?? [],
             projectIds: this.db
               .prepare(
                 "SELECT project_id FROM task_project WHERE workspace_id=? AND task_id=? ORDER BY position",
