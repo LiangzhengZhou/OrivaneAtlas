@@ -86,28 +86,6 @@ export function validateLocalCanonicalWorkValue(
         entity.projectIds.some((id) => typeof id !== "string"))
     )
       invalid();
-    if (entity.steps !== undefined) {
-      if (
-        entity.type !== "TASK" ||
-        !Array.isArray(entity.steps) ||
-        entity.steps.length > 50 ||
-        new Set(entity.steps.map((step) => step?.id)).size !==
-          entity.steps.length ||
-        entity.steps.some(
-          (step) =>
-            !step ||
-            typeof step !== "object" ||
-            typeof step.id !== "string" ||
-            !step.id ||
-            typeof step.title !== "string" ||
-            !step.title.trim() ||
-            step.title !== step.title.trim() ||
-            step.title.length > 240 ||
-            typeof step.done !== "boolean",
-        )
-      )
-        invalid();
-    }
     if (
       entity.projectCoverFocus !== undefined &&
       entity.projectCoverFocus !== null &&
