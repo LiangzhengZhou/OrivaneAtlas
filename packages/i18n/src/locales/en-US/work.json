@@ -49,7 +49,5 @@
   "timerEnd": "End timer",
   "timerRunning": "Timing",
   "timerPaused": "Paused",
-  "timerSaving": "Saving timer",
-  "steps": "Steps",
-  "newStep": "New step"
+  "timerSaving": "Saving timer"
 }

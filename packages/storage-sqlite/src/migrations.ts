@@ -409,14 +409,6 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
-  {
-    version: 49,
-    name: "task-steps",
-    sql: readFileSync(
-      new URL("./migrations/0049-task-steps.sql", import.meta.url),
-      "utf8",
-    ),
-  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {

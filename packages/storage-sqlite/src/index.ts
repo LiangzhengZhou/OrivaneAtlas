@@ -87,7 +87,6 @@ const workFields = {
   categoryId: "category_id",
   projectCoverAssetId: "project_cover_asset_id",
   projectCoverFocus: "project_cover_focus",
-  steps: "steps_json",
   activationState: "activation_state",
   activationPolicy: "activation_policy",
   startDate: "start_date",
@@ -142,8 +141,6 @@ function values<T extends object>(
 ): SQLInputValue[] {
   return (Object.keys(fields) as (keyof T)[]).map((key) => {
     const value = entity[key] as SQLInputValue | undefined;
-    if (String(key) === "steps")
-      return value === undefined ? null : JSON.stringify(value);
     if (value !== undefined) return value;
     // Legacy callers/tests omit the optional timer fields; persist defaults.
     return String(key) === "timerAccumulatedMs" ? 0 : null;
@@ -475,10 +472,6 @@ export class SqliteUnitOfWork implements UnitOfWork {
         ? row
         : {
             ...row,
-            steps:
-              typeof (row as unknown as { steps: unknown }).steps === "string"
-                ? JSON.parse((row as unknown as { steps: string }).steps)
-                : ((row as unknown as { steps?: unknown }).steps ?? []),
             projectIds: this.db
               .prepare(
                 "SELECT project_id FROM task_project WHERE workspace_id=? AND task_id=? ORDER BY position",
