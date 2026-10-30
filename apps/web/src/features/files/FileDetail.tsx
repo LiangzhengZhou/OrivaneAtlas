@@ -66,6 +66,45 @@ export function FileDetail({
   );
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const [atlasOpen, setAtlasOpen] = useState(false);
+  async function clearFileCovers() {
+    for (const folder of snapshot.organization) {
+      if (folder.kind !== "FOLDER" || folder.coverAssetId !== file.id) continue;
+      await runtime.organize({
+        kind: "FOLDER",
+        action: "cover",
+        coverAssetId: "",
+        entries: [
+          {
+            id: folder.id,
+            version: folder.version,
+            organizationVersion: folder.version,
+          },
+        ],
+      });
+    }
+    for (const space of snapshot.library) {
+      if (space.kind !== "SPACE" || space.coverAssetId !== file.id) continue;
+      const full = await runtime.readDocumentBody(space);
+      await runtime.saveLibrary(space.id, space.version, {
+        kind: "SPACE",
+        spaceId: null,
+        title: space.title,
+        bodyMd: full.bodyMd,
+        ...(space.aiPolicy ? { aiPolicy: space.aiPolicy } : {}),
+        coverAssetId: "",
+      });
+    }
+    for (const project of snapshot.items) {
+      if (project.type !== "PROJECT" || project.projectCoverAssetId !== file.id)
+        continue;
+      await runtime.service.update(
+        runtime.context,
+        project.id,
+        project.version,
+        { projectCoverAssetId: null, projectCoverFocus: null },
+      );
+    }
+  }
   const [policy, setPolicy] = useState<ContentPolicy>(
     draft?.policy ?? file.aiPolicy,
   );
@@ -476,6 +515,7 @@ export function FileDetail({
           pending={busy}
           onDelete={() => {
             void run(async () => {
+              await clearFileCovers();
               const deleted = await runtime.deleteFile(
                 file.id,
                 file.version,
