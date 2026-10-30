@@ -2,6 +2,7 @@ import { type ActorContext, DomainError } from "@arclattice/domain";
 import { requireCanonicalCalendarSettings } from "./calendar-replay-effects";
 import { requireCanonicalCategory } from "./category-replay-effects";
 import type { EntityMemoIdentity } from "./entity-memos";
+import { requireCanonicalFolderLink } from "./folder-link-replay-effects";
 import type { LibraryEntry } from "./library";
 import { requireCanonicalKnowledgeLink } from "./linked-knowledge-replay-effects";
 import { buildLocalCalendarReplayRequest } from "./local-calendar-replay-request";
@@ -21,6 +22,7 @@ import type { LocalCommandPlan } from "./local-command-plan";
 import { localDto, localObject } from "./local-dto";
 import { buildLocalEntityMemoReplayRequest } from "./local-entity-memo-replay-request";
 import { buildLocalFileReplayRequest } from "./local-file-replay-request";
+import { buildLocalFolderLinkReplayRequest } from "./local-folder-link-replay-request";
 import { equalLocalJson } from "./local-json-equal";
 import { prepareLocalKnowledgeProjection } from "./local-knowledge-projection";
 import { buildLocalKnowledgeReplayRequest } from "./local-knowledge-replay-request";
@@ -109,6 +111,7 @@ export async function prepareLocalWorkReplayAcknowledgement(
     buildLocalOrganizationReplayRequest(plan) ??
     buildLocalProjectKnowledgeReplayRequest(plan) ??
     buildLocalRecurrenceReplayRequest(plan) ??
+    buildLocalFolderLinkReplayRequest(plan) ??
     buildLocalLinkedKnowledgeReplayRequest(plan) ??
     buildLocalNoteKnowledgeReplayRequest(plan) ??
     buildLocalPlanReplayRequest(plan) ??
@@ -247,6 +250,18 @@ export async function prepareLocalWorkReplayAcknowledgement(
           invalid();
       } else if (original.entityType === "files") {
         requireCanonicalFile(
+          value,
+          original.entityId,
+          binding.remoteWorkspaceId,
+          effect.version as number,
+        );
+      } else if (
+        original.entityType === "folderLinks" ||
+        original.entityType === "spaceFolderLinks" ||
+        original.entityType === "projectFolderLinks"
+      ) {
+        requireCanonicalFolderLink(
+          original.entityType,
           value,
           original.entityId,
           binding.remoteWorkspaceId,

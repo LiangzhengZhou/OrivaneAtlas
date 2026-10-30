@@ -6715,6 +6715,79 @@ async function start(
   await new Promise<void>((done) => host.server.listen(0, "127.0.0.1", done));
   base = "http://127.0.0.1:" + (host.server.address() as AddressInfo).port;
 }
+it("replays guarded folder link creation and removal with stable effects", async () => {
+  await login();
+  const folderId = randomUUID();
+  expect(
+    (
+      await call("/api/organize", {
+        kind: "FOLDER",
+        action: "create",
+        id: folderId,
+        name: "Replay collection",
+        parentId: "",
+        scope: "GENERAL",
+      })
+    ).status,
+  ).toBe(200);
+  const target = await note("Replay target");
+  const linkId = randomUUID();
+  const commandId = randomUUID();
+  const deviceId = randomUUID();
+  const response = await call(
+    "/api/folders/link",
+    {
+      folderId,
+      targetKind: "NOTE",
+      targetId: target.id,
+      stableId: linkId,
+      syncCommand: {
+        commandId,
+        deviceId,
+        effects: [
+          {
+            collection: "folderLinks",
+            id: linkId,
+            op: "UPSERT",
+            baseVersion: 0,
+          },
+        ],
+      },
+    },
+    { "Idempotency-Key": commandId },
+  );
+  expect(response.status).toBe(200);
+  const receipt = await response.json();
+  expect(receipt.effects).toMatchObject([
+    { collection: "folderLinks", id: linkId, op: "UPSERT", version: 1 },
+  ]);
+  const link = (
+    await (await call(`/api/folders/links?folderId=${folderId}`)).json()
+  ).links[0];
+  const removeCommand = randomUUID();
+  const removed = await call(
+    "/api/folders/unlink",
+    {
+      id: linkId,
+      version: 1,
+      syncCommand: {
+        commandId: removeCommand,
+        deviceId,
+        effects: [
+          {
+            collection: "folderLinks",
+            id: linkId,
+            op: "UPSERT",
+            baseVersion: 1,
+          },
+        ],
+      },
+    },
+    { "Idempotency-Key": removeCommand },
+  );
+  expect(removed.status, await removed.text()).toBe(200);
+  expect(link.version).toBe(1);
+});
 async function call(
   path: string,
   value?: unknown,

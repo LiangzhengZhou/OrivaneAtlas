@@ -178,38 +178,70 @@ export class LocalRuntime {
     targetId: string;
   }) {
     const captured = structuredClone(input);
-    return this.workspace.run((services) =>
-      services.folderLinks.create(this.context, captured),
+    return this.workspace.run(
+      (services) => services.folderLinks.create(this.context, captured),
+      (link) => ({
+        name: "folderLink.create",
+        input: localDto({
+          id: link.id,
+          folderId: captured.folderId,
+          targetKind: captured.targetKind,
+          targetId: captured.targetId,
+        }),
+      }),
     );
   }
 
   unlinkFolder(id: string, version: number) {
-    return this.workspace.run((services) =>
-      services.folderLinks.remove(this.context, id, version),
+    return this.workspace.run(
+      (services) => services.folderLinks.remove(this.context, id, version),
+      () => ({ name: "folderLink.delete", input: localDto({ id, version }) }),
     );
   }
 
   linkSpaceFolder(spaceId: string, folderId: string) {
-    return this.workspace.run((services) =>
-      services.spaceFolderLinks.create(this.context, { spaceId, folderId }),
+    return this.workspace.run(
+      (services) =>
+        services.spaceFolderLinks.create(this.context, { spaceId, folderId }),
+      (link) => ({
+        name: "spaceFolderLink.create",
+        input: localDto({ id: link.id, spaceId, folderId }),
+      }),
     );
   }
 
   unlinkSpaceFolder(id: string, version: number) {
-    return this.workspace.run((services) =>
-      services.spaceFolderLinks.remove(this.context, id, version),
+    return this.workspace.run(
+      (services) => services.spaceFolderLinks.remove(this.context, id, version),
+      () => ({
+        name: "spaceFolderLink.delete",
+        input: localDto({ id, version }),
+      }),
     );
   }
 
   linkProjectFolder(projectId: string, folderId: string) {
-    return this.workspace.run((services) =>
-      services.projectFolderLinks.create(this.context, { projectId, folderId }),
+    return this.workspace.run(
+      (services) =>
+        services.projectFolderLinks.create(this.context, {
+          projectId,
+          folderId,
+        }),
+      (link) => ({
+        name: "projectFolderLink.create",
+        input: localDto({ id: link.id, projectId, folderId }),
+      }),
     );
   }
 
   unlinkProjectFolder(id: string, version: number) {
-    return this.workspace.run((services) =>
-      services.projectFolderLinks.remove(this.context, id, version),
+    return this.workspace.run(
+      (services) =>
+        services.projectFolderLinks.remove(this.context, id, version),
+      () => ({
+        name: "projectFolderLink.delete",
+        input: localDto({ id, version }),
+      }),
     );
   }
 

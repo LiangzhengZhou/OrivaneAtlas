@@ -5,6 +5,7 @@ import { buildLocalCategoryReplayRequest } from "./local-category-replay-request
 import { planLocalCommands } from "./local-command-plan";
 import { buildLocalEntityMemoReplayRequest } from "./local-entity-memo-replay-request";
 import { buildLocalFileReplayRequest } from "./local-file-replay-request";
+import { buildLocalFolderLinkReplayRequest } from "./local-folder-link-replay-request";
 import { prepareLocalKnowledgeReplayAcknowledgement } from "./local-knowledge-replay-ack";
 import { buildLocalKnowledgeReplayRequest } from "./local-knowledge-replay-request";
 import type { LocalWikiIndexer } from "./local-library-store";
@@ -95,6 +96,7 @@ export async function recoverLocalWorkReceipts(
       buildLocalOrganizationReplayRequest(plan) ??
       buildLocalProjectKnowledgeReplayRequest(plan) ??
       buildLocalRecurrenceReplayRequest(plan) ??
+      buildLocalFolderLinkReplayRequest(plan) ??
       buildLocalLinkedKnowledgeReplayRequest(plan) ??
       buildLocalNoteKnowledgeReplayRequest(plan) ??
       buildLocalPlanReplayRequest(plan) ??

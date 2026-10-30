@@ -37,6 +37,8 @@ import {
   type FileContextIdentity,
   FileExtractionError,
   type FileParser,
+  type FolderLinkReplayEffect,
+  FolderLinkReplayStore,
   FolderLinkService,
   type KnowledgeReplayEffect,
   KnowledgeReplayEffects,
@@ -72,6 +74,7 @@ import {
   PlanKnowledgeReplayEffects,
   type PlanReplayEffect,
   PlanReplayUnitOfWork,
+  ProjectFolderLinkReplayStore,
   ProjectFolderLinkService,
   type ProjectKnowledgeReplayEffect,
   ProjectKnowledgeReplayEffects,
@@ -103,6 +106,7 @@ import {
   requireWorkspaceMutationPrecondition,
   resolveProjectKnowledgeScope,
   reviewedWorkspaceMutationResult,
+  SpaceFolderLinkReplayStore,
   SpaceFolderLinkService,
   selectFileContext,
   type TrustedAiEndpoint,
@@ -3192,6 +3196,9 @@ export async function createHost(options: HostOptions) {
         let projectKnowledgeEffects: ProjectKnowledgeReplayEffect[] | undefined;
         let recurrenceEffects: RecurrenceReplayEffect[] | undefined;
         let linkedKnowledgeEffects: LinkedKnowledgeReplayEffect[] | undefined;
+        let folderLinkEffects: FolderLinkReplayEffect[] | undefined;
+        let spaceFolderLinkEffects: FolderLinkReplayEffect[] | undefined;
+        let projectFolderLinkEffects: FolderLinkReplayEffect[] | undefined;
         let noteKnowledgeEffects: NoteKnowledgeReplayEffect[] | undefined;
         let planEffects: PlanReplayEffect[] | undefined;
         let planKnowledgeEffects: ProjectKnowledgeReplayEffect[] | undefined;
@@ -3238,6 +3245,12 @@ export async function createHost(options: HostOptions) {
               "/api/recurrences/skip",
               "/api/link/create",
               "/api/link/delete",
+              "/api/folders/link",
+              "/api/folders/unlink",
+              "/api/space-folders/link",
+              "/api/space-folders/unlink",
+              "/api/project-folders/link",
+              "/api/project-folders/unlink",
               "/api/note/promote",
               "/api/note/link-space",
               "/api/plans/preview",
@@ -3295,41 +3308,51 @@ export async function createHost(options: HostOptions) {
                       ]
                     : noteKnowledgeReplay
                       ? ["links", "library", "notes"]
-                      : path.startsWith("/api/link/")
-                        ? ["links"]
-                        : path.startsWith("/api/recurrences/")
-                          ? ["workflows", "items"]
-                          : path.startsWith("/api/projects/")
-                            ? ["projectMaterials", "library"]
-                            : path === "/api/organize"
-                              ? value.action === "delete"
-                                ? value.kind === "WORK"
-                                  ? ["items"]
-                                  : value.kind === "NOTE"
-                                    ? ["notes"]
-                                    : ["organization"]
-                                : ["organization"]
-                              : categoryReplay
-                                ? ["categories"]
-                                : path === "/api/manual-orders/move"
-                                  ? ["manualOrders"]
-                                  : navigationReplay
-                                    ? ["navigationPreference"]
-                                    : path === "/api/work/calendar-settings"
-                                      ? ["calendarSettings"]
-                                      : path === "/api/memo/save"
-                                        ? ["entityMemos"]
-                                        : path === "/api/reminders/save"
-                                          ? ["reminders"]
-                                          : knowledgeReplay
-                                            ? ["notes", "library"]
-                                            : ["items", "edges"]
+                      : path.startsWith("/api/folders/")
+                        ? ["folderLinks"]
+                        : path.startsWith("/api/space-folders/")
+                          ? ["spaceFolderLinks"]
+                          : path.startsWith("/api/project-folders/")
+                            ? ["projectFolderLinks"]
+                            : path.startsWith("/api/link/")
+                              ? ["links"]
+                              : path.startsWith("/api/recurrences/")
+                                ? ["workflows", "items"]
+                                : path.startsWith("/api/projects/")
+                                  ? ["projectMaterials", "library"]
+                                  : path === "/api/organize"
+                                    ? value.action === "delete"
+                                      ? value.kind === "WORK"
+                                        ? ["items"]
+                                        : value.kind === "NOTE"
+                                          ? ["notes"]
+                                          : ["organization"]
+                                      : ["organization"]
+                                    : categoryReplay
+                                      ? ["categories"]
+                                      : path === "/api/manual-orders/move"
+                                        ? ["manualOrders"]
+                                        : navigationReplay
+                                          ? ["navigationPreference"]
+                                          : path ===
+                                              "/api/work/calendar-settings"
+                                            ? ["calendarSettings"]
+                                            : path === "/api/memo/save"
+                                              ? ["entityMemos"]
+                                              : path === "/api/reminders/save"
+                                                ? ["reminders"]
+                                                : knowledgeReplay
+                                                  ? ["notes", "library"]
+                                                  : ["items", "edges"]
               ).some((candidate) => candidate === collection) ||
               !["UPSERT", "DELETE"].includes(op) ||
               ((path.startsWith("/api/plans/") ||
                 noteKnowledgeReplay ||
                 knowledgeReplay ||
                 path.startsWith("/api/link/") ||
+                path.startsWith("/api/folders/") ||
+                path.startsWith("/api/space-folders/") ||
+                path.startsWith("/api/project-folders/") ||
                 path.startsWith("/api/recurrences/") ||
                 categoryReplay ||
                 path.startsWith("/api/projects/") ||
@@ -3374,6 +3397,13 @@ export async function createHost(options: HostOptions) {
             ) as ProjectKnowledgeReplayEffect[];
           } else if (noteKnowledgeReplay)
             noteKnowledgeEffects = parsedEffects as NoteKnowledgeReplayEffect[];
+          else if (path.startsWith("/api/folders/"))
+            folderLinkEffects = parsedEffects as FolderLinkReplayEffect[];
+          else if (path.startsWith("/api/space-folders/"))
+            spaceFolderLinkEffects = parsedEffects as FolderLinkReplayEffect[];
+          else if (path.startsWith("/api/project-folders/"))
+            projectFolderLinkEffects =
+              parsedEffects as FolderLinkReplayEffect[];
           else if (path.startsWith("/api/link/"))
             linkedKnowledgeEffects =
               parsedEffects as LinkedKnowledgeReplayEffect[];
@@ -4741,7 +4771,7 @@ export async function createHost(options: HostOptions) {
                     "stableId",
                   ]);
                   return new FolderLinkService(
-                    folderLinks,
+                    folderLinkReplay ?? folderLinks,
                     folderTargets,
                     authorization,
                     clock,
@@ -4764,7 +4794,7 @@ export async function createHost(options: HostOptions) {
                 case "/api/folders/unlink":
                   keys(value, ["id", "version"]);
                   return new FolderLinkService(
-                    folderLinks,
+                    folderLinkReplay ?? folderLinks,
                     folderTargets,
                     authorization,
                     clock,
@@ -4773,7 +4803,7 @@ export async function createHost(options: HostOptions) {
                 case "/api/space-folders/link":
                   keys(value, ["spaceId", "folderId", "stableId"]);
                   return new SpaceFolderLinkService(
-                    spaceFolderLinks,
+                    spaceFolderLinkReplay ?? spaceFolderLinks,
                     scopedFolderTargets,
                     authorization,
                     clock,
@@ -4791,7 +4821,7 @@ export async function createHost(options: HostOptions) {
                 case "/api/space-folders/unlink":
                   keys(value, ["id", "version"]);
                   return new SpaceFolderLinkService(
-                    spaceFolderLinks,
+                    spaceFolderLinkReplay ?? spaceFolderLinks,
                     scopedFolderTargets,
                     authorization,
                     clock,
@@ -4800,7 +4830,7 @@ export async function createHost(options: HostOptions) {
                 case "/api/project-folders/link":
                   keys(value, ["projectId", "folderId", "stableId"]);
                   return new ProjectFolderLinkService(
-                    projectFolderLinks,
+                    projectFolderLinkReplay ?? projectFolderLinks,
                     scopedFolderTargets,
                     authorization,
                     clock,
@@ -4818,7 +4848,7 @@ export async function createHost(options: HostOptions) {
                 case "/api/project-folders/unlink":
                   keys(value, ["id", "version"]);
                   return new ProjectFolderLinkService(
-                    projectFolderLinks,
+                    projectFolderLinkReplay ?? projectFolderLinks,
                     scopedFolderTargets,
                     authorization,
                     clock,
@@ -6450,6 +6480,30 @@ export async function createHost(options: HostOptions) {
                   linkedKnowledgeEffects,
                 )
               : null;
+            const folderLinkReplay = folderLinkEffects
+              ? new FolderLinkReplayStore(
+                  folderLinks,
+                  context.workspaceId,
+                  context.principalId,
+                  folderLinkEffects,
+                )
+              : null;
+            const spaceFolderLinkReplay = spaceFolderLinkEffects
+              ? new SpaceFolderLinkReplayStore(
+                  spaceFolderLinks,
+                  context.workspaceId,
+                  context.principalId,
+                  spaceFolderLinkEffects,
+                )
+              : null;
+            const projectFolderLinkReplay = projectFolderLinkEffects
+              ? new ProjectFolderLinkReplayStore(
+                  projectFolderLinks,
+                  context.workspaceId,
+                  context.principalId,
+                  projectFolderLinkEffects,
+                )
+              : null;
             const noteKnowledgeReplay = noteKnowledgeEffects
               ? new NoteKnowledgeReplayEffects(
                   context.workspaceId,
@@ -6502,6 +6556,9 @@ export async function createHost(options: HostOptions) {
                       : knowledgeReplay
                         ? await knowledgeReplay.run(store, library, execute)
                         : await execute();
+            if (folderLinkReplay) folderLinkReplay.finish();
+            if (spaceFolderLinkReplay) spaceFolderLinkReplay.finish();
+            if (projectFolderLinkReplay) projectFolderLinkReplay.finish();
             if (organizationReplay) await organizationReplay.finish();
             if (
               organizationWorkEffects &&
@@ -6519,6 +6576,9 @@ export async function createHost(options: HostOptions) {
                   }
                 : null) ??
               replay ??
+              folderLinkReplay ??
+              spaceFolderLinkReplay ??
+              projectFolderLinkReplay ??
               recurrenceReplay ??
               noteKnowledgeReplay ??
               linkedKnowledgeReplay ??

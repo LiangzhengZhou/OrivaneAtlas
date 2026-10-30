@@ -12,6 +12,7 @@ import {
   syncLocalFileBinary,
 } from "./local-file-binary-sync";
 import { buildLocalFileReplayRequest } from "./local-file-replay-request";
+import { buildLocalFolderLinkReplayRequest } from "./local-folder-link-replay-request";
 import { prepareLocalKnowledgeReplayAcknowledgement } from "./local-knowledge-replay-ack";
 import { buildLocalKnowledgeReplayRequest } from "./local-knowledge-replay-request";
 import type { LocalWikiIndexer } from "./local-library-store";
@@ -383,6 +384,7 @@ export class LocalWorkSyncCoordinator {
         buildLocalOrganizationReplayRequest(plan) ??
         buildLocalProjectKnowledgeReplayRequest(plan) ??
         buildLocalRecurrenceReplayRequest(plan) ??
+        buildLocalFolderLinkReplayRequest(plan) ??
         buildLocalLinkedKnowledgeReplayRequest(plan) ??
         buildLocalNoteKnowledgeReplayRequest(plan) ??
         buildLocalPlanReplayRequest(plan) ??
