@@ -27,6 +27,8 @@ function values<T extends object>(
 ) {
   return (Object.keys(fields) as (keyof T)[]).map((key) => {
     const value = entity[key];
+    if (String(key) === "steps")
+      return value === undefined ? null : JSON.stringify(value);
     if (value !== undefined) return value;
     // Legacy callers/tests omit the optional timer fields; persist defaults.
     return String(key) === "timerAccumulatedMs" ? 0 : null;
@@ -94,6 +96,7 @@ export function repository(client: PoolClient, workspaceId: string) {
       ? item
       : {
           ...item,
+          steps: Array.isArray(item.steps) ? item.steps : [],
           projectIds: (
             await client.query(
               "SELECT project_id FROM arclattice.task_project WHERE workspace_id=$1 AND task_id=$2 ORDER BY position",
