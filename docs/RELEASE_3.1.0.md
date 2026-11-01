@@ -14,7 +14,7 @@ Orivane Atlas 3.1.0 brings the design-system v1.1 workspace refinements and the 
 
 ## Compatibility
 
-- Web client + SQLite host migrations 46–49 (PostgreSQL 41–44).
+- Web client + SQLite host migrations 46–48 (PostgreSQL 41–43).
 - Windows NSIS/updater and Android arm64 APK built from this source.
 - Existing data and permissions are preserved.
 
