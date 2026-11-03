@@ -377,129 +377,6 @@ export function ProjectWorkspace({
   return (
     <section className="project-workspace">
       <div className="panel project-summary">
-        <div className="space-cover project-cover">
-          <div className="space-cover-media">
-            {project.projectCoverAssetId ? (
-              <img
-                src={`/api/library/asset?id=${encodeURIComponent(project.projectCoverAssetId)}`}
-                alt=""
-                style={{ objectPosition: `${projectCoverFocus}% 50%` }}
-              />
-            ) : (
-              <span>{t("projectCover")}</span>
-            )}
-          </div>
-          <div className="space-cover-actions">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => projectCoverInput.current?.click()}
-            >
-              <ImagePlus size={14} />
-              {project.projectCoverAssetId
-                ? t("changeProjectCover")
-                : t("setProjectCover")}
-            </Button>
-            <Button
-              ref={projectCoverMenu}
-              type="button"
-              variant="ghost"
-              disabled={busy}
-              aria-expanded={projectCoverMenuOpen}
-              aria-haspopup="menu"
-              onClick={() => setProjectCoverMenuOpen((value) => !value)}
-            >
-              {i18n.language.startsWith("zh")
-                ? "从文件库选择"
-                : "Choose from library"}
-            </Button>
-            {projectCoverMenuOpen && (
-              <Menu
-                anchorRef={projectCoverMenu}
-                label={
-                  i18n.language.startsWith("zh") ? "选择封面" : "Choose cover"
-                }
-                onDismiss={() => setProjectCoverMenuOpen(false)}
-              >
-                {(snapshot.files ?? [])
-                  .filter(
-                    (file) => !file.deletedAt && file.mime.startsWith("image/"),
-                  )
-                  .slice(0, 12)
-                  .map((file) => (
-                    <MenuItem
-                      key={file.id}
-                      onClick={() => {
-                        setProjectCoverMenuOpen(false);
-                        void saveProjectCover(file.id);
-                      }}
-                    >
-                      {file.name}
-                    </MenuItem>
-                  ))}
-                {(snapshot.files ?? []).every(
-                  (file) => file.deletedAt || !file.mime.startsWith("image/"),
-                ) && (
-                  <MenuItem disabled>
-                    {i18n.language.startsWith("zh")
-                      ? "文件库暂无图片"
-                      : "No images in the library"}
-                  </MenuItem>
-                )}
-              </Menu>
-            )}
-            {project.projectCoverAssetId && (
-              <label className="cover-focus-control">
-                <span>{t("coverFocus")}</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={projectCoverFocus}
-                  onChange={(event) =>
-                    setProjectCoverFocus(Number(event.target.value))
-                  }
-                  onPointerUp={() =>
-                    void saveProjectCover(
-                      project.projectCoverAssetId ?? null,
-                      projectCoverFocus,
-                    )
-                  }
-                  onKeyUp={() =>
-                    void saveProjectCover(
-                      project.projectCoverAssetId ?? null,
-                      projectCoverFocus,
-                    )
-                  }
-                />
-              </label>
-            )}
-            {project.projectCoverAssetId && (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={busy}
-                aria-label={t("removeProjectCover")}
-                onClick={() => void updateProjectCover(null)}
-              >
-                <X size={14} />
-              </Button>
-            )}
-          </div>
-          <input
-            hidden
-            ref={projectCoverInput}
-            className="project-cover-input"
-            type="file"
-            accept="image/*"
-            onChange={(event) => {
-              const file = event.target.files?.[0] ?? null;
-              event.target.value = "";
-              if (file) void updateProjectCover(file);
-            }}
-          />
-        </div>
         <h1>{project.title}</h1>
         <p>{t("projectLifecycles." + projectLifecycle(project))}</p>
         <p>
@@ -600,6 +477,132 @@ export function ProjectWorkspace({
           )}
         </Toolbar>
       </div>
+      <div
+        className={`space-cover project-cover${project.projectCoverAssetId ? " has-cover" : ""}`}
+      >
+        <div className="space-cover-media">
+          {project.projectCoverAssetId ? (
+            <img
+              src={`/api/library/asset?id=${encodeURIComponent(project.projectCoverAssetId)}`}
+              alt=""
+              style={{ objectPosition: `${projectCoverFocus}% 50%` }}
+            />
+          ) : (
+            <span>{t("projectCover")}</span>
+          )}
+        </div>
+        <div className="space-cover-actions">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => projectCoverInput.current?.click()}
+          >
+            <ImagePlus size={14} />
+            {project.projectCoverAssetId
+              ? t("changeProjectCover")
+              : t("setProjectCover")}
+          </Button>
+          <Button
+            ref={projectCoverMenu}
+            type="button"
+            variant="ghost"
+            disabled={busy}
+            aria-expanded={projectCoverMenuOpen}
+            aria-haspopup="menu"
+            onClick={() => setProjectCoverMenuOpen((value) => !value)}
+          >
+            {i18n.language.startsWith("zh")
+              ? "从文件库选择"
+              : "Choose from library"}
+          </Button>
+          {projectCoverMenuOpen && (
+            <Menu
+              anchorRef={projectCoverMenu}
+              label={
+                i18n.language.startsWith("zh") ? "选择封面" : "Choose cover"
+              }
+              onDismiss={() => setProjectCoverMenuOpen(false)}
+            >
+              {(snapshot.files ?? [])
+                .filter(
+                  (file) => !file.deletedAt && file.mime.startsWith("image/"),
+                )
+                .slice(0, 12)
+                .map((file) => (
+                  <MenuItem
+                    key={file.id}
+                    onClick={() => {
+                      setProjectCoverMenuOpen(false);
+                      void saveProjectCover(file.id);
+                    }}
+                  >
+                    {file.name}
+                  </MenuItem>
+                ))}
+              {(snapshot.files ?? []).every(
+                (file) => file.deletedAt || !file.mime.startsWith("image/"),
+              ) && (
+                <MenuItem disabled>
+                  {i18n.language.startsWith("zh")
+                    ? "文件库暂无图片"
+                    : "No images in the library"}
+                </MenuItem>
+              )}
+            </Menu>
+          )}
+          {project.projectCoverAssetId && (
+            <label className="cover-focus-control">
+              <span>{t("coverFocus")}</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={projectCoverFocus}
+                onChange={(event) =>
+                  setProjectCoverFocus(Number(event.target.value))
+                }
+                onPointerUp={() =>
+                  void saveProjectCover(
+                    project.projectCoverAssetId ?? null,
+                    projectCoverFocus,
+                  )
+                }
+                onKeyUp={() =>
+                  void saveProjectCover(
+                    project.projectCoverAssetId ?? null,
+                    projectCoverFocus,
+                  )
+                }
+              />
+            </label>
+          )}
+          {project.projectCoverAssetId && (
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              aria-label={t("removeProjectCover")}
+              onClick={() => void updateProjectCover(null)}
+            >
+              <X size={14} />
+            </Button>
+          )}
+        </div>
+        <input
+          hidden
+          ref={projectCoverInput}
+          className="project-cover-input"
+          type="file"
+          accept="image/*"
+          onChange={(event) => {
+            const file = event.target.files?.[0] ?? null;
+            event.target.value = "";
+            if (file) void updateProjectCover(file);
+          }}
+        />
+      </div>
+
       <div
         className="organization-toolbar"
         role="tablist"

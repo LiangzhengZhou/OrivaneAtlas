@@ -500,8 +500,24 @@
 }
 
 .project-cover {
+  width: 100%;
   max-width: none;
   margin: 0 0 14px;
+}
+.project-cover .space-cover-media {
+  width: 100%;
+  max-height: none;
+}
+.project-cover:not(.has-cover) .space-cover-media {
+  display: none;
+}
+.project-cover:not(.has-cover) .space-cover-actions {
+  position: static;
+  justify-content: flex-start;
+  padding: 0;
+}
+.project-cover.has-cover .space-cover-actions {
+  position: absolute;
 }
 
 .cover-focus-control {

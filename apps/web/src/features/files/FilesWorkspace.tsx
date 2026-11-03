@@ -15,6 +15,7 @@ import {
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/Button";
+import { confirmAction } from "../../components/ui/ConfirmationHost";
 import { EntityRow } from "../../components/ui/Content";
 import { Select } from "../../components/ui/Surfaces";
 import { EntityIcon } from "../notes/EntityIcon";
@@ -56,6 +57,7 @@ export function FilesWorkspace({
   onIcon,
   onOpenNote,
   onOpenResource,
+  onDeleteResource,
   onUpload,
 }: {
   notes: readonly WorkspaceNote[];
@@ -71,6 +73,7 @@ export function FilesWorkspace({
   onIcon(note: WorkspaceNote, icon: string): void;
   onOpenNote(note: WorkspaceNote): void;
   onOpenResource(ref: EntityRef): void;
+  onDeleteResource(ref: EntityRef): Promise<void>;
   onUpload(file: globalThis.File): Promise<boolean>;
 }) {
   const { t, i18n } = useTranslation("desk");
@@ -472,13 +475,40 @@ export function FilesWorkspace({
                 </div>
               )}
             </dl>
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => open(selectedRow)}
-            >
-              {zh ? "打开" : "Open"}
-            </Button>
+            <div className="files-detail-actions">
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => open(selectedRow)}
+              >
+                {zh ? "打开" : "Open"}
+              </Button>
+              {selectedRow.ref && selectedRow.kind !== "NOTE" && (
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    const ref = selectedRow.ref;
+                    if (!ref) return;
+                    void (async () => {
+                      if (
+                        !(await confirmAction(
+                          zh
+                            ? `将“${selectedRow.title}”移至回收站？`
+                            : `Move “${selectedRow.title}” to Trash?`,
+                        ))
+                      )
+                        return;
+                      await onDeleteResource(ref);
+                      setSelectedKey(null);
+                    })();
+                  }}
+                >
+                  {zh ? "移至回收站" : "Move to Trash"}
+                </Button>
+              )}
+            </div>
           </aside>
         )}
       </section>

@@ -19115,3 +19115,82 @@ test("task checklist steps persist as structured markdown", async ({
     }),
   ).toBeVisible();
 });
+
+test("file library detail moves a document to trash", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const zh = info.project.name.includes("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "SPACE",
+      spaceId: null,
+      title: "Disposable space",
+      bodyMd: "Temporary space",
+    },
+  });
+  const doc = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: space.id,
+      title: "Disposable document",
+      bodyMd: "Temporary content",
+    },
+  });
+  await page.goto(workbench.url + "/#files?library=1");
+  await page
+    .getByRole("button", { name: /Disposable document/ })
+    .first()
+    .click();
+  const detail = page.getByLabel(zh ? "资源详情" : "Resource details");
+  await expect(detail).toBeVisible();
+  await detail
+    .getByRole("button", { name: zh ? "移至回收站" : "Move to Trash" })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: zh ? "确认" : "Confirm" })
+    .click();
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.library.find(
+        (entry: { id: string }) => entry.id === doc.id,
+      )?.deletedAt;
+    })
+    .not.toBeNull();
+});
+
+test("project cover controls sit below the project header", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "Layout project",
+    type: "PROJECT",
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await page
+    .locator(".project-card")
+    .filter({ hasText: project.title })
+    .locator(".project-title")
+    .click();
+  const summary = await page.locator(".project-summary").boundingBox();
+  const cover = await page.locator(".project-cover").boundingBox();
+  expect(summary).not.toBeNull();
+  expect(cover).not.toBeNull();
+  expect(cover!.y).toBeGreaterThanOrEqual(summary!.y + summary!.height - 1);
+  expect(cover!.width).toBeGreaterThan(300);
+  await page.screenshot({ path: ".artifacts/project-311.png", fullPage: true });
+});

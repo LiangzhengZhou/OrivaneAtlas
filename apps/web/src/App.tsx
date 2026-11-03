@@ -1319,6 +1319,44 @@ function Workbench({
       },
       "task:" + item.id + ":status",
     );
+  async function trashResource(ref: EntityRef) {
+    if (ref.kind === "FILE") {
+      const file = (snapshot.files ?? []).find((entry) => entry.id === ref.id);
+      if (!file) return;
+      const deleted = await runtime.deleteFile(file.id, file.version, true);
+      showToast(t("movedToTrash"), async () => {
+        await runtime.deleteFile(deleted.id, deleted.version, false);
+        await refresh();
+      });
+      await refresh();
+      return;
+    }
+    if (ref.kind === "DOCUMENT") {
+      const entry = snapshot.library.find((item) => item.id === ref.id);
+      if (!entry) return;
+      const deleted = await runtime.deleteLibrary(
+        entry.id,
+        entry.version,
+        true,
+      );
+      showToast(t("movedToTrash"), async () => {
+        await runtime.deleteLibrary(deleted.id, deleted.version, false);
+        await refresh();
+      });
+      await refresh();
+      return;
+    }
+    if (ref.kind === "NOTE") {
+      const note = notes.find((item) => item.id === ref.id);
+      if (!note) return;
+      const deleted = await runtime.deleteNote(note.id, note.version, true);
+      showToast(t("movedToTrash"), async () => {
+        await runtime.deleteNote(deleted.id, deleted.version, false);
+        await refresh();
+      });
+      await refresh();
+    }
+  }
   async function trashWorkItem(item: WorkItem) {
     const deleted = await service.setDeleted(
       context,
@@ -2695,6 +2733,7 @@ function Workbench({
                               }
                               onOpenNote={openNote}
                               onOpenResource={openEntity}
+                              onDeleteResource={trashResource}
                               onUpload={(file) =>
                                 run(async () => {
                                   const uploaded = await runtime.uploadFile(
