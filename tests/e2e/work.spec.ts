@@ -19157,6 +19157,9 @@ test("file library detail moves a document to trash", async ({
     .getByRole("dialog")
     .getByRole("button", { name: zh ? "确认" : "Confirm" })
     .click();
+  await expect(page.locator(".toast")).toBeVisible();
+  await expect(page.locator(".toast-life")).toHaveCount(1);
+  await expect(page.locator(".toast")).toHaveCount(0, { timeout: 12_000 });
   await expect
     .poll(async () => {
       const snapshot = await (

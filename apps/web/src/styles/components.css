@@ -36,6 +36,8 @@ select {
   pointer-events: auto;
 }
 .toast {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -44,6 +46,25 @@ select {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 4px 20px #0002;
+}
+.toast-life {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  transform-origin: left center;
+  animation: toast-life 10s linear forwards;
+  pointer-events: none;
+}
+@keyframes toast-life {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
 }
 @media (max-width: 767px) {
   body:has(.toast-host .toast) .content {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../components/ui/Button";
 
@@ -14,11 +14,66 @@ export function showToast(message: string, undo?: () => Promise<void>) {
     }),
   );
 }
-export function ToastHost() {
+
+function ToastCard({
+  toast,
+  onDismiss,
+}: {
+  toast: Toast;
+  onDismiss(id: string): void;
+}) {
   const { i18n } = useTranslation();
+  const [undoing, setUndoing] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => onDismiss(toast.id), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [onDismiss, toast.id]);
+  const zh = i18n.language.startsWith("zh");
+  return (
+    <div className="toast">
+      <span>{toast.message}</span>
+      {toast.undo && (
+        <Button
+          type="button"
+          disabled={undoing}
+          onClick={async () => {
+            setUndoing(true);
+            try {
+              await toast.undo?.();
+              onDismiss(toast.id);
+            } catch {
+              showToast(
+                zh
+                  ? "撤销失败，请刷新后重试"
+                  : "Undo failed. Refresh and retry.",
+              );
+            } finally {
+              setUndoing(false);
+            }
+          }}
+        >
+          {zh ? "撤销" : "Undo"}
+        </Button>
+      )}
+      <Button
+        type="button"
+        aria-label={zh ? "关闭" : "Dismiss"}
+        onClick={() => onDismiss(toast.id)}
+      >
+        ×
+      </Button>
+      <span className="toast-life" aria-hidden="true" />
+    </div>
+  );
+}
+
+export function ToastHost() {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [pending, setPending] = useState<string | null>(null);
   const hostRef = useRef<HTMLElement>(null);
+  const dismiss = useCallback(
+    (id: string) => setToasts((old) => old.filter((entry) => entry.id !== id)),
+    [],
+  );
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -46,43 +101,7 @@ export function ToastHost() {
   return (
     <aside ref={hostRef} className="toast-host" aria-live="polite">
       {toasts.map((toast) => (
-        <div className="toast" key={toast.id}>
-          <span>{toast.message}</span>
-          {toast.undo && (
-            <Button
-              type="button"
-              disabled={pending === toast.id}
-              onClick={async () => {
-                setPending(toast.id);
-                try {
-                  await toast.undo?.();
-                  setToasts((old) =>
-                    old.filter((entry) => entry.id !== toast.id),
-                  );
-                } catch {
-                  showToast(
-                    i18n.language.startsWith("zh")
-                      ? "撤销失败，请刷新后重试"
-                      : "Undo failed. Refresh and retry.",
-                  );
-                } finally {
-                  setPending(null);
-                }
-              }}
-            >
-              {i18n.language.startsWith("zh") ? "撤销" : "Undo"}
-            </Button>
-          )}
-          <Button
-            type="button"
-            aria-label={i18n.language.startsWith("zh") ? "关闭" : "Dismiss"}
-            onClick={() =>
-              setToasts((old) => old.filter((entry) => entry.id !== toast.id))
-            }
-          >
-            ×
-          </Button>
-        </div>
+        <ToastCard key={toast.id} toast={toast} onDismiss={dismiss} />
       ))}
     </aside>
   );
