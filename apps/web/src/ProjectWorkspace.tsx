@@ -17,6 +17,7 @@ import { ImagePlus, MoreHorizontal, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useEntitySelection } from "./app/EntitySelection";
+import { showToast } from "./app/ToastHost";
 import type { Runtime, Snapshot } from "./bootstrap";
 import { Button, IconButton, Toolbar } from "./components/ui/Button";
 import { ListRow, MenuItem } from "./components/ui/Content";
@@ -65,6 +66,7 @@ export function ProjectWorkspace({
   onOpen,
   onLifecycle,
   onNewPage,
+  onNewDocument,
   onCreate,
   onLink,
   onUnlink,
@@ -95,6 +97,7 @@ export function ProjectWorkspace({
   onOpen(ref: EntityRef): void;
   onLifecycle(project: WorkItem): void;
   onNewPage(spaceId: string): void;
+  onNewDocument(project: WorkItem): void;
   onCreate(type: "PROJECT" | "TASK" | "MILESTONE", parentId: string): void;
   onLink(from: EntityRef, to: EntityRef): Promise<boolean>;
   onUnlink(link: KnowledgeLink): Promise<boolean>;
@@ -228,6 +231,22 @@ export function ProjectWorkspace({
   );
   const taskIds = new Set(tasks.map((item) => item.id));
   const projectIds = scoped.projectIds;
+  const projectDocuments = useMemo(() => {
+    const ids = new Set(projectIds);
+    return (snapshot.projectMaterials ?? [])
+      .filter(
+        (entry) =>
+          entry.kind === "DOCUMENT" &&
+          !entry.deletedAt &&
+          ids.has(entry.projectId),
+      )
+      .map((entry) =>
+        snapshot.library.find(
+          (document) => document.id === entry.targetId && !document.deletedAt,
+        ),
+      )
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  }, [projectIds, snapshot.library, snapshot.projectMaterials]);
   const edges = snapshot.edges.filter(
     (edge) => taskIds.has(edge.fromId) && taskIds.has(edge.toId),
   );
@@ -879,6 +898,43 @@ export function ProjectWorkspace({
             />
           </div>
         )}
+        {tab === "documents" && (
+          <section className="project-summary project-documents">
+            <header className="project-documents-header">
+              <h2>{t("projectHub.documents")}</h2>
+              <Button
+                type="button"
+                variant="primary"
+                disabled={busy}
+                onClick={() => onNewDocument(project)}
+              >
+                i18n.language.startsWith("zh") ? "新建文档" : "New document"
+              </Button>
+            </header>
+            {projectDocuments.length ? (
+              <div className="project-documents-list">
+                {projectDocuments.map((document) => (
+                  <Button
+                    key={document.id}
+                    type="button"
+                    variant="ghost"
+                    onClick={() =>
+                      onOpen({ kind: "DOCUMENT", id: document.id })
+                    }
+                  >
+                    {document.title}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <p>
+                {i18n.language.startsWith("zh")
+                  ? "还没有项目文档，新建文档会自动归入项目同名知识空间。"
+                  : "No project documents yet. New documents go into a space named after the project."}
+              </p>
+            )}
+          </section>
+        )}
         {tab === "knowledge" && (
           <>
             <details
@@ -1007,11 +1063,18 @@ export function ProjectWorkspace({
                   }
                 })
               }
-              onDelete={(material, deleted) =>
-                run(() =>
+              onDelete={async (material, deleted) => {
+                await run(() =>
                   runtime.projectDelete(material.id, material.version, deleted),
-                )
-              }
+                );
+                if (deleted)
+                  showToast(
+                    i18n.language.startsWith("zh")
+                      ? "已移至回收站"
+                      : "Moved to Trash",
+                  );
+                return true;
+              }}
               onDownload={async (id) => {
                 await run(async () => {
                   await saveProjectOriginal(await importProjectOriginal(id));

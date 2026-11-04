@@ -532,3 +532,22 @@
   flex: 1;
   accent-color: var(--accent);
 }
+
+.project-documents-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.project-documents-header h2 {
+  margin: 0;
+}
+.project-documents-list {
+  display: grid;
+  gap: 4px;
+}
+.project-documents-list .ui-button {
+  justify-content: flex-start;
+  text-align: start;
+}

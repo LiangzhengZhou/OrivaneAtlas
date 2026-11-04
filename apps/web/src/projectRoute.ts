@@ -1,5 +1,10 @@
 import type { ProjectScope } from "@arclattice/domain";
-export const projectTabs = ["overview", "tasks", "knowledge"] as const;
+export const projectTabs = [
+  "overview",
+  "tasks",
+  "knowledge",
+  "documents",
+] as const;
 export type ProjectTab = (typeof projectTabs)[number];
 export interface ProjectRoute {
   projectId: string | null;
@@ -22,7 +27,7 @@ export function parseProjectRoute(hash: string): ProjectRoute {
     const tab =
       legacyTab === "children" || legacyTab === "brief"
         ? "overview"
-        : legacyTab === "documents" || legacyTab === "graph"
+        : legacyTab === "graph"
           ? "knowledge"
           : legacyTab;
     return {

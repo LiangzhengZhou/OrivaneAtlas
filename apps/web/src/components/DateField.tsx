@@ -104,6 +104,7 @@ export function DateField({
         <AnchoredFloatingSurface
           anchorRef={anchor}
           placement="bottom-start"
+          draggable
           onDismiss={() => setOpen(false)}
           label={text("选择日期", "Choose date")}
           className="calendar-popover"
@@ -112,7 +113,11 @@ export function DateField({
             role="dialog"
             aria-label={label || text("选择日期", "Choose date")}
           >
-            <div className="calendar-heading">
+            <div
+              className="calendar-heading"
+              data-drag-handle
+              title={text("拖动日历", "Drag calendar")}
+            >
               <IconButton
                 label={text("上个月", "Previous month")}
                 onClick={() => shift(-1)}

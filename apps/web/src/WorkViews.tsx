@@ -22,7 +22,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { type CSSProperties, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useEntitySelection } from "./app/EntitySelection";
 import { Button, IconButton } from "./components/ui/Button";
@@ -239,7 +239,7 @@ function Task({
             }
           }}
         >
-          {item.title}
+          <TaskTitleText text={item.title} />
         </Button>
       </div>
       <div className="task-meta">
@@ -353,6 +353,34 @@ function Task({
     </ListRow>
   );
 }
+function TaskTitleText({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [distance, setDistance] = useState(0);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const measure = () =>
+      setDistance(Math.max(0, node.scrollWidth - node.clientWidth));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [text]);
+  return (
+    <span
+      ref={ref}
+      className={`task-title-text${distance > 0 ? " is-overflowing" : ""}`}
+      style={
+        {
+          "--marquee-distance": `-${distance}px`,
+        } as CSSProperties
+      }
+    >
+      {text}
+    </span>
+  );
+}
+
 export function TaskList({ items, ...props }: WorkProps) {
   const derived = props.derived;
   return (

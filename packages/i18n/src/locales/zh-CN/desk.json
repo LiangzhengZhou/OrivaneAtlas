@@ -54,7 +54,8 @@
     "detach": "解除关联",
     "emptyDocuments": "暂无关联资料。可先在笔记或知识库创建内容，再关联到这里。",
     "emptyChildren": "暂无子项目，可将较大的工作拆分为子项目。",
-    "emptyTasks": "此项目下暂无任务。"
+    "emptyTasks": "此项目下暂无任务。",
+    "documents": "文档"
   },
   "workflows": {
     "plans": "导入并审阅计划",

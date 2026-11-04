@@ -54,7 +54,8 @@
     "detach": "Remove reference",
     "emptyDocuments": "No references yet. Create material in Notes or Library, then link it here.",
     "emptyChildren": "No subprojects yet. Split larger work into subprojects.",
-    "emptyTasks": "No tasks in this project yet."
+    "emptyTasks": "No tasks in this project yet.",
+    "documents": "Documents"
   },
   "workflows": {
     "plans": "Import a reviewed plan",

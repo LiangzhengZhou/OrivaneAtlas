@@ -585,11 +585,16 @@ progress::-webkit-progress-value {
 }
 .task-main {
   display: flex;
+  flex: 1;
   gap: 12px;
   align-items: center;
   min-width: 0;
 }
 .task-title {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   background: none;
   border: 0;
   padding: 0;
@@ -597,6 +602,24 @@ progress::-webkit-progress-value {
   font-size: 16px;
   color: var(--text-primary);
   overflow-wrap: anywhere;
+}
+.task-title-text {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.task-title:hover .task-title-text.is-overflowing {
+  text-overflow: clip;
+  animation: task-title-marquee 7s linear infinite alternate;
+}
+@keyframes task-title-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--marquee-distance, 0));
+  }
 }
 .task-title:hover {
   color: var(--accent);

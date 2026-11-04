@@ -269,6 +269,35 @@ function Workbench({
     documentDirty.current = dirty;
   }, []);
   const [creatingSpace, setCreatingSpace] = useState(false);
+  async function newProjectDocument(project: WorkItem) {
+    let space = snapshot.library.find(
+      (entry) =>
+        entry.kind === "SPACE" &&
+        !entry.deletedAt &&
+        entry.title === project.title,
+    );
+    if (!space) {
+      space = await runtime.saveLibrary(null, 0, {
+        kind: "SPACE",
+        spaceId: null,
+        title: project.title,
+        bodyMd: "",
+      });
+      await runtime.linkProjectSpace({
+        projectId: project.id,
+        spaceId: space.id,
+        inheritToChildren: true,
+      });
+      await refresh();
+    }
+    openDocument({
+      key: `DOCUMENT:new:${crypto.randomUUID()}`,
+      kind: "DOCUMENT",
+      spaceId: space.id,
+      projectId: project.id,
+    });
+  }
+
   function openDocument(request: WorkspaceRequest) {
     if (request.kind === "SPACE" && !request.entity) {
       setCreatingSpace(true);
@@ -2280,6 +2309,7 @@ function Workbench({
                               onLifecycle={(project) =>
                                 setEditor(project, "LIFECYCLE")
                               }
+                              onNewDocument={newProjectDocument}
                               onNewPage={(spaceId) =>
                                 openDocument({
                                   key: `DOCUMENT:new:${crypto.randomUUID()}`,

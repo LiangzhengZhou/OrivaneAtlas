@@ -19232,6 +19232,14 @@ test("task date pickers escape the task dialog and open for both dates", async (
   expect(box).not.toBeNull();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
+  const heading = await calendar.locator(".calendar-heading").boundingBox();
+  expect(heading).not.toBeNull();
+  await page.mouse.move(heading!.x + heading!.width / 2, heading!.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(heading!.x + heading!.width / 2 + 60, heading!.y + 44);
+  await page.mouse.up();
+  const moved = await calendar.boundingBox();
+  expect(moved!.x).toBeGreaterThan(box!.x + 30);
   await page.keyboard.press("Escape");
   await expect(calendar).toHaveCount(0);
   const due = dialog.getByRole("button", {
@@ -19240,4 +19248,38 @@ test("task date pickers escape the task dialog and open for both dates", async (
   });
   await due.click();
   await expect(calendar).toBeVisible();
+});
+
+test("project documents tab creates and reuses the project space", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const zh = info.project.name.includes("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "Documents project",
+    type: "PROJECT",
+  });
+  await page.goto(
+    workbench.url + `/#projects/${project.id}?tab=documents&scope=DIRECT`,
+  );
+  await expect(
+    page.getByRole("tab", { name: zh ? "文档" : "Documents", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.locator(".project-documents-header .ui-button").click();
+  await expect(page.locator(".document-workspace")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.library.some(
+        (entry: { kind: string; title: string; deletedAt: string | null }) =>
+          entry.kind === "SPACE" &&
+          entry.title === project.title &&
+          entry.deletedAt === null,
+      );
+    })
+    .toBe(true);
 });

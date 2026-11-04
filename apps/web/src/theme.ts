@@ -1,5 +1,9 @@
 export type ThemeMode = "system" | "light" | "dark";
-export type ThemePalette = "warm-green" | "warm-violet" | "cool-neutral";
+export type ThemePalette =
+  | "warm-green"
+  | "warm-violet"
+  | "warm-orange"
+  | "cool-neutral";
 
 export const themeStorageKey = "orivane-atlas.theme";
 export const paletteStorageKey = "orivane-atlas.palette";
@@ -25,6 +29,13 @@ export const themePalettes: readonly {
     labelEn: "Warm violet",
     descriptionZh: "暖中性底，保留品牌紫",
     descriptionEn: "Warm neutral with the brand violet",
+  },
+  {
+    id: "warm-orange",
+    labelZh: "暖橙",
+    labelEn: "Warm orange",
+    descriptionZh: "暖中性底色，橙色强调",
+    descriptionEn: "Warm neutral with a warm orange accent",
   },
   {
     id: "cool-neutral",

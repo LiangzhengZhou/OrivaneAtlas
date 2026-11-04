@@ -25,6 +25,7 @@ export function AnchoredFloatingSurface({
   portalTarget,
   dismissBoundaryRef,
   deferFocus = false,
+  draggable = false,
   role = "menu",
 }: {
   anchorRef: RefObject<HTMLElement | null>;
@@ -36,6 +37,7 @@ export function AnchoredFloatingSurface({
   portalTarget?: Element | undefined;
   dismissBoundaryRef?: RefObject<HTMLElement | null>;
   deferFocus?: boolean;
+  draggable?: boolean;
   /** "menu" for item lists; "dialog" for surfaces with arbitrary controls. */
   role?: "menu" | "dialog";
 }) {
@@ -57,6 +59,7 @@ export function AnchoredFloatingSurface({
       ancestors.push(ancestor);
     }
     const measuredSizes = new Map<Element, { width: number; height: number }>();
+    const dragOffset = { x: 0, y: 0 };
     const update = () => {
       const rect = anchor.getBoundingClientRect();
       const bounds = node.getBoundingClientRect();
@@ -66,26 +69,68 @@ export function AnchoredFloatingSurface({
       const below = rect.bottom + 8;
       const preferred = placement === "top-start" ? above : below;
       const flipped = placement === "top-start" ? below : above;
+      const host = node.parentElement;
+      const hostRect = host?.getBoundingClientRect() ?? { left: 0, top: 0 };
       const position = {
-        left: Math.max(
-          8,
-          Math.min(rect.left, window.innerWidth - bounds.width - 8),
-        ),
-        top: Math.max(
-          8,
-          Math.min(
-            preferred >= 8 &&
-              preferred + bounds.height <= window.innerHeight - 8
-              ? preferred
-              : flipped,
-            window.innerHeight - bounds.height - 8,
-          ),
-        ),
+        left:
+          Math.max(
+            8,
+            Math.min(rect.left, window.innerWidth - bounds.width - 8),
+          ) -
+          hostRect.left +
+          dragOffset.x,
+        top:
+          Math.max(
+            8,
+            Math.min(
+              preferred >= 8 &&
+                preferred + bounds.height <= window.innerHeight - 8
+                ? preferred
+                : flipped,
+              window.innerHeight - bounds.height - 8,
+            ),
+          ) -
+          hostRect.top +
+          dragOffset.y,
       };
       // Anchoring coordinates do not change content. Position the existing
       // surface without a second React render on opening or viewport scroll.
       node.style.left = `${position.left}px`;
       node.style.top = `${position.top}px`;
+    };
+    let dragging: {
+      x: number;
+      y: number;
+      left: number;
+      top: number;
+      baseLeft: number;
+      baseTop: number;
+    } | null = null;
+    const dragStart = (event: PointerEvent) => {
+      if (!draggable || event.button !== 0) return;
+      const target = event.target as Element;
+      if (!target.closest("[data-drag-handle]")) return;
+      event.preventDefault();
+      dragging = {
+        x: event.clientX,
+        y: event.clientY,
+        left: node.offsetLeft,
+        top: node.offsetTop,
+        baseLeft: node.offsetLeft - dragOffset.x,
+        baseTop: node.offsetTop - dragOffset.y,
+      };
+    };
+    const dragMove = (event: PointerEvent) => {
+      if (!dragging) return;
+      dragOffset.x =
+        dragging.left + event.clientX - dragging.x - dragging.baseLeft;
+      dragOffset.y =
+        dragging.top + event.clientY - dragging.y - dragging.baseTop;
+      node.style.left = `${dragging.left + event.clientX - dragging.x}px`;
+      node.style.top = `${dragging.top + event.clientY - dragging.y}px`;
+    };
+    const dragEnd = () => {
+      dragging = null;
     };
     const outside = (event: MouseEvent) => {
       const path = event.composedPath();
@@ -133,6 +178,10 @@ export function AnchoredFloatingSurface({
     observer.observe(node);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
+    node.addEventListener("pointerdown", dragStart);
+    window.addEventListener("pointermove", dragMove);
+    window.addEventListener("pointerup", dragEnd);
+    window.addEventListener("pointercancel", dragEnd);
     document.addEventListener("click", outside);
     document.addEventListener("keydown", key);
     return () => {
@@ -140,12 +189,16 @@ export function AnchoredFloatingSurface({
       observer.disconnect();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
+      node.removeEventListener("pointerdown", dragStart);
+      window.removeEventListener("pointermove", dragMove);
+      window.removeEventListener("pointerup", dragEnd);
+      window.removeEventListener("pointercancel", dragEnd);
       document.removeEventListener("click", outside);
       document.removeEventListener("keydown", key);
       if (focusFrame) cancelAnimationFrame(focusFrame);
       if (anchor.isConnected) anchor.focus({ preventScroll: true });
     };
-  }, [anchorRef, placement, parent, family, dismissBoundaryRef]);
+  }, [anchorRef, placement, parent, family, dismissBoundaryRef, draggable]);
   return createPortal(
     <FloatingFamilyContext.Provider value={family}>
       <div
