@@ -74,3 +74,9 @@
 .calendar-month-controls select {
   width: 110px;
 }
+
+/* Native <dialog> is a top-layer clipping container; let the portalled
+   calendar escape its box while it is open. */
+dialog:has(> .calendar-popover) {
+  overflow: visible;
+}

@@ -19197,3 +19197,47 @@ test("project cover controls sit below the project header", async ({
   expect(cover!.width).toBeGreaterThan(300);
   await page.screenshot({ path: ".artifacts/project-311.png", fullPage: true });
 });
+
+test("task date pickers escape the task dialog and open for both dates", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "Date picker project",
+    type: "PROJECT",
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await page
+    .locator(".project-card")
+    .filter({ hasText: project.title })
+    .locator(".project-title")
+    .click();
+  await page
+    .getByRole("button", { name: w.desk.newTask, exact: true })
+    .first()
+    .click();
+  const dialog = page.getByRole("dialog");
+  const start = dialog.getByRole("button", {
+    name: w.desk.startDate,
+    exact: true,
+  });
+  await start.click();
+  const calendar = page.locator(".calendar-popover");
+  await expect(calendar).toBeVisible();
+  const box = await calendar.boundingBox();
+  const viewport = page.viewportSize()!;
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
+  await start.click();
+  await expect(calendar).toHaveCount(0);
+  const due = dialog.getByRole("button", {
+    name: w.desk.dueDate,
+    exact: true,
+  });
+  await due.click();
+  await expect(calendar).toBeVisible();
+});
