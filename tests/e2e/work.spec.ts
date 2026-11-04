@@ -19232,7 +19232,7 @@ test("task date pickers escape the task dialog and open for both dates", async (
   expect(box).not.toBeNull();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width + 1);
-  await start.click();
+  await page.keyboard.press("Escape");
   await expect(calendar).toHaveCount(0);
   const due = dialog.getByRole("button", {
     name: w.desk.dueDate,
