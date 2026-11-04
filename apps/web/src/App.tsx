@@ -2751,6 +2751,8 @@ function Workbench({
                               notes={notes}
                               library={snapshot.library}
                               fileEntries={snapshot.files ?? []}
+                              projectMaterials={snapshot.projectMaterials ?? []}
+                              projects={projects}
                               folderPanel={folderTree(notes)}
                               folderFilter={effectiveFolderFilter}
                               query={query}

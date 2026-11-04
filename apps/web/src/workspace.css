@@ -551,3 +551,14 @@
   justify-content: flex-start;
   text-align: start;
 }
+
+.project-document-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.project-document-row .ui-button:first-child {
+  flex: 1;
+  justify-content: flex-start;
+  text-align: start;
+}

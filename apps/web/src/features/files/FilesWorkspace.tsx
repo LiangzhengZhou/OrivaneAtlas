@@ -1,5 +1,6 @@
 import type {
   EntityRef,
+  ProjectMaterial,
   WorkspaceLibraryEntry,
   WorkspaceNote,
 } from "@arclattice/application";
@@ -34,6 +35,7 @@ interface ResourceRow {
   mime?: string;
   /** Folder key for notes; the resource browser keeps folders as a note filter. */
   folderKey: string | null;
+  projectId?: string | undefined;
   note?: WorkspaceNote;
   ref?: EntityRef;
 }
@@ -47,6 +49,8 @@ export function FilesWorkspace({
   notes,
   library,
   fileEntries,
+  projectMaterials,
+  projects,
   folderPanel,
   folderFilter,
   query,
@@ -63,6 +67,8 @@ export function FilesWorkspace({
   notes: readonly WorkspaceNote[];
   library: readonly WorkspaceLibraryEntry[];
   fileEntries: readonly LibraryFile[];
+  projectMaterials?: readonly ProjectMaterial[];
+  projects?: readonly { id: string; title: string }[];
   folderPanel?: ReactNode;
   folderFilter: string | null;
   query: string;
@@ -83,6 +89,7 @@ export function FilesWorkspace({
   const [kind, setKind] = useState<ResourceKind>("ALL");
   const [sort, setSort] = useState<"updated" | "name">("updated");
   const [libraryOnly, setLibraryOnly] = useState(false);
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
   function setLibraryMode(value: boolean) {
     setLibraryOnly(value);
     const base = location.hash.split("?")[0] || "#files";
@@ -110,6 +117,11 @@ export function FilesWorkspace({
   }, [folderFilter, libraryOnly]);
 
   const spaces = new Map(library.map((entry) => [entry.id, entry]));
+  const projectByTarget = new Map(
+    (projectMaterials ?? [])
+      .filter((material) => !material.deletedAt && material.targetId)
+      .map((material) => [material.targetId, material.projectId]),
+  );
   const rows: ResourceRow[] = [
     ...(!libraryOnly
       ? notes
@@ -135,6 +147,7 @@ export function FilesWorkspace({
         updatedAt: entry.updatedAt,
         icon: "",
         folderKey: null,
+        projectId: projectByTarget.get(entry.id),
         ref: { kind: "DOCUMENT" as const, id: entry.id },
       })),
     ...fileEntries
@@ -149,6 +162,7 @@ export function FilesWorkspace({
         updatedAt: entry.updatedAt,
         icon: "",
         folderKey: null,
+        projectId: projectByTarget.get(entry.id),
         size: entry.size,
         mime: entry.mime,
         ref: { kind: "FILE" as const, id: entry.id },
@@ -159,6 +173,7 @@ export function FilesWorkspace({
     .filter(
       (row) =>
         (kind === "ALL" || row.kind === kind) &&
+        (projectFilter === null || row.projectId === projectFilter) &&
         (kind !== "NOTE" ||
           folderFilter === null ||
           row.folderKey === folderFilter) &&
@@ -327,6 +342,42 @@ export function FilesWorkspace({
             />
           </div>
         </header>
+        {projects && projects.length > 0 && (
+          <div className="files-project-folders">
+            <span>{zh ? "项目文件夹" : "Project folders"}</span>
+            {projects.map((project) => {
+              const count = rows.filter(
+                (row) => row.projectId === project.id,
+              ).length;
+              return (
+                <Button
+                  key={project.id}
+                  type="button"
+                  variant="ghost"
+                  aria-pressed={projectFilter === project.id}
+                  onClick={() =>
+                    setProjectFilter((current) =>
+                      current === project.id ? null : project.id,
+                    )
+                  }
+                >
+                  <FolderOpen size={14} />
+                  {project.title}
+                  <small>{count}</small>
+                </Button>
+              );
+            })}
+            {projectFilter && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setProjectFilter(null)}
+              >
+                {zh ? "清除筛选" : "Clear filter"}
+              </Button>
+            )}
+          </div>
+        )}
         <div className="files-resource-body">
           {visible.length > 0 ? (
             <div className="files-resource-list">

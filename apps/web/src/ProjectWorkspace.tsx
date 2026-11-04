@@ -21,6 +21,7 @@ import { showToast } from "./app/ToastHost";
 import type { Runtime, Snapshot } from "./bootstrap";
 import { Button, IconButton, Toolbar } from "./components/ui/Button";
 import { ListRow, MenuItem } from "./components/ui/Content";
+import { EntityMenu } from "./components/ui/EntityMenu";
 import { Menu, Popover, Select } from "./components/ui/Surfaces";
 import { openGraph } from "./features/graph/graph-route";
 import { KnowledgeGraph } from "./features/knowledge/KnowledgeGraph";
@@ -240,12 +241,12 @@ export function ProjectWorkspace({
           !entry.deletedAt &&
           ids.has(entry.projectId),
       )
-      .map((entry) =>
-        snapshot.library.find(
-          (document) => document.id === entry.targetId && !document.deletedAt,
-        ),
-      )
-      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+      .flatMap((material) => {
+        const document = snapshot.library.find(
+          (entry) => entry.id === material.targetId && !entry.deletedAt,
+        );
+        return document ? [{ document, material }] : [];
+      });
   }, [projectIds, snapshot.library, snapshot.projectMaterials]);
   const edges = snapshot.edges.filter(
     (edge) => taskIds.has(edge.fromId) && taskIds.has(edge.toId),
@@ -392,6 +393,19 @@ export function ProjectWorkspace({
       projectCoverAssetId = uploaded.id;
     }
     await saveProjectCover(projectCoverAssetId);
+  }
+  async function removeProjectMaterial(
+    material: (typeof snapshot.projectMaterials)[number],
+    deleted: boolean,
+  ) {
+    await run(() =>
+      runtime.projectDelete(material.id, material.version, deleted),
+    );
+    if (deleted)
+      showToast(
+        i18n.language.startsWith("zh") ? "已移至回收站" : "Moved to Trash",
+      );
+    return true;
   }
   return (
     <section className="project-workspace">
@@ -908,22 +922,30 @@ export function ProjectWorkspace({
                 disabled={busy}
                 onClick={() => onNewDocument(project)}
               >
-                i18n.language.startsWith("zh") ? "新建文档" : "New document"
+                {i18n.language.startsWith("zh") ? "新建文档" : "New document"}
               </Button>
             </header>
             {projectDocuments.length ? (
               <div className="project-documents-list">
-                {projectDocuments.map((document) => (
-                  <Button
-                    key={document.id}
-                    type="button"
-                    variant="ghost"
-                    onClick={() =>
-                      onOpen({ kind: "DOCUMENT", id: document.id })
-                    }
-                  >
-                    {document.title}
-                  </Button>
+                {projectDocuments.map(({ document, material }) => (
+                  <div className="project-document-row" key={document.id}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() =>
+                        onOpen({ kind: "DOCUMENT", id: document.id })
+                      }
+                    >
+                      {document.title}
+                    </Button>
+                    <EntityMenu
+                      title={document.title}
+                      pending={busy}
+                      onDelete={() =>
+                        void removeProjectMaterial(material, true)
+                      }
+                    />
+                  </div>
                 ))}
               </div>
             ) : (
@@ -1063,18 +1085,7 @@ export function ProjectWorkspace({
                   }
                 })
               }
-              onDelete={async (material, deleted) => {
-                await run(() =>
-                  runtime.projectDelete(material.id, material.version, deleted),
-                );
-                if (deleted)
-                  showToast(
-                    i18n.language.startsWith("zh")
-                      ? "已移至回收站"
-                      : "Moved to Trash",
-                  );
-                return true;
-              }}
+              onDelete={removeProjectMaterial}
               onDownload={async (id) => {
                 await run(async () => {
                   await saveProjectOriginal(await importProjectOriginal(id));

@@ -360,3 +360,19 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.files-project-folders {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.files-project-folders .ui-button {
+  gap: 5px;
+}
+.files-project-folders .ui-button small {
+  color: var(--text-muted);
+}

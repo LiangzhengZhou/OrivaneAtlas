@@ -3,6 +3,7 @@ export type ThemePalette =
   | "warm-green"
   | "warm-violet"
   | "warm-orange"
+  | "orange-white"
   | "cool-neutral";
 
 export const themeStorageKey = "orivane-atlas.theme";
@@ -36,6 +37,13 @@ export const themePalettes: readonly {
     labelEn: "Warm orange",
     descriptionZh: "暖中性底色，橙色强调",
     descriptionEn: "Warm neutral with a warm orange accent",
+  },
+  {
+    id: "orange-white",
+    labelZh: "橙白",
+    labelEn: "Orange white",
+    descriptionZh: "白色表面，暖橙强调",
+    descriptionEn: "White surfaces with a warm orange accent",
   },
   {
     id: "cool-neutral",

@@ -19,7 +19,7 @@
 
 .appearance-palette-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
 }
 
@@ -95,6 +95,16 @@
 .appearance-palette-option[data-palette="warm-violet"] {
   --canvas: #f7f5f2;
   --accent: #5a5bd6;
+}
+
+.appearance-palette-option[data-palette="warm-orange"] {
+  --canvas: #faf7f2;
+  --accent: #b35a2c;
+}
+
+.appearance-palette-option[data-palette="orange-white"] {
+  --canvas: #ffffff;
+  --accent: #c2410c;
 }
 
 .appearance-palette-option[data-palette="cool-neutral"] {

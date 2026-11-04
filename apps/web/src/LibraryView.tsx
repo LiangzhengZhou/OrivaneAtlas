@@ -117,6 +117,7 @@ export function LibraryView({
       (snapshot.files ?? []).filter(
         (file) =>
           !file.deletedAt &&
+          spaceId !== null &&
           file.spaceId === spaceId &&
           (fileType === "ALL" ||
             (extensionTypes[file.extension ?? ""] ?? "OTHER") === fileType),
@@ -234,8 +235,20 @@ export function LibraryView({
   }
   const [folderLinkChoice, setFolderLinkChoice] = useState("");
   const [folderLinkName, setFolderLinkName] = useState("");
-  const spaces = entries.filter((e) => e.kind === "SPACE" && !e.deletedAt),
-    space = spaces.find((e) => e.id === spaceId);
+  const projectSpaceIds = new Set(
+    (snapshot.projectMaterials ?? [])
+      .filter(
+        (material) =>
+          material.kind === "SPACE" &&
+          material.ownership === "OWNED" &&
+          !material.deletedAt,
+      )
+      .map((material) => material.targetId),
+  );
+  const spaces = entries.filter(
+    (e) => e.kind === "SPACE" && !e.deletedAt && !projectSpaceIds.has(e.id),
+  );
+  const space = spaces.find((e) => e.id === spaceId);
   useEffect(() => {
     setCoverFocus(space?.coverFocus ?? 50);
   }, [space?.id, space?.coverFocus]);
