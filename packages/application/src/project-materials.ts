@@ -64,6 +64,21 @@ export interface ProjectStore {
   file(id: string): Promise<string>;
   activity(projectId: string): Promise<ProjectActivity[]>;
 }
+export function selectWritableProjectSpace(
+  bindings: readonly ProjectKnowledgeBinding[],
+  spaces: readonly { id: string; deletedAt: string | null }[],
+): ProjectKnowledgeBinding | null {
+  const live = new Set(
+    spaces.filter((space) => !space.deletedAt).map((space) => space.id),
+  );
+  const primary = bindings.filter(
+    (binding) => binding.role === "PRIMARY" && live.has(binding.spaceId),
+  );
+  if (primary.length > 1)
+    throw new DomainError("VALIDATION_ERROR", { field: "projectSpaces" });
+  return primary[0] ?? null;
+}
+
 export class ProjectService {
   constructor(
     private readonly uow: UnitOfWork,
@@ -252,6 +267,16 @@ export class ProjectService {
       )
       .map((binding) => ({ ...binding, ownership: "LINKED" as const }));
     return [...direct, ...inherited];
+  }
+  async findWritableProjectSpace(context: ActorContext, projectId: string) {
+    await this.authorization.require(context, "work:read");
+    const [bindings, spaces] = await Promise.all([
+      this.listProjectSpaces(context, projectId),
+      this.library.listMetadata
+        ? this.library.listMetadata()
+        : this.library.list(),
+    ]);
+    return selectWritableProjectSpace(bindings, spaces);
   }
   async createProjectSpace(
     context: ActorContext,

@@ -270,30 +270,25 @@ function Workbench({
   }, []);
   const [creatingSpace, setCreatingSpace] = useState(false);
   async function newProjectDocument(project: WorkItem) {
-    let space = snapshot.library.find(
-      (entry) =>
-        entry.kind === "SPACE" &&
-        !entry.deletedAt &&
-        entry.title === project.title,
-    );
-    if (!space) {
-      space = await runtime.saveLibrary(null, 0, {
-        kind: "SPACE",
-        spaceId: null,
-        title: project.title,
-        bodyMd: "",
-      });
-      await runtime.linkProjectSpace({
-        projectId: project.id,
-        spaceId: space.id,
-        inheritToChildren: true,
-      });
-      await refresh();
+    let resolved: Awaited<ReturnType<Runtime["resolveProjectDocumentSpace"]>>;
+    try {
+      resolved = await runtime.resolveProjectDocumentSpace(
+        project.id,
+        project.title,
+      );
+    } catch (error) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Unable to open project document",
+      );
+      throw error;
     }
+    if (resolved.created) await refresh();
     openDocument({
       key: `DOCUMENT:new:${crypto.randomUUID()}`,
       kind: "DOCUMENT",
-      spaceId: space.id,
+      spaceId: resolved.spaceId,
       projectId: project.id,
     });
   }
@@ -1348,6 +1343,14 @@ function Workbench({
       },
       "task:" + item.id + ":status",
     );
+  async function archiveProject(project: WorkItem) {
+    const archived = await run(() =>
+      service.update(context, project.id, project.version, {
+        archived: !isArchived(project),
+      }),
+    );
+    if (archived) navigateProject(null);
+  }
   async function trashResource(ref: EntityRef) {
     if (ref.kind === "FILE") {
       const file = (snapshot.files ?? []).find((entry) => entry.id === ref.id);
@@ -1438,6 +1441,14 @@ function Workbench({
       item: WorkItem,
       action: "archive" | "unarchive" | "delete",
     ) => {
+      if (item.type === "PROJECT" && action !== "delete") {
+        void run(() =>
+          service.update(context, item.id, item.version, {
+            archived: action === "archive",
+          }),
+        );
+        return;
+      }
       if (item.type === "PROJECT" && action === "delete") {
         void run(() => trashWorkItem(item), "project:" + item.id + ":delete");
         return;
@@ -2309,6 +2320,7 @@ function Workbench({
                               onLifecycle={(project) =>
                                 setEditor(project, "LIFECYCLE")
                               }
+                              onArchive={archiveProject}
                               onNewDocument={newProjectDocument}
                               onNewPage={(spaceId) =>
                                 openDocument({

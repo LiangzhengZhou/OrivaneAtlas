@@ -80,6 +80,20 @@ describe("FolderLinkService", () => {
     await expect(h.service.remove(context, created.id, 2)).rejects.toThrow();
   });
 
+  it.each(["PROJECT", "SPACE"])(
+    "rejects generic folder links to %s",
+    async (kind) => {
+      const h = harness();
+      await expect(
+        h.service.create(context, {
+          folderId,
+          targetKind: kind as never,
+          targetId: noteId,
+        }),
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    },
+  );
+
   it("rejects note-scope folders, duplicate active targets and stale versions", async () => {
     const noteScoped = harness("NOTE");
     await expect(

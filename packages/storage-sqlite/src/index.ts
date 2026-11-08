@@ -87,6 +87,8 @@ const workFields = {
   categoryId: "category_id",
   projectCoverAssetId: "project_cover_asset_id",
   projectCoverFocus: "project_cover_focus",
+  archivedAt: "archived_at",
+  archiveBatchJson: "archive_batch_json",
   activationState: "activation_state",
   activationPolicy: "activation_policy",
   startDate: "start_date",
@@ -502,6 +504,17 @@ export class SqliteUnitOfWork implements UnitOfWork {
       return hydrate({ ...row } as unknown as WorkItem);
     };
     const tx: WorkTransaction = {
+      projectArchiveStores: (actor) => {
+        guard();
+        if (actor.workspaceId !== workspaceId)
+          throw new DomainError("FORBIDDEN");
+        member(actor.principalId);
+        return {
+          library: libraryStore(this.db, actor, guard),
+          files: fileStore(this.db, actor, guard),
+          projectMaterials: projectStore(this.db, actor, guard),
+        };
+      },
       ...workspaceChangePort(this.db, workspaceId, guard),
       reminders: async () => {
         guard();

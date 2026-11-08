@@ -11,6 +11,7 @@ import {
 } from "@arclattice/domain";
 import { localObject } from "./local-dto";
 import type { LocalJson } from "./local-persistence";
+import { parseProjectArchiveBatch } from "./project-archive";
 
 function invalid(): never {
   throw new DomainError("VALIDATION_ERROR", { field: "canonicalWork" });
@@ -67,7 +68,8 @@ export function validateLocalCanonicalWorkValue(
       "parentProjectId",
       "categoryId",
       "projectCoverAssetId",
-      "projectCoverFocus",
+      "archivedAt",
+      "archiveBatchJson",
       "startDate",
       "dueDate",
       "completedAt",
@@ -86,6 +88,8 @@ export function validateLocalCanonicalWorkValue(
         entity.projectIds.some((id) => typeof id !== "string"))
     )
       invalid();
+    if (typeof entity.archiveBatchJson === "string")
+      parseProjectArchiveBatch(entity.archiveBatchJson);
     if (
       entity.projectCoverFocus !== undefined &&
       entity.projectCoverFocus !== null &&

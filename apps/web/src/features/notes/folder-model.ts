@@ -131,9 +131,11 @@ export function noteFolderKey(
 ): string {
   if (note.primaryFolderId) return folderKey(note.primaryFolderId);
   const entry = organizationByKey.get("NOTE:" + note.id);
-  if (!entry) return unfiledKey;
-  if (entry.folderId) return folderKey(entry.folderId);
-  return entry.folder ? "legacy:" + entry.folder : unfiledKey;
+  // `primaryFolderId` wins. Legacy Organization.folderId is a compatibility
+  // fallback only for body-unavailable rows that could not be migrated yet;
+  // moves update/clear it so it cannot resurrect a note after moving to Unfiled.
+  if (entry?.folderId) return folderKey(entry.folderId);
+  return entry?.folder ? "legacy:" + entry.folder : unfiledKey;
 }
 
 export function noteFolderLabel(

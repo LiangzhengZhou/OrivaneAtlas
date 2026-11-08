@@ -1,6 +1,6 @@
-import type { WorkEdge, WorkItem } from "../packages/domain/src/index";
+import type { WorkEdge } from "../packages/domain/src/index";
 
-export function work(id: string, workspaceId = "workspace-a"): WorkItem {
+export function work(id: string, workspaceId = "workspace-a"): any {
   return {
     id,
     workspaceId,

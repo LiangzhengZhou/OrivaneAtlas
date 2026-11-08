@@ -57,10 +57,9 @@ export type ActivationPolicy = (typeof activationPolicies)[number];
 export const priorities = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 export type Priority = (typeof priorities)[number];
 export type ExecutionMode = "MANUAL" | "AI" | "AUTOMATIC" | "HYBRID";
-export interface WorkItem {
+export interface WorkItemCommon {
   readonly id: string;
   readonly workspaceId: string;
-  readonly type: WorkType;
   readonly title: string;
   readonly descriptionMd: string;
   readonly status: WorkStatus;
@@ -68,23 +67,12 @@ export interface WorkItem {
   readonly executionMode: ExecutionMode;
   readonly assigneePrincipalId: string | null;
   readonly parentProjectId: string | null;
-  readonly lifecycle: import("./project-lifecycle").ProjectLifecycle | null;
   readonly categoryId: string | null;
-  /** PROJECT only: optional library asset used as the project banner. */
-  readonly projectCoverAssetId?: string | null;
-  /** PROJECT only: horizontal cover focal point 0-100. */
-  readonly projectCoverFocus?: number | null;
-  readonly projectIds?: readonly string[];
   readonly activationState: ActivationState;
   readonly activationPolicy: ActivationPolicy;
   readonly startDate: string | null;
   readonly dueDate: string | null;
-  /** Optional minute precision for the due date; null keeps date-only semantics. */
   readonly dueTime?: string | null;
-  /** Running timer start instant; null while paused/stopped. */
-  readonly timerStartedAt?: string | null;
-  /** Completed timer milliseconds; running time is startedAt + accumulated. */
-  readonly timerAccumulatedMs?: number;
   readonly version: number;
   readonly createdBy: string;
   readonly updatedBy: string;
@@ -93,6 +81,50 @@ export interface WorkItem {
   readonly completedAt: string | null;
   readonly deletedAt: string | null;
 }
+export interface ProjectWorkItemShape extends WorkItemCommon {
+  readonly type: "PROJECT";
+  readonly lifecycle: import("./project-lifecycle").ProjectLifecycle;
+  readonly projectCoverAssetId?: string | null;
+  readonly projectCoverFocus?: number | null;
+  readonly archivedAt?: string | null;
+  readonly archiveBatchJson?: string | null;
+  readonly projectIds?: undefined;
+  readonly timerStartedAt?: undefined;
+  readonly timerAccumulatedMs?: undefined;
+}
+export interface TaskWorkItemShape extends WorkItemCommon {
+  readonly type: "TASK";
+  readonly lifecycle: null;
+  readonly projectIds?: readonly string[];
+  readonly timerStartedAt?: string | null;
+  readonly timerAccumulatedMs?: number;
+  readonly projectCoverAssetId?: undefined;
+  readonly projectCoverFocus?: undefined;
+  readonly archivedAt?: undefined;
+  readonly archiveBatchJson?: undefined;
+}
+export interface OtherWorkItemShape extends WorkItemCommon {
+  readonly type:
+    | "GOAL"
+    | "EPIC"
+    | "MILESTONE"
+    | "DECISION"
+    | "AI_JOB"
+    | "REMINDER";
+  readonly lifecycle: null;
+  readonly projectIds?: undefined;
+  readonly timerStartedAt?: undefined;
+  readonly timerAccumulatedMs?: undefined;
+  readonly projectCoverAssetId?: undefined;
+  readonly projectCoverFocus?: undefined;
+  readonly archivedAt?: undefined;
+  readonly archiveBatchJson?: undefined;
+}
+export type WorkItem =
+  | ProjectWorkItemShape
+  | TaskWorkItemShape
+  | OtherWorkItemShape;
+
 /** Scheduled eligibility is read-only; callers supply the authoritative calendar date. */
 export function isExecutionActive(item: WorkItem, today?: string): boolean {
   return item.activationPolicy === "AT_SCHEDULED_TIME"
@@ -342,3 +374,14 @@ export function isReady(
     blockers(item, items, edges).length === 0
   );
 }
+
+export type {
+  MilestoneWorkItem,
+  ProjectWorkItem,
+  TaskWorkItem,
+} from "./work-item-types";
+export {
+  isMilestoneWorkItem,
+  isProjectWorkItem,
+  isTaskWorkItem,
+} from "./work-item-types";

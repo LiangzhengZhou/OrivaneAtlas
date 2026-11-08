@@ -2,13 +2,7 @@ import type { ActorContext } from "@arclattice/domain";
 import { DomainError } from "@arclattice/domain";
 import type { AuthorizationService, Clock, IdGenerator } from "./index";
 
-export const folderLinkTargetKinds = [
-  "NOTE",
-  "DOCUMENT",
-  "FILE",
-  "PROJECT",
-  "SPACE",
-] as const;
+export const folderLinkTargetKinds = ["NOTE", "DOCUMENT", "FILE"] as const;
 export type FolderLinkTargetKind = (typeof folderLinkTargetKinds)[number];
 
 export interface FolderLink {

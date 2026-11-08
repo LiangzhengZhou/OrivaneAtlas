@@ -3343,7 +3343,18 @@ export async function createHost(options: HostOptions) {
                                                 ? ["reminders"]
                                                 : knowledgeReplay
                                                   ? ["notes", "library"]
-                                                  : ["items", "edges"]
+                                                  : path ===
+                                                        "/api/work/update" &&
+                                                      typeof object(value.input)
+                                                        .archived === "boolean"
+                                                    ? [
+                                                        "items",
+                                                        "edges",
+                                                        "library",
+                                                        "files",
+                                                        "projectMaterials",
+                                                      ]
+                                                    : ["items", "edges"]
               ).some((candidate) => candidate === collection) ||
               !["UPSERT", "DELETE"].includes(op) ||
               ((path.startsWith("/api/plans/") ||
@@ -6193,6 +6204,7 @@ export async function createHost(options: HostOptions) {
                     "priority",
                     "status",
                     "projectLifecycle",
+                    "archived",
                     "categoryId",
                     "projectCoverAssetId",
                     "projectCoverFocus",
@@ -6212,6 +6224,7 @@ export async function createHost(options: HostOptions) {
                         "projectIds",
                         "projectCoverFocus",
                         "completionResolution",
+                        "archived",
                         "prerequisiteIds",
                         "expectedPrerequisiteIds",
                       ].includes(key)
@@ -6240,6 +6253,11 @@ export async function createHost(options: HostOptions) {
                       val === null
                     )
                       continue;
+                    if (key === "archived") {
+                      if (typeof val !== "boolean")
+                        fail(400, "VALIDATION_ERROR");
+                      continue;
+                    }
                     string(val, key === "descriptionMd" ? 200_000 : 240);
                   }
                   return work.update(

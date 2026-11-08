@@ -117,7 +117,6 @@ export function LibraryView({
       (snapshot.files ?? []).filter(
         (file) =>
           !file.deletedAt &&
-          spaceId !== null &&
           file.spaceId === spaceId &&
           (fileType === "ALL" ||
             (extensionTypes[file.extension ?? ""] ?? "OTHER") === fileType),

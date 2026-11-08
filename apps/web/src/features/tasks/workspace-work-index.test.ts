@@ -95,3 +95,20 @@ test("category lookup preserves nearest inheritance without scanning rows", () =
     ),
   ).toBeNull();
 });
+
+test("new archive marker inherits to tasks and explicit restore supersedes legacy archive", () => {
+  const project = {
+    ...work("project"),
+    type: "PROJECT" as const,
+    archivedAt: "2026-11-06",
+  };
+  const task = { ...work("task"), projectIds: [project.id] };
+  const legacy = [{ kind: "WORK", id: project.id, archived: true }];
+  expect(buildWorkspaceWorkIndex([project, task], []).isArchived(task)).toBe(
+    true,
+  );
+  const restored = { ...project, archivedAt: null };
+  const index = buildWorkspaceWorkIndex([restored, task], legacy);
+  expect(index.isArchived(restored)).toBe(false);
+  expect(index.isArchived(task)).toBe(false);
+});

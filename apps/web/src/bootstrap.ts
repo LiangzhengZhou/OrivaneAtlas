@@ -3100,6 +3100,8 @@ export async function bootstrap() {
       }),
     revokeToken: (id: string) => request("/api/tokens/revoke", { id }),
     library: () => request<LibraryEntry[]>("/api/library"),
+    resolveProjectDocumentSpace: (projectId: string, fallbackTitle: string) =>
+      local.resolveProjectDocumentSpace(projectId, fallbackTitle),
     createProjectSpace: (input: {
       projectId: string;
       title: string;
@@ -3190,7 +3192,35 @@ export async function bootstrap() {
       wakeFileProcessing();
       return { id: asset.id, url: "/api/v1/files/bytes?id=" + asset.id };
     },
-    service: local.service,
+    service: {
+      ...local.service,
+      update: async (
+        ...[actor, id, version, input]: Parameters<typeof local.service.update>
+      ) => {
+        const hydrated = new Set<string>();
+        for (;;) {
+          try {
+            return await local.service.update(actor, id, version, input);
+          } catch (error) {
+            if (
+              input.archived === undefined ||
+              !(error instanceof LocalBodyUnavailableError) ||
+              error.collection !== "library" ||
+              hydrated.has(error.entityId) ||
+              hydrated.size >= 1999
+            )
+              throw error;
+            const snapshot = await local.loadWorkspace();
+            const entry = snapshot.library.find(
+              (value) => value.id === error.entityId,
+            );
+            if (!entry) throw error;
+            await readDocumentBody(entry);
+            hydrated.add(error.entityId);
+          }
+        }
+      },
+    },
     loadWorkspace: () => local.loadWorkspace(),
     loadWorkspaceWithRevision: () => local.loadWorkspaceWithRevision(),
     workspaceRevision: () => local.workspaceRevision(),

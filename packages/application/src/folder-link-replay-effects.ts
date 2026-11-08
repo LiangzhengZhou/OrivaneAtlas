@@ -30,9 +30,7 @@ export function requireCanonicalFolderLink(
     (link.deletedAt !== null && typeof link.deletedAt !== "string") ||
     (collection === "folderLinks" &&
       (typeof link.folderId !== "string" ||
-        !["NOTE", "DOCUMENT", "FILE", "PROJECT", "SPACE"].includes(
-          String(link.targetKind),
-        ) ||
+        !["NOTE", "DOCUMENT", "FILE"].includes(String(link.targetKind)) ||
         typeof link.targetId !== "string")) ||
     (collection === "spaceFolderLinks" &&
       (typeof link.spaceId !== "string" ||

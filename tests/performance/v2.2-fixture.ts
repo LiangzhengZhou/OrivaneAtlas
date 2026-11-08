@@ -21,30 +21,32 @@ export function v22PerformanceFixture(actor: ActorContext, today: string) {
   });
   const projects = Array.from(
     { length: 150 },
-    (_, index): WorkItem => ({
-      ...item(`perf-project-${index}`),
-      type: "PROJECT",
-      title: `Perf project ${String(index).padStart(3, "0")}`,
-      lifecycle: "ACTIVE",
-      parentProjectId: index < 15 ? null : `perf-project-${index % 15}`,
-    }),
+    (_, index): WorkItem =>
+      ({
+        ...item(`perf-project-${index}`),
+        type: "PROJECT",
+        title: `Perf project ${String(index).padStart(3, "0")}`,
+        lifecycle: "ACTIVE",
+        parentProjectId: index < 15 ? null : `perf-project-${index % 15}`,
+      }) as WorkItem,
   );
   const tomorrow = new Date(`${today}T12:00:00Z`);
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 7);
   const future = tomorrow.toISOString().slice(0, 10);
   const tasks = Array.from(
     { length: 1500 },
-    (_, index): WorkItem => ({
-      ...item(`perf-task-${index}`),
-      title: `Perf task ${String(index).padStart(4, "0")}`,
-      projectIds: [projects[index % 150]!.id],
-      status: index % 15 === 0 ? "DONE" : "TODO",
-      completedAt: index % 15 === 0 ? stamp : null,
-      activationState: index % 5 === 0 ? "SCHEDULED" : "ACTIVE",
-      activationPolicy: index % 5 === 0 ? "AT_SCHEDULED_TIME" : "MANUAL",
-      startDate: index % 5 === 0 ? future : today,
-      dueDate: index % 5 === 0 ? future : today,
-    }),
+    (_, index): WorkItem =>
+      ({
+        ...item(`perf-task-${index}`),
+        title: `Perf task ${String(index).padStart(4, "0")}`,
+        projectIds: [projects[index % 150]!.id],
+        status: index % 15 === 0 ? "DONE" : "TODO",
+        completedAt: index % 15 === 0 ? stamp : null,
+        activationState: index % 5 === 0 ? "SCHEDULED" : "ACTIVE",
+        activationPolicy: index % 5 === 0 ? "AT_SCHEDULED_TIME" : "MANUAL",
+        startDate: index % 5 === 0 ? future : today,
+        dueDate: index % 5 === 0 ? future : today,
+      }) as WorkItem,
   );
   const edges: WorkEdge[] = [];
   for (let index = 0; index < tasks.length; index++)

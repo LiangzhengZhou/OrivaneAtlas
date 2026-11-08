@@ -115,8 +115,7 @@ export function localFolderLinkTargets(
     async target(kind: FolderLinkTargetKind, id: string) {
       if (kind === "NOTE") return recordAlive("notes", id);
       if (kind === "FILE") return recordAlive("files", id);
-      if (kind === "DOCUMENT" || kind === "SPACE")
-        return recordAlive("library", id);
+      if (kind === "DOCUMENT") return recordAlive("library", id);
       const value = (await tx.workspaceEntity("items", id)) as {
         type?: string;
         deletedAt?: string | null;

@@ -409,6 +409,33 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 49,
+    name: "folder-link-target-kinds",
+    sql: readFileSync(
+      new URL(
+        "./migrations/0049-folder-link-target-kinds.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  },
+  {
+    version: 50,
+    name: "project-archived-at",
+    sql: readFileSync(
+      new URL("./migrations/0050-project-archived-at.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 51,
+    name: "project-archive-batch",
+    sql: readFileSync(
+      new URL("./migrations/0051-project-archive-batch.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {

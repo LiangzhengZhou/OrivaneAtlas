@@ -16,7 +16,10 @@ import {
   projection,
   workFields,
 } from "./fields";
+import { fileStore } from "./files";
+import { libraryStore } from "./library";
 import { manualOrderPort } from "./manual-order";
+import { projectStore } from "./project-materials";
 import { purgeRelations } from "./purge";
 import { workflowPort } from "./workflows";
 import { workspaceChangePort } from "./workspace-changes";
@@ -145,6 +148,18 @@ export function repository(client: PoolClient, workspaceId: string) {
     );
   };
   const port: WorkTransaction = {
+    projectArchiveStores: (actor) => {
+      if (actor.workspaceId !== workspaceId) throw new DomainError("FORBIDDEN");
+      const guard = () => {
+        if (!active) throw new PostgresStorageError("TRANSACTION_CLOSED");
+      };
+      guard();
+      return {
+        library: libraryStore(client, actor, guard),
+        files: fileStore(client, actor, guard),
+        projectMaterials: projectStore(client, actor, guard),
+      };
+    },
     ...workspaceChangePort(client, workspaceId, schedule),
     reminders: () =>
       schedule(async () => {

@@ -121,7 +121,6 @@ export function folderLinkTargets(
             id,
           );
         case "DOCUMENT":
-        case "SPACE":
           return exists(
             "SELECT 1 FROM library_entry WHERE workspace_id=? AND id=? AND json_extract(payload,'$.kind')=? AND json_extract(payload,'$.deletedAt') IS NULL",
             id,
@@ -130,11 +129,6 @@ export function folderLinkTargets(
         case "FILE":
           return exists(
             "SELECT 1 FROM library_file WHERE workspace_id=? AND id=? AND json_extract(payload,'$.deletedAt') IS NULL",
-            id,
-          );
-        case "PROJECT":
-          return exists(
-            "SELECT 1 FROM work_item WHERE workspace_id=? AND id=? AND type='PROJECT' AND deleted_at IS NULL",
             id,
           );
       }

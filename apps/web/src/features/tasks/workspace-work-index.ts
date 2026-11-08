@@ -16,7 +16,9 @@ export function buildWorkspaceWorkIndex<
   const explicitArchivedByWorkId = new Map(
     items.map((item) => [
       item.id,
-      organizationByKey.get(`WORK:${item.id}`)?.archived ?? false,
+      item.type === "PROJECT" && item.archivedAt !== undefined
+        ? !!item.archivedAt
+        : (organizationByKey.get(`WORK:${item.id}`)?.archived ?? false),
     ]),
   );
   const parentProjectById = new Map<string, string>();

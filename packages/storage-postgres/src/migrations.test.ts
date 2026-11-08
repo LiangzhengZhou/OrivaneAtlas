@@ -14,6 +14,8 @@ const legacyWork = (rows: Record<string, unknown>[]) =>
     delete copy.due_time;
     delete copy.project_cover_asset_id;
     delete copy.project_cover_focus;
+    delete copy.archived_at;
+    delete copy.archive_batch_json;
     return copy;
   });
 const latest = migrations[migrations.length - 1]!.version;
@@ -566,3 +568,27 @@ it("upgrades 2.0.2 schema19 preserving reason/outbox and adds explicit conversio
     migrations.length,
   );
 }, 30000);
+
+it("backfills legacy project archive during the additive migration", async () => {
+  const name = await h.database();
+  await run(name, migrations.slice(0, 44));
+  await h.query(
+    name,
+    "INSERT INTO arclattice.workspace VALUES ('w','W'); INSERT INTO arclattice.principal VALUES ('p','USER','P'); INSERT INTO arclattice.workspace_principal VALUES ('w','p')",
+  );
+  await h.query(
+    name,
+    "INSERT INTO arclattice.work_item (workspace_id,id,type,title,description_md,status,priority,execution_mode,version,created_by,updated_by,created_at,updated_at,lifecycle) VALUES ('w','project','PROJECT','Original','# Keep','TODO','MEDIUM','MANUAL',1,'p','p','2026-10-01','2026-10-01','PLANNED')",
+  );
+  await h.query(
+    name,
+    "INSERT INTO arclattice.organization (workspace_id,kind,id,version,payload) VALUES ('w','WORK','project',1,$1)",
+    [JSON.stringify({ archived: true })],
+  );
+  await run(name, migrations, async () => {});
+  const rows = await h.query(
+    name,
+    "SELECT archived_at FROM arclattice.work_item",
+  );
+  expect(rows.rows[0]?.archived_at).toBe("2026-10-01");
+});

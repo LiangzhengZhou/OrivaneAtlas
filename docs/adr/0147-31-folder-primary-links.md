@@ -61,3 +61,21 @@ The change spans two storage adapters and incremental sync, so it is staged. No 
 - Note move through the notebook service increments note version and outbox exactly once.
 - Link uniqueness, soft-delete/relink, scope rejection, deletion cascade and authorization tests.
 - Workspace import/merge/replay tests for the new collections.
+
+## Amendment 2026-11-04: generic FolderLink target kinds
+
+Decision 3 originally listed NOTE, DOCUMENT, FILE, PROJECT and SPACE for the
+generic folder membership row while Decision 4 also introduced dedicated
+ProjectFolderLink and SpaceFolderLink rows. That left two write paths for the
+same parent relationship.
+
+The generic FolderLink is now restricted to reusable resources:
+
+- allowed: NOTE, DOCUMENT, FILE
+- not allowed for new writes: PROJECT, SPACE
+
+Project and Space folder associations are written only through their dedicated
+services/tables. Existing rows with PROJECT/SPACE are not deleted; SQLite and
+PostgreSQL guard new inserts/updates at the storage boundary, and the
+Application/Host/Replay boundaries reject them. A later cleanup may remove the
+legacy rows after all old clients and pending replay commands are gone.

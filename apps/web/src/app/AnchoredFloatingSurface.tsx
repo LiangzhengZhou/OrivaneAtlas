@@ -70,7 +70,29 @@ export function AnchoredFloatingSurface({
       const preferred = placement === "top-start" ? above : below;
       const flipped = placement === "top-start" ? below : above;
       const host = node.parentElement;
-      const hostRect = host?.getBoundingClientRect() ?? { left: 0, top: 0 };
+      // position:fixed is viewport-relative unless the portal host creates a
+      // containing block (transform/filter/contain/perspective, e.g. a dialog).
+      // Ordinary containers and body must not subtract their rect or scrolled
+      // pages push the surface off-screen.
+      const hostStyle = host ? getComputedStyle(host) : null;
+      const contained =
+        !!host &&
+        host !== document.body &&
+        (host.tagName === "DIALOG" ||
+          host.closest("dialog[open]") !== null ||
+          (!!hostStyle &&
+            (hostStyle.transform !== "none" ||
+              hostStyle.filter !== "none" ||
+              hostStyle.perspective !== "none" ||
+              hostStyle.contain
+                .split(/\s+/)
+                .some((part) =>
+                  ["paint", "layout", "strict", "content"].includes(part),
+                ) ||
+              /transform|perspective|filter/.test(hostStyle.willChange))));
+      const hostRect = contained
+        ? host!.getBoundingClientRect()
+        : { left: 0, top: 0 };
       const position = {
         left:
           Math.max(

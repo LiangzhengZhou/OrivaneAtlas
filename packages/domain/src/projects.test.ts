@@ -15,18 +15,23 @@ import {
   projectSubtreeHeight,
 } from "./projects";
 
-const root: WorkItem = { ...work("root"), type: "PROJECT" };
+const root: WorkItem = {
+  ...work("root"),
+  type: "PROJECT",
+  lifecycle: "PLANNED",
+};
 const child: WorkItem = {
   ...work("child"),
   type: "PROJECT",
+  lifecycle: "PLANNED",
   parentProjectId: root.id,
 };
 const task: WorkItem = { ...work("task"), projectIds: [child.id] };
 describe("project projections", () => {
   it("completion counts unfinished milestones independently of task progress", () => {
-    const milestone = {
+    const milestone: WorkItem = {
       ...work("milestone"),
-      type: "MILESTONE" as const,
+      type: "MILESTONE",
       parentProjectId: child.id,
     };
     expect(
@@ -42,7 +47,7 @@ describe("project projections", () => {
     ).toBe(0);
   });
   it("shared tasks stay visible while any membership is unarchived", () => {
-    const shared = { ...task, projectIds: [root.id, child.id] };
+    const shared = { ...task, projectIds: [root.id, child.id] } as WorkItem;
     const items = [root, child, shared];
     expect(
       projectDescendants(root, items).filter((i) => i.id === task.id),
@@ -70,7 +75,7 @@ describe("project projections", () => {
         deleted,
         foreign,
         work("free"),
-      ]).map((i) => i.id),
+      ] as WorkItem[]).map((i) => i.id),
     ).toEqual(["child", "task"]);
     expect(projectDescendants(task, [root, child, task])).toEqual([]);
   });
@@ -94,7 +99,7 @@ describe("project projections", () => {
       { ...child, deletedAt: root.createdAt },
       { ...child, workspaceId: "other" },
       { ...child, type: "TASK" as const },
-    ]) {
+    ] as WorkItem[]) {
       expect(projectAncestors(child, [parent, task])).toEqual([]);
     }
     expect(projectAncestors(task, [root, task])).toEqual([]);

@@ -139,6 +139,14 @@ describe("SQLite migrations and recovery", () => {
       expect(raw.prepare("SELECT COUNT(*) n FROM folder_link").get()?.n).toBe(
         2,
       );
+      for (const kind of ["PROJECT", "SPACE"])
+        expect(() =>
+          raw
+            .prepare(
+              "INSERT INTO folder_link VALUES ('w','link-kind',?,?,'note-1',1,NULL,?)",
+            )
+            .run(folderId, kind, JSON.stringify({ id: "link-kind" })),
+        ).toThrow(/folder_link_target_kind/);
       expect(inspectSchema(raw)).toBe(migrations.length);
     } finally {
       raw.close();
@@ -880,5 +888,42 @@ it("upgrades 2.0.2 schema26 preserving activity reason/outbox and independently 
     }
   } finally {
     db.close();
+  }
+});
+
+it("backfills legacy project archive and preserves the pre-migration backup", async () => {
+  const path = harness.file();
+  const raw = new DatabaseSync(path);
+  let backup = "";
+  try {
+    await migrate(raw, path, 100, migrations.slice(0, 49));
+    raw.exec(
+      "INSERT INTO workspace VALUES ('w','W'); INSERT INTO principal VALUES ('p','USER','P'); INSERT INTO workspace_principal VALUES ('w','p');",
+    );
+    raw.exec(
+      "INSERT INTO work_item (workspace_id,id,type,title,description_md,status,priority,execution_mode,version,created_by,updated_by,created_at,updated_at,lifecycle) VALUES ('w','project','PROJECT','Original','# Keep','TODO','MEDIUM','MANUAL',1,'p','p','2026-10-01','2026-10-01','PLANNED')",
+    );
+    raw
+      .prepare(
+        "INSERT INTO organization (workspace_id,kind,id,version,payload) VALUES ('w','WORK','project',1,?)",
+      )
+      .run(JSON.stringify({ archived: true }));
+    backup = (await migrate(raw, path, 100)).backupPath!;
+    expect(
+      raw.prepare("SELECT archived_at FROM work_item").get()?.archived_at,
+    ).toBe("2026-10-01");
+  } finally {
+    raw.close();
+  }
+  const restored = harness.file();
+  await restoreDatabase(backup, restored);
+  const old = new DatabaseSync(restored);
+  try {
+    expect(inspectSchema(old, migrations.slice(0, 49))).toBe(49);
+    expect(old.prepare("SELECT payload FROM organization").get()?.payload).toBe(
+      JSON.stringify({ archived: true }),
+    );
+  } finally {
+    old.close();
   }
 });

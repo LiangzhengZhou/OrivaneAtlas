@@ -773,6 +773,20 @@ export class LocalRuntime {
       ),
     );
   }
+  async resolveProjectDocumentSpace(projectId: string, fallbackTitle: string) {
+    const primary = await this.workspace.run((s) =>
+      s.projects.findWritableProjectSpace(this.context, projectId),
+    );
+    if (primary)
+      return { spaceId: primary.spaceId, binding: primary, created: false };
+    const created = await this.createProjectSpace({
+      projectId,
+      title: fallbackTitle,
+      role: "PRIMARY",
+      inheritToChildren: true,
+    });
+    return { spaceId: created.spaceId, binding: created, created: true };
+  }
   createProjectSpace(
     input: Parameters<ProjectService["createProjectSpace"]>[1],
   ) {

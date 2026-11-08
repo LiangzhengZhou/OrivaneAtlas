@@ -41,6 +41,10 @@ export function buildLocalWorkReplayRequest(
   const actor = plan.mutations[0];
   if (!actor) return null;
   const deviceId = requireStableUuid(actor.deviceId, "deviceId");
+  const archive =
+    plan.command.name === "work.update" &&
+    typeof localObject(localObject(plan.command.input).input!).archived ===
+      "boolean";
   const effects: WorkReplayEffect[] = plan.mutations.map((mutation) => {
     if (
       mutation.commandId !== commandId ||
@@ -48,7 +52,11 @@ export function buildLocalWorkReplayRequest(
       mutation.workspaceId !== actor.workspaceId ||
       mutation.principalId !== actor.principalId ||
       !["PENDING", "SENDING"].includes(mutation.state) ||
-      !["items", "edges"].includes(mutation.entityType) ||
+      !(
+        archive
+          ? ["items", "edges", "library", "files", "projectMaterials"]
+          : ["items", "edges"]
+      ).includes(mutation.entityType) ||
       !["CREATE", "PATCH", "DELETE"].includes(mutation.operation)
     )
       throw new DomainError("VALIDATION_ERROR", { field: "commandEffects" });
@@ -56,7 +64,7 @@ export function buildLocalWorkReplayRequest(
     if (
       !Number.isSafeInteger(baseVersion) ||
       baseVersion < 0 ||
-      (mutation.entityType === "items" && mutation.operation === "DELETE")
+      (mutation.entityType !== "edges" && mutation.operation === "DELETE")
     )
       throw new DomainError("VALIDATION_ERROR", { field: "commandEffects" });
     if (baseVersion === 0) requireStableUuid(mutation.entityId, "effect.id");

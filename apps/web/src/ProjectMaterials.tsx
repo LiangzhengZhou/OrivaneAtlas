@@ -444,7 +444,7 @@ export function ProjectHistory({
   }, [projectId, projectIds, tasks, edges, load, loadWork]);
   if (loaded && !error && events.length === 0) return null;
   return (
-    <section className="panel project-summary">
+    <section className="panel project-activity">
       <h2>{zh ? "最近活动" : "Recent activity"}</h2>
       {error && (
         <p role="alert">{zh ? "无法加载活动。" : "Could not load activity."}</p>
@@ -511,7 +511,7 @@ export function ProjectTimeline({
     [tasks],
   );
   return (
-    <section className="panel project-summary">
+    <section className="panel project-timeline">
       <h2>{zh ? "项目时间线" : "Project timeline"}</h2>
       <VirtualTaskCollection
         items={sorted}

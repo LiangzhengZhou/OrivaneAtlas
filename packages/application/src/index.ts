@@ -12,6 +12,7 @@ import {
   requireCalendarTimezone,
   requireNavigationPreference,
 } from "@arclattice/domain";
+import { changeProjectArchiveResources } from "./project-archive";
 
 export * from "./categories";
 export * from "./file-extraction";
@@ -153,6 +154,9 @@ export interface WorkSnapshot {
 }
 /** A transaction is already bound to one workspace by UnitOfWork.run. */
 export interface WorkTransaction {
+  projectArchiveStores?(
+    context: ActorContext,
+  ): import("./project-archive").ProjectArchiveStores;
   workspaceChanges(
     after: number,
     epoch?: string,
@@ -250,6 +254,8 @@ export interface UpdateWorkInput {
     projectId?: string;
   };
   readonly projectLifecycle?: ProjectLifecycle;
+  /** PROJECT only. Archive is independent from lifecycle and completion. */
+  readonly archived?: boolean;
   readonly assigneePrincipalId?: string | null;
   readonly projectIds?: readonly string[];
   readonly parentProjectId?: string | null;
@@ -370,7 +376,7 @@ export class WorkService {
       throw new DomainError("VALIDATION_ERROR", { field: "projectIds" });
     return this.uow.run(context.workspaceId, async (tx) => {
       const now = this.clock.now();
-      const item: WorkItem = {
+      const item = {
         id: this.ids.nextFor?.("WORK") ?? this.ids.next(),
         workspaceId: context.workspaceId,
         title: requireTitle(input.title),
@@ -425,7 +431,7 @@ export class WorkService {
         updatedAt: now,
         completedAt: null,
         deletedAt: null,
-      };
+      } as WorkItem;
       if (input.reopenProjectVersion !== undefined)
         await this.reopenParent(
           tx,
@@ -516,6 +522,11 @@ export class WorkService {
             field: "projectCoverFocus",
           });
       }
+      if (
+        input.archived !== undefined &&
+        (previous.type !== "PROJECT" || typeof input.archived !== "boolean")
+      )
+        throw new DomainError("VALIDATION_ERROR", { field: "archived" });
       if (input.projectCoverAssetId !== undefined) {
         if (previous.type !== "PROJECT")
           throw new DomainError("VALIDATION_ERROR", {
@@ -605,8 +616,29 @@ export class WorkService {
               requireMember(input.timer, ["START", "PAUSE", "STOP"], "timer"),
               now,
             );
-      const item: WorkItem = {
+      const archiveBatchJson =
+        input.archived !== undefined && input.archived !== !!previous.archivedAt
+          ? await (async () => {
+              await this.authorization.require(
+                context,
+                input.archived ? "work:delete" : "work:update",
+              );
+              if (!tx.projectArchiveStores)
+                throw new DomainError("VALIDATION_ERROR");
+              return changeProjectArchiveResources(
+                context,
+                tx.projectArchiveStores(context),
+                id,
+                id + ":" + (previous.version + 1),
+                previous.archiveBatchJson,
+                input.archived!,
+                now,
+              );
+            })()
+          : previous.archiveBatchJson;
+      const item = {
         ...previous,
+        ...(input.archived === undefined ? {} : { archiveBatchJson }),
         categoryId:
           input.categoryId === undefined
             ? previous.categoryId
@@ -663,6 +695,9 @@ export class WorkService {
           "priority",
         ),
         ...lifecycle,
+        ...(input.archived === undefined
+          ? {}
+          : { archivedAt: input.archived ? now : null }),
         status,
         version: previous.version + 1,
         updatedBy: context.principalId,
@@ -674,7 +709,7 @@ export class WorkService {
         )
           ? (previous.completedAt ?? now)
           : null,
-      };
+      } as WorkItem;
       if (
         item.type === "PROJECT" &&
         item.lifecycle === "COMPLETED" &&
@@ -964,7 +999,7 @@ export class WorkService {
       version: previous.version + 1,
       updatedAt: now,
       updatedBy: context.principalId,
-    };
+    } as WorkItem;
     await tx.replace(project, expectedVersion);
     await this.record(tx, context, parentProjectId, "WORK_ITEM_UPDATED", now);
   }
@@ -1053,7 +1088,7 @@ export class WorkService {
         version: task.version + 1,
         updatedBy: context.principalId,
         updatedAt: now,
-      };
+      } as WorkItem;
       await tx.replace(updated, task.version);
       await this.record(tx, context, task.id, "WORK_ITEM_UPDATED", now);
     }
@@ -1066,7 +1101,7 @@ export class WorkService {
             version: child.version + 1,
             updatedBy: context.principalId,
             updatedAt: now,
-          },
+          } as WorkItem,
           child.version,
         );
         await this.record(tx, context, child.id, "WORK_ITEM_UPDATED", now);
@@ -1309,7 +1344,7 @@ export class WorkService {
             projectIds: item.projectIds ?? [],
           }
         : {}),
-    };
+    } as WorkItem;
   }
 
   private async reconcileDependents(
@@ -1477,6 +1512,7 @@ export { type AiTextEdit, parseAiTextEdits } from "./personal-ai";
 export * from "./plan-documents";
 export * from "./plan-knowledge-replay-effects";
 export * from "./plan-replay-effects";
+export * from "./project-archive";
 export * from "./project-knowledge-scope";
 export * from "./provider-adapter";
 export * from "./provider-error";

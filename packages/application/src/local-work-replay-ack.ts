@@ -283,7 +283,8 @@ export async function prepareLocalWorkReplayAcknowledgement(
           value,
         );
       } else if (original.entityType === "projectMaterials") {
-        (plan.command?.name === "project.material.delete"
+        (plan.command?.name === "project.material.delete" ||
+          plan.command?.name === "work.update"
           ? requireProjectMaterialReplica
           : requireCanonicalProjectMaterial)(
           value,

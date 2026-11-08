@@ -142,6 +142,27 @@ export class LocalWorkUnitOfWork implements UnitOfWork {
           publish,
         );
         const images = assets(stage, publish);
+        tx.projectArchiveStores = (actor) => {
+          if (
+            actor.workspaceId !== workspaceId ||
+            actor.principalId !== this.actor.principalId
+          )
+            throw new DomainError("FORBIDDEN");
+          return {
+            library: new LocalLibraryStore(
+              stage,
+              this.actor,
+              this.clock,
+              this.ids,
+              publish,
+              indexer,
+              images,
+              readProjection,
+            ),
+            files: new LocalFileStore(records, this.store.fileExtractions),
+            projectMaterials: new LocalProjectStore(records, stage),
+          };
+        };
         return operation({
           memos: localEntityMemoTransaction(stage, this.actor, (change) =>
             publish({

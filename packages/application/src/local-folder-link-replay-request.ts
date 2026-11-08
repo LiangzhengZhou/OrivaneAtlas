@@ -83,6 +83,8 @@ export function buildLocalFolderLinkReplayRequest(
   let body: Record<string, LocalJson>;
   if (name === "folderLink.create") {
     allow(["id", "folderId", "targetKind", "targetId"]);
+    if (!["NOTE", "DOCUMENT", "FILE"].includes(String(required("targetKind"))))
+      throw new DomainError("VALIDATION_ERROR", { field: "targetKind" });
     path = "/api/v1/folders/link";
     body = {
       folderId: required("folderId"),

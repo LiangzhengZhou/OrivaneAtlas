@@ -375,6 +375,33 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 44,
+    name: "folder-link-target-kinds",
+    sql: readFileSync(
+      new URL(
+        "./migrations/0044-folder-link-target-kinds.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  },
+  {
+    version: 45,
+    name: "project-archived-at",
+    sql: readFileSync(
+      new URL("./migrations/0045-project-archived-at.sql", import.meta.url),
+      "utf8",
+    ),
+  },
+  {
+    version: 46,
+    name: "project-archive-batch",
+    sql: readFileSync(
+      new URL("./migrations/0046-project-archive-batch.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 function checksum(sql: string) {
   return createHash("sha256")
@@ -415,6 +442,7 @@ export async function inspectSchema(
           "capture_folder_link_change",
           "capture_space_folder_link_change",
           "capture_project_folder_link_change",
+          "guard_folder_link_target_kind",
         ].includes(routine.proname) ||
         routine.prosecdef ||
         routine.pronargs !== 0 ||
@@ -422,6 +450,7 @@ export async function inspectSchema(
         (routine.proname !== "capture_folder_link_change" &&
           routine.proname !== "capture_space_folder_link_change" &&
           routine.proname !== "capture_project_folder_link_change" &&
+          routine.proname !== "guard_folder_link_target_kind" &&
           routine.prosrc !==
             plan
               .find(
@@ -436,8 +465,9 @@ export async function inspectSchema(
               ?.sql.split("AS $$")[1]
               ?.split("$$;")[0]),
     )
-  )
+  ) {
     throw new PostgresStorageError("UNRECOGNIZED_DATABASE");
+  }
   const claimed = schemas.some((row) => row.nspname === "arclattice");
   if (!claimed && objects.length === 0) return 0;
   if (
@@ -570,13 +600,15 @@ export async function inspectSchema(
   if (rows.length >= 24) {
     if (
       routines.length !==
-      (rows.length >= 41
-        ? 6
-        : rows.length >= 36
-          ? 3
-          : rows.length >= 27
-            ? 2
-            : 1)
+      (rows.length >= 44
+        ? 7
+        : rows.length >= 41
+          ? 6
+          : rows.length >= 36
+            ? 3
+            : rows.length >= 27
+              ? 2
+              : 1)
     )
       throw new PostgresStorageError("SCHEMA_OBJECT_MISSING");
     const expected = [

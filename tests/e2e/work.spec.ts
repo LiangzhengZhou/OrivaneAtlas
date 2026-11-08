@@ -19261,6 +19261,16 @@ test("project documents tab creates and reuses the project space", async ({
     title: "Documents project",
     type: "PROJECT",
   });
+  const unbound = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "SPACE",
+      spaceId: null,
+      title: project.title,
+      bodyMd: "Unbound same-title space",
+    },
+  });
   await page.goto(
     workbench.url + `/#projects/${project.id}?tab=documents&scope=DIRECT`,
   );
@@ -19274,12 +19284,143 @@ test("project documents tab creates and reuses the project space", async ({
       const snapshot = await (
         await page.request.get(workbench.url + "/api/snapshot")
       ).json();
-      return snapshot.library.some(
-        (entry: { kind: string; title: string; deletedAt: string | null }) =>
+      return snapshot.projectMaterials.some(
+        (entry: {
+          kind: string;
+          projectId: string;
+          targetId: string | null;
+          deletedAt: string | null;
+        }) =>
           entry.kind === "SPACE" &&
-          entry.title === project.title &&
+          entry.projectId === project.id &&
+          entry.targetId !== null &&
+          entry.targetId !== unbound.id &&
           entry.deletedAt === null,
       );
     })
     .toBe(true);
+});
+
+test("project archive is an independent versioned flag", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "Archived project",
+    type: "PROJECT",
+  });
+  const archived = await mutation(page, "/api/work/update", {
+    id: project.id,
+    version: project.version,
+    input: { archived: true },
+  });
+  expect(archived.archivedAt).toEqual(expect.any(String));
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.items.find(
+        (item: { id: string }) => item.id === project.id,
+      )?.archivedAt;
+    })
+    .toEqual(expect.any(String));
+});
+
+test("archive project hides it from the project list and stamps archivedAt", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const project = await mutation(page, "/api/work/create", {
+    title: "Archive UI project",
+    type: "PROJECT",
+  });
+  const space = await mutation(page, "/api/projects/space/create", {
+    projectId: project.id,
+    title: "Archive owned space",
+  });
+  const document = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: space.spaceId,
+      title: "Archive preserved document",
+      bodyMd: "# Keep original Markdown",
+    },
+  });
+  await page.reload();
+  await nav(page, w.desk.projects);
+  await page
+    .locator(".project-card")
+    .filter({ hasText: project.title })
+    .locator(".project-title")
+    .click();
+  await projectAction(page, zh ? "归档项目" : "Archive project");
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.items.find(
+        (item: { id: string }) => item.id === project.id,
+      )?.archivedAt;
+    })
+    .toEqual(expect.any(String));
+  await expect(
+    page.locator(".project-card").filter({ hasText: project.title }),
+  ).toHaveCount(0);
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.library.find((entry: { id: string }) => entry.id === document.id),
+  ).toMatchObject({
+    deletedAt: expect.any(String),
+    version: document.version + 1,
+  });
+  await page
+    .getByRole("button", { name: new RegExp(w.desk.archivedProjects) })
+    .click();
+  const card = page.locator(".project-card").filter({ hasText: project.title });
+  await expect(card).toBeVisible();
+  await page.screenshot({
+    path: ".artifacts/session393-archive-" + info.project.name + ".png",
+    fullPage: true,
+  });
+  await (await projectMenu(page, project.title))
+    .getByRole("menuitem", { name: w.desk.unarchive, exact: true })
+    .click();
+  await expect(card).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const current = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return current.items.find(
+        (entry: { id: string }) => entry.id === project.id,
+      )?.archivedAt;
+    })
+    .toBeNull();
+  await page
+    .getByRole("button", { name: new RegExp(w.desk.archivedProjects) })
+    .click();
+  await expect(card).toBeVisible();
+  await page.reload();
+  await expect(card).toBeVisible();
+  const recovered = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    recovered.library.find((entry: { id: string }) => entry.id === document.id),
+  ).toMatchObject({
+    deletedAt: null,
+    version: document.version + 2,
+    bodyMd: "# Keep original Markdown",
+  });
 });

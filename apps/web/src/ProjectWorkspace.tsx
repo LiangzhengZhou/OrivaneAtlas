@@ -66,6 +66,7 @@ export function ProjectWorkspace({
   onProject,
   onOpen,
   onLifecycle,
+  onArchive,
   onNewPage,
   onNewDocument,
   onCreate,
@@ -97,6 +98,7 @@ export function ProjectWorkspace({
   onProject(id: string): void;
   onOpen(ref: EntityRef): void;
   onLifecycle(project: WorkItem): void;
+  onArchive(project: WorkItem): void;
   onNewPage(spaceId: string): void;
   onNewDocument(project: WorkItem): void;
   onCreate(type: "PROJECT" | "TASK" | "MILESTONE", parentId: string): void;
@@ -488,6 +490,23 @@ export function ProjectWorkspace({
               >
                 {t("changeProjectLifecycle")}
               </MenuItem>
+              {!archiveSource(project) && (
+                <MenuItem
+                  disabled={busy}
+                  onClick={() => {
+                    setHeaderMenuOpen(false);
+                    onArchive(project);
+                  }}
+                >
+                  {i18n.language.startsWith("zh")
+                    ? isArchived(project)
+                      ? "恢复项目"
+                      : "归档项目"
+                    : isArchived(project)
+                      ? "Restore project"
+                      : "Archive project"}
+                </MenuItem>
+              )}
               <MenuItem
                 disabled={busy}
                 onClick={() => {
@@ -951,8 +970,8 @@ export function ProjectWorkspace({
             ) : (
               <p>
                 {i18n.language.startsWith("zh")
-                  ? "还没有项目文档，新建文档会自动归入项目同名知识空间。"
-                  : "No project documents yet. New documents go into a space named after the project."}
+                  ? "还没有项目文档，新建文档会自动归入项目的知识空间。"
+                  : "No project documents yet. New documents go into the project's knowledge space."}
               </p>
             )}
           </section>
@@ -1098,7 +1117,7 @@ export function ProjectWorkspace({
                 });
               }}
             />
-            <section className="panel project-summary">
+            <section className="panel project-material-summary">
               <label>
                 {t("projectHub.chooseDocument")}
                 <input

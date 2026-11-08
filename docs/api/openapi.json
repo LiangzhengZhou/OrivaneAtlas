@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Orivane Atlas workspace API",
-    "version": "3.1.5",
+    "version": "3.1.6",
     "description": "HTTPS self-hosted accounts with isolated workspaces. Registration is PENDING until admin approval. Legacy-key session alone binds ADMIN to original workspace. Cookie + CSRF or 30/90/365-day or non-expiring revocable Bearer credentials: write allows create/update/delete and responses may include the affected entity (not append-only or confidential blind-write); read-write permits workspace content reads except separately owner-scoped private EntityMemo, which remains cookie-only. Bearer forbids admin/accounts/tokens/backup/server AI. Business POSTs use atomic durable Idempotency-Key receipts and current versions. Claim/password/token issuance consume keys without replaying secret responses (409 on consumed key). Passwords and secret-response plaintext are never in receipts. Registration requires a key but deduplicates by unique normalized username (retry after success can return 400). Login/logout/read-only backup do not use receipts. No server AI configuration needed for local AI uploads. No email recovery/MFA/offline replication/public sharing or unrestricted autonomous tools. PDF is client browser print, not a PDF-generation API. Legacy /api and versioned /api/v1 aliases have identical behavior. Owner-encrypted Provider Connections, Models, Profiles and Bindings support bounded multi-provider Atlas execution. Model routing is separate from retrieval; precedence Explicit > Space > Project > Personal. Tools use real version-bound approval, shared capability services and bounded durable audit. Read old 2.0.2 encrypted provider arrays, atomically write catalog format 2 without returning keys. SQLite backup excludes the separate provider vault and its master key."
   },
   "servers": [
@@ -17327,7 +17327,7 @@
                   },
                   "targetKind": {
                     "type": "string",
-                    "enum": ["NOTE", "DOCUMENT", "FILE", "PROJECT", "SPACE"]
+                    "enum": ["NOTE", "DOCUMENT", "FILE"]
                   },
                   "targetId": {
                     "type": "string",
@@ -17471,7 +17471,7 @@
                   },
                   "targetKind": {
                     "type": "string",
-                    "enum": ["NOTE", "DOCUMENT", "FILE", "PROJECT", "SPACE"]
+                    "enum": ["NOTE", "DOCUMENT", "FILE"]
                   },
                   "targetId": {
                     "type": "string",
@@ -19800,6 +19800,10 @@
                 ],
                 "description": "Project-only explicit lifecycle command. Cannot mix with status or activation fields. Completion requires terminal owned tasks and descendant projects. Legacy status updates use the same guards."
               },
+              "archived": {
+                "type": "boolean",
+                "description": "Project-only atomic archive/restore. Archive moves live owned resources to Trash and records a recovery batch. Restore recovers only unchanged batch members; linked and previously deleted resources are preserved. Requires work:delete to archive."
+              },
               "parentProjectId": {
                 "type": ["string", "null"],
                 "maxLength": 240
@@ -20038,6 +20042,14 @@
               "CANCELED",
               null
             ]
+          },
+          "archivedAt": {
+            "type": ["string", "null"]
+          },
+          "archiveBatchJson": {
+            "type": ["string", "null"],
+            "readOnly": true,
+            "description": "Owned-resource recovery batch, assigned only by the server/application archive command."
           }
         },
         "required": [
@@ -22169,7 +22181,13 @@
                   "maxLength": 240
                 },
                 "collection": {
-                  "enum": ["items", "edges"],
+                  "enum": [
+                    "items",
+                    "edges",
+                    "library",
+                    "files",
+                    "projectMaterials"
+                  ],
                   "type": "string"
                 },
                 "baseVersion": {
@@ -22194,7 +22212,7 @@
         },
         "type": "object",
         "additionalProperties": false,
-        "description": "Optional human-session replay guard. commandId must equal Idempotency-Key. Immutable original effect versions are checked inside the business/receipt transaction. An unexpected or missing effect rolls back the entire command. No client workspace, actor, audit or canonical entity payload is accepted. Purge and other command families are not supported by this narrow Work guard."
+        "description": "Optional human-session replay guard. commandId must equal Idempotency-Key. Immutable original effect versions are checked inside the business/receipt transaction. An unexpected or missing effect rolls back the entire command. No client workspace, actor, audit or canonical entity payload is accepted. Purge and other command families are not supported by this narrow Work guard. Only work.update with archived supports library/files/projectMaterials UPSERT effects for an atomic owned-resource trash/recovery batch."
       },
       "WorkReplayDelete": {
         "type": "object",
@@ -22236,7 +22254,13 @@
                   "type": "integer"
                 },
                 "collection": {
-                  "enum": ["items", "edges"],
+                  "enum": [
+                    "items",
+                    "edges",
+                    "library",
+                    "files",
+                    "projectMaterials"
+                  ],
                   "type": "string"
                 },
                 "id": {
@@ -22252,6 +22276,15 @@
                     },
                     {
                       "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LibraryEntry"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LibraryFile"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProjectMaterial"
                     }
                   ]
                 }
