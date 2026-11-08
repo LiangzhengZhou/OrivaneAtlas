@@ -33,3 +33,12 @@ first architecture-hardening pass.
 
 - `pnpm check`: 1573 tests passed / 1 skipped.
 - Full Playwright: 783/783 passed across desktop-en, desktop-zh and mobile-zh.
+
+## Published artifacts
+
+- GitHub Release: https://github.com/LiangzhengZhou/OrivaneAtlas/releases/tag/v3.1.6
+- Tag: v3.1.6 (immutable release commit 4cfc6ff)
+- Windows: `OrivaneAtlas-3.1.6-windows-x64-setup.exe` SHA256 `f1b97cfe64ed4e7607203863b9f8b286b1a14c8e386b60c22618d9a27c733722`
+- Android: `OrivaneAtlas-3.1.6-android-arm64.apk` SHA256 `380c797ff405a43f6311bb93653f3e553661a67eb1d3c8c275b4d4706c118408`; v2/v3 signatures and production certificate verified; versionCode 3001006.
+- Update manifests: `latest.json`, `android.json`, `SHA256SUMS.txt`.
+- Production: https://123.207.179.150:11220 deployed; SQLite schema 51; public health 200; bundle byte-identical to local release build.
