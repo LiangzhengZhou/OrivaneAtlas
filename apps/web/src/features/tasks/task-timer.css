@@ -27,8 +27,12 @@
   padding: 0;
 }
 
-.task-card.timer-running {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-  box-shadow: inset 3px 0 0 var(--accent);
+.task-list .task-card.timer-running,
+.board .task-card.timer-running {
+  background: color-mix(in oklab, var(--accent) 20%, var(--surface));
+}
+
+.task-list .task-card.timer-running:hover,
+.board .task-card.timer-running:hover {
+  background: color-mix(in oklab, var(--accent) 26%, var(--surface));
 }
