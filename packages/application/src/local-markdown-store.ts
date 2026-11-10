@@ -64,6 +64,37 @@ export class LocalMarkdownStore<T extends Note | LibraryEntry> {
     return this.metadata(entity);
   }
 
+  async saveMetadata(value: BodyManifest<T>, expectedVersion: number) {
+    const old = await this.stage.get(this.collection, value.id);
+    if (
+      !Number.isSafeInteger(expectedVersion) ||
+      expectedVersion < 0 ||
+      (old?.version ?? 0) !== expectedVersion ||
+      value.version !== expectedVersion + 1
+    )
+      throw new DomainError("VERSION_CONFLICT");
+    this.stage.stage(
+      {
+        workspaceId: this.actor.workspaceId,
+        collection: this.collection,
+        id: value.id,
+        version: value.version,
+        value: localDto(value),
+      },
+      old?.version ?? null,
+      old ? "PATCH" : "CREATE",
+      localDto(value),
+      old ? localDto(value) : null,
+    );
+    this.publish({
+      workspaceId: value.workspaceId,
+      collection: this.collection,
+      entityId: value.id,
+      op: "UPSERT",
+      version: value.version,
+    });
+  }
+
   async get(id: string): Promise<T> {
     const entity = await this.stage.get(this.collection, id);
     if (!entity || localObject(entity.value).localTombstone === true)

@@ -514,13 +514,36 @@ export class ProjectService {
     if (old.kind === "SPACE" && old.ownership === "OWNED")
       throw new DomainError("FORBIDDEN");
     if (old.ownership === "OWNED" && old.kind === "DOCUMENT" && old.targetId) {
-      const entry = await this.library.get(old.targetId);
-      await new LibraryService(
-        this.library,
-        this.authorization,
-        this.clock,
-        this.ids,
-      ).setDeleted(context, entry.id, entry.version, deleted);
+      try {
+        const entry = await this.library.get(old.targetId);
+        await new LibraryService(
+          this.library,
+          this.authorization,
+          this.clock,
+          this.ids,
+        ).setDeleted(context, entry.id, entry.version, deleted);
+      } catch (error) {
+        // Metadata-only replicas still allow a project document to leave the
+        // project tree. Body content is never rewritten; a later online sync
+        // hydrates it if needed.
+        if (
+          !(error instanceof LocalBodyUnavailableError) ||
+          !this.library.getMetadata ||
+          !this.library.saveMetadata
+        )
+          throw error;
+        const entry = await this.library.getMetadata(old.targetId);
+        await this.library.saveMetadata(
+          {
+            ...entry,
+            version: entry.version + 1,
+            updatedAt: this.clock.now(),
+            updatedBy: context.principalId,
+            deletedAt: deleted ? this.clock.now() : null,
+          },
+          entry.version,
+        );
+      }
     }
     const material = {
       ...old,

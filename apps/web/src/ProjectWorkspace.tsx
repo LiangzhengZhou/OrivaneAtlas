@@ -400,9 +400,10 @@ export function ProjectWorkspace({
     material: (typeof snapshot.projectMaterials)[number],
     deleted: boolean,
   ) {
-    await run(() =>
+    const changed = await run(() =>
       runtime.projectDelete(material.id, material.version, deleted),
     );
+    if (!changed) return false;
     if (deleted)
       showToast(
         i18n.language.startsWith("zh") ? "已移至回收站" : "Moved to Trash",

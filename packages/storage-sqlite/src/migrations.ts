@@ -436,6 +436,14 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 52,
+    name: "project-archive-backfill-repair",
+    sql: readFileSync(
+      new URL("./migrations/0052-project-archive-backfill-repair.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
 export const currentSchemaVersion = migrations[migrations.length - 1]!.version;
 function checksum(sql: string): string {

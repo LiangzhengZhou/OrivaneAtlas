@@ -402,8 +402,16 @@ export const migrations: readonly Migration[] = [
       "utf8",
     ),
   },
+  {
+    version: 47,
+    name: "project-archive-backfill-repair",
+    sql: readFileSync(
+      new URL("./migrations/0047-project-archive-backfill-repair.sql", import.meta.url),
+      "utf8",
+    ),
+  },
 ];
-function checksum(sql: string) {
+$1(sql: string) {
   return createHash("sha256")
     .update(sql.replaceAll("\r\n", "\n"))
     .digest("hex");

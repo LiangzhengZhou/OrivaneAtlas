@@ -67,6 +67,10 @@ export interface LibraryStore {
   ensureWikiIndex?(): Promise<boolean>;
   listMetadata?(): Promise<BodyManifest<LibraryEntry>[]>;
   getMetadata?(id: string): Promise<BodyManifest<LibraryEntry>>;
+  saveMetadata?(
+    entry: BodyManifest<LibraryEntry>,
+    expectedVersion: number,
+  ): Promise<void>;
   searchIds?(query: string): Promise<string[]>;
   rebuildWikiIndex?(): Promise<void>;
   wikiLinks?(): Promise<DocumentWikiLink[]>;
