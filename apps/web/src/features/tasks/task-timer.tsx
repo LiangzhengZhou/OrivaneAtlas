@@ -1,5 +1,5 @@
 import { timerElapsedMs, type WorkItem } from "@arclattice/domain";
-import { Pause, Play, Square, Timer } from "lucide-react";
+import { Pause, Play, Timer } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "../../components/ui/Button";
@@ -68,13 +68,6 @@ export function TaskTimerControl({
             onClick={() => void run(item, "PAUSE")}
           >
             <Pause size={12} aria-hidden="true" />
-          </IconButton>
-          <IconButton
-            label={t("timerEnd")}
-            disabled={busy}
-            onClick={() => void run(item, "STOP")}
-          >
-            <Square size={12} aria-hidden="true" />
           </IconButton>
         </>
       ) : (

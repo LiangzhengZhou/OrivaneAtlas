@@ -140,7 +140,7 @@ function Task({
         );
         event.dataTransfer.effectAllowed = "move";
       }}
-      className={`task-card ${compact ? "task-action-row" : ""} ${item.status === "DONE" ? "completed" : ""}`}
+      className={`task-card ${compact ? "task-action-row" : ""} ${item.status === "DONE" ? "completed" : ""} ${item.timerStartedAt ? "timer-running" : ""}`}
       data-project={!!item.projectIds?.length || undefined}
       selected={
         (selection?.selected?.kind === "WORK" &&

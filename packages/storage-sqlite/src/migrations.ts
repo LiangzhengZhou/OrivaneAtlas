@@ -440,7 +440,10 @@ export const migrations: readonly Migration[] = [
     version: 52,
     name: "project-archive-backfill-repair",
     sql: readFileSync(
-      new URL("./migrations/0052-project-archive-backfill-repair.sql", import.meta.url),
+      new URL(
+        "./migrations/0052-project-archive-backfill-repair.sql",
+        import.meta.url,
+      ),
       "utf8",
     ),
   },

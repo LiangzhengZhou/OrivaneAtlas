@@ -14,6 +14,7 @@ import {
   LibraryService,
   type LibraryStore,
 } from "./library";
+import { LocalBodyUnavailableError } from "./local-body-availability";
 import { stableEntityIds } from "./stable-entity-ids";
 
 export interface ProjectMaterial {

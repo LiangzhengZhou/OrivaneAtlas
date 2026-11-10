@@ -6,6 +6,8 @@ export function taskPresentationComparator(
   positions: ReadonlyMap<string, number>,
 ): (a: WorkItem, b: WorkItem) => number {
   return (a, b) => {
+    if (!!a.timerStartedAt !== !!b.timerStartedAt)
+      return a.timerStartedAt ? -1 : 1;
     if (sort === "manual")
       return (
         (positions.get(a.id) ?? Number.MAX_SAFE_INTEGER) -

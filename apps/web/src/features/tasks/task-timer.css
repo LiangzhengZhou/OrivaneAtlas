@@ -26,3 +26,9 @@
   height: 20px;
   padding: 0;
 }
+
+.task-card.timer-running {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
