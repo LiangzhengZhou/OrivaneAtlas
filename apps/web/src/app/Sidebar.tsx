@@ -23,6 +23,7 @@ export function Sidebar({
   label,
   onNavigate,
   onFileLibrary,
+  showFileLibrary = true,
   onToggleMobile,
   onToggleCollapsed,
   onLogout,
@@ -42,6 +43,7 @@ export function Sidebar({
   label(value: string): string;
   onNavigate(view: View): void;
   onFileLibrary?(): void;
+  showFileLibrary?: boolean;
   onToggleMobile(): void;
   onToggleCollapsed(): void;
   onLogout(): void;
@@ -169,7 +171,7 @@ export function Sidebar({
           </section>
         ))}
       </nav>
-      {onFileLibrary && (
+      {onFileLibrary && showFileLibrary && (
         <Button
           type="button"
           variant="ghost"

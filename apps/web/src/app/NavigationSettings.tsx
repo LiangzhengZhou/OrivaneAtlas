@@ -13,11 +13,15 @@ export function NavigationSettings({
   busy,
   label,
   onSave,
+  fileLibraryVisible,
+  onFileLibraryVisible,
 }: {
   preference: NavigationPreference;
   busy: boolean;
   label(id: string): string;
   onSave(value: NavigationPreference): Promise<boolean>;
+  fileLibraryVisible: boolean;
+  onFileLibraryVisible(value: boolean): void;
 }) {
   const { t } = useTranslation("desk");
   const [draft, setDraft] = useState(preference);
@@ -218,6 +222,15 @@ export function NavigationSettings({
           {label(id)}
         </label>
       ))}
+      <label className="navigation-choice" style={{ marginTop: "0.75rem" }}>
+        <input
+          type="checkbox"
+          checked={fileLibraryVisible}
+          disabled={busy}
+          onChange={(event) => onFileLibraryVisible(event.target.checked)}
+        />
+        {t("fileLibrary")}
+      </label>
       {conflict && <p role="alert">{t("errors:VERSION_CONFLICT")}</p>}
       <div className="organization-toolbar">
         <Button

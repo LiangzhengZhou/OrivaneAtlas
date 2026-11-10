@@ -356,6 +356,9 @@ function Workbench({
   const searchQuery = useDebouncedValue(query, 200);
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const advancedFiltersAnchor = useRef<HTMLButtonElement>(null);
+  const [showFileLibrary, setShowFileLibrary] = useState(
+    () => localStorage.getItem("orivane-atlas.file-library-visible") !== "0",
+  );
   const navigationPreference =
     snapshot.navigationPreference ?? defaultNavigationPreference();
   const navigationOrder = [
@@ -1921,6 +1924,7 @@ function Workbench({
                     label={viewLabel}
                     onNavigate={navigate}
                     onFileLibrary={() => void openFileLibrary()}
+                    showFileLibrary={showFileLibrary}
                     onToggleMobile={() =>
                       setMobileNavigationOpen((value) => !value)
                     }
@@ -2020,6 +2024,14 @@ function Workbench({
                                 preference,
                               ),
                             ),
+                          fileLibraryVisible: showFileLibrary,
+                          onFileLibraryVisible: (value) => {
+                            setShowFileLibrary(value);
+                            localStorage.setItem(
+                              "orivane-atlas.file-library-visible",
+                              value ? "1" : "0",
+                            );
+                          },
                         }}
                         calendar={{
                           settings: snapshot.calendarSettings ?? {
