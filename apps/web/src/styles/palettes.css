@@ -214,3 +214,28 @@
   --priority-medium: #525252;
   --priority-low: #737373;
 }
+
+/* Running-timer card: a pale complementary hue, not the theme accent itself. */
+:root[data-palette="warm-green"] {
+  --timer-running-bg: #f4e9ef;
+}
+:root[data-palette="warm-violet"] {
+  --timer-running-bg: #f8f1dc;
+}
+:root[data-palette="warm-orange"] {
+  --timer-running-bg: #e7f1f8;
+}
+:root[data-palette="orange-white"] {
+  --timer-running-bg: #e8f2fc;
+}
+@media screen {
+  :root[data-theme="dark"][data-palette="warm-green"] {
+    --timer-running-bg: #2c2029;
+  }
+  :root[data-theme="dark"][data-palette="warm-violet"] {
+    --timer-running-bg: #2d291c;
+  }
+  :root[data-theme="dark"][data-palette="warm-orange"] {
+    --timer-running-bg: #1b2a34;
+  }
+}

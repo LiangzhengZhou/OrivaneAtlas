@@ -29,10 +29,14 @@
 
 .task-list .task-card.timer-running,
 .board .task-card.timer-running {
-  background: color-mix(in oklab, var(--accent) 20%, var(--surface));
+  background: var(--timer-running-bg, var(--accent-subtle));
 }
 
 .task-list .task-card.timer-running:hover,
 .board .task-card.timer-running:hover {
-  background: color-mix(in oklab, var(--accent) 26%, var(--surface));
+  background: color-mix(
+    in oklab,
+    var(--timer-running-bg, var(--accent-subtle)) 92%,
+    var(--accent)
+  );
 }
