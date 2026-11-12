@@ -242,6 +242,8 @@ export class LocalImageAssets implements LocalLibraryAssets {
     for (const hash of record.chunkHashes) {
       const blob = await this.blobs.get(this.actor.workspaceId, hash);
       if (!blob) throw new Error("LOCAL_BINARY_MISSING");
+      if (!this.blobs.digest || (await this.blobs.digest(blob)) !== hash)
+        throw new Error("LOCAL_BINARY_CORRUPT");
       parts.push(blob);
     }
     const blob = new Blob(parts, { type: asset.mime });

@@ -1604,6 +1604,16 @@ export async function bootstrap() {
     await readDocumentBody(note);
     if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
   }
+  async function decodableRaster(blob: Blob): Promise<boolean> {
+    if (typeof createImageBitmap !== "function") return true;
+    try {
+      const bitmap = await createImageBitmap(blob);
+      bitmap.close();
+      return true;
+    } catch {
+      return false;
+    }
+  }
   const privateImageLoader = scopedImageLoader(
     () =>
       `${serverGeneration}|${local.context.workspaceId}|${local.context.principalId}`,
@@ -1622,11 +1632,21 @@ export async function bootstrap() {
       if (!/^\/api\/library\/asset\?id=[a-zA-Z0-9-]+$/.test(path))
         throw new DomainError("VALIDATION_ERROR");
       try {
-        return await local.loadImage(path);
+        const localBlob = await local.loadImage(path);
+        if (!(await decodableRaster(localBlob)))
+          throw new Error("LOCAL_BINARY_CORRUPT");
+        return localBlob;
       } catch (error) {
         if (
           !(error instanceof DomainError && error.code === "NOT_FOUND") &&
-          !(error instanceof Error && error.message === "LOCAL_BINARY_MISSING")
+          !(
+            error instanceof Error &&
+            [
+              "LOCAL_BINARY_MISSING",
+              "LOCAL_BINARY_CORRUPT",
+              "LOCAL_DATA_CORRUPT",
+            ].includes(error.message)
+          )
         )
           throw imageLoadFailure(error);
         // Legacy assets are not in the workspace bootstrap manifest. The server
