@@ -141,7 +141,23 @@ export async function readLegacyImage(
   }
   const cachedRecord = await readCacheRecord();
   if (cachedRecord && ports.revalidateCache) {
-    if (await ports.revalidateCache(scope, cachedRecord.contentHash)) {
+    let fresh = false;
+    try {
+      fresh = await ports.revalidateCache(scope, cachedRecord.contentHash);
+    } catch (error) {
+      // A metadata route that is unavailable or rejected by an older/native
+      // transport must behave like a cache miss. Authentication/authorization
+      // failures still propagate; the byte route performs the same guard.
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        ["FORBIDDEN", "UNAUTHORIZED", "NOT_FOUND", "IMAGE_ACCESS"].includes(
+          message,
+        )
+      )
+        throw error;
+      fresh = false;
+    }
+    if (fresh) {
       const cached = await readCachedBlob(cachedRecord);
       if (cached) {
         await check();

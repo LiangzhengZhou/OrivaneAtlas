@@ -191,6 +191,7 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/library",
             "/api/library/revisions",
             "/api/library/asset",
+            "/api/library/asset/meta",
             "/api/ai/providers",
             "/api/ai/configuration",
             "/api/ai",
