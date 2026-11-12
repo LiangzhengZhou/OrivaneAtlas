@@ -119,6 +119,7 @@ import {
   ImageLoadError,
   imageLoadFailure,
   imageResponseBlob,
+  rasterMime,
 } from "./imageResponse";
 import { scopedImageLoader } from "./scoped-image-loader";
 import { WorkspaceEventDecoder } from "./utils/workspace-event-decoder";
@@ -389,7 +390,11 @@ export async function bootstrap() {
         : (scope ?? workspaceRequestScope());
     let response: Response;
     try {
-      if (native && /^\/api\/(?:v1\/)?files\/bytes(?:\?|$)/.test(path)) {
+      if (
+        native &&
+        (/^\/api\/(?:v1\/)?files\/bytes(?:\?|$)/.test(path) ||
+          /^\/api\/library\/asset\?id=[a-zA-Z0-9-]+$/.test(path))
+      ) {
         if (payload !== undefined) throw new Error("INVALID_FILE_METHOD");
         const bytes = await invoke<ArrayBuffer>("server_download_file", {
           origin,
@@ -398,7 +403,11 @@ export async function bootstrap() {
         });
         response = new Response(bytes, {
           status: 200,
-          headers: { "Content-Type": "application/octet-stream" },
+          headers: {
+            "Content-Type": /^\/api\/library\/asset/.test(path)
+              ? rasterMime(new Uint8Array(bytes))
+              : "application/octet-stream",
+          },
         });
       } else if (native) {
         const reply = await invoke<{

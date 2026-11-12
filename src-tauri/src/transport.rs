@@ -536,7 +536,12 @@ async fn send_binary_download(state:&Transport,origin:String,path:String)->Resul
 }
 async fn send_binary_download_scoped(state:&Transport,origin:String,path:String,workspace_id:Option<String>)->Result<Vec<u8>,String> {
     let url=endpoint(&origin,&path,false)?;
-    if !["/api/files/bytes","/api/v1/files/bytes"].contains(&url.path()) { return Err("INVALID_FILE_PATH".into()); }
+    let is_file = ["/api/files/bytes", "/api/v1/files/bytes"].contains(&url.path());
+    let is_library_image = url.path() == "/api/library/asset"
+        && url
+            .query()
+            .is_some_and(|query| query.split('&').any(|part| part.starts_with("id=")));
+    if !is_file && !is_library_image { return Err("INVALID_FILE_PATH".into()); }
     let (cookie,generation)={
         let current=state.0.lock().map_err(|_|"NETWORK_ERROR")?;
         if current.origin!=origin || origin.is_empty() { return Err("INVALID_SERVER".into()); }
@@ -553,7 +558,13 @@ async fn send_binary_download_scoped(state:&Transport,origin:String,path:String,
     }
     if status==403 { return Err("FORBIDDEN".into()); }
     if status==404 { return Err("NOT_FOUND".into()); }
-    if status!=200 || response.headers().get("content-type").and_then(|v|v.to_str().ok())!=Some("application/octet-stream") {return Err("INVALID_RESPONSE".into());}
+    let content_type=response.headers().get("content-type").and_then(|v|v.to_str().ok()).unwrap_or("");
+    let valid_content_type = if is_library_image {
+        ["image/png", "image/jpeg", "image/webp"].contains(&content_type)
+    } else {
+        content_type == "application/octet-stream"
+    };
+    if status!=200 || !valid_content_type {return Err("INVALID_RESPONSE".into());}
     const LIMIT:usize=100*1024*1024;
     if response.content_length().is_some_and(|size|size>LIMIT as u64) {return Err("FILE_TOO_LARGE".into());}
     let mut bytes=Vec::new();
@@ -858,6 +869,26 @@ mod tests {
             assert_eq!(send_binary_download(&state,origin,path).await.unwrap(),vec![0,1,127,128,255]);
         });
         assert!(worker.join().unwrap().starts_with("GET /api/v1/files/bytes?id=original "));
+    }
+    #[test]
+    fn library_image_download_preserves_binary_without_base64_bridge() {
+        use std::io::{Read,Write};
+        let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin=format!("http://{}",listener.local_addr().unwrap());
+        let worker=std::thread::spawn(move||{
+            let(mut stream,_)=listener.accept().unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut request=[0;8192];let length=stream.read(&mut request).unwrap();
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 12\r\nConnection: close\r\n\r\n").unwrap();
+            stream.write_all(&[137,80,78,71,13,10,26,10,0,0,0,0]).unwrap();
+            String::from_utf8_lossy(&request[..length]).into_owned()
+        });
+        let state=Transport::default();state.0.lock().unwrap().origin=origin.clone();
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let path="/api/library/asset?id=e76ee4ac-528c-4855-b55f-f18966fbadb5".to_string();
+            assert_eq!(send_binary_download(&state,origin.clone(),path).await.unwrap(),vec![137,80,78,71,13,10,26,10,0,0,0,0]);
+        });
+        assert!(worker.join().unwrap().starts_with("GET /api/library/asset?id=e76ee4ac-528c-4855-b55f-f18966fbadb5 "));
     }
     #[test]
     fn file_download_preserves_permission_denial_without_exposing_body() {

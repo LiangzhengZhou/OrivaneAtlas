@@ -40,6 +40,31 @@ export function imageFailureReason(error: unknown): string {
     : "UNCLASSIFIED";
 }
 
+export function rasterMime(bytes: Uint8Array): string {
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 137 &&
+    bytes[1] === 80 &&
+    bytes[2] === 78 &&
+    bytes[3] === 71
+  )
+    return "image/png";
+  if (
+    bytes.length >= 3 &&
+    bytes[0] === 255 &&
+    bytes[1] === 216 &&
+    bytes[2] === 255
+  )
+    return "image/jpeg";
+  if (
+    bytes.length >= 12 &&
+    String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+    String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
+  )
+    return "image/webp";
+  return "application/octet-stream";
+}
+
 export async function imageResponseBlob(response: Response): Promise<Blob> {
   const status = response.status;
   if (status === 401 || status === 403)
