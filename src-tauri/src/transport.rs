@@ -63,6 +63,16 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
         "/api/v1/recurrences/skip" => "/api/recurrences/skip",
         "/api/v1/link/create" => "/api/link/create",
         "/api/v1/link/delete" => "/api/link/delete",
+        "/api/v1/folders/link" => "/api/folders/link",
+        "/api/v1/folders/unlink" => "/api/folders/unlink",
+        "/api/v1/folders/move" => "/api/folders/move",
+        "/api/v1/space-folders/link" => "/api/space-folders/link",
+        "/api/v1/space-folders/unlink" => "/api/space-folders/unlink",
+        "/api/v1/project-folders/link" => "/api/project-folders/link",
+        "/api/v1/project-folders/unlink" => "/api/project-folders/unlink",
+        "/api/v1/folders/links" => "/api/folders/links",
+        "/api/v1/space-folders/links" => "/api/space-folders/links",
+        "/api/v1/project-folders/links" => "/api/project-folders/links",
         "/api/v1/note/promote" => "/api/note/promote",
         "/api/v1/note/link-space" => "/api/note/link-space",
         "/api/v1/plans/preview" => "/api/plans/preview",
@@ -146,6 +156,13 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/ai/apply",
             "/api/ai/decide",
             "/api/link/create",
+            "/api/folders/link",
+            "/api/folders/unlink",
+            "/api/folders/move",
+            "/api/space-folders/link",
+            "/api/space-folders/unlink",
+            "/api/project-folders/link",
+            "/api/project-folders/unlink",
             "/api/link/delete",
             "/api/backup",
             "/api/organize",
@@ -181,6 +198,9 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/bootstrap",
             "/api/document/body",
             "/api/document/note-backlinks",
+            "/api/folders/links",
+            "/api/space-folders/links",
+            "/api/project-folders/links",
             "/api/notes/search",
             "/api/library/search",
             "/api/sync",
@@ -1478,6 +1498,28 @@ mod tests {
         }
         assert!(endpoint("https://example.com", "/api/work/unknown-preference", true).is_err());
     }
+    #[test]
+    fn collection_endpoints_preserve_method_and_versioned_aliases() {
+        for (route, post) in [
+            ("folders/link", true),
+            ("folders/unlink", true),
+            ("folders/move", true),
+            ("space-folders/link", true),
+            ("space-folders/unlink", true),
+            ("project-folders/link", true),
+            ("project-folders/unlink", true),
+            ("folders/links", false),
+            ("space-folders/links", false),
+            ("project-folders/links", false),
+        ] {
+            for prefix in ["/api", "/api/v1"] {
+                let path = format!("{prefix}/{route}");
+                assert!(endpoint("https://example.com", &path, post).is_ok());
+                assert!(endpoint("https://example.com", &path, !post).is_err());
+            }
+        }
+    }
+
     #[test]
     fn project_knowledge_endpoints_are_allowed_only_as_post() {
         for path in [

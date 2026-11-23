@@ -38,6 +38,7 @@ export const localWorkCommandNames = [
   "link.delete",
   "folderLink.create",
   "folderLink.delete",
+  "folderLink.move",
   "spaceFolderLink.create",
   "spaceFolderLink.delete",
   "projectFolderLink.create",

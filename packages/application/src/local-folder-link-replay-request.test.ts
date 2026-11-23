@@ -15,6 +15,7 @@ function plan(
   name:
     | "folderLink.create"
     | "folderLink.delete"
+    | "folderLink.move"
     | "spaceFolderLink.create"
     | "projectFolderLink.create",
   input: Record<string, unknown>,
@@ -45,6 +46,32 @@ function plan(
 }
 
 describe("folder link replay requests", () => {
+  it("replays the reviewed destination and original source version with one stable effect", () => {
+    const input = { id: linkId, version: 3, folderId, destinationLinkId: null };
+    expect(
+      buildLocalFolderLinkReplayRequest(
+        plan("folderLink.move", input, "folderLinks", "PATCH", 3),
+      ),
+    ).toMatchObject({
+      path: "/api/v1/folders/move",
+      idempotencyKey: commandId,
+      body: {
+        ...input,
+        syncCommand: {
+          commandId,
+          deviceId,
+          effects: [
+            {
+              id: linkId,
+              baseVersion: 3,
+              op: "UPSERT",
+              collection: "folderLinks",
+            },
+          ],
+        },
+      },
+    });
+  });
   it("builds a general folder link create with a stable id", () => {
     expect(
       buildLocalFolderLinkReplayRequest(

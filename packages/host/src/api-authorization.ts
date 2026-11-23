@@ -40,6 +40,7 @@ export const granularRouteGrants: Readonly<
   "/api/link/delete": ["knowledge:write"],
   "/api/folders/links": ["knowledge:read"],
   "/api/folders/link": ["knowledge:write"],
+  "/api/folders/move": ["knowledge:write"],
   "/api/folders/unlink": ["knowledge:write"],
   "/api/space-folders/links": ["knowledge:read"],
   "/api/space-folders/link": ["knowledge:write"],

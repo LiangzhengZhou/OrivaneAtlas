@@ -192,6 +192,14 @@ export class LocalRuntime {
     );
   }
 
+  moveFolderLink(input: import("./folder-links").MoveFolderLinkInput) {
+    const captured = structuredClone(input);
+    return this.workspace.run(
+      (services) => services.folderLinks.move(this.context, captured),
+      () => ({ name: "folderLink.move", input: localDto(captured) }),
+    );
+  }
+
   unlinkFolder(id: string, version: number) {
     return this.workspace.run(
       (services) => services.folderLinks.remove(this.context, id, version),

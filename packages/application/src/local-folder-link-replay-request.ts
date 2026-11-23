@@ -19,6 +19,7 @@ export interface FolderLinkReplayEffect {
 const commandCollections = {
   "folderLink.create": "folderLinks",
   "folderLink.delete": "folderLinks",
+  "folderLink.move": "folderLinks",
   "spaceFolderLink.create": "spaceFolderLinks",
   "spaceFolderLink.delete": "spaceFolderLinks",
   "projectFolderLink.create": "projectFolderLinks",
@@ -91,6 +92,19 @@ export function buildLocalFolderLinkReplayRequest(
       targetKind: required("targetKind"),
       targetId: required("targetId"),
       stableId: id,
+    };
+  } else if (name === "folderLink.move") {
+    allow(["id", "version", "folderId", "destinationLinkId"]);
+    const destination = required("destinationLinkId");
+    path = "/api/v1/folders/move";
+    body = {
+      id,
+      version,
+      folderId: requireStableUuid(required("folderId"), "folderId"),
+      destinationLinkId:
+        destination === null
+          ? null
+          : requireStableUuid(destination, "destinationLinkId"),
     };
   } else if (name === "folderLink.delete") {
     allow(["id", "version"]);

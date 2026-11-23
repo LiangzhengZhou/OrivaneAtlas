@@ -64,9 +64,10 @@ export function folderLinkStore(
         } else if (
           db
             .prepare(
-              "UPDATE folder_link SET version=?,deleted_at=?,payload=? WHERE workspace_id=? AND id=? AND version=?",
+              "UPDATE folder_link SET folder_id=?,version=?,deleted_at=?,payload=? WHERE workspace_id=? AND id=? AND version=?",
             )
             .run(
+              value.folderId,
               value.version,
               value.deletedAt,
               payload,

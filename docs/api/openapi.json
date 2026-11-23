@@ -17352,6 +17352,62 @@
         }
       }
     },
+    "/api/folders/move": {
+      "post": {
+        "operationId": "moveFolderLink",
+        "summary": "Move a versioned resource membership between general collections",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version", "folderId", "destinationLinkId"],
+                "properties": {
+                  "folderId": { "type": "string", "format": "uuid" },
+                  "destinationLinkId": {
+                    "type": ["string", "null"],
+                    "format": "uuid"
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Moved source membership, or its tombstone if the reviewed destination link already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/folders/unlink": {
       "post": {
         "operationId": "removeFolderLink",
@@ -17485,6 +17541,62 @@
         "responses": {
           "200": {
             "description": "Created folder link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/folders/move": {
+      "post": {
+        "operationId": "moveFolderLinkV1",
+        "summary": "Move a versioned resource membership between general collections",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9-]{16,80}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "version", "folderId", "destinationLinkId"],
+                "properties": {
+                  "folderId": { "type": "string", "format": "uuid" },
+                  "destinationLinkId": {
+                    "type": ["string", "null"],
+                    "format": "uuid"
+                  },
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Moved source membership, or its tombstone if the reviewed destination link already exists",
             "content": {
               "application/json": {
                 "schema": {

@@ -6764,12 +6764,67 @@ it("replays guarded folder link creation and removal with stable effects", async
   const link = (
     await (await call(`/api/folders/links?folderId=${folderId}`)).json()
   ).links[0];
+  const destination = randomUUID();
+  const moveKey = randomUUID();
+  const move = {
+    id: linkId,
+    version: 1,
+    folderId: destination,
+    destinationLinkId: null,
+    syncCommand: {
+      commandId: moveKey,
+      deviceId,
+      effects: [
+        { collection: "folderLinks", id: linkId, op: "UPSERT", baseVersion: 1 },
+      ],
+    },
+  };
+  expect(
+    (await call("/api/folders/move", { ...move, syncCommand: undefined }))
+      .status,
+  ).toBe(400);
+  expect(
+    (await (await call(`/api/folders/links?folderId=${folderId}`)).json())
+      .links,
+  ).toHaveLength(1);
+  expect(
+    (
+      await call("/api/organize", {
+        kind: "FOLDER",
+        action: "create",
+        id: destination,
+        name: "Destination",
+        parentId: "",
+        scope: "GENERAL",
+      })
+    ).status,
+  ).toBe(200);
+  const moveResponse = await call("/api/v1/folders/move", move, {
+    "Idempotency-Key": moveKey,
+  });
+  const moved = await moveResponse.json();
+  expect(moveResponse.status, JSON.stringify(moved)).toBe(200);
+  expect(moved.effects).toMatchObject([
+    { id: linkId, version: 2, op: "UPSERT", collection: "folderLinks" },
+  ]);
+  const repeated = await call("/api/v1/folders/move", move, {
+    "Idempotency-Key": moveKey,
+  });
+  expect(await repeated.json()).toEqual(moved);
+  expect(
+    (await (await call(`/api/folders/links?folderId=${folderId}`)).json())
+      .links,
+  ).toHaveLength(0);
+  expect(
+    (await (await call(`/api/folders/links?folderId=${destination}`)).json())
+      .links,
+  ).toMatchObject([{ id: linkId, version: 2, folderId: destination }]);
   const removeCommand = randomUUID();
   const removed = await call(
     "/api/folders/unlink",
     {
       id: linkId,
-      version: 1,
+      version: 2,
       syncCommand: {
         commandId: removeCommand,
         deviceId,
@@ -6778,7 +6833,7 @@ it("replays guarded folder link creation and removal with stable effects", async
             collection: "folderLinks",
             id: linkId,
             op: "UPSERT",
-            baseVersion: 1,
+            baseVersion: 2,
           },
         ],
       },

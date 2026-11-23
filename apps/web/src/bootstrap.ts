@@ -3666,6 +3666,9 @@ export async function bootstrap() {
     },
     linkFolder: (input: import("@arclattice/application").FolderLinkInput) =>
       local.linkFolder(input),
+    moveFolderLink: (
+      input: import("@arclattice/application").MoveFolderLinkInput,
+    ) => local.moveFolderLink(input),
     unlinkFolder: (id: string, version: number) =>
       local.unlinkFolder(id, version),
     linkSpaceFolder: (spaceId: string, folderId: string) =>

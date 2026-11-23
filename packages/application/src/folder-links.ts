@@ -23,6 +23,12 @@ export interface FolderLinkInput {
   targetKind: FolderLinkTargetKind;
   targetId: string;
 }
+export interface MoveFolderLinkInput {
+  id: string;
+  version: number;
+  folderId: string;
+  destinationLinkId: string | null;
+}
 export interface FolderLinkStore {
   list(): Promise<FolderLink[]>;
   findActive(
@@ -119,6 +125,58 @@ export class FolderLinkService {
     };
     await this.store.save(link, 0);
     return link;
+  }
+
+  async move(
+    context: ActorContext,
+    input: MoveFolderLinkInput,
+  ): Promise<FolderLink> {
+    await this.authorization.require(context, "work:update");
+    await this.authorization.require(context, "work:delete");
+    const id = stableId(input.id, "id");
+    const folderId = stableId(input.folderId, "folderId");
+    const destinationId =
+      input.destinationLinkId === null
+        ? null
+        : stableId(input.destinationLinkId, "destinationLinkId");
+    if (!Number.isSafeInteger(input.version) || input.version < 1)
+      throw new DomainError("VALIDATION_ERROR", { field: "version" });
+    const source = (await this.store.list()).find(
+      (link) => link.id === id && link.workspaceId === context.workspaceId,
+    );
+    if (!source || source.deletedAt) throw new DomainError("NOT_FOUND");
+    if (source.version !== input.version)
+      throw new DomainError("VERSION_CONFLICT");
+    if (
+      source.folderId === folderId ||
+      !folderLinkTargetKinds.includes(source.targetKind)
+    )
+      throw new DomainError("VALIDATION_ERROR");
+    for (const id of [source.folderId, folderId]) {
+      const folder = await this.targets.folder(id);
+      if (!folder || folder.archived || folder.scope !== "GENERAL")
+        throw new DomainError("VALIDATION_ERROR", { field: "folderId" });
+    }
+    if (!(await this.targets.target(source.targetKind, source.targetId)))
+      throw new DomainError("NOT_FOUND");
+    const destination = await this.store.findActive(
+      folderId,
+      source.targetKind,
+      source.targetId,
+    );
+    if ((destination?.id ?? null) !== destinationId)
+      throw new DomainError("VERSION_CONFLICT", { field: "destinationLinkId" });
+    const now = this.clock.now();
+    const moved = {
+      ...source,
+      folderId: destination ? source.folderId : folderId,
+      deletedAt: destination ? now : null,
+      version: source.version + 1,
+      updatedAt: now,
+      updatedBy: context.principalId,
+    };
+    await this.store.save(moved, source.version);
+    return moved;
   }
 
   async remove(

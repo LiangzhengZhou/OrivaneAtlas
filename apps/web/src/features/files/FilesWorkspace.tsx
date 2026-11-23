@@ -1,5 +1,6 @@
 import {
   type EntityRef,
+  type MoveFolderLinkInput,
   type ProjectMaterial,
   type ResourceFolderSource,
   selectResourceCatalog,
@@ -87,6 +88,7 @@ export function FilesWorkspace({
   onOpenResource,
   onDeleteResource,
   onTrashSelection,
+  onMoveLinks,
   batchPending,
   onUpload,
 }: {
@@ -117,6 +119,10 @@ export function FilesWorkspace({
   onOpenResource(ref: EntityRef): void;
   onDeleteResource(ref: EntityRef): Promise<void>;
   onTrashSelection(items: readonly VersionedResource[]): Promise<boolean>;
+  onMoveLinks(
+    items: readonly MoveFolderLinkInput[],
+    destination: string,
+  ): Promise<boolean>;
   batchPending: boolean;
   onUpload(file: globalThis.File): Promise<string | null>;
 }) {
@@ -356,6 +362,9 @@ export function FilesWorkspace({
   const [pageIndex, setPageIndex] = useState(0);
   const [selection, setSelection] = useState<Set<string> | null>(null);
   const selectionButton = useRef<HTMLButtonElement>(null);
+  const [destinationId, setDestinationId] = useState("");
+  const dragging = useRef(false);
+  const targetFolder = catalog.folderIndex.folders.get(destinationId);
   const pageSize = 60;
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
   const page = Math.min(pageIndex, pageCount - 1);
@@ -372,6 +381,8 @@ export function FilesWorkspace({
   const [previousFilter, setPreviousFilter] = useState(filterSignature);
   if (filterSignature !== previousFilter) {
     setPreviousFilter(filterSignature);
+    setDestinationId("");
+    dragging.current = false;
     setSelection(null);
     setPageIndex(0);
     setSelectedKey(null);
@@ -380,6 +391,42 @@ export function FilesWorkspace({
   const checked = pageRows
     .filter((row) => selection?.has(row.key))
     .map((row) => row.key);
+  async function moveSelection() {
+    if (
+      !activeFolder ||
+      !targetFolder ||
+      activeFolder.id === targetFolder.id ||
+      !checked.length ||
+      batchPending
+    )
+      return;
+    const selected = new Set(checked);
+    const sources = [];
+    const destinations = new Map<string, string>();
+    for (const link of relations.folderLinks ?? []) {
+      const key = link.targetKind + ":" + link.targetId;
+      if (
+        link.deletedAt ||
+        link.workspaceId !== workspaceId ||
+        !selected.has(key)
+      )
+        continue;
+      if (link.folderId === activeFolder.id) sources.push(link);
+      if (link.folderId === targetFolder.id) destinations.set(key, link.id);
+    }
+    if (sources.length !== selected.size) return;
+    const items = sources.map((link) => ({
+      id: link.id,
+      version: link.version,
+      folderId: targetFolder.id,
+      destinationLinkId:
+        destinations.get(link.targetKind + ":" + link.targetId) ?? null,
+    }));
+    if (await onMoveLinks(items, targetFolder.path)) {
+      setSelection(null);
+      selectionButton.current?.focus();
+    }
+  }
   function saveSelection(favorite: boolean) {
     shortcuts.setFavorites(checked, favorite);
     setSelection(null);
@@ -921,6 +968,58 @@ export function FilesWorkspace({
                 >
                   {zh ? "移出收藏" : "Remove from favorites"}
                 </Button>
+                {activeFolder && catalog.folderIndex.folders.size > 1 && (
+                  <>
+                    <label className="collection-move-destination">
+                      {zh ? "目标集合" : "Destination collection"}
+                      <select
+                        value={targetFolder?.id ?? ""}
+                        onChange={(event) =>
+                          setDestinationId(event.currentTarget.value)
+                        }
+                        disabled={batchPending}
+                      >
+                        <option value="">
+                          {zh ? "选择集合" : "Choose a collection"}
+                        </option>
+                        {Array.from(catalog.folderIndex.folders.values())
+                          .filter((folder) => folder.id !== activeFolder.id)
+                          .map((folder) => (
+                            <option key={folder.id} value={folder.id}>
+                              {folder.path}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <Button
+                      variant="secondary"
+                      disabled={
+                        !targetFolder || !checked.length || batchPending
+                      }
+                      className="collection-move-target"
+                      onDragLeave={(event) => {
+                        delete event.currentTarget.dataset.dropReady;
+                      }}
+                      onClick={() => void moveSelection()}
+                      onDragOver={(event) => {
+                        if (dragging.current) {
+                          event.currentTarget.dataset.dropReady = "true";
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                        }
+                      }}
+                      onDrop={(event) => {
+                        if (!dragging.current) return;
+                        event.preventDefault();
+                        delete event.currentTarget.dataset.dropReady;
+                        dragging.current = false;
+                        void moveSelection();
+                      }}
+                    >
+                      {zh ? "移动到所选集合" : "Move to selected collection"}
+                    </Button>
+                  </>
+                )}
                 <Button
                   variant="danger"
                   pending={batchPending}
@@ -1008,7 +1107,34 @@ export function FilesWorkspace({
                   );
                   if (selection !== null)
                     return (
-                      <label key={row.key} className="files-select-row">
+                      <label
+                        key={row.key}
+                        className="files-select-row"
+                        draggable={
+                          !!activeFolder &&
+                          selection.has(row.key) &&
+                          !batchPending
+                        }
+                        onDragStart={(event) => {
+                          if (
+                            !activeFolder ||
+                            !selection.has(row.key) ||
+                            batchPending
+                          ) {
+                            event.preventDefault();
+                            return;
+                          }
+                          dragging.current = true;
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData(
+                            "application/x-atlas-collection-selection",
+                            "selected",
+                          );
+                        }}
+                        onDragEnd={() => {
+                          dragging.current = false;
+                        }}
+                      >
                         <input
                           type="checkbox"
                           aria-label={row.title}

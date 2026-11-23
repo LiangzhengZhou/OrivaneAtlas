@@ -1,3 +1,4 @@
+import { DomainError } from "@arclattice/domain";
 import type {
   FolderLink,
   FolderLinkStore,
@@ -87,8 +88,8 @@ export function localProjectFolderLinkStore(
 }
 
 export function localFolderLinkTargets(
-  tx: WorkTransaction,
-  records: LocalRecordRepository,
+  tx: Pick<WorkTransaction, "organizations" | "workspaceEntity">,
+  records: Pick<LocalRecordRepository, "get">,
 ): FolderLinkTargetPort & ScopedFolderTargetPort {
   const folder = async (folderId: string) => {
     const value = (await tx.organizations()).find(
@@ -100,14 +101,21 @@ export function localFolderLinkTargets(
       scope: value.scope === "GENERAL" ? "GENERAL" : "NOTE",
     };
   };
-  const recordAlive = async (collection: string, id: string) => {
+  const recordAlive = async (
+    collection: string,
+    id: string,
+    kind?: "DOCUMENT" | "SPACE",
+  ) => {
     try {
-      const value = (await records.get(collection, id)) as {
+      const value = await records.get<{
+        kind?: string;
         deletedAt?: string | null;
-      };
-      return !value.deletedAt;
-    } catch {
-      return false;
+      }>(collection, id);
+      return !value.deletedAt && (!kind || value.kind === kind);
+    } catch (cause) {
+      if (cause instanceof DomainError && cause.code === "NOT_FOUND")
+        return false;
+      throw cause;
     }
   };
   return {
@@ -115,14 +123,14 @@ export function localFolderLinkTargets(
     async target(kind: FolderLinkTargetKind, id: string) {
       if (kind === "NOTE") return recordAlive("notes", id);
       if (kind === "FILE") return recordAlive("files", id);
-      if (kind === "DOCUMENT") return recordAlive("library", id);
+      if (kind === "DOCUMENT") return recordAlive("library", id, "DOCUMENT");
       const value = (await tx.workspaceEntity("items", id)) as {
         type?: string;
         deletedAt?: string | null;
       } | null;
       return value?.type === "PROJECT" && !value.deletedAt;
     },
-    space: (id) => recordAlive("library", id),
+    space: (id) => recordAlive("library", id, "SPACE"),
     async project(id) {
       const value = (await tx.workspaceEntity("items", id)) as {
         type?: string;

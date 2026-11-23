@@ -951,9 +951,13 @@ function Workbench({
     () => organizationRows.filter((entry) => entry.kind === "FOLDER"),
     [organizationRows],
   );
-  const activeFolders = useMemo(
-    () => folderRows.filter((folder) => !folder.archived),
+  const noteFolderRows = useMemo(
+    () => folderRows.filter((folder) => folder.scope !== "GENERAL"),
     [folderRows],
+  );
+  const activeFolders = useMemo(
+    () => noteFolderRows.filter((folder) => !folder.archived),
+    [noteFolderRows],
   );
   const organizationByKey = workIndex.organizationByKey;
   const folderOptions = useMemo(
@@ -1442,6 +1446,61 @@ function Workbench({
       batchTrashLock.current = false;
     }
   }
+  async function moveSelectedLinks(
+    items: readonly import("@arclattice/application").MoveFolderLinkInput[],
+    destination: string,
+  ) {
+    if (!items.length || batchTrashLock.current) return false;
+    if (
+      documentDirty.current ||
+      libraryDraft.current ||
+      projectBriefDirty.current
+    ) {
+      showToast(t("saveBeforeOrganize"));
+      return false;
+    }
+    const origin = runtime.serverOrigin,
+      route = location.hash,
+      account = runtime.account?.id;
+    const current = () =>
+      runtime.serverOrigin === origin &&
+      runtime.context?.workspaceId === context.workspaceId &&
+      runtime.context?.principalId === context.principalId &&
+      runtime.account?.id === account &&
+      location.hash === route;
+    const zh = i18n.language.startsWith("zh");
+    batchTrashLock.current = true;
+    try {
+      const count = items.length;
+      if (
+        !(await confirmAction(
+          zh
+            ? `将 ${count} 项从当前集合移动到“${destination}”？`
+            : `Move ${count} items from this collection to “${destination}”?`,
+        )) ||
+        !current()
+      )
+        return false;
+      let done = 0;
+      const ok = await run(async () => {
+        for (const item of items) {
+          if (!current()) break;
+          await runtime.moveFolderLink(item);
+          done++;
+        }
+      }, "resource-collection-move");
+      if (!current()) return false;
+      if (!ok) void refresh().catch(() => undefined);
+      showToast(
+        zh
+          ? `已移动 ${done}/${count} 项至“${destination}”`
+          : `Moved ${done} of ${count} items to “${destination}”`,
+      );
+      return ok && done === count;
+    } finally {
+      batchTrashLock.current = false;
+    }
+  }
   async function trashResource(ref: EntityRef) {
     if (ref.kind === "FILE") {
       const file = (snapshot.files ?? []).find((entry) => entry.id === ref.id);
@@ -1587,7 +1646,7 @@ function Workbench({
   const folderTree = (allEntries: Note[]) =>
     view === "journal" ? undefined : (
       <FolderTree
-        folders={folderRows}
+        folders={noteFolderRows}
         notes={allEntries.filter((note) => note.kind === "NOTE")}
         counts={folderCounts(allEntries, organizationByKey)}
         legacy={legacyFolderGroups(allEntries, organizationByKey)}
@@ -2958,7 +3017,11 @@ function Workbench({
                               onTrashSelection={(items) =>
                                 changeSelectedResources(items, true)
                               }
-                              batchPending={isPending("resource-trash-batch")}
+                              onMoveLinks={moveSelectedLinks}
+                              batchPending={
+                                isPending("resource-trash-batch") ||
+                                isPending("resource-collection-move")
+                              }
                               onUpload={async (file) => {
                                 let id: string | null = null;
                                 await run(async () => {

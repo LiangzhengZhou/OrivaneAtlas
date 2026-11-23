@@ -968,6 +968,7 @@ export async function createHost(options: HostOptions) {
             "/api/link/create",
             "/api/link/delete",
             "/api/folders/link",
+            "/api/folders/move",
             "/api/folders/unlink",
             "/api/space-folders/link",
             "/api/space-folders/unlink",
@@ -3246,6 +3247,7 @@ export async function createHost(options: HostOptions) {
               "/api/link/create",
               "/api/link/delete",
               "/api/folders/link",
+              "/api/folders/move",
               "/api/folders/unlink",
               "/api/space-folders/link",
               "/api/space-folders/unlink",
@@ -4802,6 +4804,28 @@ export async function createHost(options: HostOptions) {
                       : string(value.stableId, 64),
                   );
                 }
+                case "/api/folders/move":
+                  keys(value, [
+                    "id",
+                    "version",
+                    "folderId",
+                    "destinationLinkId",
+                  ]);
+                  return new FolderLinkService(
+                    folderLinkReplay ?? folderLinks,
+                    folderTargets,
+                    authorization,
+                    clock,
+                    ids,
+                  ).move(context, {
+                    id: string(value.id, 64),
+                    version: version(value.version),
+                    folderId: string(value.folderId, 64),
+                    destinationLinkId:
+                      value.destinationLinkId === null
+                        ? null
+                        : string(value.destinationLinkId, 64),
+                  });
                 case "/api/folders/unlink":
                   keys(value, ["id", "version"]);
                   return new FolderLinkService(

@@ -20130,3 +20130,181 @@ test("first keyboard stop skips shell navigation without changing the resource r
     .poll(() => main.evaluate((el) => el.contains(document.activeElement)))
     .toBe(true);
 });
+
+test("moves a mixed collection selection with keyboard or drag while preserving original ownership", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, words(info.project.name));
+  const source = crypto.randomUUID(),
+    destination = crypto.randomUUID(),
+    third = crypto.randomUUID();
+  for (const [id, name] of [
+    [source, "Field notes"],
+    [destination, "Publication"],
+    [third, "Archive"],
+  ]) {
+    await mutation(page, "/api/organize", {
+      kind: "FOLDER",
+      action: "create",
+      id,
+      name,
+      parentId: "",
+      scope: "GENERAL",
+    });
+  }
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: { kind: "SPACE", spaceId: null, title: "Research", bodyMd: "" },
+  });
+  const doc = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: space.id,
+      title: "Analysis",
+      bodyMd: "Original Markdown",
+    },
+  });
+  const note = await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "NOTE",
+      day: null,
+      title: "Logbook",
+      bodyMd: "Original journal notes",
+    },
+  });
+  async function link(folderId: string, targetKind: string, targetId: string) {
+    return mutation(page, "/api/folders/link", {
+      folderId,
+      targetKind,
+      targetId,
+    });
+  }
+  const bytes = Buffer.from("Original field file\n原始记录", "utf8");
+  await page.goto(workbench.url + "/#files");
+  await page.locator(".files-resource-browser input[type=file]").setInputFiles({
+    name: "Field bytes.txt",
+    mimeType: "text/plain",
+    buffer: bytes,
+  });
+  await expect(page.locator(".file-text-preview")).toHaveText(
+    bytes.toString("utf8"),
+  );
+  const snap = async () =>
+    (await page.request.get(workbench.url + "/api/snapshot")).json();
+  const findFile = async () =>
+    (await snap()).files.find(
+      (entry: { name: string }) => entry.name === "Field bytes.txt",
+    );
+  await expect.poll(findFile).toBeTruthy();
+  const file = await findFile();
+  await link(source, "FILE", file.id);
+  const sourceDoc = await link(source, "DOCUMENT", doc.id);
+  const sourceNote = await link(source, "NOTE", note.id);
+  const existing = await link(destination, "NOTE", note.id);
+  const retained = await link(third, "DOCUMENT", doc.id);
+  await page.goto(workbench.url + "/#files");
+  await page.reload();
+  const browser = page.locator(".files-resource-browser");
+  const folder = browser.getByRole("combobox", {
+    name: zh ? "集合文件夹" : "Collection folder",
+    exact: true,
+  });
+  await folder.selectOption(source);
+  await expect(
+    browser.getByRole("treeitem", { name: /Field notes/ }),
+  ).toHaveCount(0);
+  const toggle = browser.getByRole("button", {
+    name: zh ? "多选" : "Select items",
+    exact: true,
+  });
+  await toggle.click();
+  await browser
+    .getByRole("checkbox", { name: zh ? "选择本页" : "Select this page" })
+    .check();
+  await browser
+    .getByRole("combobox", {
+      name: zh ? "目标集合" : "Destination collection",
+      exact: true,
+    })
+    .selectOption(destination);
+  const move = browser.getByRole("button", {
+    name: zh ? "移动到所选集合" : "Move to selected collection",
+  });
+  await move.focus();
+  await move.press("Enter");
+  await answerConfirmation(page, false, "Publication");
+  await expect(browser.locator(".files-select-row")).toHaveCount(3);
+  await page.screenshot({ path: info.outputPath("collection-selection.png") });
+  if (info.project.name === "desktop-en") {
+    await browser.locator(".files-select-row").first().dragTo(move);
+  } else {
+    await move.focus();
+    await move.press("Enter");
+  }
+  await answerConfirmation(page, true, "Publication");
+  await expect(browser.locator(".files-resource-row")).toHaveCount(0);
+  await expect(toggle).toBeFocused();
+  await folder.selectOption(destination);
+  await expect(browser.locator(".files-resource-row")).toHaveCount(3);
+
+  await expect
+    .poll(
+      async () =>
+        (await snap()).folderLinks.filter(
+          (l: { id: string }) => l.id === sourceDoc.id,
+        )[0],
+    )
+    .toMatchObject({ id: sourceDoc.id, folderId: destination, version: 2 });
+  await expect
+    .poll(
+      async () =>
+        (await snap()).folderLinks.filter(
+          (l: { folderId: string; deletedAt: string | null }) =>
+            l.folderId === destination && !l.deletedAt,
+        ).length,
+    )
+    .toBe(3);
+  const saved = await snap();
+  expect(
+    saved.notes.find((v: { id: string }) => v.id === note.id),
+  ).toMatchObject({ version: note.version, bodyMd: "Original journal notes" });
+  const original = await page.request.get(
+    workbench.url + "/api/v1/files/bytes?id=" + file.id,
+  );
+  expect(original.ok()).toBeTruthy();
+  expect(await original.body()).toEqual(bytes);
+  expect(
+    saved.folderLinks.filter(
+      (l: { id: string; deletedAt: string | null }) =>
+        l.id === sourceNote.id && !l.deletedAt,
+    ),
+  ).toHaveLength(0);
+  expect(saved.folderLinks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: existing.id,
+        folderId: destination,
+        version: 1,
+      }),
+      expect.objectContaining({ id: retained.id, folderId: third, version: 1 }),
+    ]),
+  );
+  expect(
+    saved.library.find((v: { id: string }) => v.id === doc.id),
+  ).toMatchObject({
+    spaceId: space.id,
+    bodyMd: "Original Markdown",
+    version: doc.version,
+  });
+  await page.reload();
+  await folder.selectOption(destination);
+  await expect(browser.locator(".files-resource-row")).toHaveCount(3);
+  await page.screenshot({ path: info.outputPath("collection-move.png") });
+});
