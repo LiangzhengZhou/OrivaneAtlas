@@ -1,0 +1,74 @@
+{
+  "environment": "Local Windows 11 build 26300, Core i5-12500H, 16 GB, node:sqlite, HTTP loopback. Each pass requests three ranges. RSS and CPU include the client and Host in one process.",
+  "unit": "Bytes returned in SQLite chunk payloads, not physical disk I/O.",
+  "baseline": {
+    "node": "v24.20.0",
+    "platform": "win32",
+    "originalBytes": 18875129,
+    "contentHash": "cbcef6f5d63d2e40dcdac8314331c80b3434c91e34178464d133bc8cd92885f3",
+    "groups": [
+      {
+        "sqlBytes": 56625387,
+        "maxSqlBatchBytes": 18875129,
+        "transferred": 525049,
+        "elapsedMs": 511,
+        "cpuMs": 844,
+        "baseRss": 379174912,
+        "peakRss": 408907776
+      },
+      {
+        "sqlBytes": 56625387,
+        "maxSqlBatchBytes": 18875129,
+        "transferred": 525049,
+        "elapsedMs": 474,
+        "cpuMs": 828,
+        "baseRss": 306700288,
+        "peakRss": 437952512
+      },
+      {
+        "sqlBytes": 56625387,
+        "maxSqlBatchBytes": 18875129,
+        "transferred": 525049,
+        "elapsedMs": 490,
+        "cpuMs": 953,
+        "baseRss": 361914368,
+        "peakRss": 436563968
+      }
+    ]
+  },
+  "candidate": {
+    "node": "v24.20.0",
+    "platform": "win32",
+    "originalBytes": 18875129,
+    "contentHash": "cbcef6f5d63d2e40dcdac8314331c80b3434c91e34178464d133bc8cd92885f3",
+    "groups": [
+      {
+        "sqlBytes": 19138034,
+        "maxSqlBatchBytes": 1048576,
+        "transferred": 525049,
+        "elapsedMs": 119,
+        "cpuMs": 282,
+        "baseRss": 381460480,
+        "peakRss": 409772032
+      },
+      {
+        "sqlBytes": 525049,
+        "maxSqlBatchBytes": 262144,
+        "transferred": 525049,
+        "elapsedMs": 17,
+        "cpuMs": 16,
+        "baseRss": 251723776,
+        "peakRss": 256425984
+      },
+      {
+        "sqlBytes": 525049,
+        "maxSqlBatchBytes": 262144,
+        "transferred": 525049,
+        "elapsedMs": 19,
+        "cpuMs": 15,
+        "baseRss": 256425984,
+        "peakRss": 262107136
+      }
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "baselineIndex": "8a7095f1a06a7fc53b76e13b7344c6873ce99cb72abec385f02a458336892c7f",
+  "candidateIndex": "814220a8dbf85bb4fd2290a6e194d497c5d717033ece7bcd3c60e53e6a88cc57",
+  "engine": "153.0.8010.12",
+  "steps": [
+    {
+      "stage": "baseline",
+      "js": "/assets/index-CpsGwWLI.js",
+      "deepLink": "#library?file=6d11e8ef-2b4c-4fcc-84c9-097d64d5940a",
+      "sha256": "f1553d8900fa1cce125cc6e12dcff03bc2f848aa5d2d0a1073f481fea6c636db",
+      "theme": "dark"
+    },
+    {
+      "stage": "upgrade",
+      "js": "/assets/index-Bkin-XgM.js",
+      "deepLink": "#library?file=6d11e8ef-2b4c-4fcc-84c9-097d64d5940a",
+      "sha256": "f1553d8900fa1cce125cc6e12dcff03bc2f848aa5d2d0a1073f481fea6c636db",
+      "theme": "dark"
+    },
+    {
+      "stage": "rollback",
+      "js": "/assets/index-CpsGwWLI.js",
+      "deepLink": "#library?file=6d11e8ef-2b4c-4fcc-84c9-097d64d5940a",
+      "sha256": "f1553d8900fa1cce125cc6e12dcff03bc2f848aa5d2d0a1073f481fea6c636db",
+      "theme": "dark"
+    },
+    {
+      "stage": "reupgrade",
+      "js": "/assets/index-Bkin-XgM.js",
+      "deepLink": "#library?file=6d11e8ef-2b4c-4fcc-84c9-097d64d5940a",
+      "sha256": "f1553d8900fa1cce125cc6e12dcff03bc2f848aa5d2d0a1073f481fea6c636db",
+      "theme": "dark"
+    },
+    {
+      "stage": "offline",
+      "js": "/assets/index-Bkin-XgM.js",
+      "deepLink": "#library?file=6d11e8ef-2b4c-4fcc-84c9-097d64d5940a",
+      "sha256": "f1553d8900fa1cce125cc6e12dcff03bc2f848aa5d2d0a1073f481fea6c636db",
+      "theme": "dark"
+    }
+  ]
+}

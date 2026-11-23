@@ -1,0 +1,55 @@
+{
+  "browser": "153.0.8010.12",
+  "trace": [
+    {
+      "kind": "compositionstart",
+      "key": null,
+      "composing": null
+    },
+    {
+      "kind": "input",
+      "key": null,
+      "composing": true
+    },
+    {
+      "kind": "keydown",
+      "key": "Escape",
+      "composing": true
+    },
+    {
+      "kind": "cancel",
+      "key": null,
+      "composing": null
+    },
+    {
+      "kind": "keyup",
+      "key": "Escape",
+      "composing": true
+    },
+    {
+      "kind": "input",
+      "key": null,
+      "composing": true
+    },
+    {
+      "kind": "input",
+      "key": null,
+      "composing": true
+    },
+    {
+      "kind": "compositionend",
+      "key": null,
+      "composing": null
+    },
+    {
+      "kind": "keydown",
+      "key": "Enter",
+      "composing": false
+    },
+    {
+      "kind": "keyup",
+      "key": "Enter",
+      "composing": false
+    }
+  ]
+}

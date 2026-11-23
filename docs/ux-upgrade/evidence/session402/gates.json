@@ -1,0 +1,107 @@
+[
+  {
+    "suite": "SQL baseline",
+    "revision": "d52ccc0",
+    "log": "baseline.log",
+    "sha256": "7927fcbc61ce9774f5d69b5fd4a46aab61a6a7145b763b1f9eec3fa790f30f68",
+    "result": ["1 passed (5.1s)"]
+  },
+  {
+    "suite": "SQL range bounds",
+    "revision": "4cf727e",
+    "log": "candidate.log",
+    "sha256": "96961c83f843c4c2ce9831f995c2f456095a132ad9e3f15d6bdfbd64f22004f2",
+    "result": ["1 passed (3.9s)"]
+  },
+  {
+    "suite": "SQL, integrity and HTTP tests",
+    "revision": "4cf727e",
+    "log": "target-tests.log",
+    "sha256": "6b4c39a2ce9f4f418e22db3de0e071b9de95afe83e7ff190067ab1db43f52516",
+    "result": ["Test Files  4 passed (4)", "Tests  138 passed (138)"]
+  },
+  {
+    "suite": "PDF reader",
+    "revision": "4cf727e",
+    "log": "reader-verified.log",
+    "sha256": "d06dc2a90a2bf9eead281de0cb24f2c184f860f1e137e963d49cec4025503b7d",
+    "result": ["6 passed (45.4s)"]
+  },
+  {
+    "suite": "Dark PDF reader",
+    "revision": "4cf727e",
+    "log": "reader-dark.log",
+    "sha256": "8bad57b3243b695bd24eb5f6b5f8f1ede6ca5a5d8ba6110772639a995b2f2fce",
+    "result": ["4 passed (25.6s)"]
+  },
+  {
+    "suite": "320 CSS pixels and forced colors",
+    "revision": "4cf727e",
+    "log": "narrow.log",
+    "sha256": "e0253c20bada627eb4f839bf83f2e2fb195c85be0b9ec5d0641f5b5d94aac029",
+    "result": ["1 passed (9.2s)"]
+  },
+  {
+    "suite": "Reproduce input-method cancellation",
+    "revision": "4cf727e",
+    "log": "ime-before.log",
+    "sha256": "5b98736b220aa8e4760da39107c5d61e1f4539135dddff443aad6f2623ed3cdd",
+    "result": ["1 failed"]
+  },
+  {
+    "suite": "Folder composition events",
+    "revision": "8256fa7",
+    "log": "ime-after.log",
+    "sha256": "b62f4b02b64b3b162285e5bdff03efaf267b6828347a2ac4f50e0972fbd15bc2",
+    "result": ["3 passed (24.2s)"]
+  },
+  {
+    "suite": "Combined personal journeys",
+    "revision": "8256fa7",
+    "log": "personal-final.log",
+    "sha256": "931bbe6692cf0f809396b0ce5cfe878f59451e1a8e0b0c45c9bdc6b5216732c8",
+    "result": ["9 passed (57.5s)"]
+  },
+  {
+    "log": "check.log",
+    "revision": "Started at reading candidate; final build includes the dialog fix",
+    "suite": "Complete pnpm check",
+    "sha256": "f0d11b6c1288ef58bcc8c9d541848ba7d5a9bd20ff4fc13963d29a9c6b447459",
+    "result": [
+      "Tasks:    11 successful, 11 total",
+      "Test Files  309 passed (309)",
+      "Tests  1592 passed (1592)",
+      "Tasks:    2 successful, 2 total"
+    ]
+  },
+  {
+    "log": "personal-dialog.log",
+    "revision": "bba4419",
+    "suite": "Final personal journeys with browser IME",
+    "sha256": "9cf9d85fffffe5e580c02c6539095136e1a272e414221649637370d98b7a16b6",
+    "result": ["9 passed (1.1m)"]
+  },
+  {
+    "log": "dialog-compat.log",
+    "revision": "bba4419",
+    "suite": "Dialog compatibility",
+    "sha256": "659b68f28c0213a1f1dac07d5518aa0baa5fc5a34045349c766d1a9237f7f571",
+    "result": ["6 passed (50.3s)"]
+  },
+  {
+    "log": "dark-final.log",
+    "revision": "bba4419 with folder test selected",
+    "suite": "Full dark-mode browser suite",
+    "sha256": "a8e85e9c79cc128525d2df7ef16e24658caa61b6df54dd30b92eaced5e15a0c7",
+    "result": ["44 passed (2.6m)"]
+  },
+  {
+    "log": "rollback.log",
+    "revision": "60553a4 to bba4419",
+    "suite": "Local Web upgrade and rollback",
+    "sha256": "d6fd57a3962849014df71fa98d0d3c67c23c407da5225d278d43127837ad1059",
+    "result": [
+      "Five stages preserved the same link, theme and downloaded SHA-256"
+    ]
+  }
+]
