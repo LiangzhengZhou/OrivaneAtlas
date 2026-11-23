@@ -20478,3 +20478,66 @@ test("graph search bounds the visible results and supports keyboard selection an
       .filter({ hasText: label.split(" / ").at(-1) ?? label }),
   ).toBeVisible();
 });
+
+test("calendar week day and agenda preserve leap-day context and show only scheduled days", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.calendar);
+  const modes = page.getByRole("group", {
+    name: zh ? "日历视图" : "Calendar views",
+  });
+  const mode = (cn: string, en: string) =>
+    modes.getByRole("button", { name: zh ? cn : en, exact: true });
+  const date = page.getByLabel(zh ? "选择日期" : "Choose date", {
+    exact: true,
+  });
+  await mode("周", "Week").click();
+  await date.fill("2028-02-29");
+  const list = page.locator(".calendar-period-list");
+  await expect(list.getByRole("button")).toHaveCount(7);
+  await expect(list.locator('[aria-pressed="true"]')).toContainText("29");
+  await mode("日", "Day").click();
+  await page
+    .getByRole("button", { name: zh ? "下一时段" : "Next period" })
+    .click();
+  await expect(date).toHaveValue("2028-03-01");
+  await page
+    .getByRole("button", { name: zh ? "上一时段" : "Previous period" })
+    .click();
+  await expect(date).toHaveValue("2028-02-29");
+  await mode("议程", "Agenda").click();
+  await expect(list.getByRole("status")).toHaveText(
+    zh ? "本月没有日程" : "No entries this month",
+  );
+  await page
+    .locator(".agenda-panel")
+    .getByRole("button", { name: zh ? "+ 任务" : "+ Task", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog
+    .getByLabel(w.work.title, { exact: true })
+    .fill("Leap day review");
+  await dialog
+    .getByRole("button", { name: w.common.create, exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(list.getByRole("button")).toHaveCount(1);
+  await expect(list.getByRole("button")).toContainText(
+    zh ? "任务 · 1" : "Tasks · 1",
+  );
+  await expect(page.locator(".agenda-panel")).toContainText("Leap day review");
+  await page.screenshot({ path: info.outputPath("calendar-agenda.png") });
+  await mode("周", "Week").click();
+  await nav(page, w.desk.tasks);
+  await nav(page, w.desk.calendar);
+  await expect(mode("周", "Week")).toHaveAttribute("aria-pressed", "true");
+  await expect(date).toHaveValue("2028-02-29");
+  await mode("月", "Month").click();
+  await expect(
+    page.locator('.calendar-day[aria-pressed="true"]'),
+  ).toHaveAttribute("aria-label", "2028-02-29");
+});

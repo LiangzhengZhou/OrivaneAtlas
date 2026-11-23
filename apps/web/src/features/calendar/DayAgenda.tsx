@@ -73,6 +73,30 @@ export function DayAgenda({
           </Button>
         )}
       </div>
+      {!groups.some((group) => group.entries.length) &&
+        !summary.reminders.length &&
+        !summary.journals.length &&
+        !summary.recurrence.length && (
+          <p className="muted">
+            {zh ? "这一天没有日程" : "No entries for this day"}
+          </p>
+        )}
+      {summary.recurrence.length > 0 && (
+        <section className="calendar-agenda-section">
+          <h3>{zh ? "重复任务实例" : "Recurring task occurrences"}</h3>
+          <ul>
+            {summary.recurrence.map(
+              ({ id, payload }) =>
+                payload.kind === "OCCURRENCE" && (
+                  <li key={id}>
+                    {payload.ruleSnapshot?.title || t("workflows.recurrences")}{" "}
+                    · {t(`workflows.${payload.status}`)}
+                  </li>
+                ),
+            )}
+          </ul>
+        </section>
+      )}
       {groups
         .filter((group) => group.entries.length > 0)
         .map((group) => (

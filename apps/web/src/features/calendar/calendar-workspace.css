@@ -1,3 +1,38 @@
+.calendar-modes,
+.calendar-period-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.calendar-modes [aria-pressed="true"],
+.calendar-period-list [aria-pressed="true"] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.calendar-period .calendar-month-header,
+.calendar-period .calendar-controls {
+  flex-wrap: wrap;
+}
+.calendar-period-list {
+  display: grid;
+  gap: var(--space-1);
+}
+.calendar-period-list button {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  min-height: 44px;
+  text-align: start;
+}
+.calendar-period-list small {
+  color: var(--text-secondary);
+}
+@media (forced-colors: active) {
+  .calendar-modes [aria-pressed="true"],
+  .calendar-period-list [aria-pressed="true"] {
+    border: 2px solid Highlight;
+  }
+}
 .calendar-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;

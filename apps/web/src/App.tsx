@@ -81,6 +81,7 @@ import { DocumentWorkspace, type WorkspaceRequest } from "./DocumentWorkspace";
 import { AssistantPane } from "./features/ai/AssistantPane";
 import { AtlasFloatingSurface } from "./features/ai/AtlasFloatingSurface";
 import { parseConversationRoute } from "./features/ai/conversation-route";
+import type { CalendarViewState } from "./features/calendar/CalendarWorkspace";
 import { FileLinkContext } from "./features/files/FileLinkContext";
 import { FilesWorkspace } from "./features/files/FilesWorkspace";
 import { parseFileHash } from "./features/files/fileRoute";
@@ -986,10 +987,12 @@ function Workbench({
   );
   const calendarDay = localCalendarDay(calendarInstant, calendarTimezone);
   const [calendarViewStore] = useState(() =>
-    createViewStore(
+    createViewStore<CalendarViewState>(
       { month: calendarDay.slice(0, 7), selected: calendarDay },
       (previous, next) =>
-        previous.month === next.month && previous.selected === next.selected,
+        previous.month === next.month &&
+        previous.selected === next.selected &&
+        previous.mode === next.mode,
     ),
   );
   const initialCalendarDay = useRef(calendarDay);
@@ -1000,7 +1003,7 @@ function Workbench({
     calendarViewStore.set((previous) =>
       previous.selected === initialCalendarDay.current &&
       previous.month === initialCalendarDay.current.slice(0, 7)
-        ? { month: calendarDay.slice(0, 7), selected: calendarDay }
+        ? { ...previous, month: calendarDay.slice(0, 7), selected: calendarDay }
         : previous,
     );
   }, [loading, calendarDay, calendarViewStore]);
