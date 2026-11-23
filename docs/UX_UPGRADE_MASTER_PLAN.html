@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>OrivaneAtlas 全面 UX 升级实施总纲</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+<style>
+:root{--bg:#f4f1eb;--paper:#fffdfa;--surface:#f8f6f1;--ink:#292d33;--muted:#73736f;--line:#e7e1d8;--brand:#526174;--brand-soft:#e8edf1;--sage:#788875;--sage-soft:#edf1eb;--clay-soft:#f4ebe5;--shadow:0 14px 40px rgba(48,48,42,.07);--radius:18px;--max:1180px}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:86px}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.78 Inter,"SF Pro Text","Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+a{color:#536b83;text-underline-offset:3px}.topbar{position:sticky;top:0;z-index:20;background:rgba(250,248,243,.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
+.topbar-inner{max-width:var(--max);margin:auto;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:11px;font-weight:750;letter-spacing:.04em}.brand-mark{width:34px;height:34px;border-radius:12px;background:var(--brand);color:white;display:grid;place-items:center;font-size:18px}.brand small{display:block;font-size:10px;letter-spacing:.15em;color:var(--muted)}
+.pill{font-size:11px;padding:4px 10px;border:1px solid var(--line);border-radius:99px;color:var(--muted);background:var(--paper)}
+.layout{max-width:var(--max);margin:28px auto 70px;padding:0 24px;display:grid;grid-template-columns:245px minmax(0,1fr);gap:24px}
+.toc{position:sticky;top:80px;align-self:start;max-height:calc(100vh - 100px);overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:16px 13px;box-shadow:var(--shadow)}
+.toc h3{font-size:11px;letter-spacing:.14em;color:var(--muted);margin:2px 10px 12px}.toc a{display:block;padding:7px 10px;border-radius:9px;text-decoration:none;color:#656762;font-size:12px;line-height:1.5}.toc a:hover,.toc a.active{background:var(--brand-soft);color:var(--brand)}
+main{min-width:0}.hero{background:linear-gradient(135deg,#e9e5dc,#f8f6f1 58%,#e8eceb);border:1px solid #e1dbd1;border-radius:25px;padding:40px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.hero:after{content:"";position:absolute;width:250px;height:250px;border:1px solid rgba(82,97,116,.13);border-radius:50%;right:-65px;top:-80px;box-shadow:0 0 0 28px rgba(82,97,116,.035),0 0 0 58px rgba(82,97,116,.025)}
+.eyebrow{font-size:11px;letter-spacing:.18em;color:var(--brand);font-weight:750}.hero h1{font-size:clamp(30px,4vw,46px);line-height:1.16;letter-spacing:-.04em;margin:13px 0;max-width:750px}.hero p{font-size:16px;color:#62635f;max-width:760px}
+.hero-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}.hero-meta span{font-size:12px;padding:6px 11px;border-radius:99px;background:#ffffffa8;border:1px solid #7772}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin:16px 0 26px}.metric{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px}.metric b{display:block;font-size:19px}.metric span{font-size:11px;color:var(--muted)}
+section{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:28px;margin:17px 0;box-shadow:0 6px 24px #30302a08}
+h1{font-size:30px;line-height:1.25}h2{font-size:24px;line-height:1.3;letter-spacing:-.025em;margin:0 0 17px;padding-bottom:12px;border-bottom:1px solid var(--line)}h3{font-size:18px;margin:25px 0 9px}h4{font-size:14px;margin:19px 0 7px}
+p{margin:9px 0}li{margin:5px 0}ul,ol{padding-left:1.5em}blockquote{margin:17px 0;padding:13px 17px;border-left:3px solid var(--sage);background:var(--sage-soft);border-radius:0 12px 12px 0}
+code{font-family:Consolas,monospace;font-size:.88em;background:#f0eee9;border:1px solid #e7e2d9;padding:2px 5px;border-radius:5px}pre{overflow:auto;background:#252a30;color:#e9e8e3;padding:17px;border-radius:13px;line-height:1.6}pre code{background:none;border:0;color:inherit}
+table{width:100%;border-collapse:collapse;display:block;overflow-x:auto;font-size:13px;margin:15px 0}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;min-width:105px}th{background:var(--surface);color:#555b60;font-weight:650}tr:hover td{background:#fbfaf7}
+hr{border:0;border-top:1px solid var(--line);margin:27px 0}.footer{color:var(--muted);font-size:12px;text-align:center;padding:24px}
+@media(max-width:900px){.layout{grid-template-columns:1fr}.toc{position:relative;top:auto;max-height:250px}.metrics{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.layout{padding:0 12px;margin-top:13px}.hero{padding:26px 20px}.hero h1{font-size:31px}section{padding:21px 17px}.topbar-inner{padding:10px 14px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style></head>
+<body>
+<div class="topbar"><div class="topbar-inner">
+<div class="brand"><div class="brand-mark">✧</div><div>ORIVANE ATLAS<small>UX UPGRADE MASTER PLAN</small></div></div>
+<div><span class="pill">MASTER SPECIFICATION</span> <span class="pill">v1.0</span></div>
+</div></div>
+<div class="layout"><aside class="toc"><h3>执行目录 · CONTENTS</h3><a class="toc-link" data-level="1" href="#orivaneatlas-全面-ux品牌与产品体验升级实施总纲">OrivaneAtlas
+全面 UX、品牌与产品体验升级实施总纲</a><a class="toc-link" data-level="2" href="#最终任务定义">0. 最终任务定义</a><a class="toc-link" data-level="2" href="#仓库事实与审查起点">1. 仓库事实与审查起点</a><a class="toc-link" data-level="2" href="#不可违反的工程约束">2. 不可违反的工程约束</a><a class="toc-link" data-level="2" href="#agent-开始前的必做工作">3. Agent 开始前的必做工作</a><a class="toc-link" data-level="2" href="#全新品牌系统与-design-system">4. 全新品牌系统与 Design
+System</a><a class="toc-link" data-level="2" href="#全产品模块升级范围">5. 全产品模块升级范围</a><a class="toc-link" data-level="2" href="#统一交互规则">6. 统一交互规则</a><a class="toc-link" data-level="2" href="#响应式与跨平台">7. 响应式与跨平台</a><a class="toc-link" data-level="2" href="#性能与可用性目标">8. 性能与可用性目标</a><a class="toc-link" data-level="2" href="#工程重构要求">9. 工程重构要求</a><a class="toc-link" data-level="2" href="#测试与验收矩阵">10. 测试与验收矩阵</a><a class="toc-link" data-level="2" href="#发布迁移与回滚">11. 发布、迁移与回滚</a><a class="toc-link" data-level="2" href="#执行方式全目标可暂停可恢复">12.
+执行方式：全目标、可暂停、可恢复</a><a class="toc-link" data-level="2" href="#最终交付清单">13. 最终交付清单</a><a class="toc-link" data-level="2" href="#最终报告格式">14. 最终报告格式</a></aside><main>
+<div class="hero"><div class="eyebrow">ORIVANE ATLAS · PRODUCT EXPERIENCE PROGRAM</div>
+<h1>全面 UX、品牌与产品体验升级</h1>
+<p>面向完整产品交付的实施总纲。目标不是给旧界面换皮，而是建立统一品牌、设计系统、资源管理体验、全模块交互和可靠的工程交付体系。</p>
+<div class="hero-meta"><span>方向 C · 柔和 × 专业</span><span>全产品范围</span><span>可暂停 / 可恢复</span><span>数据安全优先</span></div></div>
+<div class="metrics">
+<div class="metric"><b>全产品</b><span>覆盖所有主要模块，不止文件库</span></div>
+<div class="metric"><b>统一系统</b><span>品牌、Token、组件与交互规范</span></div>
+<div class="metric"><b>渐进实施</b><span>分阶段执行，但不缩小最终范围</span></div>
+<div class="metric"><b>证据验收</b><span>测试、截图、迁移和回滚记录</span></div>
+</div>
+
+<h1 id="orivaneatlas-全面-ux品牌与产品体验升级实施总纲">OrivaneAtlas
+全面 UX、品牌与产品体验升级实施总纲</h1>
+<blockquote>
+<p>项目：OrivaneAtlas<br />
+目标：在保留既有业务能力、数据安全与兼容性的前提下，完成全产品范围的品牌重塑、设计系统升级、信息架构优化、交互重构、资源中心重做、各功能模块体验升级，以及对应的工程质量和发布验收。<br />
+执行对象：具备仓库读写、终端、测试和必要浏览器/桌面验证能力的工程
+Agent。<br />
+本文是完整目标和执行契约，不是某一个 Sprint 的局部任务单。</p>
+</blockquote>
+<hr />
+<h2 id="最终任务定义">0. 最终任务定义</h2>
+<p>你受托完成 OrivaneAtlas
+的<strong>全产品体验升级</strong>，不是只做文件库，不是只换主题，不是只产出设计稿，也不是只提交一份建议。</p>
+<p>最终需要交付一个可构建、可运行、经过测试、具备迁移与回滚方案的产品版本，至少覆盖：</p>
+<ol type="1">
+<li>全新品牌视觉系统：品牌定位表达、Logo/图标资产策略、色彩、字体、图标、插画、动效和跨平台品牌一致性。</li>
+<li>完整 Design System：设计
+Token、基础组件、复合组件、页面布局模式、交互状态、无障碍和响应式规则。</li>
+<li>全局应用
+Shell：侧边栏、顶栏、导航、页面标题、搜索、命令面板、通知、同步状态、浮层和移动导航。</li>
+<li>文件库 /
+资源中心：重新设计信息架构、统一资源浏览、文件夹体验、搜索筛选、列表/网格、预览、详情、上传、批量操作、关联关系与回收站体验。</li>
+<li>笔记、日记、文档、知识空间、项目、任务、日历、图谱、AI
+Assistant、账户/设置、通知等所有主要模块的体验一致性升级。</li>
+<li>Web、Windows/Tauri、Android 等现有目标平台的适配和行为一致性。</li>
+<li>前端结构、样式组织、状态管理、性能、测试和文档的配套升级。</li>
+<li>生产运维体验：同步状态可理解、错误可恢复、备份恢复说明准确、发布与迁移安全。</li>
+<li>完整验收报告：问题、决策、变更、测试证据、未完成项、已知限制、发布与回滚步骤。</li>
+</ol>
+<p><strong>允许分阶段实施、允许 Agent
+因上下文、时间、工具或安全原因暂停并报告；不允许把最终目标缩小成一个局部模块，不允许将”阶段性报告”冒充最终交付。</strong>
+每次暂停必须保存状态，说明已完成、未完成、阻塞原因、证据和下一步。后续继续时必须从检查点恢复，直到全目标完成或明确报告客观无法完成的阻塞。</p>
+<h2 id="仓库事实与审查起点">1. 仓库事实与审查起点</h2>
+<p>目标仓库：<code>https://github.com/LiangzhengZhou/OrivaneAtlas</code><br />
+默认分支：<code>main</code></p>
+<p>已观察到的工程结构和事实（Agent
+必须重新核对当前工作树，不可将本节当成永远不变的现状）：</p>
+<ul>
+<li>pnpm workspace / Turborepo / TypeScript / React 19 / Vite。</li>
+<li>Tauri 2 + Rust 原生层；仓库含 Android 生成工程和原生插件代码。</li>
+<li>主要目录包括
+<code>apps/web</code>、<code>packages/application</code>、<code>packages/domain</code>、<code>packages/host</code>、<code>packages/storage-local</code>、<code>packages/storage-memory</code>、<code>packages/storage-sqlite</code>、<code>packages/storage-postgres</code>、<code>packages/wiki-core</code>、<code>src-tauri</code>、<code>tests</code>、<code>docs</code>。</li>
+<li>前端已有
+<code>styles/tokens.css</code>、<code>themes.css</code>、<code>palettes.css</code>、<code>shell.css</code>、<code>components.css</code>
+等设计样式基础；已有主题与密度机制。应升级和收敛现有体系，避免并行建立互不兼容的第二套系统。</li>
+<li>已有
+<code>FilesWorkspace.tsx</code>、<code>LibraryView.tsx</code>、<code>FileDetail.tsx</code>、<code>FolderTree.tsx</code>、图片/PDF/文件解析相关实现，应优先复用和梳理，不可盲目重写。</li>
+<li>领域模型区分 Note、Library
+Space/Document、LibraryFile、Folder、ProjectMaterial
+等对象。<code>Document.spaceId</code>
+当前被定义为规范所有权边界；不能为了 UI 方便直接移除或弱化其语义。</li>
+<li><code>FolderLink</code>、<code>SpaceFolderLink</code>、<code>ProjectFolderLink</code>
+是不同关系，变更前必须读领域模型、ADR、迁移和权限实现。</li>
+<li>同步系统包含本地存储、Outbox、Receipt、版本校验、增量拉取、冲突与恢复等机制；不得以视觉简化为由绕过同步协议。</li>
+<li>历史文档和验收记录有不同时间、状态和范围。必须以当前
+<code>main</code> 源码、当前测试和当前部署证据为准。</li>
+<li>已观察到 README / Self-hosting
+等文档中存在与仓库版本、迁移版本不一致的历史数字。Agent
+必须校准，但不可猜测实际部署版本。</li>
+<li>已观察到部分大文件，例如
+<code>App.tsx</code>、<code>bootstrap.ts</code>、<code>packages/host/src/server.ts</code>。大文件是审查线索，不等于必须按行数拆分；必须按职责、依赖和可测试性决定重构。</li>
+</ul>
+<h2 id="不可违反的工程约束">2. 不可违反的工程约束</h2>
+<h3 id="数据安全与兼容">2.1 数据安全与兼容</h3>
+<ul>
+<li>不删除、重建、清空或覆盖任何用户数据库、真实用户缓存、未跟踪文件、生产文件或密钥。</li>
+<li>不执行
+<code>git reset --hard</code>、<code>git clean</code>、危险数据库重置、未经批准的生产迁移或发布。</li>
+<li>不将真实用户数据用于测试；测试必须使用隔离 fixture / 临时数据库 /
+独立 profile。</li>
+<li>数据迁移必须可审查、具备迁移前备份建议、迁移后校验和明确回滚策略。不可逆迁移必须标注，并提供安全恢复路径。</li>
+<li>保持 Workspace / Principal / Actor /
+私有资源的授权边界。任何统一资源查询必须在服务端或可信 Application
+边界做权限过滤，不能只靠前端隐藏。</li>
+<li>不绕过
+CAS、版本检查、Revision、UnitOfWork、事务、Outbox/ACK、Mutation
+Receipt、幂等键或冲突审查。</li>
+<li>文件元数据与二进制内容必须保持一致性；上传、恢复、删除、清理都要考虑失败和重试。</li>
+<li>旧数据、旧客户端、已有用户主题偏好和 URL
+深链应尽量兼容。破坏性变更必须给出迁移与兼容方案。</li>
+</ul>
+<h3 id="架构边界">2.2 架构边界</h3>
+<ul>
+<li>保持并强化 <code>UI → Application → Domain / Ports → Adapters</code>
+依赖方向。</li>
+<li>UI 不直接执行 SQL、不调用 Provider
+SDK、不实现授权判定、不拼装跨权限资源事实。</li>
+<li>不为了”现代架构”盲目引入微服务、事件总线、状态管理框架或新数据库。</li>
+<li>优先 Modular Monolith、Feature-oriented Frontend、明确的
+Query/Command、可测试的 Application Service。</li>
+<li>仅在真实痛点和测量证据支持时引入
+CQRS、虚拟列表、缓存、Worker、异步任务等机制。</li>
+<li>新依赖必须说明必要性、维护成本、许可证、包体积和替代方案。</li>
+<li>不以大量防御性抽象、重复状态、无意义 wrapper
+或只为测试样式而制造复杂度。</li>
+</ul>
+<h3 id="uiux-原则">2.3 UI/UX 原则</h3>
+<ul>
+<li>方向为 C：<strong>现代编辑型 +
+专业工作台</strong>。整体柔和、清晰、内容优先；复杂场景保留专业密度和高效操作。</li>
+<li>品牌视觉系统整体重新设计，不强制保留旧紫色作为主品牌色；品牌决策需通过完整方案统一，不可每个模块自行选色。</li>
+<li>不复制 Claude、Notion、Linear、Craft
+等产品的品牌或具体界面；可以学习通用交互范式。</li>
+<li>设计必须覆盖 Light /
+Dark、桌面、窄屏、移动端、键盘操作、Focus、Hover、Disabled、Loading、Empty、Error、Success
+等状态。</li>
+<li>避免大面积纯白/纯黑、过度卡片套卡片、过量胶囊、过重阴影、无意义渐变、全屏玻璃、过度动画和视觉噪音。</li>
+<li>动效遵守 <code>prefers-reduced-motion</code>；颜色满足 WCAG 2.2 AA
+对比度目标；交互目标尺寸考虑触控。</li>
+<li>不可仅凭截图美化；必须验证真实任务流程和大量数据场景。</li>
+</ul>
+<h2 id="agent-开始前的必做工作">3. Agent 开始前的必做工作</h2>
+<ol type="1">
+<li>检查分支、HEAD、工作树状态、未提交变更、当前运行进程和测试进程。保护已有改动，不覆盖他人工作。</li>
+<li>读取
+<code>AGENTS.md</code>、README、开发指南、架构文档、领域模型、数据所有权、同步协议、ADR、UI/UX
+审查、Self-hosting、安全策略、CI 工作流。</li>
+<li>核对当前版本、数据库迁移最新版本、正式发布版本、部署版本之间的差异。分别记录，不得混为一谈。</li>
+<li>运行或检查现有质量基线：lint、typecheck、unit、contract、build、e2e、native。若环境不支持，记录原因和替代验证。</li>
+<li>建立当前 UI
+基线：桌面常见尺寸、窄屏、移动端、浅色、深色。记录关键页面截图、明显交互缺陷和任务完成路径。</li>
+<li>建立全模块页面清单和功能清单，确认哪些路由、视图和平台是真正存在的。</li>
+<li>盘点 CSS 加载顺序、Token
+覆盖、重复选择器、硬编码颜色、全局样式泄漏、主题/密度偏好持久化。</li>
+<li>盘点资源实体、关系、API、Application
+Query、权限、同步、删除恢复、预览和上传路径。</li>
+<li>建立 <code>docs/ux-upgrade/</code>
+作为本次审计、决策、计划、验收和进度记录目录；如果仓库已有约定目录，遵从现有约定。</li>
+<li>在开始实质修改前提交一份简短的基线报告和总实施任务树，但不要停在计划阶段；在安全范围内继续执行。</li>
+</ol>
+<h2 id="全新品牌系统与-design-system">4. 全新品牌系统与 Design
+System</h2>
+<h3 id="品牌设计交付">4.1 品牌设计交付</h3>
+<p>形成完整品牌规范，至少包括：</p>
+<ul>
+<li>品牌定位、设计关键词、视觉原则、语气与命名。</li>
+<li>主标志、横向字标、图形标、应用图标、favicon、通知图标。</li>
+<li>图标在 16/20/24/32/48/64/128/256px 的可识别性。</li>
+<li>Windows、Android、Web、Tauri 原生资源一致性。</li>
+<li>中文和英文的字体栈、字号、字重、行高、字距。</li>
+<li>主色、辅助色、强调色、语义色、浅色/深色主题。</li>
+<li>空状态插画、引导图、资源类型图标、状态图标规范。</li>
+<li>品牌动效与过渡规范。</li>
+<li>不同背景、尺寸、明暗模式下的 Logo 使用规则。</li>
+</ul>
+<p>不要把本文件中的概念色值当成已批准最终色板。Agent
+应提交至少两套有明确差异的品牌方案，基于真实 UI
+组件制作应用场景对比，选择一套并说明理由。若用户没有参与即时确认，采用最符合已确认方向
+C 的方案，记录决策，不得无限等待确认。</p>
+<h3 id="token-架构">4.2 Token 架构</h3>
+<p>建立单一事实来源，建议分层：</p>
+<ul>
+<li>Primitive tokens：基础色阶、字号、间距、圆角、阴影、动效时长。</li>
+<li>Semantic
+tokens：canvas、surface、text、border、accent、success、warning、danger、focus。</li>
+<li>Component tokens：按钮、输入、导航、列表、弹窗、菜单、卡片。</li>
+<li>Density tokens：comfortable / compact。</li>
+<li>Platform tokens：desktop / narrow / touch。</li>
+<li>Theme tokens：light / dark。</li>
+</ul>
+<p>所有组件优先使用语义
+Token。禁止新代码直接硬编码设计颜色、圆角、阴影和尺寸，少量不可避免的图表/图片/品牌资源除外。逐步清理旧
+CSS，但不可用一次性全局替换造成回归。</p>
+<h3 id="组件系统">4.3 组件系统</h3>
+<p>统一基础组件：</p>
+<ul>
+<li>Button / IconButton / SplitButton</li>
+<li>TextField / SearchField / Textarea / Select / Combobox</li>
+<li>Checkbox / Radio / Switch / SegmentedControl</li>
+<li>Tabs / Breadcrumbs / Pagination</li>
+<li>Tooltip / Popover / Dropdown / ContextMenu</li>
+<li>Dialog / Drawer / CommandMenu</li>
+<li>Toast / InlineNotice / Progress / Skeleton</li>
+<li>ListRow / ResourceRow / Card / EmptyState</li>
+<li>Sidebar / PageHeader / Toolbar / SplitPane / Inspector</li>
+<li>Dropzone / UploadQueue / PreviewHost</li>
+</ul>
+<p>组件必须有完整状态、键盘行为、ARIA
+语义、焦点管理和测试。避免将业务逻辑塞入通用组件。</p>
+<h3 id="全局布局模式">4.4 全局布局模式</h3>
+<p>建立统一：</p>
+<ul>
+<li>Application Shell</li>
+<li>Global Navigation</li>
+<li>Page Header</li>
+<li>Search / Command Surface</li>
+<li>Content Container</li>
+<li>Split View</li>
+<li>Inspector Panel</li>
+<li>Responsive Drawer</li>
+<li>Empty / Loading / Error layouts</li>
+</ul>
+<p>各页面可以有差异，但不能各自重新发明导航、标题、间距和浮层行为。</p>
+<h2 id="全产品模块升级范围">5. 全产品模块升级范围</h2>
+<p>必须逐个审查并完成以下模块，而不是只升级文件库：</p>
+<h3 id="全局-shell-与导航">5.1 全局 Shell 与导航</h3>
+<ul>
+<li>侧边栏层级、分组、选中状态、折叠态、工具提示。</li>
+<li>顶栏高度、搜索、新建、通知和同步状态布局。</li>
+<li>页面标题、面包屑、主操作位置。</li>
+<li>Command Palette 与快捷键。</li>
+<li>移动端导航和窄屏抽屉。</li>
+<li>导航排序/固定行为。</li>
+<li>避免无意义计数和重复操作入口。</li>
+</ul>
+<h3 id="dashboard-总览">5.2 Dashboard / 总览</h3>
+<ul>
+<li>展示真正可行动的信息，而非装饰性统计。</li>
+<li>今日任务、近期项目、最近资源、待处理事项。</li>
+<li>信息优先级清晰，模块可收敛，空状态有引导。</li>
+<li>首屏内容密度适中，加载分区化。</li>
+</ul>
+<h3 id="文件库-资源中心重点模块">5.3 文件库 / 资源中心（重点模块）</h3>
+<p>目标：成为统一、可扩展、可理解的资源管理入口。</p>
+<h4 id="信息架构">信息架构</h4>
+<p>建议资源中心入口包含：</p>
+<ul>
+<li>全部资源</li>
+<li>最近访问</li>
+<li>收藏</li>
+<li>我的文件夹</li>
+<li>项目资源</li>
+<li>回收站</li>
+</ul>
+<p>同时保持笔记、日记、知识空间原有专门工作流，不强迫用户只能从资源中心进入内容。</p>
+<h4 id="浏览器布局">浏览器布局</h4>
+<ul>
+<li>桌面宽屏：可调节三栏（目录 / 资源 / Inspector）。</li>
+<li>常规桌面：目录 + 资源，详情抽屉或可关闭 Inspector。</li>
+<li>窄屏：单栏，目录和详情作为 Drawer。</li>
+<li>移动端：全屏导航层或底部/侧边抽屉，触控目标适配。</li>
+<li>左侧目录支持树形层级、折叠、创建、重命名、移动、拖放排序、键盘操作。</li>
+<li>中间资源支持列表/网格、面包屑、筛选、排序、多选、批量操作。</li>
+<li>右侧 Inspector 支持元数据、预览、位置、项目/Space 关联、操作。</li>
+<li>列宽、面板开关、布局偏好可持久化，但不可污染跨账户/工作区状态。</li>
+</ul>
+<h4 id="资源类型">资源类型</h4>
+<p>统一浏览
+Note、Document、File，但不把它们错误地压成同一个数据库实体。通过类型安全的
+<code>ResourceRef</code> / View Model 统一展示：</p>
+<ul>
+<li>类型、标题、图标、更新时间、创建时间、位置、大小、MIME、关联项目/空间、可用操作。</li>
+<li>每种类型仍调用其正确的 Application Service 和权限路径。</li>
+<li>搜索、筛选和排序的语义一致；无效筛选、空结果、权限拒绝必须有明确反馈。</li>
+</ul>
+<h4 id="文件夹与关系">文件夹与关系</h4>
+<ul>
+<li>先检查现有
+<code>FolderLink</code>、<code>SpaceFolderLink</code>、<code>ProjectFolderLink</code>、Note
+primary folder 和 Document/File 归属语义。</li>
+<li>评估是否支持通用资源关联、多文件夹引用、主要归属位置、项目/Space
+关联。</li>
+<li>先实现统一读取投影和 UX，再决定是否改数据库。</li>
+<li>如需 Schema 变更，编写 ADR、迁移、数据回填、权限检查、同步
+replay、回滚/恢复方案。</li>
+<li>文件夹删除必须区分删除文件夹实体和删除资源；资源默认不因移除集合关系而被物理删除。</li>
+<li>回收站需明确软删除、恢复、永久删除、子树策略和引用清理。</li>
+<li>不允许跨 Workspace 关系，不允许 Folder
+循环，不允许无授权资源出现在搜索/计数/预览。</li>
+</ul>
+<h4 id="核心功能">核心功能</h4>
+<p>P0： - 创建/重命名/移动/删除文件夹。 - 面包屑。 -
+文件/文档/笔记区分。 - 搜索、类型筛选、排序。 - 列表/网格。 -
+上传、进度、失败重试。 - PDF/图片/Markdown/表格等受支持预览。 - 详情
+Inspector。 - 移动/重命名/删除/恢复。 - 空、加载、错误和权限状态。</p>
+<p>P1： - 多选、批量移动/删除/收藏。 - 拖放上传和文件夹移动。 -
+最近访问、收藏。 - 右键菜单。 - 快捷键。 - 项目资源筛选。 -
+文件夹图标/封面。 - 资源关联信息。</p>
+<p>P2： - 智能筛选视图。 - 重复文件识别。 - 文件内容全文搜索增强。 -
+资源关系可视化。 - 批量整理辅助。 - 大型集合性能优化。</p>
+<h4 id="文件预览">文件预览</h4>
+<p>建立 Preview Host + 类型 Provider。复用已有
+FileDetail、ImageViewer、文件解析和处理服务。PDF
+分页/按需加载；图片缩放与适配；Markdown
+渲染与编辑分离；表格安全预览；未知格式提供元数据、下载和外部打开。预览不能绕过权限或将私有文件变成公开
+URL。</p>
+<h4 id="上传队列">上传队列</h4>
+<ul>
+<li>多文件并行/限流策略。</li>
+<li>每个文件独立状态和重试。</li>
+<li>取消与失败处理。</li>
+<li>上传后进入当前目录或用户指定位置。</li>
+<li>元数据与二进制完成状态一致。</li>
+<li>支持拖入窗口、拖入目标文件夹。</li>
+<li>不因单个失败中断整个队列。</li>
+</ul>
+<h3 id="笔记与日记">5.4 笔记与日记</h3>
+<ul>
+<li>文件夹树、未归档、归档、回收站体验。</li>
+<li>列表密度、排序、搜索、批量选择。</li>
+<li>编辑器工具栏与内容区域层级。</li>
+<li>自动保存、保存中、保存失败状态。</li>
+<li>Markdown 预览、目录、Wiki 链接、反向链接。</li>
+<li>图片和附件体验。</li>
+<li>窄屏编辑和移动端键盘遮挡。</li>
+<li>日记按时间组织，避免与普通笔记重复呈现。</li>
+</ul>
+<h3 id="文档工作区">5.5 文档工作区</h3>
+<ul>
+<li>编辑/阅读模式切换。</li>
+<li>文档标题、目录、面包屑和保存状态。</li>
+<li>Slash Commands、快捷键、Undo/Redo。</li>
+<li>Diff/Merge、版本历史、冲突提示。</li>
+<li>图片、公式、表格、代码块、链接和 Wiki 自动补全。</li>
+<li>长文性能、滚动位置保持、编辑器焦点管理。</li>
+<li>右侧上下文和文档属性不干扰正文。</li>
+</ul>
+<h3 id="知识空间与知识图谱">5.6 知识空间与知识图谱</h3>
+<ul>
+<li>Space 创建、选择、介绍、封面和内容组织。</li>
+<li>Space 所有权、Project 关联、继承/链接关系清晰展示。</li>
+<li>图谱作用域和筛选可理解。</li>
+<li>节点/边详情、缩放、定位、搜索。</li>
+<li>大图谱布局性能、空图状态、无结果状态。</li>
+<li>区分任务依赖图与知识关系图，避免概念混淆。</li>
+</ul>
+<h3 id="项目管理">5.7 项目管理</h3>
+<ul>
+<li>项目列表、项目卡片/列表视图。</li>
+<li>项目详情与 Overview / Tasks / Knowledge。</li>
+<li>项目封面、摘要、状态、时间和关联资源。</li>
+<li>项目层级和导航。</li>
+<li>项目任务、里程碑、依赖图。</li>
+<li>归档、恢复、删除与批量操作。</li>
+<li>项目资源和知识空间关系可见但不过度复杂。</li>
+</ul>
+<h3 id="任务管理与专注">5.8 任务管理与专注</h3>
+<ul>
+<li>列表、看板、时间线/Gantt 的一致性。</li>
+<li>任务行布局、状态操作、优先级和截止时间。</li>
+<li>快速创建、快速编辑、批量操作。</li>
+<li>任务依赖和项目归属。</li>
+<li>正向计时器与独立 Focus Timer 的语义区分。</li>
+<li>完成确认、Undo、状态反馈。</li>
+<li>大量任务虚拟化和筛选性能。</li>
+</ul>
+<h3 id="日历与提醒">5.9 日历与提醒</h3>
+<ul>
+<li>月/周/日/Agenda 视图一致。</li>
+<li>日期和时区处理明确。</li>
+<li>创建提醒步骤简化。</li>
+<li>重复规则和跳过实例可理解。</li>
+<li>任务与日历联动。</li>
+<li>权限、通知许可、通知失败与重试状态。</li>
+<li>移动端日期选择和触控体验。</li>
+</ul>
+<h3 id="ai-assistant-agent">5.10 AI Assistant / Agent</h3>
+<ul>
+<li>对话、上下文、模型配置和审批边界清晰。</li>
+<li>消息流、工具活动、来源引用和错误状态可读。</li>
+<li>用户能理解哪些内容被提供给模型。</li>
+<li>提案、批准、应用、撤销区分明确。</li>
+<li>侧栏/浮窗不遮挡编辑内容。</li>
+<li>流式输出取消、超时和不确定发送状态清楚。</li>
+<li>不弱化现有权限过滤、Context Version、Provider Gateway、预算和 Agent
+治理。</li>
+</ul>
+<h3 id="账户设置与通知">5.11 账户、设置与通知</h3>
+<ul>
+<li>设置按任务分组，避免长页面和左右栏失衡。</li>
+<li>账户、安全、会话、工作区、同步、API/模型分区。</li>
+<li>高级信息折叠，危险操作隔离。</li>
+<li>通知分组、已读/未读、筛选和操作。</li>
+<li>同步状态区分连接、认证、绑定、Outbox、Pull、冲突。</li>
+<li>错误说明应有可执行恢复建议。</li>
+</ul>
+<h2 id="统一交互规则">6. 统一交互规则</h2>
+<p>所有主要页面统一以下行为：</p>
+<ul>
+<li>单击选择、双击打开的语义只在合适的资源浏览器中采用；其他区域不得产生冲突。</li>
+<li>Enter / Space / Escape / Tab / 方向键行为一致。</li>
+<li>Context Menu 不能覆盖输入框和原生编辑操作。</li>
+<li>Hover 不能是唯一的信息提示方式。</li>
+<li>破坏性操作必须有确认或可撤销策略。</li>
+<li>成功反馈短暂、安静；错误反馈明确、可操作。</li>
+<li>异步操作显示进度，不冻结整个页面。</li>
+<li>选中、聚焦、悬停、禁用、加载等状态必须视觉可区分。</li>
+<li>保留滚动位置和用户上下文，避免操作后无故跳回顶部。</li>
+<li>快捷键必须有帮助入口并避开系统/编辑器冲突。</li>
+<li>拖放必须有可见目标提示，并提供非拖放替代操作。</li>
+</ul>
+<h2 id="响应式与跨平台">7. 响应式与跨平台</h2>
+<p>至少验证：</p>
+<ul>
+<li>1920×1080 / 1440×900 / 1280×800 桌面。</li>
+<li>1024px 左右窄桌面。</li>
+<li>768px 平板断点。</li>
+<li>390px / 360px 手机宽度。</li>
+<li>Windows Tauri 窗口可缩放。</li>
+<li>Android 竖屏与软键盘。</li>
+<li>Light / Dark。</li>
+<li>Comfortable / Compact 密度。</li>
+</ul>
+<p>禁止仅通过 CSS 隐藏关键功能。移动端需有真实可用的替代交互。注意
+safe-area、软键盘、触控尺寸、滚动容器和焦点恢复。</p>
+<h2 id="性能与可用性目标">8. 性能与可用性目标</h2>
+<p>先建立基线，再验证改进。目标不是虚构性能数字：</p>
+<ul>
+<li>资源列表 1,000 项仍可流畅滚动和选择。</li>
+<li>10,000 项规模采用虚拟化或分页策略，不全量渲染 DOM。</li>
+<li>搜索输入即时反馈，查询异步且可取消/去抖。</li>
+<li>预览大型文件按需加载。</li>
+<li>详情面板不触发无关全局重渲染。</li>
+<li>页面切换尽量保留上下文。</li>
+<li>首屏分区加载，避免所有功能初始化阻塞应用。</li>
+<li>遵守真实设备能力，不在低端 Android 上强行启用昂贵效果。</li>
+</ul>
+<h2 id="工程重构要求">9. 工程重构要求</h2>
+<ul>
+<li>对 <code>App.tsx</code>、<code>bootstrap.ts</code>、Host
+等大模块按职责审查，不机械拆分。</li>
+<li>建立 Feature Routes / Domain Hooks / Application Queries / UI
+components 的职责边界。</li>
+<li>资源浏览 View Model 与领域实体分离。</li>
+<li>UI 不拼装跨集合的授权数据。</li>
+<li>CSS 按 Token、Foundation、Component、Feature、Platform 分层。</li>
+<li>删除旧实现前先查引用、路由、测试、深链、迁移和历史数据。</li>
+<li>不保留两个长期并行的设计系统；迁移期间可以兼容，但必须有清理计划。</li>
+<li>所有新增组件具备必要测试。</li>
+<li>不为追求架构整洁而增加不必要的层。</li>
+</ul>
+<h2 id="测试与验收矩阵">10. 测试与验收矩阵</h2>
+<h3 id="自动化测试">10.1 自动化测试</h3>
+<ul>
+<li>Biome lint / format check。</li>
+<li>TypeScript typecheck。</li>
+<li>Unit tests。</li>
+<li>Application contract tests。</li>
+<li>SQLite migration / transaction tests。</li>
+<li>PostgreSQL parity tests（仅适用范围）。</li>
+<li>Playwright E2E。</li>
+<li>Narrow viewport tests。</li>
+<li>Performance tests。</li>
+<li>Tauri/Rust tests。</li>
+<li>Android build / JVM tests。</li>
+</ul>
+<h3 id="ux-关键任务验收">10.2 UX 关键任务验收</h3>
+<p>必须真实执行并留证：</p>
+<ol type="1">
+<li>新用户首次进入，理解导航和当前页面。</li>
+<li>创建项目并添加资源。</li>
+<li>创建多级文件夹并整理文件。</li>
+<li>上传多份 PDF、图片和表格，处理其中一项失败。</li>
+<li>搜索文件并预览。</li>
+<li>将资源关联到项目/知识空间。</li>
+<li>多选并批量移动/删除/恢复。</li>
+<li>编辑 Markdown 文档并保存、查看历史。</li>
+<li>创建任务、设置日期、完成并撤销。</li>
+<li>创建重复提醒并处理跳过实例。</li>
+<li>断网后执行允许的本地操作，恢复网络并检查同步状态。</li>
+<li>切换账户/工作区，确认私有资源不泄漏。</li>
+<li>在窄屏/手机上完成关键流程。</li>
+<li>深色模式下完成同样的关键流程。</li>
+</ol>
+<h3 id="质量门槛">10.3 质量门槛</h3>
+<ul>
+<li>不允许引入新的 TypeScript 错误、Lint 错误或测试回归。</li>
+<li>不允许已有安全、权限、事务和同步合同测试失效。</li>
+<li>所有 P0/P1 UX 任务必须通过。</li>
+<li>所有主要模块至少完成一次桌面、窄屏、深色模式检查。</li>
+<li>不能用”构建成功”代替真实交互验收。</li>
+<li>不能把被跳过、未执行或环境受限的测试写成通过。</li>
+<li>测试报告必须列出命令、结果、耗时、环境、跳过项和失败项。</li>
+</ul>
+<h2 id="发布迁移与回滚">11. 发布、迁移与回滚</h2>
+<p>最终交付必须包括：</p>
+<ul>
+<li>当前版本与目标版本识别。</li>
+<li>变更清单和兼容性说明。</li>
+<li>数据库迁移清单。</li>
+<li>客户端/服务端最低兼容版本。</li>
+<li>用户主题偏好迁移。</li>
+<li>旧 URL / 深链兼容。</li>
+<li>文件夹关系数据迁移（如确实需要）。</li>
+<li>备份建议与恢复演练证据。</li>
+<li>Windows / Android / Web 构建和发布说明。</li>
+<li>签名与更新机制检查。</li>
+<li>回滚步骤。</li>
+<li>已知限制和不支持场景。</li>
+</ul>
+<p>Agent 不得自行发布正式
+Release、部署生产环境或执行真实生产迁移，除非用户另行明确授权。</p>
+<h2 id="执行方式全目标可暂停可恢复">12.
+执行方式：全目标、可暂停、可恢复</h2>
+<h3 id="不缩小范围">12.1 不缩小范围</h3>
+<p>本任务目标是全产品升级。不得以”先做文件库”“先做设计系统”“先完成一个页面”为最终交付。阶段只是执行顺序，不是缩小任务范围。</p>
+<h3 id="可暂停规则">12.2 可暂停规则</h3>
+<p>Agent 可以因以下情况暂停：</p>
+<ul>
+<li>上下文/Token 即将耗尽。</li>
+<li>长时间测试或构建。</li>
+<li>需要真实设备、账号或生产环境。</li>
+<li>遇到数据迁移或安全风险。</li>
+<li>依赖外部授权或用户决策。</li>
+<li>工作量需要拆分给后续会话。</li>
+</ul>
+<p>暂停前必须更新：</p>
+<p><code>docs/ux-upgrade/PROGRESS.md</code></p>
+<p>至少包含：</p>
+<ul>
+<li>当前分支、HEAD、工作树状态。</li>
+<li>已完成内容与对应 Commit/文件。</li>
+<li>正在进行的工作。</li>
+<li>未完成任务及阻塞原因。</li>
+<li>测试命令、结果、日志路径。</li>
+<li>当前风险和禁止触碰事项。</li>
+<li>下一步明确的可执行任务。</li>
+<li>是否有进程仍在运行。</li>
+</ul>
+<p>同时更新：</p>
+<ul>
+<li><code>DECISIONS.md</code>：设计/架构决策。</li>
+<li><code>ISSUES.md</code>：发现的问题和状态。</li>
+<li><code>ACCEPTANCE.md</code>：验收状态与证据。</li>
+</ul>
+<p>不得只发聊天消息而不写入仓库检查点。</p>
+<h3 id="恢复规则">12.3 恢复规则</h3>
+<p>恢复时先读取上述检查点，检查 git
+状态和进程，验证记录是否仍与当前源码一致，再继续。不可盲目重跑旧脚本覆盖日志或工件。</p>
+<h3 id="每个阶段的退出条件">12.4 每个阶段的退出条件</h3>
+<p>每个阶段都必须有：</p>
+<ul>
+<li>实现。</li>
+<li>测试。</li>
+<li>截图或交互证据（适用时）。</li>
+<li>文档。</li>
+<li>风险说明。</li>
+<li>回滚/兼容说明（适用时）。</li>
+</ul>
+<p>但阶段结束后继续下一个阶段，不等待用户重复授权，除非涉及不可逆生产操作、真实发布、密钥、付费服务或必须由用户决定的产品政策。</p>
+<h2 id="最终交付清单">13. 最终交付清单</h2>
+<p>最终只有满足下列条件，才能报告”全面升级完成”：</p>
+<ul class="task-list">
+<li><label><input
+type="checkbox" />品牌视觉系统完整且跨平台一致。</label></li>
+<li><label><input type="checkbox" />Design Tokens
+与组件系统成为唯一正式体系。</label></li>
+<li><label><input type="checkbox" />全局 Shell
+和导航完成升级。</label></li>
+<li><label><input type="checkbox" />Dashboard 完成升级。</label></li>
+<li><label><input
+type="checkbox" />文件库/资源中心完成重构和关键场景验收。</label></li>
+<li><label><input type="checkbox" />笔记与日记完成升级。</label></li>
+<li><label><input type="checkbox" />文档工作区完成升级。</label></li>
+<li><label><input
+type="checkbox" />知识空间与知识图谱完成升级。</label></li>
+<li><label><input type="checkbox" />项目管理完成升级。</label></li>
+<li><label><input
+type="checkbox" />任务与专注体验完成升级。</label></li>
+<li><label><input type="checkbox" />日历与提醒完成升级。</label></li>
+<li><label><input type="checkbox" />AI Assistant / Agent
+体验完成升级。</label></li>
+<li><label><input
+type="checkbox" />账户、设置、通知和同步状态完成升级。</label></li>
+<li><label><input type="checkbox" />Web、Windows/Tauri、Android
+适配完成或明确列出客观无法验证的平台。</label></li>
+<li><label><input
+type="checkbox" />性能、无障碍、窄屏和深色模式验收完成。</label></li>
+<li><label><input
+type="checkbox" />数据安全、权限、迁移、备份和恢复合同未被破坏。</label></li>
+<li><label><input
+type="checkbox" />自动化质量门禁通过，所有例外均有明确说明。</label></li>
+<li><label><input
+type="checkbox" />文档、发布说明、迁移说明、回滚说明齐全。</label></li>
+<li><label><input
+type="checkbox" /><code>PROGRESS.md</code>、<code>DECISIONS.md</code>、<code>ISSUES.md</code>、<code>ACCEPTANCE.md</code>
+完整。</label></li>
+<li><label><input
+type="checkbox" />最终报告包含实际变更、证据、遗留问题和风险。</label></li>
+</ul>
+<p>若仍有未完成项，必须准确报告”部分完成”，逐项说明原因，不能宣称全部升级完成。</p>
+<hr />
+<h2 id="最终报告格式">14. 最终报告格式</h2>
+<p>最终报告至少包括：</p>
+<ol type="1">
+<li>执行摘要。</li>
+<li>目标范围完成率（按模块逐项列出，不使用虚构百分比）。</li>
+<li>品牌与设计系统变更。</li>
+<li>各模块 UX 改造内容。</li>
+<li>资源中心的数据与交互变化。</li>
+<li>架构和代码变更。</li>
+<li>数据库/API/同步兼容性。</li>
+<li>性能对比及测试环境。</li>
+<li>自动化测试结果。</li>
+<li>桌面/窄屏/移动端截图证据。</li>
+<li>发布、迁移、备份和回滚步骤。</li>
+<li>未完成项、已知限制和风险。</li>
+<li>对运维人员的日常操作影响。</li>
+</ol>
+<p><strong>最终原则：交付的是一个完整、连贯、可靠、真正更好用的
+OrivaneAtlas，而不是一组互不相关的 UI 补丁。</strong></p>
+<div class="footer">OrivaneAtlas · Full Product Experience Upgrade · Master Specification</div></main></div>
+<script>
+const links=[...document.querySelectorAll('.toc-link')];
+const headings=links.map(a=>document.getElementById(decodeURIComponent(a.hash.slice(1)))).filter(Boolean);
+if('IntersectionObserver' in window){const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){links.forEach(a=>a.classList.toggle('active',a.hash==='#'+e.target.id))}}),{rootMargin:'-15% 0px -75% 0px'});headings.forEach(h=>io.observe(h))}
+</script>
+</body>
+</html>

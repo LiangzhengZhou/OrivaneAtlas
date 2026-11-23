@@ -1,0 +1,18 @@
+[
+  {
+    "width": 1280,
+    "height": 800,
+    "theme": "survey",
+    "overflow": 0,
+    "heading": "Files",
+    "canvas": "#f5f4ec"
+  },
+  {
+    "width": 1280,
+    "height": 800,
+    "theme": "folio",
+    "overflow": 0,
+    "heading": "Files",
+    "canvas": "#f7f4f0"
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "overflow": 0,
+    "heading": "Files",
+    "canvas": "#f8f9f6"
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "overflow": 0,
+    "heading": "Files",
+    "canvas": "#141815"
+  },
+  {
+    "width": 768,
+    "height": 1024,
+    "theme": "light",
+    "overflow": 0,
+    "heading": "Files",
+    "canvas": "#f8f9f6"
+  },
+  {
+    "width": 768,
+    "height": 1024,
+    "theme": "dark",
+    "overflow": 0,
+    "heading": "Files",
+    "canvas": "#141815"
+  },
+  {
+    "width": 360,
+    "height": 800,
+    "theme": "light",
+    "overflow": 0,
+    "heading": "文件",
+    "canvas": "#f8f9f6"
+  },
+  {
+    "width": 360,
+    "height": 800,
+    "theme": "dark",
+    "overflow": 0,
+    "heading": "文件",
+    "canvas": "#141815"
+  }
+]
