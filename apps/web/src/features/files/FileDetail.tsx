@@ -23,6 +23,7 @@ import { projectHash } from "../../projectRoute";
 import { HierarchyPicker } from "../hierarchy/HierarchyPicker";
 import { ProjectDrilldownPicker } from "../projects/ProjectDrilldownPicker";
 import { FilePreview } from "./FilePreview";
+import { PdfOriginalPreview } from "./PdfOriginalPreview";
 import { RasterFilePreview } from "./RasterFilePreview";
 import "./files.css";
 import { EntityMemo } from "../memos/EntityMemo";
@@ -669,6 +670,24 @@ export function FileDetail({
           </Button>
         </div>
       </details>
+      {file.extension === "pdf" &&
+        !file.deletedAt &&
+        file.size <= fileExtractionLimits.inputBytes && (
+          <PdfOriginalPreview
+            key={JSON.stringify([
+              runtime.serverOrigin,
+              runtime.context.principalId,
+              file.workspaceId,
+              file.id,
+              file.version,
+              file.contentHash,
+            ])}
+            runtime={runtime}
+            id={file.id}
+            name={file.name}
+            zh={zh}
+          />
+        )}
       {["png", "jpeg", "jpg", "webp"].includes(file.extension ?? "") &&
         file.size <= fileExtractionLimits.inputBytes && (
           <RasterFilePreview

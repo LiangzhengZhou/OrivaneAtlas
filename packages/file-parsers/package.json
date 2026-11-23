@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./browser": "./src/browser.ts"
+    "./browser": "./src/browser.ts",
+    "./pdf-page-view": "./src/pdf-page-view.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

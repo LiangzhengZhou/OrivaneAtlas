@@ -111,6 +111,47 @@ try {
   await image.getByRole("button", { name: /^(Zoom in|放大)$/ }).click();
   await page.screenshot({ path: resolve(root, "windows-image.png") });
   await image.getByRole("button", { name: /^(Close|关闭)$/ }).click();
+  const printer = await chromium.launch();
+  let pdf;
+  try {
+    const sheet = await printer.newPage();
+    await sheet.setContent(
+      '<main style="break-after:page">Windows survey</main><main><svg width="64" height="64"><rect width="64" height="64" fill="blue"/></svg></main>',
+    );
+    pdf = await sheet.pdf();
+  } finally {
+    await printer.close();
+  }
+  await page.evaluate(() => {
+    location.hash = "files";
+  });
+  await files.locator("input[type=file]").setInputFiles({
+    name: "Windows survey.pdf",
+    mimeType: "application/pdf",
+    buffer: pdf,
+  });
+  await page
+    .getByRole("button", {
+      name: /^(View original PDF pages|查看 PDF 原始页面)$/,
+    })
+    .click();
+  const pages = page.getByRole("dialog", { name: "Windows survey.pdf" });
+  await pages.getByRole("button", { name: /^(Next page|下一页)$/ }).click();
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector(
+      ".pdf-original-dialog canvas:not([hidden])",
+    );
+    if (!canvas) return false;
+    const pixels = canvas
+      .getContext("2d")
+      .getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let i = 0; i < pixels.length; i += 16)
+      if (pixels[i] < 80 && pixels[i + 1] < 80 && pixels[i + 2] > 190)
+        return true;
+    return false;
+  });
+  await page.screenshot({ path: resolve(root, "windows-pdf.png") });
+  await pages.getByRole("button", { name: /^(Close|关闭)$/ }).click();
   await writeFile(
     resolve(root, "result.json"),
     JSON.stringify(
@@ -125,6 +166,7 @@ try {
           "keyboard open",
           "CSV preview",
           "private PNG decode and zoom",
+          "original PDF second page drawn in WebView2",
         ],
         overflow: await page.evaluate(
           () => document.documentElement.scrollWidth - innerWidth,

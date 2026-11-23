@@ -739,7 +739,7 @@ test("the file viewer opens a private raster and pages extracted PDF text", asyn
   await page.goto(origin + "/#files");
   const print = await page.context().newPage();
   await print.setContent(
-    '<main style="break-after:page">North station</main><main>South station</main>',
+    '<main style="break-after:page"><svg width="64" height="64"><rect width="64" height="64" fill="red"/></svg>North station</main><main><svg width="64" height="64"><rect width="64" height="64" fill="blue"/></svg>South station</main>',
   );
   const bytes = await print.pdf();
   await print.close();
@@ -756,4 +756,40 @@ test("the file viewer opens a private raster and pages extracted PDF text", asyn
   await expect(preview.locator("pre")).toContainText("South station");
   await expect(preview).not.toContainText("North station");
   await page.screenshot({ path: info.outputPath("pdf-text-page.png") });
+  const openOriginal = detail.getByRole("button", {
+    name: zh ? "查看 PDF 原始页面" : "View original PDF pages",
+  });
+  await openOriginal.click();
+  const original = page.getByRole("dialog", { name: "Stations.pdf" });
+  const colored = (channel: 0 | 2) =>
+    original.locator("canvas").evaluate((canvas, color) => {
+      if (!(canvas instanceof HTMLCanvasElement))
+        throw new Error("Missing PDF page canvas");
+      const pixels = canvas
+        .getContext("2d")!
+        .getImageData(0, 0, canvas.width, canvas.height).data;
+      let matching = 0;
+      for (let i = 0; i < pixels.length; i += 16)
+        if (
+          pixels[i + color]! > 190 &&
+          pixels[i + 1]! < 80 &&
+          pixels[i + (color === 0 ? 2 : 0)]! < 80
+        )
+          matching++;
+      return matching;
+    }, channel);
+  await expect(
+    original.getByRole("img", { name: /Stations\.pdf/ }),
+  ).toBeVisible();
+  await expect.poll(() => colored(0)).toBeGreaterThan(20);
+  await original
+    .getByRole("button", { name: zh ? "下一页" : "Next page" })
+    .click();
+  await expect.poll(() => colored(2)).toBeGreaterThan(20);
+  await expect(original.locator("canvas")).toHaveCount(1);
+  await page.screenshot({ path: info.outputPath("pdf-original-page.png") });
+  await original
+    .getByRole("button", { name: zh ? "关闭" : "Close", exact: true })
+    .click();
+  await expect(openOriginal).toBeFocused();
 });
