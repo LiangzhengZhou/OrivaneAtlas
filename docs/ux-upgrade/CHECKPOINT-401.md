@@ -42,9 +42,25 @@
 
 原检查点 `browser-57cdd9e.log` 为 837/837（57.5 分钟），`browser-eeef72c.log` 为 840/840（48.4 分钟），`check-3b84038-native.log` 为 307/307 文件、1588/1588 测试和 2/2 构建。[门禁日志摘要及 SHA-256](evidence/session401/gates.json) 收录通过、失败、已替换的运行；本地原始日志分别在 .artifacts/ux400、.artifacts/ux401。新候选进程及终态另见 [PROGRESS.md](PROGRESS.md)。
 
+最终候选 60553a4 的完整浏览器回归为 843/843，耗时 45.7 分钟。完整 pnpm check 在 24f1df3 和最终候选均通过。60553a4 的 308/308 个测试文件、1590/1590 项用例、11/11 个包类型检查和 2/2 项构建全部通过，Vitest 耗时 2131.75 秒，完整命令退出码 0。主树的最终交付材料另经 1076 个文件的 Biome 和架构边界检查以及类型检查。
+
 本轮专项用 `pnpm exec playwright test tests/e2e/work.spec.ts --grep 'large PDF originals'` 验证三个配置。含账户切换、收藏、原件与重新认证的先行组合 9/9。新加入实际取消断言后的三配置 3/3。Web 区间/取消合同 2/2；完整授权夹具 1 项通过（125 项被过滤）。Rust 优化版测试 34 通过，5 项忽略。Android ARM64 构建已核对 ELF64/AArch64 和 JNI；本轮未在 Android 系统中运行应用。[Android 构建](evidence/session401/android-ranges.json)
 
-Windows 未签名独立标识的 Tauri 构建耗时 8 分 55 秒。真实 WebView2 158.0.4370.33 从文件选择器导入 18,875,129 字节，核对两页画布像素和关闭后按钮焦点。深色英文桌面及中文移动同样完成在线翻页、关闭请求和撤权专项（2/2）。[Windows 实窗结果](evidence/session401/windows-large-pdf.json)
+Windows 未签名独立标识的 Tauri 构建耗时 8 分 55 秒。真实 WebView2 158.0.4370.33 从文件选择器导入 18,875,129 字节，核对两页画布像素和关闭后按钮焦点。深色英文桌面及中文移动同样完成在线翻页、关闭请求和撤权专项（2/2）。包含该流程的最终候选深色套件 40/40 通过，耗时 5.1 分钟。[Windows 实窗结果](evidence/session401/windows-large-pdf.json)
+
+### 本机复验命令
+
+以下命令使用隔离工作树和新建输出目录。数据库测试自行创建临时集群，原生集成使用测试构建生成的可执行文件。Windows 夹具使用独立标识与 WebView2 资料目录。
+
+|验证|命令和环境|
+|---|---|
+|完整检查|`pnpm check`，设置 `CI=1`、`NO_PROXY=localhost,127.0.0.1,::1` 和 `ATLAS_NATIVE_TEST_EXE` 为本机 release 模式的 Rust 测试程序绝对路径。|
+|完整浏览器|`pnpm build` 后将 `ATLAS_UI_FIXTURE_DIST` 设为该构建的 apps/web/dist 绝对路径，设置 `ATLAS_E2E_BASE_PORT=27820`，执行 `pnpm test:e2e --workers=2 --reporter=line`。|
+|深色及窄屏|`pnpm exec playwright test --config tests/ux-dark.playwright.ts --workers=1`；另执行 `pnpm exec playwright test --config docs/ux-upgrade/evidence/session401/narrow-pdf.config.ts`。各自使用空闲环回端口。|
+|草稿与集合|`pnpm exec playwright test --config docs/ux-upgrade/evidence/session401/revoked-draft.config.ts`；设置 `ATLAS_BENCH_REVOKE_MOVE=1` 后执行 `pnpm exec playwright test --config docs/ux-upgrade/evidence/session400/collection-page.config.ts --workers=1 --repeat-each=3`。两者均使用上述构建目录。|
+|Windows 实窗|隔离配置下运行 `pnpm exec tauri build --no-bundle --no-sign --config <fixture.json>`，之后用 `node docs/ux-upgrade/evidence/session401/windows-pdf.mjs <新目录> <独立标识的 exe>` 导入合成 PDF。|
+|Android ARM64|配置既有 NDK 26.1 API 24 目标链接器、WRY 的生成目录与包名，执行 `cargo build --manifest-path src-tauri/Cargo.toml --release --lib --target aarch64-linux-android`；用 NDK 的 llvm-readelf 核对 ELF 与 JNI。|
+|Web 兼容|`node scripts/rehearse-ux-web-upgrade.mjs .artifacts/ux400/collection-retry-web apps/web/dist <新目录>`。|
 
 ## 10. 交互证据
 
@@ -52,9 +68,11 @@ Windows 未签名独立标识的 Tauri 构建耗时 8 分 55 秒。真实 WebVie
 
 [Windows 原生第二页](evidence/session401/windows-large-page.png) · [深色桌面撤权](evidence/session401/revoked-dark-desktop.png) · [深色移动撤权](evidence/session401/revoked-dark-mobile.png)
 
+768 × 900 中文窄屏的两轮交互均启用减少动态效果；普通配色与系统强制色都完成翻页、取消和重新认证（2/2）。[窄屏第二页](evidence/session401/large-pdf-narrow.png) · [窄屏强制色撤权](evidence/session401/revoked-narrow-forced-colors.png)
+
 ## 11. 发布、迁移与回退
 
-原件服务须先具备强 ETag 单段响应，原生壳和前端资产需配套升级。遇到不匹配或不支持的响应时停止预览，用户可通过授权下载取得原件。回退为上一组匹配的前端、原生壳与服务，保留原件、工作区副本和未同步命令。本机未推送或发布。
+原件服务须先具备强 ETag 单段响应，原生壳和前端资产需配套升级。遇到不匹配或不支持的响应时停止预览，用户可通过授权下载取得原件。回退为上一组匹配的前端、原生壳与服务，保留原件、工作区副本和未同步命令。同一隔离浏览器副本用上轮前端和 60553a4 完成基线、升级、回退、再升级及离线复开。五步均核对同一资源深链、暗色主题和下载摘要。此演练覆盖 Web 静态资源与设备副本。[五阶段原始记录](evidence/session401/web-rollback.json)
 
 ## 12. 未完成项与风险
 

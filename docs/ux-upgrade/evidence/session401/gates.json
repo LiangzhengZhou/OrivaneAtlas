@@ -178,5 +178,67 @@
     "status": "passed",
     "sha256": "7e8cc038bbe4d04b8ef01648b2d0c54c8a80fba1b85f172869ab0d15af58cc10",
     "terminal": ["Architecture boundaries passed."]
+  },
+  {
+    "log": "ux401/dark-60553a4.log",
+    "revision": "60553a4",
+    "suite": "完整深色交互，英文桌面及中文移动",
+    "status": "passed",
+    "sha256": "e2c3700f7ffc7bf6e0f8bc045b67c323685e624c55db0188f916d5cb253e8a05",
+    "terminal": ["40 passed (5.1m)"]
+  },
+  {
+    "log": "ux401/check-session-recheck.log",
+    "revision": "24f1df3",
+    "suite": "完整 pnpm check，串行 PostgreSQL，包含原生程序",
+    "status": "passed",
+    "sha256": "393013c639f5c042b420b16e539ac276705dfa7df8f9c0483b2d0d93960ac630",
+    "terminal": [
+      "Tasks:    11 successful, 11 total",
+      "Test Files  308 passed (308)",
+      "Tests  1590 passed (1590)",
+      "Duration  2556.20s (tests 96%, import 3%, transform 1%)",
+      "Tasks:    2 successful, 2 total"
+    ]
+  },
+  {
+    "log": "ux401/browser-60553a4.log",
+    "revision": "60553a4",
+    "suite": "全量 Playwright，三种配置",
+    "status": "passed",
+    "sha256": "9451443ca4a9fa70668e20cb9e4dafff21ca9393e566cf7d79196ce12f6fe32e",
+    "terminal": ["843 passed (45.7m)"]
+  },
+  {
+    "log": "ux401/narrow-60553a4.log",
+    "revision": "60553a4",
+    "suite": "768 像素窄屏、强制色与减少动态效果",
+    "status": "passed",
+    "sha256": "3e0a9d8c73a01fb5ab53614838e4a08d8a8db05ae329bb514c3762b92e9b63f2",
+    "terminal": ["2 passed (32.3s)"]
+  },
+  {
+    "log": "ux401/rollback-60553a4.log",
+    "revision": "60553a4",
+    "suite": "Web 升级、回退、再升级、离线复开",
+    "status": "passed",
+    "sha256": "d6fd57a3962849014df71fa98d0d3c67c23c407da5225d278d43127837ad1059",
+    "terminal": [
+      "Five stages preserved the same link, theme and downloaded SHA-256"
+    ]
+  },
+  {
+    "log": "ux401/check-60553a4.log",
+    "revision": "60553a4",
+    "suite": "最终候选完整 pnpm check，包含原生程序和 PostgreSQL",
+    "status": "passed",
+    "sha256": "ba1fee47959441b73ec24df5dbb54cc71e6a9107df4abfedb3dd6f23f41c93e6",
+    "terminal": [
+      "Tasks:    11 successful, 11 total",
+      "Test Files  308 passed (308)",
+      "Tests  1590 passed (1590)",
+      "Duration  2131.75s (tests 96%, import 2%, transform 1%)",
+      "Tasks:    2 successful, 2 total"
+    ]
   }
 ]

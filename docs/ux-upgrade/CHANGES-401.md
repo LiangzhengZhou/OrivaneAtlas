@@ -34,3 +34,5 @@
 |修改|[tests/e2e/api-grants.spec.ts](../../tests/e2e/api-grants.spec.ts)|
 |新增|[tests/e2e/large-pdf-fixture.ts](../../tests/e2e/large-pdf-fixture.ts)|
 |修改|[tests/e2e/work.spec.ts](../../tests/e2e/work.spec.ts)|
+
+阶段材料在提交 9edb604 及其后的本轮门禁记录中，包括本清单、四份台账、发布准备、CHANGELOG、深色回归配置、真实交互夹具与截图。包含整轮文档及证据的完整清单可在本轮交付提交上执行 `git diff --name-status 4595838 HEAD`。
