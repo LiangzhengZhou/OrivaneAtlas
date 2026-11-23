@@ -21091,7 +21091,20 @@ test("personal folder names keep the input method candidate until editing finish
     await expect(named("cao")).toHaveCount(0);
   }
   await newFolder.click();
-  await compose("草稿");
+  // A native browser composition can also send cancel to the mobile dialog.
+  const cdp = await page.context().newCDPSession(page);
+  await input.focus();
+  await cdp.send("Input.imeSetComposition", {
+    text: "草",
+    selectionStart: 1,
+    selectionEnd: 1,
+  });
+  await input.press("Escape");
+  await expect(input).toBeFocused();
+  await cdp.send("Input.insertText", { text: "草稿" });
+  await cdp.detach();
+  await input.press("Enter");
+  await expect(named("草稿")).toBeVisible();
   await named("草稿").click();
   await newFolder.click();
   await compose("每日记录");
@@ -21101,6 +21114,7 @@ test("personal folder names keep the input method candidate until editing finish
   await input.fill("未保存");
   await input.press("Escape");
   await expect(input).toHaveCount(0);
+  await expect(named("阅读札记")).toBeVisible();
   await page.reload();
   await showFilesFolders(page);
   await expect(named("阅读札记")).toBeVisible();

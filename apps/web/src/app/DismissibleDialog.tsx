@@ -14,6 +14,7 @@ export function DismissibleDialog({
   onRequestClose(reason: DismissReason): void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const composingEscape = useRef(false);
   const request = useRef(onRequestClose);
   request.current = onRequestClose;
   useEffect(() => {
@@ -44,11 +45,18 @@ export function DismissibleDialog({
         request.current("outside");
       startedOutside = false;
     };
+    const rememberEscape = (event: KeyboardEvent) => {
+      // A modal can receive a native cancel event for the IME's Escape key.
+      composingEscape.current =
+        event.key === "Escape" && (event.isComposing || event.keyCode === 229);
+    };
     const key = (event: KeyboardEvent) => {
       if (
         !modal &&
         event.key === "Escape" &&
         !event.defaultPrevented &&
+        !event.isComposing &&
+        event.keyCode !== 229 &&
         (!(event.target instanceof Element) ||
           !event.target.closest("dialog[open]") ||
           event.target.closest("dialog[open]") === node) &&
@@ -58,10 +66,12 @@ export function DismissibleDialog({
         request.current("escape");
       }
     };
+    node.addEventListener("keydown", rememberEscape, true);
     document.addEventListener("pointerdown", down);
     document.addEventListener("pointerup", up);
     document.addEventListener("keydown", key);
     return () => {
+      node.removeEventListener("keydown", rememberEscape, true);
       document.removeEventListener("pointerdown", down);
       document.removeEventListener("pointerup", up);
       document.removeEventListener("keydown", key);
@@ -86,6 +96,10 @@ export function DismissibleDialog({
       className={`glass-surface ${className}`.trim()}
       onCancel={(event) => {
         event.preventDefault();
+        if (composingEscape.current) {
+          composingEscape.current = false;
+          return;
+        }
         request.current("escape");
       }}
     />

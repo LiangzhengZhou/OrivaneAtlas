@@ -42,7 +42,11 @@ function handleNameKey(
     return;
   }
   if (event.key === "Enter") save();
-  if (event.key === "Escape") cancel();
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    cancel();
+  }
 }
 
 function countLabel(value: number): string {
