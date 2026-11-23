@@ -5,6 +5,7 @@ import {
   type NodeProps,
   Panel,
   ReactFlow,
+  type ReactFlowInstance,
   useNodesState,
   useReactFlow,
   type Viewport,
@@ -88,6 +89,7 @@ export function GraphViewport({
   workspace = false,
   selectionId,
   layoutKey,
+  refitRequest = 0,
   initialViewport,
   onViewportChange,
 }: {
@@ -103,6 +105,7 @@ export function GraphViewport({
   workspace?: boolean;
   selectionId?: string | undefined;
   layoutKey: string;
+  refitRequest?: number;
 } & GraphViewportStateProps) {
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState(
     selectionId === undefined
@@ -145,6 +148,24 @@ export function GraphViewport({
   const menuAnchor = useRef<HTMLElement | null>(null);
   const [menuNode, setMenuNode] = useState<Node | null>(null);
   const viewportIntent = useRef(false);
+  const instance = useRef<ReactFlowInstance | null>(null);
+  useEffect(() => {
+    if (!refitRequest) return;
+    // React Flow measures the replacement nodes after the controlled state commits.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        const flow = instance.current;
+        if (!flow) return;
+        const documents = flow
+          .getNodes()
+          .filter((node) => node.selectable !== false);
+        if (!documents.length) return;
+        viewportIntent.current = true;
+        void flow.fitView({ ...readableFitOptions, nodes: documents });
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [refitRequest]);
   const { t, i18n } = useTranslation("desk");
   return (
     <DismissibleDialog
@@ -209,6 +230,9 @@ export function GraphViewport({
           ) : (
             <ReactFlow
               nodeTypes={nodeTypes}
+              onInit={(flow) => {
+                instance.current = flow;
+              }}
               nodes={flowNodes}
               onNodesChange={onNodesChange}
               edges={edges}

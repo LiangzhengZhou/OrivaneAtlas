@@ -20436,6 +20436,37 @@ test("graph search bounds the visible results and supports keyboard selection an
   const search = graph.getByLabel(zh ? "图谱搜索" : "Graph search", {
     exact: true,
   });
+  const flowBox = graph.locator(".react-flow");
+  const cluster = graph.locator(".react-flow__node-spaceCluster");
+  await expect(cluster).toBeVisible();
+  expect(
+    await cluster.evaluate((el) => {
+      const sample = document.createElement("span");
+      sample.style.backgroundColor = "var(--surface-subtle)";
+      el.appendChild(sample);
+      const usesTheme =
+        getComputedStyle(sample).backgroundColor ===
+        getComputedStyle(el).backgroundColor;
+      sample.remove();
+      return usesTheme;
+    }),
+  ).toBe(true);
+  async function visibleNodeCenter() {
+    const node = await graph
+      .locator(".react-flow__node-default")
+      .first()
+      .boundingBox();
+    const flow = await flowBox.boundingBox();
+    if (!node || !flow) return false;
+    return (
+      node.x + node.width / 2 > flow.x &&
+      node.x + node.width / 2 < flow.x + flow.width &&
+      node.y + node.height / 2 > flow.y &&
+      node.y + node.height / 2 < flow.y + flow.height
+    );
+  }
+  await expect.poll(visibleNodeCenter).toBe(true);
+  await page.screenshot({ path: info.outputPath("graph-scope-fit.png") });
   await search.fill("Missing sheet");
   await expect(
     graph
@@ -20477,6 +20508,7 @@ test("graph search bounds the visible results and supports keyboard selection an
       .locator(".react-flow__node")
       .filter({ hasText: label.split(" / ").at(-1) ?? label }),
   ).toBeVisible();
+  await expect.poll(visibleNodeCenter).toBe(true);
 });
 
 test("calendar week day and agenda preserve leap-day context and show only scheduled days", async ({

@@ -68,6 +68,7 @@ export function KnowledgeGraph({
   );
   const [focusId, setFocusId] = useState(initialFocus ?? documentId ?? "");
   const [hops, setHops] = useState(initialHops);
+  const [refitRequest, setRefitRequest] = useState(0);
   useEffect(() => {
     if (initialFocus !== undefined) setFocusId(initialFocus);
     if (initialScope !== undefined) setScope(initialScope);
@@ -77,6 +78,8 @@ export function KnowledgeGraph({
     patch: Partial<{ scope: string; focus: string; hops: number }>,
   ) => {
     const next = { scope, focus: focusId, hops, ...patch };
+    if (scope !== next.scope || focusId !== next.focus || hops !== next.hops)
+      setRefitRequest((previous) => previous + 1);
     setScope(next.scope);
     setFocusId(next.focus);
     setHops(next.hops);
@@ -190,8 +193,10 @@ export function KnowledgeGraph({
         style: {
           width: 540,
           height: Math.max(220, Math.ceil(children.length / 2) * 100 + 60),
-          background: "var(--surface-alt, #f3f4f6)",
-          borderRadius: 12,
+          background: "var(--surface-subtle)",
+          border: "1px solid var(--border-default)",
+          color: "var(--text-primary)",
+          borderRadius: "var(--radius-lg)",
         },
         selectable: false,
       });
@@ -216,6 +221,7 @@ export function KnowledgeGraph({
         initialViewport={initialViewport}
         onViewportChange={onViewportChange}
         layoutKey={layoutKey}
+        refitRequest={refitRequest}
         workspace={workspace}
         selectionId={selectionId}
         inspector={inspector}
