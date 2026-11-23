@@ -20271,6 +20271,17 @@ test("moves a mixed collection selection with keyboard or drag while preserving 
         ).length,
     )
     .toBe(3);
+  // The destination already contained this note. Its count can reach three
+  // before the last source removal reaches the Host.
+  await expect
+    .poll(async () => {
+      const { folderLinks } = await snap();
+      return folderLinks.filter(
+        (link: { folderId: string; deletedAt: string | null }) =>
+          link.folderId === source && !link.deletedAt,
+      ).length;
+    })
+    .toBe(0);
   const saved = await snap();
   expect(
     saved.notes.find((v: { id: string }) => v.id === note.id),
