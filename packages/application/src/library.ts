@@ -420,6 +420,11 @@ export class LibraryService {
     const restored = await this.setDeleted(context, id, version, false);
     return this.save(context, id, restored.version, input);
   }
+  private locationMetadata(id: string) {
+    return this.store.getMetadata
+      ? this.store.getMetadata(id)
+      : this.store.get(id);
+  }
   async setDeleted(
     context: ActorContext,
     id: string,
@@ -444,7 +449,7 @@ export class LibraryService {
     )
       throw new DomainError("VALIDATION_ERROR");
     if (!deleted && old.parentDocumentId) {
-      const parent = await this.store.get(old.parentDocumentId);
+      const parent = await this.locationMetadata(old.parentDocumentId);
       if (
         parent.workspaceId !== context.workspaceId ||
         parent.deletedAt ||
@@ -454,8 +459,13 @@ export class LibraryService {
         throw new DomainError("VALIDATION_ERROR");
     }
     if (!deleted && old.spaceId) {
-      const space = await this.store.get(old.spaceId);
-      if (space.deletedAt) throw new DomainError("NOT_FOUND");
+      const space = await this.locationMetadata(old.spaceId);
+      if (
+        space.workspaceId !== context.workspaceId ||
+        space.kind !== "SPACE" ||
+        space.deletedAt
+      )
+        throw new DomainError("NOT_FOUND");
     }
     const entry = {
       ...old,

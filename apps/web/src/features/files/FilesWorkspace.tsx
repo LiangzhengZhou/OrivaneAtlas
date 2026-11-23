@@ -35,6 +35,8 @@ import { ResourceUploadQueue } from "./ResourceUploadQueue";
 import { useResourceShortcuts } from "./useResourceShortcuts";
 import "./files-workspace.css";
 
+import type { VersionedResource } from "./versioned-resource";
+
 type ResourceKind = "ALL" | "NOTE" | "DOCUMENT" | "FILE";
 
 interface ResourceRow {
@@ -43,6 +45,8 @@ interface ResourceRow {
   title: string;
   location: string;
   updatedAt: string;
+  version: number;
+  parentDocumentId?: string | null | undefined;
   icon: string;
   size?: number;
   mime?: string;
@@ -80,6 +84,8 @@ export function FilesWorkspace({
   onOpenNote,
   onOpenResource,
   onDeleteResource,
+  onTrashSelection,
+  batchPending,
   onUpload,
 }: {
   scopeKey: string;
@@ -108,6 +114,8 @@ export function FilesWorkspace({
   onOpenNote(note: WorkspaceNote): void;
   onOpenResource(ref: EntityRef): void;
   onDeleteResource(ref: EntityRef): Promise<void>;
+  onTrashSelection(items: readonly VersionedResource[]): Promise<boolean>;
+  batchPending: boolean;
   onUpload(file: globalThis.File): Promise<string | null>;
 }) {
   const { t, i18n } = useTranslation("desk");
@@ -185,6 +193,7 @@ export function FilesWorkspace({
             title: note.title || (zh ? "未命名笔记" : "Untitled note"),
             location: getFolderLabel(note) || (zh ? "未归档" : "Unfiled"),
             updatedAt: note.updatedAt,
+            version: note.version,
             icon: getIcon(note),
             folderKey: getFolderKey(note),
             note,
@@ -192,7 +201,9 @@ export function FilesWorkspace({
         : []),
       ...catalog.documents.map(({ entry, location, projectIds }) => ({
         key: `DOCUMENT:${entry.id}`,
+        version: entry.version,
         kind: "DOCUMENT" as const,
+        parentDocumentId: entry.parentDocumentId,
         title: entry.title || (zh ? "未命名文档" : "Untitled document"),
         location,
         updatedAt: entry.updatedAt,
@@ -203,7 +214,9 @@ export function FilesWorkspace({
       })),
       ...catalog.files.map(({ entry, location, projectIds }) => ({
         key: `FILE:${entry.id}`,
+        version: entry.version,
         kind: "FILE" as const,
+        parentDocumentId: entry.parentDocumentId,
         title: entry.name,
         location,
         updatedAt: entry.updatedAt,
@@ -834,6 +847,27 @@ export function FilesWorkspace({
                   onClick={() => saveSelection(false)}
                 >
                   {zh ? "移出收藏" : "Remove from favorites"}
+                </Button>
+                <Button
+                  variant="danger"
+                  pending={batchPending}
+                  disabled={!checked.length}
+                  onClick={async () => {
+                    const items = pageRows
+                      .filter((row) => selection.has(row.key))
+                      .map((row) => ({
+                        kind: row.kind,
+                        id: row.note?.id ?? row.ref!.id,
+                        parentDocumentId: row.parentDocumentId,
+                        version: row.version,
+                      }));
+                    if (await onTrashSelection(items)) {
+                      setSelection(null);
+                      selectionButton.current?.focus();
+                    }
+                  }}
+                >
+                  {zh ? "所选项移至回收站" : "Move selected to Trash"}
                 </Button>
               </>
             )}

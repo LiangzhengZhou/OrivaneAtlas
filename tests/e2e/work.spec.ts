@@ -19869,3 +19869,192 @@ test("graph entry distinguishes knowledge links from project dependencies and ke
     await expect(page).toHaveURL(new RegExp("#" + route + "$"));
   }
 });
+
+test("resource batch trash and filtered restore keep other originals and honor cancellation", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, words(info.project.name));
+  await page.goto(workbench.url + "/#files");
+  const library = page.locator(".files-resource-browser");
+  await library.locator("input[type=file]").setInputFiles(
+    ["A", "B", "C"].map((letter) => ({
+      name: "Batch " + letter + ".txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("original " + letter),
+    })),
+  );
+  await expect(library.locator(".files-resource-row")).toHaveCount(3);
+  await library
+    .getByRole("button", { name: zh ? "多选" : "Select items", exact: true })
+    .click();
+  for (const letter of ["A", "B"])
+    await library
+      .getByRole("checkbox", { name: "Batch " + letter + ".txt", exact: true })
+      .check();
+  const trash = library.getByRole("button", {
+    name: zh ? "所选项移至回收站" : "Move selected to Trash",
+  });
+  const dialog = page.getByRole("dialog", {
+    name: zh ? "确认操作" : "Confirm action",
+  });
+  await trash.click();
+  await dialog
+    .getByRole("button", { name: zh ? "取消" : "Cancel", exact: true })
+    .click();
+  await expect(library.locator(".files-resource-row")).toHaveCount(3);
+  await trash.click();
+  await dialog
+    .getByRole("button", { name: zh ? "确认" : "Confirm", exact: true })
+    .click();
+  await expect(library.locator(".files-resource-row")).toHaveCount(1);
+  await expect(
+    library.getByRole("button", { name: /Batch C\.txt ·/ }),
+  ).toBeVisible();
+  await page.goto(workbench.url + "/#trash?filter=library");
+  const bin = page.locator(".trash-list");
+  await bin
+    .getByRole("button", {
+      name: zh ? "选择要恢复的资源" : "Select resources to restore",
+    })
+    .click();
+  await bin
+    .getByRole("checkbox", {
+      name: zh ? "选择筛选结果中的资源" : "Select filtered resources",
+    })
+    .check();
+  await bin
+    .getByRole("button", {
+      name: zh ? "恢复所选项（2）" : "Restore selected (2)",
+      exact: true,
+    })
+    .click();
+  await dialog
+    .getByRole("button", { name: zh ? "确认" : "Confirm", exact: true })
+    .click();
+  await expect(bin.getByText("Batch A.txt", { exact: true })).toHaveCount(0);
+  await expect(bin.getByText("Batch B.txt", { exact: true })).toHaveCount(0);
+  await page.goto(workbench.url + "/#files");
+  await expect(library.locator(".files-resource-row")).toHaveCount(3);
+  const row = library.getByRole("button", { name: /Batch A\.txt ·/ });
+  await row.focus();
+  await row.press("Enter");
+  await expect(page.locator(".file-text-preview")).toHaveText("original A");
+});
+
+test("mixed resource selection reports partial trash and recovers a nested document with its original owner", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, words(info.project.name));
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: { kind: "SPACE", spaceId: null, title: "Batch archive", bodyMd: "" },
+  });
+  const parent = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: space.id,
+      title: "B parent",
+      bodyMd: "Preserved introduction",
+    },
+  });
+  const child = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: space.id,
+      parentDocumentId: parent.id,
+      title: "C child",
+      bodyMd: "Preserved appendix",
+    },
+  });
+  await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "NOTE",
+      day: null,
+      title: "A review note",
+      bodyMd: "Independent entry",
+    },
+  });
+  await page.goto(workbench.url + "/#files");
+  await page.reload();
+  const library = page.locator(".files-resource-browser");
+  await expect(library.locator(".files-resource-row")).toHaveCount(3);
+  await library
+    .getByRole("combobox", { name: zh ? "资源排序" : "Resource order" })
+    .selectOption("name");
+  const confirm = () =>
+    page
+      .getByRole("dialog", { name: zh ? "确认操作" : "Confirm action" })
+      .getByRole("button", { name: zh ? "确认" : "Confirm", exact: true })
+      .click();
+  const move = async (titles: string[]) => {
+    await library
+      .getByRole("button", { name: zh ? "多选" : "Select items", exact: true })
+      .click();
+    for (const title of titles)
+      await library.getByRole("checkbox", { name: title, exact: true }).check();
+    await library
+      .getByRole("button", {
+        name: zh ? "所选项移至回收站" : "Move selected to Trash",
+      })
+      .click();
+    await confirm();
+  };
+  await move(["A review note", "B parent"]);
+  await expect(
+    page.getByText(
+      zh
+        ? "已确认 1/2 项。请核对刷新后的列表。"
+        : "1 of 2 changes confirmed. Review the refreshed list.",
+    ),
+  ).toBeVisible();
+  await expect(library.locator(".files-resource-row")).toHaveCount(2);
+  await move(["B parent", "C child"]);
+  await expect(library.locator(".files-resource-row")).toHaveCount(0);
+  await page.goto(workbench.url + "/#trash?filter=library");
+  const bin = page.locator(".trash-list");
+  await bin
+    .getByRole("button", {
+      name: zh ? "选择要恢复的资源" : "Select resources to restore",
+    })
+    .click();
+  await bin
+    .getByRole("checkbox", {
+      name: zh ? "选择筛选结果中的资源" : "Select filtered resources",
+    })
+    .check();
+  await bin
+    .getByRole("button", {
+      name: zh ? "恢复所选项（2）" : "Restore selected (2)",
+      exact: true,
+    })
+    .click();
+  await confirm();
+  await expect(bin.getByText("C child", { exact: true })).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const snapshot = await (
+        await page.request.get(workbench.url + "/api/snapshot")
+      ).json();
+      return snapshot.library.find(
+        (entry: { id: string }) => entry.id === child.id,
+      );
+    })
+    .toMatchObject({
+      parentDocumentId: parent.id,
+      spaceId: space.id,
+      bodyMd: "Preserved appendix",
+      deletedAt: null,
+      version: child.version + 2,
+    });
+});

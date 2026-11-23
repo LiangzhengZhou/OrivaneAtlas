@@ -86,6 +86,10 @@ import { FilesWorkspace } from "./features/files/FilesWorkspace";
 import { parseFileHash } from "./features/files/fileRoute";
 import { RecentResources } from "./features/files/RecentResources";
 import { useFileNavigation } from "./features/files/useFileNavigation";
+import {
+  orderResourceTrashEntries,
+  type VersionedResource,
+} from "./features/files/versioned-resource";
 import { PickerIdentityContext } from "./features/hierarchy/PickerIdentityContext";
 import { CreateSpaceDialog } from "./features/knowledge/CreateSpaceDialog";
 import { EntityMemo, WorkEntityMemo } from "./features/memos/EntityMemo";
@@ -1367,6 +1371,76 @@ function Workbench({
       }),
     );
     if (archived) navigateProject(null);
+  }
+  const batchTrashLock = useRef(false);
+  async function changeSelectedResources(
+    items: readonly VersionedResource[],
+    deleted: boolean,
+  ) {
+    if (!items.length || batchTrashLock.current) return false;
+    if (
+      documentDirty.current ||
+      libraryDraft.current ||
+      projectBriefDirty.current
+    ) {
+      showToast(t("saveBeforeOrganize"));
+      return false;
+    }
+    const startRoute = location.hash;
+    const origin = runtime.serverOrigin;
+    const current = () =>
+      runtime.serverOrigin === origin &&
+      runtime.context?.workspaceId === context.workspaceId &&
+      runtime.context?.principalId === context.principalId &&
+      location.hash === startRoute;
+    const zh = i18n.language.startsWith("zh");
+    const count = items.length;
+    batchTrashLock.current = true;
+    try {
+      const prompt = deleted
+        ? zh
+          ? `将所选 ${count} 项资源移至回收站？可在回收站中恢复。`
+          : `Move ${count} selected resources to Trash? You can restore them there.`
+        : zh
+          ? `恢复所选的 ${count} 项资源？`
+          : `Restore ${count} selected resources?`;
+      if (!(await confirmAction(prompt)) || !current()) return false;
+      let acknowledged = 0;
+      const ok = await run(async () => {
+        for (const item of orderResourceTrashEntries(items, deleted)) {
+          if (!current()) break;
+          if (item.kind === "FILE")
+            await runtime.deleteFile(item.id, item.version, deleted);
+          else if (item.kind === "NOTE")
+            await runtime.deleteNote(item.id, item.version, deleted);
+          else await runtime.deleteLibrary(item.id, item.version, deleted);
+          acknowledged++;
+        }
+      }, "resource-trash-batch");
+      if (current()) {
+        if (ok && acknowledged === count) {
+          showToast(
+            deleted
+              ? zh
+                ? `已将 ${count} 项移至回收站`
+                : `Moved ${count} resources to Trash`
+              : zh
+                ? `已恢复 ${count} 项资源`
+                : `Restored ${count} resources`,
+          );
+        } else {
+          showToast(
+            zh
+              ? `已确认 ${acknowledged}/${count} 项。请核对刷新后的列表。`
+              : `${acknowledged} of ${count} changes confirmed. Review the refreshed list.`,
+          );
+          void refresh().catch(() => undefined);
+        }
+      }
+      return true;
+    } finally {
+      batchTrashLock.current = false;
+    }
   }
   async function trashResource(ref: EntityRef) {
     if (ref.kind === "FILE") {
@@ -2865,6 +2939,10 @@ function Workbench({
                               onOpenNote={openNote}
                               onOpenResource={openEntity}
                               onDeleteResource={trashResource}
+                              onTrashSelection={(items) =>
+                                changeSelectedResources(items, true)
+                              }
+                              batchPending={isPending("resource-trash-batch")}
                               onUpload={async (file) => {
                                 let id: string | null = null;
                                 await run(async () => {
@@ -2922,6 +3000,11 @@ function Workbench({
                             })()
                           ) : view === "trash" ? (
                             <TrashRoute
+                              key={resourceScopeKey}
+                              onRestoreSelection={(items) =>
+                                changeSelectedResources(items, false)
+                              }
+                              batchPending={isPending("resource-trash-batch")}
                               snapshot={snapshot}
                               runtime={runtime}
                               query={query}

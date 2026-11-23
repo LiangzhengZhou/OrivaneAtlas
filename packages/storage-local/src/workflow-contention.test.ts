@@ -11,6 +11,7 @@ it.each(
       "RESTORE_CATEGORY",
       "PUBLISH",
       "FILE_UPLOAD",
+      "DOCUMENT_TRASH",
       "CALENDAR",
     ] as const
   ).flatMap((operation) =>
@@ -97,9 +98,27 @@ it.each(
         tasks: [{ tempId: "first", title: "Published once" }],
       });
       const bytes = new Blob([new Uint8Array([0, 128, 255, 10])]);
+      const space =
+        operation === "DOCUMENT_TRASH"
+          ? await runtime.saveLibrary(null, 0, {
+              kind: "SPACE",
+              title: "Research",
+              bodyMd: "",
+              spaceId: null,
+            })
+          : null;
+      const document = space
+        ? await runtime.saveLibrary(null, 0, {
+            kind: "DOCUMENT",
+            spaceId: space.id,
+            title: "Method",
+            bodyMd: "Original protocol",
+          })
+        : null;
       interfere = true;
-      const result =
-        operation === "FILE_UPLOAD"
+      const result = document
+        ? runtime.deleteLibrary(document.id, document.version, true)
+        : operation === "FILE_UPLOAD"
           ? runtime.uploadFile(
               {
                 name: "Preserved.bin",
@@ -130,7 +149,16 @@ it.each(
         await expect(result).rejects.toMatchObject({
           code: "VERSION_CONFLICT",
         });
-      else if (operation === "FILE_UPLOAD") {
+      else if (document) {
+        await expect(result).resolves.toMatchObject({
+          id: document.id,
+          version: document.version + 1,
+          bodyMd: "Original protocol",
+        });
+        await expect(
+          runtime.deleteLibrary(document.id, document.version, false),
+        ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+      } else if (operation === "FILE_UPLOAD") {
         const file = (await result) as Awaited<
           ReturnType<LocalRuntime["uploadFile"]>
         >;
@@ -184,6 +212,13 @@ it.each(
       ).toHaveLength(operation === "PUBLISH" && !continuous ? 1 : 0);
       expect(collisions).toBe(continuous ? 3 : 1);
       const outbox = await first.outbox.list(identity.workspaceId);
+      if (document)
+        expect(
+          outbox.filter(
+            (item) =>
+              item.entityType === "library" && item.entityId === document.id,
+          ),
+        ).toHaveLength(continuous ? 1 : 2);
       expect(outbox.filter((item) => item.entityType === "files")).toHaveLength(
         operation === "FILE_UPLOAD" && !continuous ? 1 : 0,
       );

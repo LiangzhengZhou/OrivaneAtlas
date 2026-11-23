@@ -5,18 +5,24 @@ import { Button } from "../../components/ui/Button";
 import { confirmAction } from "../../components/ui/ConfirmationHost";
 import { Select } from "../../components/ui/Surfaces";
 
+import type { VersionedResource } from "../../features/files/versioned-resource";
+
 export function TrashRoute({
   snapshot,
   runtime,
   query,
   busy,
   run,
+  onRestoreSelection,
+  batchPending,
 }: {
   snapshot: Snapshot;
   runtime: Runtime;
   query: string;
   busy: boolean;
   run(action: () => Promise<unknown>): Promise<boolean>;
+  onRestoreSelection(items: readonly VersionedResource[]): Promise<boolean>;
+  batchPending: boolean;
 }) {
   const { t, i18n } = useTranslation("desk");
   const zh = i18n.language.startsWith("zh");
@@ -24,9 +30,18 @@ export function TrashRoute({
     const value = new URLSearchParams(location.hash.split("?")[1]).get(
       "filter",
     );
-    return ["library", "work", "note"].includes(value ?? "") ? value! : "all";
+    return ["library", "work", "note", "folders"].includes(value ?? "")
+      ? value!
+      : "all";
   };
   const [filter, setFilter] = useState(initialFilter);
+  const [selection, setSelection] = useState<Set<string> | null>(null);
+  const filterKey = JSON.stringify([filter, query]);
+  const [previous, setPrevious] = useState(filterKey);
+  if (previous !== filterKey) {
+    setPrevious(filterKey);
+    setSelection(null);
+  }
   useEffect(() => {
     const changed = () => setFilter(initialFilter());
     window.addEventListener("hashchange", changed);
@@ -79,6 +94,22 @@ export function TrashRoute({
         .toLocaleLowerCase()
         .includes(query.toLocaleLowerCase()),
     );
+  const selectable = entries.flatMap((entry): VersionedResource[] =>
+    entry.kind === "NOTE" || entry.kind === "DOCUMENT" || entry.kind === "FILE"
+      ? [
+          {
+            id: entry.id,
+            version: entry.version,
+            kind: entry.kind,
+            parentDocumentId:
+              "parentDocumentId" in entry ? entry.parentDocumentId : null,
+          },
+        ]
+      : [],
+  );
+  const checked = selectable.filter((entry) =>
+    selection?.has(entry.kind + ":" + entry.id),
+  );
   return (
     <div className="trash-list">
       <label>
@@ -99,8 +130,79 @@ export function TrashRoute({
           <option value="library">{zh ? "知识库" : "Library"}</option>
         </Select>
       </label>
+      {selectable.length > 0 && (
+        <section
+          className="files-selection-toolbar"
+          aria-label={zh ? "批量恢复资源" : "Restore resources in bulk"}
+        >
+          <Button
+            variant="ghost"
+            aria-pressed={selection !== null}
+            disabled={batchPending}
+            onClick={() => setSelection(selection === null ? new Set() : null)}
+          >
+            {selection === null
+              ? zh
+                ? "选择要恢复的资源"
+                : "Select resources to restore"
+              : zh
+                ? "取消多选"
+                : "Cancel selection"}
+          </Button>
+          {selection !== null && (
+            <>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={checked.length === selectable.length}
+                  disabled={batchPending}
+                  onChange={(e) =>
+                    setSelection(
+                      new Set(
+                        e.target.checked
+                          ? selectable.map((item) => item.kind + ":" + item.id)
+                          : [],
+                      ),
+                    )
+                  }
+                />
+                {zh ? "选择筛选结果中的资源" : "Select filtered resources"}
+              </label>
+              <Button
+                disabled={!checked.length}
+                pending={batchPending}
+                onClick={async () => {
+                  if (await onRestoreSelection(checked)) setSelection(null);
+                }}
+              >
+                {zh
+                  ? `恢复所选项（${checked.length}）`
+                  : `Restore selected (${checked.length})`}
+              </Button>
+            </>
+          )}
+        </section>
+      )}
       {entries.map((entry) => (
         <div key={`${entry.kind}:${entry.id}`}>
+          {selection !== null &&
+            (entry.kind === "NOTE" ||
+              entry.kind === "FILE" ||
+              entry.kind === "DOCUMENT") && (
+              <input
+                type="checkbox"
+                aria-label={entry.title}
+                disabled={batchPending}
+                checked={selection.has(entry.kind + ":" + entry.id)}
+                onChange={(event) => {
+                  const key = entry.kind + ":" + entry.id;
+                  const next = new Set(selection);
+                  if (event.target.checked) next.add(key);
+                  else next.delete(key);
+                  setSelection(next);
+                }}
+              />
+            )}
           <span>{entry.title}</span>
           <Button
             type="button"

@@ -733,12 +733,14 @@ export class LocalRuntime {
     );
   }
   deleteLibrary(id: string, version: number, deleted: boolean) {
-    return this.workspace.run(
-      (s) => s.library.setDeleted(this.context, id, version, deleted),
-      () => ({
-        name: "library.delete",
-        input: localDto({ id, version, deleted }),
-      }),
+    return this.restartAbortedWorkspaceWrite(() =>
+      this.workspace.run(
+        (s) => s.library.setDeleted(this.context, id, version, deleted),
+        () => ({
+          name: "library.delete",
+          input: localDto({ id, version, deleted }),
+        }),
+      ),
     );
   }
   purgeLibrary(id: string, version: number) {

@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import { extname, resolve, sep } from "node:path";
+import { resolve } from "node:path";
 import { chromium } from "@playwright/test";
+import { serveWebFixture } from "./serve-ux-web-fixture.mjs";
 
 const [distPath, outputPath] = process.argv.slice(2);
 if (!distPath || !outputPath)
@@ -10,35 +10,8 @@ const dist = resolve(distPath);
 await readFile(resolve(dist, "index.html"));
 const output = resolve(outputPath);
 await mkdir(output);
-const mime = {
-  ".html": "text/html",
-  ".js": "text/javascript",
-  ".css": "text/css",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".webp": "image/webp",
-  ".woff2": "font/woff2",
-  ".json": "application/json",
-  ".wasm": "application/wasm",
-};
-const server = createServer(async (req, res) => {
-  try {
-    const path = new URL(req.url, "http://localhost").pathname;
-    const file = resolve(dist, "." + (path === "/" ? "/index.html" : path));
-    if (!file.startsWith(dist + sep) || path.startsWith("/api/"))
-      throw new Error();
-    const bytes = await readFile(file);
-    res.writeHead(200, {
-      "Content-Type": mime[extname(file)] ?? "application/octet-stream",
-    });
-    res.end(bytes);
-  } catch {
-    res.writeHead(404);
-    res.end();
-  }
-});
-await new Promise((accept) => server.listen(0, "127.0.0.1", accept));
-const origin = "http://127.0.0.1:" + server.address().port;
+const server = await serveWebFixture(dist);
+const { origin } = server;
 const routes = [
   "overview",
   "files",
