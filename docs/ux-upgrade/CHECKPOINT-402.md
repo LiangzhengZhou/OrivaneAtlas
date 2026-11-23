@@ -26,7 +26,7 @@ SQL 存储通过应用层可选的受权原件区间端口提供请求字节。�
 
 - 应用与 Host 涉及 packages/application/src/{file-binary,files,local-persistence,verified-file-ranges,index}.ts 及 packages/host/src/file-routes.ts。
 - SQLite、PostgreSQL 的 file-binary.ts 和 index.ts 实现同一份合同。两个摘要损坏用例和 tests/contracts/file-binary.ts 覆盖读出行与初次验证的原件身份。
-- Web 改动集中在 PdfOriginalPreview.tsx、files.css 、FolderTree.tsx 与 DismissibleDialog.tsx。完整文件清单可用 git diff --name-status d52ccc0..bba4419 查阅。
+- Web 改动集中在 PdfOriginalPreview.tsx、files.css、FolderTree.tsx 与 DismissibleDialog.tsx。完整文件清单可用 git diff --name-status d52ccc0..c186b0d 查阅。
 
 ## 7. 数据与同步
 
@@ -53,17 +53,23 @@ SQL 单批最大值从 18,875,129 降到首次 1,048,576、重复 262,144 字节
 - 早期 Host 的 Range 字面类型推断导致类型检查失败，经修正后 11/11 包通过。首次重试夹具将 503 注入了本地文件路径，未产生网络错误；已改用独立账号的已同步原件测试 503，将本地夹具用于检验跳页。
 - 原始日志在 .artifacts/ux402。完整回归的终态见本节末的运行记录。
 
-8256fa7 的两项个人功能联合重跑 9/9，通过时间 57.5 秒。最终 lint 检查了 1082 个文件且架构边界通过。两项长回归在 06:39 +08:00 仍在进行：check.log 的 Vitest（PID 35876），以及 browser.log 的 Playwright（PID 55668），后者冻结 4cf727e 的 Web 产物并已发现 846 项测试。专项数字不计入完整套件结果。该段是当时的运行快照。pnpm check 随后以 0 退出，309/309 个文件、1592/1592 项用例通过，Vitest 耗时 831.74 秒，构建 2/2。完整浏览器单独收尾。
+8256fa7 的两项个人功能联合回归 9/9。首轮完整 pnpm check 以 0 退出，309 个文件、1592 项测试、2 项构建通过。
 
 bba4419 的个人场景联合回归 9/9，耗时 1.1 分钟；包含浏览器原生 IME 路径。此提交的 11/11 类型检查和架构边界通过。旧弹窗、浮动菜单、点击外部保留草稿的交互回归在三配置 6/6 通过。
 
 完整深色套件 44/44 通过（2.6 分钟），覆盖本轮个人功能以及笔记、日记、图谱、项目等既有入口。c186b0d 增加两个兼容用例：1025 个单字节历史分块每次按批复核、不同工作区验证记录隔离及淘汰后重新核验。该文件 4/4 通过。[各次运行摘要与日志指纹](evidence/session402/gates.json)
+
+最终在 c186b0d 完整重跑 pnpm check，退出码 0：309/309 文件、1594/1594 用例，Vitest 为 740.92 秒，类型检查 11/11，生产构建 2/2。
+
+完整明色浏览器回归 846/846，耗时 53.2 分钟，退出码 0，failedTests 为空。该运行的发现清单及工作台 Web 夹具固定于 4cf727e；后加入的输入法修复另在最终 Web 产物上运行 9 项个人流程、6 项弹窗兼容和全套深色 44 项。使用 pnpm test:e2e --workers=2 --reporter=line 和独立输出目录。日志含 50 条重复任务后台扫描重试，上期完整运行亦有 41 条；原因未定位。
 
 ## 10. 交互证据
 
 相同四页原件、第 3 页、768×900 中文视口、Chromium 153.0.8010.12，改前使用 60553a4 已记录的构建指纹，改后为 4cf727e。另留实际操作后的英文桌面和中文移动截图。
 
 [改前](evidence/session402/before-768.png) · [改后](evidence/session402/after-768.png) · [桌面浅色](evidence/session402/light-desktop.png) · [移动深色](evidence/session402/dark-mobile.png) · [320 像素强制色](evidence/session402/forced-colors-320.png)
+
+Windows 使用 c186b0d 的隔离工作树、新标识 app.orivane.atlas.ux402fixture、单独的 WebView2 配置和本地 Rust GNU 缓存构建测试程序。命令为 pnpm exec tauri build --no-bundle --no-sign --config <windows-fixture.json>，用 node docs/ux-upgrade/evidence/session402/windows-reader.mjs <新目录> <隔离测试程序> 复验。首次启动缺少工具链环境，随后一次离线缓存未包含 rustls；指定已安装的 RUSTUP_HOME 和正确的 cargo-home 后完成构建。WebView2 158.0.4370.33 的真实窗口成功从第 1 页直达第 4 页，核对画布、输入焦点和关闭后归还焦点。768 像素布局下发送真实组字与 Escape，面板保留并能保存中文名称。[实窗截图](evidence/session402/windows-reading.png) · [原始结果](evidence/session402/windows-reading.json)
 
 ## 11. 发布、迁移与回退
 
@@ -75,4 +81,4 @@ Android 低内存真机、系统 IME 和读屏仍待验证；浏览器移动视�
 
 ## 13. 运维影响
 
-使用本地临时数据库、环回端口、合成账号和原件。线上服务、新发布、签名和真实用户数据均未参与。恢复前先运行 git status --short --branch、git rev-parse HEAD，检查 .artifacts/ux402/check.log、browser.log 终态与工作区进程，避免重复运行同一门禁。
+使用本地临时数据库、环回端口、合成账号和原件。线上服务、新发布、签名和真实用户数据均未参与。全部本轮构建、回归和测试程序已结束。额外 Windows 工作树 ../ArcLattice-ux402-native 保留在 c186b0d，构建生成的 ACL 已留档，工作树干净。复验用仓库内证据和 .artifacts/ux402 的本地日志。

@@ -103,5 +103,39 @@
     "result": [
       "Five stages preserved the same link, theme and downloaded SHA-256"
     ]
+  },
+  {
+    "log": "check-final.log",
+    "revision": "c186b0d",
+    "suite": "Final complete pnpm check",
+    "sha256": "738db5d32ddbfb1dffe5996ca41971a72c609b9bf0ec1c9a4d0e2c946084edff",
+    "result": [
+      "Tasks:    11 successful, 11 total",
+      "Test Files  309 passed (309)",
+      "Tests  1594 passed (1594)",
+      "Duration  740.92s (tests 96%, import 3%, transform 1%)",
+      "Tasks:    2 successful, 2 total"
+    ]
+  },
+  {
+    "log": "windows-build-cached.log",
+    "revision": "c186b0d",
+    "suite": "Unsigned isolated Windows fixture build",
+    "sha256": "e37ed8515c37dbd07ec3311c004dd5532a64cf8b763c9cd47c123a95ca62803e",
+    "result": ["Finished `release` profile [optimized] target(s) in 5m 37s"]
+  },
+  {
+    "log": "windows-reading/result.json",
+    "revision": "c186b0d",
+    "suite": "WebView2 PDF jump and native composition",
+    "sha256": "f35cab65c84da6d2a5ce2d9684bca35a287d06d0f25c22102ce247e69a085bbc",
+    "result": ["Four-page PDF and folder composition verified"]
+  },
+  {
+    "log": "browser.log",
+    "revision": "4cf727e frozen workbench Web fixture and discovery list",
+    "suite": "Complete browser regression",
+    "sha256": "3a5d365699a34bd17ccf44ba3053d1cf471cd1d975807d9c790a89831a902f4d",
+    "result": ["846 passed (53.2m)"]
   }
 ]
