@@ -1,0 +1,26 @@
+{
+  "desktop-en": {
+    "sourceCharacters": 120086,
+    "sectionCount": 18,
+    "headingCount": 36,
+    "readyMs": 417,
+    "offsetBefore": 64.28125,
+    "offsetAfter": 64.28125
+  },
+  "desktop-zh": {
+    "sourceCharacters": 120086,
+    "sectionCount": 18,
+    "headingCount": 36,
+    "readyMs": 387,
+    "offsetBefore": 64.28125,
+    "offsetAfter": 64.28125
+  },
+  "mobile-zh": {
+    "sourceCharacters": 120086,
+    "sectionCount": 18,
+    "headingCount": 36,
+    "readyMs": 486,
+    "offsetBefore": 64.1875,
+    "offsetAfter": 64.1875
+  }
+}

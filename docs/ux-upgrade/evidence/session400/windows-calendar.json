@@ -1,0 +1,15 @@
+{
+  "engine": "Edg/158.0.4370.33",
+  "viewport": {
+    "width": 1280,
+    "height": 840,
+    "overflow": -15
+  },
+  "selected": "2028-02-29",
+  "steps": [
+    "week seven days",
+    "day crosses into March",
+    "agenda empty month",
+    "month restores leap day"
+  ]
+}

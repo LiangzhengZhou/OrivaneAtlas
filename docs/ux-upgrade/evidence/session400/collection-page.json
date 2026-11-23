@@ -1,0 +1,42 @@
+{
+  "baseline": {
+    "productCommit": "db711d7",
+    "originalMembers": 60,
+    "sourceRemainingAfter120Seconds": 55,
+    "acceptedMoveResponses": 5,
+    "statusCode": 200
+  },
+  "candidateCommit": "eeef72c",
+  "runs": [
+    {
+      "browser": "153.0.8010.12",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "notes": 30,
+      "documents": 30,
+      "clearedMs": 2460,
+      "displayedMs": 2534,
+      "canonicalMs": 3504,
+      "unchangedOriginals": 60,
+      "unchangedThirdMembership": 1,
+      "reopened": 60
+    },
+    {
+      "browser": "153.0.8010.12",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "notes": 30,
+      "documents": 30,
+      "clearedMs": 2455,
+      "displayedMs": 2533,
+      "canonicalMs": 3467,
+      "unchangedOriginals": 60,
+      "unchangedThirdMembership": 1,
+      "reopened": 60
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "browser": "153.0.8010.12",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "documents": 1000,
+  "edges": 1000,
+  "samples": [
+    {
+      "scopeToPaintMs": 1094,
+      "queryToVisibleMs": 192
+    },
+    {
+      "scopeToPaintMs": 882,
+      "queryToVisibleMs": 161
+    },
+    {
+      "scopeToPaintMs": 868,
+      "queryToVisibleMs": 146
+    }
+  ]
+}

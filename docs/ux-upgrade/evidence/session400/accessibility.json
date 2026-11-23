@@ -1,0 +1,230 @@
+{
+  "engine": "153.0.8010.12",
+  "fixture": "offline empty workspace",
+  "records": [
+    {
+      "route": "overview",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 26,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "files",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 34,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "notes",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 18,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "journal",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 18,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "library",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 24,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "graph",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 17,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "projects",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 20,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "tasks",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 35,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "focus",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 17,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "calendar",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 56,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "ai",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 27,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "account",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 22,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "settings",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 163,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "trash",
+      "locale": "en-US",
+      "width": 1280,
+      "controls": 17,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "overview",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 19,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "files",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 21,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "notes",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 11,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "journal",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 11,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "library",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 17,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "graph",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 10,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "projects",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 13,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "tasks",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 28,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "focus",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 10,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "calendar",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 49,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "ai",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 20,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "account",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 15,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "settings",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 50,
+      "main": 1,
+      "unnamed": []
+    },
+    {
+      "route": "trash",
+      "locale": "zh-CN",
+      "width": 390,
+      "controls": 10,
+      "main": 1,
+      "unnamed": []
+    }
+  ]
+}

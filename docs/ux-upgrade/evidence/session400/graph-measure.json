@@ -1,0 +1,20 @@
+{
+  "measure": "Force pass only for non-local grid scopes, milliseconds. One warm-up per size. Excludes grid, React and paint.",
+  "node": "v24.20.0",
+  "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+  "windows": "10.0.26300",
+  "cases": [
+    {
+      "documents": 500,
+      "edges": 499,
+      "baseline": [273.5754, 272.9976, 323.015],
+      "candidate": [0.003, 0.0023, 0.0008]
+    },
+    {
+      "documents": 1000,
+      "edges": 999,
+      "baseline": [792.6161, 791.5678, 874.8116],
+      "candidate": [0.0044, 0.0026, 0.0006]
+    }
+  ]
+}

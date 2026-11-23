@@ -1,0 +1,24 @@
+{
+  "sourceCommit": "bdc9d1c",
+  "nativeSourceAlsoMatches": "db711d7",
+  "target": "aarch64-linux-android",
+  "sdkApi": 24,
+  "ndk": "26.1",
+  "profile": "release",
+  "duration": "7m 05s",
+  "warnings": 5,
+  "elfClass": "ELF64",
+  "machine": "AArch64",
+  "fileBytes": 14869224,
+  "sha256": "5f0e693d6269cbe18261aa4ce38d1edc29ea5024a99fa879ef12293e6829f2a6",
+  "sampledJniExports": [
+    "Java_app_orivane_atlas_Rust_assetLoaderDomain",
+    "Java_app_orivane_atlas_Rust_create",
+    "Java_app_orivane_atlas_Rust_handleReceivedTitle",
+    "Java_app_orivane_atlas_Rust_handleRequest",
+    "Java_app_orivane_atlas_Rust_ipc",
+    "Java_app_orivane_atlas_Rust_onActivityCreate",
+    "Java_app_orivane_atlas_Rust_onActivityDestroy",
+    "Java_app_orivane_atlas_Rust_onActivityLowMemory"
+  ]
+}

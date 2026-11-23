@@ -1,3 +1,35 @@
+# 全产品升级接力 · Session 400
+
+2026-11-24，本机 Windows 隔离测试。主分支 codex/ux-upgrade，从 9929884 恢复。代码依次为 92a1c0f（集合移动）、fd5e96d（组合读取授权）、9e10fd0（OpenAPI 随构建输出）、26e02f1（阅读目录与位置）、c455891（图谱搜索）、75b0eea（日历）、bdc9d1c（原件 HTTP Range）、57cdd9e（深色图谱和节点定位）、1ecf1d9（首次同步保留 Wiki 索引身份）、db711d7（纳入长期暗色套件）和 eeef72c（修复整页集合移动被同步竞争打断）。下方先前检查点各自保留其当时状态。报告见 [CHECKPOINT-400.md](CHECKPOINT-400.md)。
+
+|范围|本轮实测|未签收|
+|---|---|---|
+|集合与权限|三个客户端配置实际移动笔记、文档与原件，核对第三个集合、下载字节与 Markdown 所有权。授权检查覆盖两个路由别名、旧凭据、缺少读取权限及外部工作区。|共享委派和撤权后已开界面。|
+|文档与图谱|120086 字符、36 标题在 3 个配置均能准确回到原位置。图谱键盘分页、空结果、局部作用域共 9/9。500/1000 节点不再计算随后丢弃的力布局。|低端机、编辑输入法、密集图的整页延迟。|
+|日历|月/周/日/议程共享所选日期和工作区时区。3 配置核对闰日、跨月、从议程创建任务及离开后回到所选周。|系统提醒、原生触控、夏令时切换时的调度体验。|
+|原件|基础及可续传单段 HTTP 读取、旧客户端普通 200、416 和缺授权不暴露范围均实测；1048593 字节夹具跨五块上传，再分两段取回，SHA-256 与源相等。|存储层仍在读取前验证完整原件；大 PDF 的端到端按需解析与低端内存预算。|
+
+**首次同步缺陷与性能。** 已用正式 HTTP 接口在隔离账号创建 1,000 篇文档和 1,000 条 Wiki 关系。旧 Host 的展示投影缺少记录身份，开户副本激活在 workDelta 校验处失败。1ecf1d9 的 SQLite/PG 读取使用现有 ID、版本、工作区及时间。三种配置验证旧 Host 阻塞时能看到可执行的提示，更新后同页重试、随后创建缺失目标时原关联版本递增。真实整页三样本中位数：切换/绘制 1682→882 ms，输入/匹配可见 755→161 ms。两版前端使用同一修复后的 Host。
+
+**门禁与恢复。** 92a1c0f 的 `pnpm check` 307/307 文件、1585/1585 测试通过，Vitest 738.18 秒，构建 2/2。原始运行输出在 `.artifacts/ux400`。早一轮 `.artifacts/ux398/browser-825.log` 为 823 通过、2 失败；检查表中保留了测试源码与构建不一致的原因。独立工作树 D:/Lib/Codex_workplace/ArcLattice-ux401 使用自己的依赖与构建，避免修改进行中浏览器的源码。bdc9d1c 的完整 `pnpm check` 已结束，307 个文件、1587 个用例及 2 项构建通过。57cdd9e 的完整门禁分别记录于 `check-57cdd9e.log` 与 `browser-57cdd9e.log`。92a1c0f 的完整浏览器运行 828/828 通过（56.9 分钟），记录在 `full-browser.log`。本机接力含最终 HEAD 和进程。57cdd9e 的 392 个布局组合、图谱 9 项专项与 8 项深色流程均已通过。Windows 使用独立标识、独立数据目录、无签名 Tauri 夹具实际运行了闰日的四个日历步骤，见 evidence/session400/windows-calendar.json。
+
+### 本轮检查点与恢复顺序
+
+产品提交 `eeef72c` 已快进合入主工作树，最新检查点提交用 `git log -1 -- docs/ux-upgrade/PROGRESS.md` 获取。2026-11-24 03:08（+08:00）在本机核对如下。各后台任务使用隔离夹具和独立输出目录。
+
+|任务|现场状态与保护范围|
+|---|---|
+|db711d7 全量检查|已结束，307 个测试文件、1588 个测试、两项构建全部通过。793.60 秒是 Vitest 时长，日志 `.artifacts/ux400/check-db711d7-r2.log`。|
+|eeef72c 整页集合移动|此前 5 项成功、55 项未移动；修复后的真实浏览器两次均完成 60/60，核对 60 份原始正文、30 个文档的 spaceId 和一条第三集合关联。专项合同 14/14。日志 `collection-page.log`、`collection-retry.log`、`collection-retry-contract.log`。|
+|eeef72c 完整检查|主工作树 PID 53456，`.artifacts/ux400/check-eeef72c.log`。当时类型检查已通过，Vitest 在运行。|
+|57cdd9e 完整浏览器|独立工作树 `../ArcLattice-ux-graph`，PID 31128 / 53312，`.artifacts/ux400/browser-57cdd9e.log`，已启动第 483/837 项。保持该工作树、构建目录、宿主及输出。|
+|eeef72c 完整浏览器|独立工作树 `../ArcLattice-ux401`，分支 `codex/ux-collection-contention`，PID 41420 正等待上行全量结束以复用旧测试的固定端口。构建通过，清单 15 文件、840 项。原排队 db711d7 的浏览器任务在尚未启动前由本修复版本替代。新日志 `.artifacts/ux400/browser-eeef72c.log` 会在实际开始后出现。|
+|平台与可访问性|真实 Windows Tauri 四步、Android ARM64/JNI 构建、11 月 24 日 03:11 离线重跑 JVM 7/7（通知 4、更新 3）、38/38 深色流程及 18/18 强制色与减少动态效果流程已完成。无 Android 真机/模拟器镜像，真人读屏与系统安装升级未验证。|
+
+恢复先读 `docs/HANDOFF.md`，核对 `git status --short --branch`、`git rev-parse HEAD`、`git worktree list`，用 `Get-Process -Id 31128,53312,41420,53456 -ErrorAction SilentlyContinue` 和上述日志判断各任务终态。若测试失败，按确切标题、提交、trace 在新的输出目录重跑。测试运行期间保留相应工作树及 dist。
+
+接下来在 `tests/e2e/work.spec.ts` 的账户/资源流程覆盖持有已开详情时撤销会话、再次打开搜索与下载，以及中断整页移动后重新打开。依 ADR0108/0124 区分已登录所有者、细粒度凭据和设备上保存的离线副本。用 2 个合成主体逐项核对原件和元数据。大文件在 `apps/web/src/features/files/PdfOriginalPreview.tsx`、`packages/file-parsers/src/pdf-page-view.ts` 和应用层取件契约接入可取消的受权分段源；以 evidence/session400/large-pdf.mjs 的 18 MiB 夹具比对首屏、在途请求、内存及下载摘要。其他模块继续按 [§13 验收台账](ACCEPTANCE.md) 和 [问题列表](ISSUES.md) 执行。
+
 # 全产品升级接力 · 当前候选 da0105e
 
 本机记录时间 2026-11-24 00:10 +08:00。项目根目录 D:/Lib/Codex_workplace/ArcLattice，分支 codex/ux-upgrade，生产版本未核证。最新产品代码 da0105e，报告与证据提交可用 `git log -1 -- docs/ux-upgrade/PROGRESS.md` 定位。当前实现、验收缺口和文件清单见 CHECKPOINT-398.md、ACCEPTANCE.md、CHANGES-398.md。以下旧记录按各自时点解读。
