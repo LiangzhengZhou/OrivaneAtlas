@@ -1989,8 +1989,33 @@ it("authenticated Host extraction uses the real Node worker, preserves originals
       expect(part.headers.get("etag")).toBeNull();
       expect(part.headers.get("content-range")).toBeNull();
     }
-    if (grants.length === 2)
+    if (grants.length === 2) {
       expect(Buffer.from(await original.arrayBuffer())).toEqual(bytes);
+      expect((await call("/api/tokens/revoke", { id: scoped.id })).status).toBe(
+        200,
+      );
+      for (const resource of [
+        `/api/v1/files/metadata?id=${file.id}`,
+        path,
+        `/api/v1/files/bytes?id=${file.id}`,
+      ]) {
+        const denied = await call(resource, undefined, {
+          ...bearer,
+          Range: "bytes=4-7",
+          "If-Range": part.headers.get("etag")!,
+        });
+        expect(denied.status).toBe(401);
+        expect(denied.headers.get("content-range")).toBeNull();
+        expect(denied.headers.get("etag")).toBeNull();
+      }
+      expect(
+        (
+          await call(`/api/v1/files/bytes?id=${file.id}`, undefined, {
+            Range: "bytes=4-7",
+          })
+        ).status,
+      ).toBe(206);
+    }
   }
   const foreignSecret = "arc_" + randomBytes(32).toString("hex");
   await host.db.accounts((store) => {

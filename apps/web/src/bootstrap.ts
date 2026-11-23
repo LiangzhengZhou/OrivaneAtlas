@@ -44,6 +44,7 @@ import {
   equalLocalJson,
   FileExtractionCoordinator,
   FileExtractionService,
+  type FilePageSource,
   FileProcessingService,
   hydrateLocalConflictBody,
   initializeLocalEntityMemoHistory,
@@ -78,6 +79,7 @@ import {
   recoverWorkspaceImportReceipts,
   remoteUnhydratedSearchIds,
   requireCanonicalFile,
+  requireFilePageRange,
   requireRasterImage,
   resolveWorkspaceImportSteps,
   reviewWorkspaceImportSuffix,
@@ -115,6 +117,7 @@ import {
   resolveWikiLinks,
 } from "@arclattice/wiki-core";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import { readFilePageResponse } from "./app/file-page-response";
 import {
   ImageLoadError,
   imageLoadFailure,
@@ -360,6 +363,35 @@ export async function bootstrap() {
     }
     return native ? nativeAccounts : readSavedAccounts();
   }
+  // Keep a confirmed session loss across a reload without storing credentials or content.
+  const lockKey = "atlas.revoked-replica." + activeWorkspace.databaseName;
+  const accessEvents = new EventTarget();
+  let replicaLocked = false;
+  try {
+    replicaLocked =
+      !!activeWorkspace.remote && sessionStorage.getItem(lockKey) === "1";
+  } catch {
+    /* Storage is optional. */
+  }
+  function setReplicaLocked(value: boolean) {
+    if (replicaLocked === value) return;
+    replicaLocked = value;
+    try {
+      if (value) sessionStorage.setItem(lockKey, "1");
+      else sessionStorage.removeItem(lockKey);
+    } catch {
+      /* Keep the in-memory lock. */
+    }
+    accessEvents.dispatchEvent(new Event("change"));
+  }
+  function isBoundOwner() {
+    const remote = activeWorkspace.remote;
+    return (
+      !!remote &&
+      remote.serverOrigin === serverOrigin &&
+      context?.principalId === remote.principalId
+    );
+  }
   let serverGeneration = 0;
   let requestController = new AbortController();
   function workspaceRequestScope() {
@@ -479,6 +511,8 @@ export async function bootstrap() {
       throw new Error("NETWORK_ERROR");
     }
     if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
+    if (response.status === 401 && payload === undefined && isBoundOwner())
+      setReplicaLocked(true);
     return response;
   }
   function requireRemoteBindingScope(
@@ -1427,10 +1461,153 @@ export async function bootstrap() {
     }
   }
   setTimeout(wakeFileProcessing, 0);
+  async function canonicalFileBinding(id: string, generation: number) {
+    if (replicaLocked) throw new DomainError("FORBIDDEN");
+    const scope = await localStore.syncState.get(local.context.workspaceId);
+    if (!scope?.remotePrincipalId) return null;
+    const base = await localStore.metadata.get(
+      local.context.workspaceId,
+      "$local.remoteBase",
+      JSON.stringify(["files", id]),
+    );
+    if (!base || navigator.onLine === false) return null;
+    requireRemoteBindingScope(scope, generation);
+    return scope;
+  }
+
+  async function checkFileAccess(id: string) {
+    const generation = serverGeneration;
+    const binding = await canonicalFileBinding(id, generation);
+    if (!binding?.remoteWorkspaceId) return false;
+    const reply = await transport(
+      "/api/v1/files/metadata?id=" + encodeURIComponent(id),
+      undefined,
+      "",
+      binding.remoteWorkspaceId,
+    );
+    requireRemoteBindingScope(binding, generation);
+    if (reply.status === 401 || reply.status === 403)
+      throw new DomainError("FORBIDDEN");
+    if (reply.status === 404) throw new DomainError("NOT_FOUND");
+    if (!reply.ok) throw new Error("FILE_ACCESS_UNAVAILABLE");
+    return true;
+  }
+
+  async function openFilePageSource(
+    id: string,
+    signal: AbortSignal,
+  ): Promise<FilePageSource> {
+    const generation = serverGeneration;
+    const owner = local.context;
+    const file = await local.readFile(owner, id);
+    const binding = await canonicalFileBinding(id, generation);
+    signal.throwIfAborted();
+    const blob = binding ? null : await local.readFileBytes(id);
+    let preview: number | null =
+      binding && native
+        ? await invoke<number>("file_preview_lease", { id: null })
+        : null;
+    function close() {
+      const id = preview;
+      preview = null;
+      signal.removeEventListener("abort", close);
+      window.removeEventListener("pagehide", close);
+      if (id !== null)
+        void invoke("file_preview_lease", { id }).catch(() => undefined);
+    }
+    if (preview !== null) {
+      signal.addEventListener("abort", close, { once: true });
+      window.addEventListener("pagehide", close, { once: true });
+      if (signal.aborted) close();
+    }
+    function active() {
+      signal.throwIfAborted();
+      if (replicaLocked) throw new DomainError("FORBIDDEN");
+      assertLocalSearchScope(owner, generation);
+      if (binding) requireRemoteBindingScope(binding, generation);
+    }
+    try {
+      active();
+    } catch (error) {
+      close();
+      throw error;
+    }
+    return {
+      close,
+      size: file.size,
+      async read(begin, end, requestSignal) {
+        active();
+        requestSignal.throwIfAborted();
+        requireFilePageRange(file.size, begin, end);
+        const path = "/api/v1/files/bytes?id=" + encodeURIComponent(id);
+        let bytes: Uint8Array;
+        if (blob) {
+          bytes = new Uint8Array(await blob.slice(begin, end).arrayBuffer());
+        } else if (binding && native) {
+          bytes = new Uint8Array(
+            await invoke<ArrayBuffer>("server_download_file", {
+              origin: serverOrigin,
+              path,
+              workspaceId: binding.remoteWorkspaceId,
+              preview,
+              range: {
+                begin,
+                end,
+                size: file.size,
+                contentHash: file.contentHash,
+              },
+            }),
+          );
+        } else if (binding?.remoteWorkspaceId) {
+          const combined = AbortSignal.any([
+            signal,
+            requestSignal,
+            requestController.signal,
+            AbortSignal.timeout(15000),
+          ]);
+          const response = await fetch(serverOrigin + path, {
+            credentials: "same-origin",
+            cache: "no-store",
+            signal: combined,
+            headers: {
+              "X-Workspace-Id": binding.remoteWorkspaceId,
+              Range: `bytes=${begin}-${end - 1}`,
+              "If-Range": '"' + file.contentHash + '"',
+            },
+          });
+          if (
+            response.status === 401 &&
+            generation === serverGeneration &&
+            isBoundOwner()
+          )
+            setReplicaLocked(true);
+          bytes = await readFilePageResponse(
+            response,
+            file.size,
+            file.contentHash,
+            begin,
+            end,
+            combined,
+          );
+        } else throw new DomainError("FORBIDDEN");
+        active();
+        requestSignal.throwIfAborted();
+        if (bytes.length !== end - begin)
+          throw new Error("INCOMPLETE_FILE_RANGE");
+        return bytes;
+      },
+    };
+  }
+
   async function readFileBytes(id: string) {
+    const generationAtStart = serverGeneration;
+    await checkFileAccess(id);
     try {
       wakeFileProcessing();
-      return await local.readFileBytes(id);
+      const bytes = await local.readFileBytes(id);
+      if (replicaLocked || generationAtStart !== serverGeneration)
+        throw new DomainError("FORBIDDEN");
+      return bytes;
     } catch (error) {
       const api = await import("@arclattice/application");
       if (!(error instanceof api.FileBytesUnavailableError)) throw error;
@@ -1463,7 +1640,10 @@ export async function bootstrap() {
           return response.blob();
         },
       );
-      return local.readFileBytes(id);
+      const bytes = await local.readFileBytes(id);
+      if (replicaLocked || generationAtStart !== serverGeneration)
+        throw new DomainError("FORBIDDEN");
+      return bytes;
     }
   }
   function assertLocalSearchScope(actor: ActorContext, generation: number) {
@@ -1932,6 +2112,8 @@ export async function bootstrap() {
       }
     },
     readFileBytes,
+    checkFileAccess,
+    openFilePageSource,
     async searchNotes(query: string) {
       const actor = { ...local.context },
         generation = serverGeneration;
@@ -2723,6 +2905,44 @@ export async function bootstrap() {
       requireRemoteBindingScope(captured.binding, generation);
       await localStore.deletedKnowledge.commit(prepared);
       return prepared.resultId;
+    },
+    replicaAccess: {
+      locked: () => replicaLocked,
+      subscribe(listener: () => void) {
+        accessEvents.addEventListener("change", listener);
+        return () => accessEvents.removeEventListener("change", listener);
+      },
+      async recheck() {
+        if (replicaLocked || !isBoundOwner() || navigator.onLine === false)
+          return;
+        const remote = activeWorkspace.remote!;
+        const generation = serverGeneration;
+        const reply = await transport(
+          "/api/session",
+          undefined,
+          "",
+          remote.workspaceId,
+        );
+        if (reply.status === 403) setReplicaLocked(true);
+        if (!reply.ok) return;
+        const current = await reply.json();
+        if (
+          generation === serverGeneration &&
+          (current.context?.principalId !== remote.principalId ||
+            current.context?.workspaceId !== remote.workspaceId)
+        )
+          setReplicaLocked(true);
+      },
+      async unlock(username: string, password: string) {
+        const remote = activeWorkspace.remote;
+        if (!remote || remote.serverOrigin !== serverOrigin)
+          throw new DomainError("FORBIDDEN");
+        await session(
+          { username, password },
+          { workspaceId: remote.workspaceId, principalId: remote.principalId },
+        );
+        setReplicaLocked(false);
+      },
     },
     get activeWorkspace() {
       return activeWorkspace;

@@ -1426,6 +1426,7 @@ export * from "./entity-memo-replay";
 export * from "./entity-memos";
 export * from "./file-ai-context";
 export * from "./file-binary";
+export * from "./file-page-source";
 export * from "./file-replay-effects";
 export * from "./file-transfer";
 export * from "./files";

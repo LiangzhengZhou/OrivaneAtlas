@@ -545,23 +545,85 @@ async fn send_binary_chunk_scoped(
     Ok(Reply { status, content_type, body: String::from_utf8(bytes.to_vec()).map_err(|_| "INVALID_RESPONSE")?, encoding: "utf8" })
 }
 
+struct PreviewLease(tokio::sync::watch::Sender<bool>);
+
+impl tauri::Resource for PreviewLease {
+    fn close(self: std::sync::Arc<Self>) {
+        self.0.send_replace(true);
+    }
+}
+
+#[tauri::command]
+pub fn file_preview_lease(webview: tauri::Webview, id: Option<tauri::ResourceId>) -> Result<Option<tauri::ResourceId>, String> {
+    use tauri::Manager;
+    let mut table = webview.resources_table();
+    if let Some(id) = id {
+        table.get::<PreviewLease>(id).map_err(|_| "INVALID_PREVIEW")?;
+        table.close(id).map_err(|_| "INVALID_PREVIEW")?;
+        Ok(None)
+    } else {
+        let (sender, _) = tokio::sync::watch::channel(false);
+        Ok(Some(table.add(PreviewLease(sender))))
+    }
+}
+
+async fn until_preview_closed<T>(read: impl std::future::Future<Output = Result<T,String>>, mut closed: tokio::sync::watch::Receiver<bool>) -> Result<T,String> {
+    use std::future::{poll_fn, Future};
+    use std::task::Poll;
+    if *closed.borrow() { return Err("PREVIEW_CLOSED".into()); }
+    let mut read = std::pin::pin!(read);
+    let mut changed = std::pin::pin!(closed.changed());
+    poll_fn(|cx| {
+        if changed.as_mut().poll(cx).is_ready() { Poll::Ready(Err("PREVIEW_CLOSED".into())) }
+        else { read.as_mut().poll(cx) }
+    }).await
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OriginalRange {
+    begin: u64,
+    end: u64,
+    size: u64,
+    content_hash: String,
+}
+
+impl OriginalRange {
+    fn valid(&self) -> bool {
+        self.begin < self.end && self.end <= self.size && self.end - self.begin <= 256 * 1024
+            && self.size <= 100 * 1024 * 1024 && self.content_hash.len() == 64
+            && self.content_hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    }
+}
+
 #[tauri::command]
 pub async fn server_download_file(
     state: tauri::State<'_, Transport>, origin: String, path: String,
-    workspace_id: Option<String>,
+    webview: tauri::Webview, workspace_id: Option<String>, range: Option<OriginalRange>, preview: Option<tauri::ResourceId>,
 ) -> Result<tauri::ipc::Response, String> {
-    send_binary_download_scoped(&state,origin,path,workspace_id).await.map(tauri::ipc::Response::new)
+    use tauri::Manager;
+    let result = if range.is_some() {
+        let lease = webview.resources_table().get::<PreviewLease>(preview.ok_or("INVALID_PREVIEW")?).map_err(|_| "INVALID_PREVIEW")?;
+        let closed = lease.0.subscribe();
+        drop(lease);
+        until_preview_closed(download_original(&state,origin,path,workspace_id,range),closed).await
+    } else { download_original(&state,origin,path,workspace_id,None).await };
+    result.map(tauri::ipc::Response::new)
 }
 async fn send_binary_download(state:&Transport,origin:String,path:String)->Result<Vec<u8>,String> {
     send_binary_download_scoped(state,origin,path,None).await
 }
 async fn send_binary_download_scoped(state:&Transport,origin:String,path:String,workspace_id:Option<String>)->Result<Vec<u8>,String> {
+    download_original(state,origin,path,workspace_id,None).await
+}
+async fn download_original(state:&Transport,origin:String,path:String,workspace_id:Option<String>,range:Option<OriginalRange>)->Result<Vec<u8>,String> {
     let url=endpoint(&origin,&path,false)?;
     let is_file = ["/api/files/bytes", "/api/v1/files/bytes"].contains(&url.path());
     let is_library_image = url.path() == "/api/library/asset"
         && url
             .query()
             .is_some_and(|query| query.split('&').any(|part| part.starts_with("id=")));
+    if range.as_ref().is_some_and(|part| !is_file || !part.valid()) { return Err("INVALID_FILE_RANGE".into()); }
     if !is_file && !is_library_image { return Err("INVALID_FILE_PATH".into()); }
     let (cookie,generation)={
         let current=state.0.lock().map_err(|_|"NETWORK_ERROR")?;
@@ -570,6 +632,10 @@ async fn send_binary_download_scoped(state:&Transport,origin:String,path:String,
     };
     let mut request=client()?.get(url).header("Origin",&origin).timeout(Duration::from_secs(60));
     if !cookie.is_empty(){request=request.header("Cookie",cookie);}
+    if let Some(part) = &range {
+        request = request.header("Range", format!("bytes={}-{}", part.begin, part.end-1))
+            .header("If-Range", format!("\"{}\"", part.content_hash));
+    }
     let mut response=workspace_scope(request,workspace_id.as_deref())?.send().await.map_err(network_error)?;
     let status=response.status().as_u16();
     if status==401 {
@@ -585,16 +651,28 @@ async fn send_binary_download_scoped(state:&Transport,origin:String,path:String,
     } else {
         content_type == "application/octet-stream"
     };
-    if status!=200 || !valid_content_type {return Err("INVALID_RESPONSE".into());}
-    const LIMIT:usize=100*1024*1024;
-    if response.content_length().is_some_and(|size|size>LIMIT as u64) {return Err("FILE_TOO_LARGE".into());}
+    let limit = if let Some(part) = &range {
+        let span = part.end - part.begin;
+        let header = |name: &str| response.headers().get(name).and_then(|v|v.to_str().ok());
+        if status != 206 || !valid_content_type || response.content_length() != Some(span)
+            || header("etag") != Some(format!("\"{}\"", part.content_hash).as_str())
+            || header("content-range") != Some(format!("bytes {}-{}/{}",part.begin,part.end-1,part.size).as_str()) {
+            return Err("INVALID_FILE_RANGE_RESPONSE".into());
+        }
+        span as usize
+    } else {
+        if status!=200 || !valid_content_type {return Err("INVALID_RESPONSE".into());}
+        100 * 1024 * 1024
+    };
+    if response.content_length().is_some_and(|size|size>limit as u64) {return Err("FILE_TOO_LARGE".into());}
     let mut bytes=Vec::new();
     while let Some(chunk)=response.chunk().await.map_err(network_error)? {
-        if chunk.len()>LIMIT-bytes.len(){return Err("FILE_TOO_LARGE".into());}
+        if chunk.len()>limit-bytes.len(){return Err("FILE_TOO_LARGE".into());}
         bytes.extend_from_slice(&chunk);
     }
     let current=state.0.lock().map_err(|_|"NETWORK_ERROR")?;
     if current.generation!=generation || current.origin!=origin {return Err("SERVER_CHANGED".into());}
+    if range.is_some() && bytes.len() != limit { return Err("INCOMPLETE_FILE_RANGE".into()); }
     Ok(bytes)
 }
 async fn send(
@@ -891,6 +969,60 @@ mod tests {
         });
         assert!(worker.join().unwrap().starts_with("GET /api/v1/files/bytes?id=original "));
     }
+    #[test]
+    fn closing_the_preview_drops_an_in_flight_read() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let (lease, receiver) = tokio::sync::watch::channel(false);
+            let (started, wait) = tokio::sync::oneshot::channel();
+            let (released, dropped) = tokio::sync::oneshot::channel::<()>();
+            let task = tokio::spawn(until_preview_closed(async move {
+                let _guard = released;
+                started.send(()).unwrap();
+                std::future::pending::<Result<(),String>>().await
+            }, receiver));
+            wait.await.unwrap();
+            lease.send_replace(true);
+            assert_eq!(tokio::time::timeout(Duration::from_secs(2),task).await.unwrap().unwrap().unwrap_err(),"PREVIEW_CLOSED");
+            assert!(dropped.await.is_err());
+        });
+    }
+
+    #[test]
+    fn ranged_original_requires_matching_identity_range_and_length() {
+        use std::io::{Read, Write};
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let hash = "a".repeat(64);
+        for (status, etag, interval, length, valid) in [
+            ("206 Partial Content", hash.as_str(), "bytes 4-6/16", 3, true),
+            ("200 OK", hash.as_str(), "bytes 4-6/16", 3, false),
+            ("206 Partial Content", "changed", "bytes 4-6/16", 3, false),
+            ("206 Partial Content", hash.as_str(), "bytes 1-3/16", 3, false),
+            ("206 Partial Content", hash.as_str(), "bytes 4-6/16", 4, false),
+        ] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let origin = format!("http://{}", listener.local_addr().unwrap());
+            let reply = format!("HTTP/1.1 {status}\r\nContent-Type: application/octet-stream\r\nContent-Length: {length}\r\nETag: \"{etag}\"\r\nContent-Range: {interval}\r\nConnection: close\r\n\r\n");
+            let worker = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                let mut request = [0;8192];
+                let count = socket.read(&mut request).unwrap();
+                let mut response = reply.into_bytes();
+                response.extend_from_slice(&[11,12,13,14][..length]);
+                socket.write_all(&response).unwrap();
+                String::from_utf8_lossy(&request[..count]).to_ascii_lowercase()
+            });
+            let state = Transport::default();
+            state.0.lock().unwrap().origin = origin.clone();
+            let range = OriginalRange { begin:4, end:7, size:16, content_hash:hash.clone() };
+            let result = runtime.block_on(download_original(&state, origin, "/api/v1/files/bytes?id=original".into(), None, Some(range)));
+            let request = worker.join().unwrap();
+            assert!(request.contains("range: bytes=4-6") && request.contains(&format!("if-range: \"{hash}\"")));
+            if valid { assert_eq!(result.unwrap(), vec![11,12,13]); }
+            else { assert_eq!(result.unwrap_err(), "INVALID_FILE_RANGE_RESPONSE"); }
+        }
+    }
+
     #[test]
     fn library_image_download_preserves_binary_without_base64_bridge() {
         use std::io::{Read,Write};

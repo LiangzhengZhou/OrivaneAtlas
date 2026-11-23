@@ -83,6 +83,20 @@ try {
       (await detail
         .getByRole("button", { name: "View original PDF pages", exact: true })
         .count()) > 0;
+    let firstPageMs = null;
+    if (canOpen) {
+      const opened = performance.now();
+      await detail
+        .getByRole("button", { name: "View original PDF pages", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog", {
+        name: "Large blank survey.pdf",
+      });
+      await dialog.locator("canvas:visible").waitFor({ timeout: 60000 });
+      firstPageMs = Math.round(performance.now() - opened);
+      await page.screenshot({ path: resolve(directory, "page-one.png") });
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    }
     const pending = page.waitForEvent("download");
     await download.click();
     const file = await pending;
@@ -99,6 +113,7 @@ try {
       sourceSha256: hash(original),
       downloadedSha256: hash(bytes),
       previewButtonPresent: canOpen,
+      firstPageMs,
       detailReadyMs,
       downloadedMs,
       samples: samples.length,

@@ -33,7 +33,15 @@ import {
   Search,
   Target,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Activity,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { AccountView, AdminView } from "./AccountViews";
 import { AppUpdater } from "./AppUpdater";
@@ -149,23 +157,62 @@ export function App({ runtime }: { runtime: Runtime }) {
       active = false;
     };
   }, [runtime]);
+  const locked = useSyncExternalStore(
+    runtime.replicaAccess.subscribe,
+    runtime.replicaAccess.locked,
+  );
+  useEffect(() => {
+    if (!ready || !runtime.activeWorkspace.remote || locked) return;
+    let pending = false;
+    const check = async () => {
+      if (document.hidden || pending) return;
+      pending = true;
+      try {
+        await runtime.replicaAccess.recheck();
+      } catch {
+        /* Loss of connectivity does not establish revocation. */
+      } finally {
+        pending = false;
+      }
+    };
+    void check();
+    const interval = window.setInterval(check, 15000);
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [runtime, ready, locked]);
   if (!ready) return <StartupShell />;
   return context ? (
-    <PickerIdentityContext.Provider
-      value={{
-        server: runtime.serverOrigin || location.origin,
-        workspaceId: context.workspaceId,
-        principalId: context.principalId,
-      }}
-    >
-      <Workbench
-        runtime={runtime}
-        context={context}
-        onLogout={() => {
-          setContext(runtime.context);
-        }}
-      />
-    </PickerIdentityContext.Provider>
+    <>
+      {locked && (
+        <Login
+          runtime={runtime}
+          restoreReplica
+          onLogin={() => setContext(runtime.context)}
+        />
+      )}
+      <Activity mode={locked ? "hidden" : "visible"}>
+        <PickerIdentityContext.Provider
+          value={{
+            server: runtime.serverOrigin || location.origin,
+            workspaceId: context.workspaceId,
+            principalId: context.principalId,
+          }}
+        >
+          <Workbench
+            runtime={runtime}
+            context={context}
+            onLogout={() => {
+              setContext(runtime.context);
+            }}
+          />
+        </PickerIdentityContext.Provider>
+      </Activity>
+    </>
   ) : (
     <>
       <Login runtime={runtime} onLogin={() => setContext(runtime.context)} />

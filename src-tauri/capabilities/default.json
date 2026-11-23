@@ -15,6 +15,7 @@
     "allow-server-request",
     "allow-server-upload-chunk",
     "allow-server-download-file",
+    "allow-file-preview-lease",
     "allow-notification-permission",
     "allow-notification-request-permission",
     "allow-notification-reconcile",

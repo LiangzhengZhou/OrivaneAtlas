@@ -89,6 +89,7 @@ pub fn run() {
             transport::detach_account,
             transport::server_request,
             transport::server_upload_chunk,
+            transport::file_preview_lease,
             transport::server_download_file
         ])
         .run(tauri::generate_context!())

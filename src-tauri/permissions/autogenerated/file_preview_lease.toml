@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-file-preview-lease"
+description = "Enables the file_preview_lease command without any pre-configured scope."
+commands.allow = ["file_preview_lease"]
+
+[[permission]]
+identifier = "deny-file-preview-lease"
+description = "Denies the file_preview_lease command without any pre-configured scope."
+commands.deny = ["file_preview_lease"]

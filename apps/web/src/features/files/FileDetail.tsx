@@ -33,18 +33,7 @@ import { fileMarkdownLink } from "./fileRoute";
 
 export type FileDraft = { name: string; policy: ContentPolicy };
 
-export function FileDetail({
-  file,
-  snapshot,
-  runtime,
-  onChanged,
-  onClose,
-  onOpenDocument,
-  draft,
-  onStatus,
-  atlasDraft,
-  onAtlasDraft,
-}: {
+type FileDetailProps = {
   file: LibraryFile;
   snapshot: Snapshot;
   runtime: Runtime;
@@ -55,7 +44,115 @@ export function FileDetail({
   onStatus?(draft: FileDraft, dirty: boolean, busy: boolean): void;
   atlasDraft?: FileAtlasDraft | undefined;
   onAtlasDraft?(draft: FileAtlasDraft): void;
-}) {
+};
+
+export function FileDetail(props: FileDetailProps) {
+  return props.file.deletedAt ? (
+    <FileDetailContent {...props} />
+  ) : (
+    <FileAccessBoundary
+      key={JSON.stringify([
+        props.runtime.serverOrigin,
+        props.runtime.context.workspaceId,
+        props.runtime.context.principalId,
+        props.file.id,
+      ])}
+      {...props}
+    />
+  );
+}
+
+function FileAccessBoundary(props: FileDetailProps) {
+  const { runtime, file } = props;
+  const { i18n } = useTranslation();
+  const zh = i18n.language.startsWith("zh");
+  const [state, setState] = useState<
+    "checking" | "open" | "denied" | "unavailable"
+  >("checking");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let active = true,
+      checking = false;
+    const check = async () => {
+      if (!active || checking) return;
+      checking = true;
+      try {
+        const remote = await runtime.checkFileAccess(file.id);
+        if (active)
+          setState((previous) =>
+            previous === "denied" && !remote ? previous : "open",
+          );
+      } catch (error) {
+        if (!active) return;
+        const code = error instanceof Error ? error.message : "";
+        if (
+          code === "FORBIDDEN" ||
+          code === "NOT_FOUND" ||
+          code === "UNAUTHORIZED"
+        )
+          setState("denied");
+        else
+          setState((previous) =>
+            previous === "open" || previous === "denied"
+              ? previous
+              : "unavailable",
+          );
+      } finally {
+        checking = false;
+      }
+    };
+    const visible = () => {
+      if (!document.hidden) void check();
+    };
+    void check();
+    const timer = window.setInterval(visible, 15000);
+    window.addEventListener("focus", visible);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", visible);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [runtime, file.id, retry]);
+  if (state === "open") return <FileDetailContent {...props} />;
+  return (
+    <section className="file-detail">
+      <p role={state === "checking" ? "status" : "alert"}>
+        {state === "checking"
+          ? zh
+            ? "正在核对文件访问权限…"
+            : "Checking file access…"
+          : state === "denied"
+            ? zh
+              ? "文件访问权限已失效，或原件已移除。"
+              : "File access has expired or the original was removed."
+            : zh
+              ? "暂时无法核对文件访问权限。"
+              : "File access could not be verified."}
+      </p>
+      {state !== "checking" && (
+        <Button onClick={() => setRetry((value) => value + 1)}>
+          {zh ? "重新检查" : "Check again"}
+        </Button>
+      )}
+      <Button onClick={props.onClose}>{zh ? "关闭" : "Close"}</Button>
+    </section>
+  );
+}
+
+function FileDetailContent({
+  file,
+  snapshot,
+  runtime,
+  onChanged,
+  onClose,
+  onOpenDocument,
+  draft,
+  onStatus,
+  atlasDraft,
+  onAtlasDraft,
+}: FileDetailProps) {
   const { i18n } = useTranslation(),
     zh = i18n.language.startsWith("zh"),
     titleId = useId();
@@ -670,24 +767,22 @@ export function FileDetail({
           </Button>
         </div>
       </details>
-      {file.extension === "pdf" &&
-        !file.deletedAt &&
-        file.size <= fileExtractionLimits.inputBytes && (
-          <PdfOriginalPreview
-            key={JSON.stringify([
-              runtime.serverOrigin,
-              runtime.context.principalId,
-              file.workspaceId,
-              file.id,
-              file.version,
-              file.contentHash,
-            ])}
-            runtime={runtime}
-            id={file.id}
-            name={file.name}
-            zh={zh}
-          />
-        )}
+      {file.extension === "pdf" && !file.deletedAt && (
+        <PdfOriginalPreview
+          key={JSON.stringify([
+            runtime.serverOrigin,
+            runtime.context.principalId,
+            file.workspaceId,
+            file.id,
+            file.version,
+            file.contentHash,
+          ])}
+          runtime={runtime}
+          id={file.id}
+          name={file.name}
+          zh={zh}
+        />
+      )}
       {["png", "jpeg", "jpg", "webp"].includes(file.extension ?? "") &&
         file.size <= fileExtractionLimits.inputBytes && (
           <RasterFilePreview

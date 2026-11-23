@@ -64,13 +64,13 @@ function PdfDialog({
       controller.abort();
     }, fileExtractionLimits.milliseconds);
     void (async () => {
-      const bytes = await runtime.readFileBytes(id);
+      const source = await runtime.openFilePageSource(id, controller.signal);
       controller.signal.throwIfAborted();
       const { openPdfPageView } = await import(
         "@arclattice/file-parsers/pdf-page-view"
       );
       controller.signal.throwIfAborted();
-      const loaded = await openPdfPageView(bytes, controller.signal);
+      const loaded = await openPdfPageView(source, controller.signal);
       if (!controller.signal.aborted) setPdf(loaded);
     })()
       .catch(() => {

@@ -20755,3 +20755,205 @@ test("account experience: first activation of an indexed Wiki preserves occurren
     version: beforeLater.version + 1,
   });
 });
+
+test("account experience: large PDF originals read bounded pages and stop showing content after session revocation", async ({
+  page,
+  workbench,
+  playwright,
+}, info) => {
+  test.setTimeout(120000);
+  const { largeSurveyPdf } = await import("./large-pdf-fixture");
+  const { createHash, randomUUID } = await import("node:crypto");
+  const bytes = largeSurveyPdf(),
+    digest = (b: Buffer) => createHash("sha256").update(b).digest("hex");
+  const contentHash = digest(bytes),
+    name = "Survey transect.pdf";
+  const owner = await playwright.request.newContext({ baseURL: workbench.url });
+  try {
+    const session = await owner.post("/api/session", {
+      headers: { Origin: workbench.url },
+      data: { username: "image-editor", password: workbench.secret },
+    });
+    expect(session.status()).toBe(200);
+    const { csrf } = await session.json();
+    const save = async (path: string, data: unknown, binary?: Buffer) => {
+      const reply = await owner.post("/api/v1/" + path, {
+        headers: {
+          Origin: workbench.url,
+          "X-CSRF-Token": csrf,
+          "Idempotency-Key": randomUUID(),
+          ...(binary
+            ? {
+                "Content-Type": "application/octet-stream",
+                "X-File-Chunk-Hash": digest(binary),
+              }
+            : {}),
+        },
+        data: binary ?? data,
+      });
+      expect(reply.status(), path).toBe(200);
+      return reply;
+    };
+    const chunkSize = 262144;
+    await save("files/binary/begin", {
+      contentHash,
+      size: bytes.length,
+      mime: "application/pdf",
+      chunkSize,
+    });
+    for (let offset = 0; offset < bytes.length; offset += chunkSize)
+      await (
+        await save(
+          `files/binary/chunk?hash=${contentHash}&index=${offset / chunkSize}`,
+          null,
+          bytes.subarray(offset, offset + chunkSize),
+        )
+      ).dispose();
+    await save("files/binary/complete", { contentHash });
+    const { id } = await (
+      await save("files/register", {
+        name,
+        mime: "application/pdf",
+        spaceId: null,
+        contentHash,
+        size: bytes.length,
+      })
+    ).json();
+    await unlock(
+      page,
+      workbench.url,
+      workbench.secret,
+      words(info.project.name),
+    );
+    await page.goto(workbench.url + "/#library?file=" + id);
+    const open = page.getByRole("button", {
+      name: /^(View original PDF pages|查看 PDF 原始页面)$/,
+    });
+    await expect(open).toBeVisible();
+    const ranges: {
+      status: number;
+      length: number;
+      interval: string | null;
+    }[] = [];
+    page.on("response", (r) => {
+      if (new URL(r.url()).pathname.endsWith("/files/bytes"))
+        ranges.push({
+          status: r.status(),
+          length: Number(r.headers()["content-length"]),
+          interval: r.headers()["content-range"] ?? null,
+        });
+    });
+    await open.click();
+    const dialog = page.getByRole("dialog", { name });
+    const color = async () =>
+      dialog
+        .locator("canvas:visible")
+        .evaluate((el: HTMLCanvasElement) =>
+          Array.from(el.getContext("2d")!.getImageData(12, 12, 1, 1).data),
+        );
+    await expect.poll(color).toEqual([255, 0, 0, 255]);
+    await dialog.getByRole("button", { name: /^(Next page|下一页)$/ }).click();
+    await expect.poll(color).toEqual([0, 0, 255, 255]);
+    expect(ranges.length).toBeGreaterThan(1);
+    expect(
+      ranges.every(
+        (r) =>
+          r.status === 206 &&
+          r.interval &&
+          r.length > 0 &&
+          r.length <= chunkSize,
+      ),
+    ).toBe(true);
+    expect(ranges.reduce((n, r) => n + r.length, 0)).toBeLessThan(
+      bytes.length / 2,
+    );
+    await page.screenshot({ path: info.outputPath("large-pdf-page-two.png") });
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(
+      info.outputPath("ranges.json"),
+      JSON.stringify(
+        { size: bytes.length, ranges, sha256: contentHash },
+        null,
+        2,
+      ) + "\n",
+    );
+    await info.attach("ranges", {
+      body: JSON.stringify({ size: bytes.length, ranges }),
+      contentType: "application/json",
+    });
+    await dialog.getByRole("button", { name: /^(Close|关闭)$/ }).click();
+    const pattern = "**/api/v1/files/bytes?**";
+    // Hold one real browser fetch before delivery, then close the dialog.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const requested = page.waitForRequest((req) =>
+      new URL(req.url()).pathname.endsWith("/files/bytes"),
+    );
+    await page.route(
+      pattern,
+      async (route) => {
+        await held;
+        await route.continue().catch(() => undefined);
+      },
+      { times: 1 },
+    );
+    await open.click();
+    const inflight = await requested;
+    const aborted = page.waitForEvent("requestfailed", {
+      predicate: (req) => req === inflight,
+    });
+    try {
+      await dialog.getByRole("button", { name: /^(Close|关闭)$/ }).click();
+      release();
+      const failed = await aborted;
+      expect(failed.failure()?.errorText).toMatch(/ABORTED|CANCELLED/i);
+    } finally {
+      release();
+      await page.unroute(pattern);
+    }
+    await expect(dialog).toHaveCount(0);
+    await open.click();
+    await expect.poll(color).toEqual([255, 0, 0, 255]);
+    const revoked = await owner.post("/api/account/sessions/revoke", {
+      data: { all: true },
+      headers: {
+        Origin: workbench.url,
+        "X-CSRF-Token": csrf,
+        "Idempotency-Key": randomUUID(),
+      },
+    });
+    expect(revoked.status()).toBe(200);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(dialog).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /^(Download original|下载原始文件)$/ }),
+    ).toHaveCount(0);
+    const locked = page.getByRole("heading", {
+      name: /^(Sign back in to your workspace|重新登录工作区)$/,
+    });
+    await expect(locked).toBeVisible();
+    await expect(page.locator(".app-shell:visible")).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath("revoked-detail.png") });
+    await page.goto(workbench.url + "/#files");
+    await page.reload();
+    await expect(locked).toBeVisible();
+    const login = page.locator(".login-form");
+    const username = login.locator('input[autocomplete="username"]'),
+      password = login.locator('input[type="password"]');
+    await username.fill("second-user");
+    await password.fill(workbench.secret);
+    await login.locator('button[type="submit"]').click();
+    await expect(login.getByRole("alert")).toBeVisible();
+    await expect(locked).toBeVisible();
+    await username.fill("image-editor");
+    await password.fill(workbench.secret);
+    await login.locator('button[type="submit"]').click();
+    await expect(locked).toHaveCount(0);
+    await page.goto(workbench.url + "/#library?file=" + id);
+    await expect(open).toBeVisible();
+  } finally {
+    await owner.dispose();
+  }
+});

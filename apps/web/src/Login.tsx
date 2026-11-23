@@ -7,9 +7,11 @@ import { loginErrorKey } from "./login-error";
 export function Login({
   runtime,
   onLogin,
+  restoreReplica = false,
 }: {
   runtime: Runtime;
   onLogin: () => void;
+  restoreReplica?: boolean;
 }) {
   const { t, i18n } = useTranslation("desk");
   const zh = i18n.language.startsWith("zh");
@@ -38,8 +40,20 @@ export function Login({
             alt="Orivane Atlas"
           />
         </div>
-        <h1>{t("welcome")}</h1>
-        <p>{t("dataControl")}</p>
+        <h1>
+          {restoreReplica
+            ? zh
+              ? "重新登录工作区"
+              : "Sign back in to your workspace"
+            : t("welcome")}
+        </h1>
+        <p>
+          {restoreReplica
+            ? zh
+              ? "会话已失效。使用此工作区的原账户继续，设备上的草稿已保留。"
+              : "Your session has ended. Sign in with the workspace owner account to continue. Drafts on this device are retained."
+            : t("dataControl")}
+        </p>
       </section>
       <form
         className="login-form"
@@ -49,11 +63,12 @@ export function Login({
           setBusy(true);
           setError("");
           try {
-            await runtime.setServerOrigin(server);
-            await runtime.session({
-              username: username.trim(),
-              password,
-            });
+            if (restoreReplica)
+              await runtime.replicaAccess.unlock(username.trim(), password);
+            else {
+              await runtime.setServerOrigin(server);
+              await runtime.session({ username: username.trim(), password });
+            }
             setPassword("");
             onLogin();
           } catch (cause) {
@@ -71,7 +86,7 @@ export function Login({
             {a("localLogoutOnly")}
           </p>
         )}
-        {saved.length > 0 && (
+        {!restoreReplica && saved.length > 0 && (
           <section aria-label={a("savedAccounts")}>
             <p className="muted">
               {runtime.native
@@ -150,7 +165,7 @@ export function Login({
             required
             placeholder="https://your-server.example"
             value={server}
-            disabled={busy}
+            disabled={busy || restoreReplica}
             onChange={(event) => setServer(event.target.value)}
           />
         </label>

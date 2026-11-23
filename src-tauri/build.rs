@@ -13,6 +13,7 @@ fn main() {
             "detach_account",
             "server_request",
             "server_upload_chunk",
+            "file_preview_lease",
             "server_download_file",
             "notification_permission",
             "notification_request_permission",
