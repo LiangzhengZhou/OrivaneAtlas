@@ -58,9 +58,14 @@ The table is generated from actual Host route literals and the shared route gran
 | `/api/files/policy` | HUMAN / bearer denied | bearer denied | dedicated handler + default-deny bearer gate |
 | `/api/files/register` | HUMAN / bearer denied | bearer denied | dedicated handler + default-deny bearer gate |
 | `/api/files/rename` | HUMAN / bearer denied | bearer denied | dedicated handler + default-deny bearer gate |
+| `/api/folders/link` | knowledge:write | POST: write/read-write | request + transaction recheck; Application scope/version checks |
+| `/api/folders/links` | knowledge:read, files:read | GET: read-write only | request + transaction recheck; Application scope/version checks |
+| `/api/folders/move` | knowledge:write, knowledge:read, files:read | bearer denied | request + transaction recheck; Application scope/version checks |
+| `/api/folders/unlink` | knowledge:write | POST: write/read-write | request + transaction recheck; Application scope/version checks |
 | `/api/health` | Dedicated login/health contract | bearer denied | dedicated handler + default-deny bearer gate |
 | `/api/library` | knowledge:read | GET: read-write only | request + transaction recheck; Application scope/version checks |
 | `/api/library/asset` | knowledge:read, files:content | GET: read-write only | request + transaction recheck; Application scope/version checks |
+| `/api/library/asset/meta` | HUMAN / bearer denied | GET: read-write only | dedicated handler + default-deny bearer gate |
 | `/api/library/delete` | knowledge:write | POST: write/read-write | request + transaction recheck; Application scope/version checks |
 | `/api/library/move` | HUMAN / bearer denied | bearer denied | dedicated handler + default-deny bearer gate |
 | `/api/library/purge` | HUMAN / bearer denied | bearer denied | dedicated handler + default-deny bearer gate |
@@ -88,6 +93,9 @@ The table is generated from actual Host route literals and the shared route gran
 | `/api/organize` | tasks:write, projects:write, knowledge:write | POST: write/read-write | request + transaction recheck; Application scope/version checks |
 | `/api/plans/preview` | HUMAN / bearer denied | bearer denied | dedicated handler + default-deny bearer gate |
 | `/api/plans/publish` | HUMAN / bearer denied | bearer denied | dedicated handler + default-deny bearer gate |
+| `/api/project-folders/link` | knowledge:write | POST: write/read-write | request + transaction recheck; Application scope/version checks |
+| `/api/project-folders/links` | knowledge:read, projects:read | GET: read-write only | request + transaction recheck; Application scope/version checks |
+| `/api/project-folders/unlink` | knowledge:write | POST: write/read-write | request + transaction recheck; Application scope/version checks |
 | `/api/projects/activity` | projects:read | GET: read-write only | request + transaction recheck; Application scope/version checks |
 | `/api/projects/delete` | projects:write, knowledge:write | POST: write/read-write | request + transaction recheck; Application scope/version checks |
 | `/api/projects/document` | projects:write, knowledge:write | POST: write/read-write | request + transaction recheck; Application scope/version checks |
@@ -109,6 +117,9 @@ The table is generated from actual Host route literals and the shared route gran
 | `/api/revisions` | knowledge:read | GET: read-write only | request + transaction recheck; Application scope/version checks |
 | `/api/session` | Dedicated login/health contract | bearer denied | dedicated handler + default-deny bearer gate |
 | `/api/snapshot` | workspace:read, tasks:read, projects:read, knowledge:read, files:read, files:content | GET: read-write only | request + transaction recheck; Application scope/version checks |
+| `/api/space-folders/link` | knowledge:write | POST: write/read-write | request + transaction recheck; Application scope/version checks |
+| `/api/space-folders/links` | knowledge:read | GET: read-write only | request + transaction recheck; Application scope/version checks |
+| `/api/space-folders/unlink` | knowledge:write | POST: write/read-write | request + transaction recheck; Application scope/version checks |
 | `/api/sync` | HUMAN / bearer denied | GET: read-write only | dedicated handler + default-deny bearer gate |
 | `/api/sync/receipt` | HUMAN / bearer denied | bearer denied | dedicated handler + default-deny bearer gate |
 | `/api/tokens` | HUMAN / bearer denied | bearer denied | dedicated handler + default-deny bearer gate |

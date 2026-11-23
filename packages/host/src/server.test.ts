@@ -7465,6 +7465,59 @@ describe("private HTTP host", () => {
       ).status,
     ).toBe(404);
   }, 15000);
+  it("requires constituent metadata grants for collection listings and keeps the new move outside legacy profiles", async () => {
+    await claim();
+    await signIn();
+    const knowledge = await tokenFor("read-write", ["knowledge:read"]);
+    const mixed = await tokenFor("read-write", [
+      "knowledge:read",
+      "files:read",
+    ]);
+    const project = await tokenFor("read-write", [
+      "knowledge:read",
+      "projects:read",
+    ]);
+    const legacy = await tokenFor("read-write");
+    const headers = (token: { secret: string }) => ({
+      Authorization: "Bearer " + token.secret,
+      Cookie: "",
+    });
+    for (const prefix of ["/api", "/api/v1"]) {
+      expect(
+        (await call(prefix + "/folders/links", undefined, headers(knowledge)))
+          .status,
+      ).toBe(403);
+      expect(
+        (
+          await call(
+            prefix + "/project-folders/links",
+            undefined,
+            headers(knowledge),
+          )
+        ).status,
+      ).toBe(403);
+      expect(
+        (await call(prefix + "/folders/links", undefined, headers(mixed)))
+          .status,
+      ).toBe(200);
+      expect(
+        (
+          await call(
+            prefix + "/project-folders/links",
+            undefined,
+            headers(project),
+          )
+        ).status,
+      ).toBe(200);
+      expect(
+        (await call(prefix + "/folders/move", {}, headers(legacy))).status,
+      ).toBe(403);
+      expect(
+        (await call(prefix + "/folders/move", {}, headers(mixed))).status,
+      ).toBe(403);
+    }
+  });
+
   it("granular credentials never fall back, cannot mint tokens, and authorize every MCP tool", async () => {
     await claim();
     await signIn();

@@ -17263,6 +17263,7 @@
       "get": {
         "operationId": "listFolderLinks",
         "summary": "List reusable folder links",
+        "description": "Granular bearer credentials require knowledge:read, files:read.",
         "parameters": [
           {
             "name": "folderId",
@@ -17356,6 +17357,7 @@
       "post": {
         "operationId": "moveFolderLink",
         "summary": "Move a versioned resource membership between general collections",
+        "description": "Granular bearer credentials require knowledge:write, knowledge:read, files:read. Legacy bearer profiles cannot perform this operation.",
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -17463,6 +17465,7 @@
       "get": {
         "operationId": "listFolderLinksV1",
         "summary": "List reusable folder links",
+        "description": "Granular bearer credentials require knowledge:read, files:read.",
         "parameters": [
           {
             "name": "folderId",
@@ -17556,6 +17559,7 @@
       "post": {
         "operationId": "moveFolderLinkV1",
         "summary": "Move a versioned resource membership between general collections",
+        "description": "Granular bearer credentials require knowledge:write, knowledge:read, files:read. Legacy bearer profiles cannot perform this operation.",
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -17943,6 +17947,7 @@
       "get": {
         "operationId": "listProjectFolderLinks",
         "summary": "List project folder links",
+        "description": "Granular bearer credentials require knowledge:read, projects:read.",
         "parameters": [
           {
             "name": "projectId",
@@ -18083,6 +18088,7 @@
       "get": {
         "operationId": "listProjectFolderLinksV1",
         "summary": "List project folder links",
+        "description": "Granular bearer credentials require knowledge:read, projects:read.",
         "parameters": [
           {
             "name": "projectId",

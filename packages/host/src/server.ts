@@ -968,7 +968,6 @@ export async function createHost(options: HostOptions) {
             "/api/link/create",
             "/api/link/delete",
             "/api/folders/link",
-            "/api/folders/move",
             "/api/folders/unlink",
             "/api/space-folders/link",
             "/api/space-folders/unlink",
