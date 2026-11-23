@@ -36,8 +36,8 @@ describe("generated application brand", () => {
     const icon = readFileSync("src-tauri/icons/icon.ico");
     expect(icon.readUInt16LE(0)).toBe(0);
     expect(icon.readUInt16LE(2)).toBe(1);
-    expect(icon.readUInt16LE(4)).toBe(7);
-    [16, 24, 32, 48, 64, 128, 256].forEach((size, index) => {
+    expect(icon.readUInt16LE(4)).toBe(8);
+    [16, 20, 24, 32, 48, 64, 128, 256].forEach((size, index) => {
       const frame = 6 + index * 16;
       expect(icon[frame] || 256).toBe(size);
       expect(icon[frame + 1] || 256).toBe(size);

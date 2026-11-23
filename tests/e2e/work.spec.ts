@@ -283,7 +283,7 @@ const test = base.extend<{
       database: join(directory, "test.sqlite"),
       secret,
       origin: "http://127.0.0.1:" + port,
-      webRoot: resolve("apps/web/dist"),
+      webRoot: resolve(process.env.ATLAS_UI_FIXTURE_DIST || "apps/web/dist"),
       vault: openPersonalVault(join(directory, "vault")),
       ...(info.title.includes("Agent Harness")
         ? {
@@ -5626,8 +5626,12 @@ test("task timer persists timestamp transitions without per-second writes", asyn
     .getByRole("button", { name: zh ? "继续计时" : "Continue timer" })
     .click();
   await expect(timer).toHaveAttribute("data-running", "true");
+  // Since 3.1.8 Pause is the single action for a running timer.
+  await expect(
+    timer.getByRole("button", { name: zh ? "结束计时" : "End timer" }),
+  ).toHaveCount(0);
   await timer
-    .getByRole("button", { name: zh ? "结束计时" : "End timer" })
+    .getByRole("button", { name: zh ? "暂停计时" : "Pause timer" })
     .click();
   await expect(timer).toHaveAttribute("data-running", "false");
   await expect.poll(async () => (await readTask()).timerStartedAt).toBeNull();
@@ -5721,12 +5725,11 @@ test("task due minute keeps date-only work unchanged and clears with the date", 
     fullPage: true,
   });
 });
-test("workspace chrome is frosted and the context header stays sticky with accessible fallbacks", async ({
+test("workspace chrome remains opaque and the context header stays in flow", async ({
   page,
   workbench,
 }, info) => {
-  const w = words(info.project.name),
-    mobile = info.project.name.startsWith("mobile");
+  const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   await page.goto(workbench.url + "/#tasks");
   const header = page.locator(".page-header").first();
@@ -5747,18 +5750,12 @@ test("workspace chrome is frosted and the context header stays sticky with acces
       };
     });
   const headerStyle = await readStyle(header);
-  // The band is frosted but must stay in flow so it never intercepts row clicks.
+  // The header stays in flow so it cannot intercept rows during scrolling.
   expect(headerStyle.position).not.toBe("sticky");
   const sidebar = page.locator(".app-shell .sidebar");
   const sidebarStyle = await readStyle(sidebar);
-  if (mobile) {
-    // Mobile compositing keeps chrome opaque.
-    expect(headerStyle.backdrop).toBe("none");
-    expect(sidebarStyle.backdrop).toBe("none");
-  } else {
-    expect(headerStyle.backdrop).toContain("blur");
-    expect(sidebarStyle.backdrop).toContain("blur");
-  }
+  expect(headerStyle.backdrop).toBe("none");
+  expect(sidebarStyle.backdrop).toBe("none");
   await page.emulateMedia({ forcedColors: "active" });
   const forcedHeader = await readStyle(header);
   expect(forcedHeader.backdrop).toBe("none");
@@ -6096,6 +6093,7 @@ test("files page opens real documents and uploads original files", async ({
     })
     .click();
   await expect(page.locator(".document-pane")).toBeVisible();
+  await expect(page.locator("dialog.files-detail-dialog[open]")).toHaveCount(0);
   await nav(page, w.desk.files);
   await resources.locator('input[type="file"]').setInputFiles({
     name: "resource-proof.txt",
@@ -6117,6 +6115,11 @@ test("files page opens real documents and uploads original files", async ({
   await expect(
     resources.getByRole("button", { name: /resource-proof.txt/ }),
   ).toBeVisible();
+  const folderDrawer = resources.getByRole("button", {
+    name: info.project.name.includes("zh") ? "笔记文件夹" : "Note folders",
+    exact: true,
+  });
+  if (await folderDrawer.isVisible()) await folderDrawer.click();
   const filesTree = page.locator(".folder-tree");
   await filesTree
     .getByRole("button", { name: w.desk.newFolder, exact: true })
@@ -6128,6 +6131,8 @@ test("files page opens real documents and uploads original files", async ({
   await expect(
     filesTree.getByRole("button", { name: "Research archive", exact: true }),
   ).toBeVisible();
+  if (await page.locator(".files-folders-dialog").isVisible())
+    await page.keyboard.press("Escape");
   await page.screenshot({
     path: info.outputPath("workspace-resources.png"),
     fullPage: true,
@@ -6378,7 +6383,7 @@ test("brand stays transparent and compact on login and sidebar", async ({
   await expect(logo).toBeVisible();
   await expect(logo).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(logo).toHaveCSS("border-radius", "0px");
-  await expect(logo).toHaveCSS("filter", "brightness(0)");
+  await expect(logo).toHaveCSS("filter", "none");
   expect((await logo.boundingBox())?.width).toBeLessThanOrEqual(260);
   // Verify that the shipped image itself retains transparency, not just CSS.
   expect(
@@ -10768,7 +10773,7 @@ test("workspace timezone appearance density and mobile navigation persist", asyn
         style.getPropertyValue(name).trim(),
       );
     }),
-  ).toEqual(["#fff", "#316b5d"]);
+  ).toEqual(["#fff", "#165d57"]);
   await page.emulateMedia({ media: "screen" });
   await expect(
     page.getByLabel(w.desk.workspaceTimezone, { exact: true }),
@@ -11202,8 +11207,6 @@ test("navigation long press uses a real touch gesture and commits only on releas
   const anchor = mobile ? "overview" : "focus";
   const source = surface.locator(`[data-order-entity="${moving}"]`);
   const target = surface.locator(`[data-order-entity="${anchor}"]`);
-  const sourceBounds = (await source.boundingBox())!;
-  let targetBounds = (await target.boundingBox())!;
   const before = (
     await (await page.request.get(workbench.url + "/api/snapshot")).json()
   ).navigationPreference;
@@ -11212,6 +11215,9 @@ test("navigation long press uses a real touch gesture and commits only on releas
     enabled: true,
     maxTouchPoints: 1,
   });
+  // Coarse-pointer styles change the row height, including on hybrid desktops.
+  await source.scrollIntoViewIfNeeded();
+  const sourceBounds = (await source.boundingBox())!;
   await session.send("Input.dispatchTouchEvent", {
     type: "touchStart",
     touchPoints: [
@@ -11224,7 +11230,7 @@ test("navigation long press uses a real touch gesture and commits only on releas
   await expect(source).toHaveAttribute("data-reordering", "true");
   // Long press can reveal the drag handle and shift rows by a few pixels;
   // resolve the target against the current layout before moving.
-  targetBounds = (await target.boundingBox())!;
+  const targetBounds = (await target.boundingBox())!;
   await session.send("Input.dispatchTouchEvent", {
     type: "touchMove",
     touchPoints: [
@@ -15486,7 +15492,7 @@ test("AI approval model failure uses friendly error details and real retry", asy
   );
 });
 
-test("v2.2 application icons and protected Sidebar logo are served independently", async ({
+test("application icons and editorial Sidebar wordmark are served independently", async ({
   page,
   workbench,
 }, info) => {
@@ -15502,7 +15508,7 @@ test("v2.2 application icons and protected Sidebar logo are served independently
       .update(await logo.body())
       .digest("hex")
       .toUpperCase(),
-  ).toBe("12E98E78FD60082975FA0FD655AD1C80C00598186232971AE22CA4971E7BB176");
+  ).toBe("FAEC5770F342319AB0302B25327449039FB7D7A5A4598FF497231A62188AFA6D");
   await expect(page.locator('head link[rel="icon"]')).toHaveAttribute(
     "href",
     "/favicon.png",
@@ -15521,7 +15527,7 @@ test("v2.2 application icons and protected Sidebar logo are served independently
         .digest("hex")
         .toUpperCase(),
     ).not.toBe(
-      "12E98E78FD60082975FA0FD655AD1C80C00598186232971AE22CA4971E7BB176",
+      "FAEC5770F342319AB0302B25327449039FB7D7A5A4598FF497231A62188AFA6D",
     );
   }
 });

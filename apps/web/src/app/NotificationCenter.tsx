@@ -2,7 +2,7 @@ import type { NotificationRecord } from "@arclattice/domain";
 import { Bell, BellOff, Clock, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { IconButton } from "../components/ui/Button";
+import { Button, IconButton } from "../components/ui/Button";
 import { AnchoredFloatingSurface } from "./AnchoredFloatingSurface";
 import "./notification-center.css";
 
@@ -45,6 +45,10 @@ export function NotificationBell({
   const zh = i18n.language.startsWith("zh");
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const visibleRecords = unreadOnly
+    ? records.filter((record) => !record.readAt)
+    : records;
   const [snoozing, setSnoozing] = useState<string | null>(null);
   useEffect(() => {
     if (!open) setSnoozing(null);
@@ -103,6 +107,30 @@ export function NotificationBell({
                   : "All caught up"}
             </span>
           </header>
+          {records.length > 0 && (
+            <div
+              className="notification-filter"
+              role="group"
+              aria-label={zh ? "通知筛选" : "Filter notifications"}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                aria-pressed={!unreadOnly}
+                onClick={() => setUnreadOnly(false)}
+              >
+                {zh ? "全部" : "All"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-pressed={unreadOnly}
+                onClick={() => setUnreadOnly(true)}
+              >
+                {zh ? "未读" : "Unread"}
+              </Button>
+            </div>
+          )}
           {error && (
             <p role="alert">
               {zh
@@ -110,16 +138,20 @@ export function NotificationBell({
                 : "A notification could not be saved or delivered. Local records are retained; check system permissions and retry."}
             </p>
           )}
-          {records.length === 0 ? (
+          {visibleRecords.length === 0 ? (
             <p className="notification-empty">
               <BellOff size={16} aria-hidden="true" />
-              {zh
-                ? "没有需要处理的通知。到期的提醒和需要你介入的问题会出现在这里。"
-                : "Nothing needs you right now. Due reminders and issues that need action appear here."}
+              {unreadOnly && records.length
+                ? zh
+                  ? "没有未读通知。"
+                  : "No unread notifications."
+                : zh
+                  ? "没有需要处理的通知。到期的提醒和需要你介入的问题会出现在这里。"
+                  : "Nothing needs you right now. Due reminders and issues that need action appear here."}
             </p>
           ) : (
             <ul className="notification-list">
-              {records.map((record) => {
+              {visibleRecords.map((record) => {
                 const isUnread = !record.readAt;
                 return (
                   <li

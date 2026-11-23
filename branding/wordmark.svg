@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="128" viewBox="0 0 350 64">
+  <title>Orivane Atlas</title>
+  <path fill="#193732" fill-rule="evenodd" d="M7 17 23 9l18 7 16-8v39l-16 9-18-7-16 8z M13 36l14-16 9 15 9-10 7 5v7l-7-5-10 12-9-15-13 15z"/>
+  <text x="62" y="46" font-family="Georgia, 'Times New Roman', serif" font-size="45" letter-spacing="-1.5" fill="#193732">Orivane Atlas</text>
+</svg>

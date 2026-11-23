@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { crc32, deflateSync } from "node:zlib";
 import { chromium } from "@playwright/test";
 
-// All application icon resources derive from the repository PNG source.
+// All application icon resources derive from the repository SVG source.
 // The Sidebar wordmark and Android monochrome status glyph remain separate assets.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // Adaptive launchers require a separate opaque platform background.
@@ -22,7 +22,7 @@ const adaptiveBackground = "#F3F4F6";
 // densities; this scales the source and never crops or redraws it.
 const adaptiveForegroundInset = 14;
 const master = (
-  await readFile(path.join(root, "branding/application-icon-source.png"))
+  await readFile(path.join(root, "branding/app-icon-master.svg"))
 ).toString("base64");
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -44,7 +44,7 @@ async function png(
 ) {
   await page.setViewportSize({ width: size, height: size });
   await page.setContent(
-    `<html><head><style>html,body{margin:0;width:100%;height:100%;background:transparent}main{box-sizing:border-box;width:100%;height:100%;padding:${size * padding}px;background:${background};border-radius:${round ? "50%" : "21%"}}img{display:block;width:100%;height:100%;object-fit:contain}</style></head><body><main><img src="data:image/png;base64,${master}" /></main></body></html>`,
+    `<html><head><style>html,body{margin:0;width:100%;height:100%;background:transparent}main{box-sizing:border-box;width:100%;height:100%;padding:${size * padding}px;background:${background};border-radius:${round ? "50%" : "21%"}}img{display:block;width:100%;height:100%;object-fit:contain}</style></head><body><main><img src="data:image/svg+xml;base64,${master}" /></main></body></html>`,
   );
   await page.locator("img").evaluate((img) => img.decode());
   const capture = await page.screenshot({ omitBackground: true });
@@ -95,10 +95,25 @@ async function png(
   ]);
 }
 try {
+  // A typography edit is explicit: launcher regeneration on a machine with a
+  // different serif fallback must preserve the shipped horizontal lockup.
+  if (process.argv.includes("--wordmark")) {
+    const wordmark = await readFile(path.join(root, "branding/wordmark.svg"));
+    await page.setViewportSize({ width: 700, height: 128 });
+    await page.setContent(
+      "<style>body{margin:0}</style>" + wordmark.toString(),
+    );
+    await page.evaluate(() => document.fonts.ready);
+    await save(
+      "apps/web/public/orivane-atlas.png",
+      await page.screenshot({ omitBackground: true }),
+    );
+  }
+  await save("branding/application-icon-source.png", await png(512));
   const frames = [];
-  for (const size of [16, 24, 32, 48, 64, 128, 256]) {
-    // Keep the compass large enough at 16px while leaving a visible outer margin.
-    const bytes = await png(size, { padding: 0 });
+  for (const size of [16, 20, 24, 32, 48, 64, 128, 256]) {
+    // Give antialiased small frames a full transparent perimeter.
+    const bytes = await png(size, { padding: size <= 24 ? 0.05 : 0 });
     frames.push({ size, bytes });
     await save(`src-tauri/icons/${size}x${size}.png`, bytes);
   }
@@ -182,7 +197,7 @@ try {
   ]) {
     await save(
       `src-tauri/icons/android/mipmap-${density}/ic_launcher_foreground.png`,
-      await png(108 * scale, { padding: 0.08, background: "transparent" }),
+      await png(108 * scale, { padding: 0.14, background: "transparent" }),
     );
     await save(
       `src-tauri/icons/android/mipmap-${density}/ic_launcher.png`,
@@ -223,7 +238,7 @@ try {
   }
   await mirror("");
   console.log(
-    "Generated Windows frames, Android launcher and packaged application resources from branding/application-icon-source.png.",
+    "Generated Windows frames, Android launcher and packaged application resources from branding/app-icon-master.svg.",
   );
 } finally {
   await browser.close();

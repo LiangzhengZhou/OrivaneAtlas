@@ -1,20 +1,28 @@
 /* Palette overlays. Structural tokens stay shared; each palette only changes
    surface, text, border and accent values. */
+@media print {
+  :root[data-theme][data-palette] {
+    --canvas: #fff;
+    --surface: #fff;
+    --surface-raised: #fff;
+  }
+}
+
 :root[data-palette="warm-green"] {
-  --canvas: #f8f9f6;
-  --surface: #ffffff;
+  --canvas: #f5f4ec;
+  --surface: #fefdf8;
   --surface-raised: #ffffff;
   --surface-subtle: #f1f3ef;
   --surface-hover: #e9ede7;
   --surface-active: #dfe7df;
-  --sidebar-surface: #f1f3ef;
+  --sidebar-surface: #eaece3;
   --text-primary: #242a26;
   --text-secondary: #58635c;
-  --text-muted: #7a857d;
+  --text-muted: #54645e;
   --border-subtle: #edf0eb;
   --border-default: #e1e6e0;
   --border-strong: #c7cfc9;
-  --accent: #316b5d;
+  --accent: #165d57;
   --accent-hover: #27594d;
   --accent-subtle: color-mix(in srgb, var(--accent) 8%, var(--surface));
   --on-accent: #ffffff;
@@ -75,7 +83,7 @@
   --sidebar-surface: #f1ede8;
   --text-primary: #272426;
   --text-secondary: #605b60;
-  --text-muted: #817b7f;
+  --text-muted: #665e63;
   --border-subtle: #f0ebe6;
   --border-default: #e6dfd8;
   --border-strong: #cfc4bb;
@@ -132,7 +140,7 @@
   --sidebar-surface: #f5eee5;
   --text-primary: #2b2621;
   --text-secondary: #665b50;
-  --text-muted: #887a6d;
+  --text-muted: #685c50;
   --border-subtle: #f2eae0;
   --border-default: #e7d9c9;
   --border-strong: #ceb8a3;
@@ -151,7 +159,8 @@
 }
 
 @media screen {
-  :root[data-theme="dark"][data-palette="warm-orange"] {
+  :root[data-theme="dark"][data-palette="warm-orange"],
+  :root[data-theme="dark"][data-palette="orange-white"] {
     --canvas: #181310;
     --sidebar-surface: #1c1713;
     --surface: #221b16;
@@ -197,7 +206,7 @@
   --sidebar-surface: #f7f7f7;
   --text-primary: #1c1c1c;
   --text-secondary: #5c5c5c;
-  --text-muted: #7c7c7c;
+  --text-muted: #5c5c5c;
   --border-subtle: #ececec;
   --border-default: #dedede;
   --border-strong: #c2c2c2;
@@ -235,7 +244,8 @@
   :root[data-theme="dark"][data-palette="warm-violet"] {
     --timer-running-bg: #2d291c;
   }
-  :root[data-theme="dark"][data-palette="warm-orange"] {
+  :root[data-theme="dark"][data-palette="warm-orange"],
+  :root[data-theme="dark"][data-palette="orange-white"] {
     --timer-running-bg: #1b2a34;
   }
 }

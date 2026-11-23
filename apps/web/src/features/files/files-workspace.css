@@ -376,3 +376,104 @@
 .files-project-folders .ui-button small {
   color: var(--text-muted);
 }
+.files-results {
+  min-width: 0;
+}
+.files-resource-list[data-layout="grid"] {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+.files-resource-list[data-layout="grid"] .files-resource-row {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  justify-items: start;
+  gap: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+.files-resource-list[data-layout="grid"] .files-resource-title {
+  max-inline-size: 100%;
+}
+.files-resource-list[data-layout="grid"] .files-resource-row time {
+  justify-self: start;
+}
+.files-resource-list .files-resource-row[data-selected] {
+  background: var(--accent-subtle);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.files-pagination,
+.files-upload-status li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.files-pagination {
+  justify-content: center;
+  padding: var(--space-2);
+}
+.files-detail-dialog {
+  width: min(90vw, 24rem);
+  max-height: 80dvh;
+  overflow: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background: var(--surface);
+}
+.files-upload-queue[data-dragging] {
+  outline: 2px dashed var(--accent);
+}
+.files-upload-status {
+  padding: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--font-meta-size);
+}
+.files-upload-status ul {
+  list-style: none;
+  padding: 0;
+  max-height: 12rem;
+  overflow: auto;
+}
+.files-upload-status li {
+  justify-content: space-between;
+  overflow-wrap: anywhere;
+  min-height: var(--control-height);
+}
+.files-upload-status li small {
+  white-space: nowrap;
+}
+@media (pointer: coarse) {
+  .files-resource-actions .ui-button,
+  .files-detail-panel .ui-button,
+  .files-pagination .ui-button {
+    min-height: 44px;
+  }
+}
+@media (forced-colors: active) {
+  .files-resource-row:focus-visible,
+  .files-resource-row[data-selected] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+
+.files-folders-dialog {
+  width: min(92vw, 28rem);
+  max-height: 85dvh;
+  overflow: auto;
+}
+.files-drawer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+.files-drawer-heading h2 {
+  font-size: var(--font-section-size);
+}
+.files-resource-empty {
+  flex-direction: column;
+  text-align: center;
+}

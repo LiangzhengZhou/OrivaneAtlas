@@ -89,9 +89,7 @@ The three relationship rows remain separate by ADR0147:
 - `SpaceFolderLink`: dedicated Space-to-Folder association.
 - `ProjectFolderLink`: dedicated Project-to-Folder association.
 
-The guide's proposal to narrow `FolderLink` to resources only conflicts with
-the accepted ADR text. No narrowing was applied; this needs an ADR amendment
-before code or database constraints change.
+ADR0147 records the November 4 amendment. The generic relation accepts resource targets. Dedicated Project and Space association tables retain their own validation and replay paths.
 
 ### KnowledgeLink / Wiki link
 

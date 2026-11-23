@@ -1110,6 +1110,13 @@ function DocumentPane({
           {zh ? "保存" : "Save"}
         </Button>
         <DocumentSaveStatus
+          key={JSON.stringify([
+            runtime.serverOrigin,
+            runtime.context.workspaceId,
+            runtime.context.principalId,
+            library,
+            base?.id,
+          ])}
           runtime={runtime}
           id={base?.id}
           library={library}

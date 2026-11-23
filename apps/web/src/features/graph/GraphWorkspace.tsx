@@ -420,6 +420,7 @@ export function GraphWorkspace({
             </div>
           ) : (
             <GraphViewport
+              label={text("项目结构图", "Project structure")}
               initialViewport={route.viewport}
               onViewportChange={(viewport) => update({ viewport })}
               layoutKey={structureKey}

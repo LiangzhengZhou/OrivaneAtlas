@@ -1,3 +1,5 @@
+export * from "./resource-catalog";
+
 import {
   localCalendarDay,
   moveNavigationWithinGroup,

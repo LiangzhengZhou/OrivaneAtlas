@@ -1,5 +1,5 @@
 /* Static application shell only. Business data and private bytes stay in IndexedDB. */
-const shellCache = "orivane-static-shell-v1";
+const shellCache = "orivane-static-shell-v2";
 const shellPath = "/";
 self.addEventListener("install", (event) => {
   event.waitUntil(

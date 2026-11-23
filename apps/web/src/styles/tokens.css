@@ -9,7 +9,7 @@
   --sidebar-surface: #f2f4f7;
   --text-primary: #17181b;
   --text-secondary: #54565e;
-  --text-muted: #7b7e87;
+  --text-muted: #5f626c;
   --border-subtle: #eef0f3;
   --border-default: #e2e5ea;
   --border-strong: #c4c8d1;
@@ -38,12 +38,14 @@
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
   --space-12: 48px;
   --font-ui:
     "Inter", "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei",
     "Noto Sans CJK SC", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-editorial: Georgia, "Songti SC", SimSun, serif;
   --font-body-size: 14px;
   --font-meta-size: 12px;
   --font-section-size: 13px;
@@ -85,6 +87,6 @@
   --muted: var(--text-muted);
   --text: var(--text-primary);
   --soft: var(--surface-subtle);
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+  --focus-ring: 0 0 0 2px var(--accent);
   color-scheme: light;
 }

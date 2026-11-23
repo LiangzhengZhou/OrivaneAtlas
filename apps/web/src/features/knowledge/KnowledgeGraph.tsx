@@ -212,6 +212,7 @@ export function KnowledgeGraph({
   return (
     <section className="graph-section">
       <GraphViewport
+        label={zh ? "知识关系图" : "Knowledge relationships"}
         initialViewport={initialViewport}
         onViewportChange={onViewportChange}
         layoutKey={layoutKey}

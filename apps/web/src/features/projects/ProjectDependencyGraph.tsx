@@ -258,6 +258,7 @@ export function ProjectDependencyGraph({
       data-project-id={scopeProjectId}
     >
       <GraphViewport
+        label={text("任务依赖图", "Task dependencies")}
         initialViewport={initialViewport}
         onViewportChange={onViewportChange}
         emptyState={

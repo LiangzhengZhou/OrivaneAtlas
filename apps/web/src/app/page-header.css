@@ -6,23 +6,11 @@
   min-height: 44px;
   /* Search sits between the title and the actions, so it must not push them off. */
   flex-wrap: nowrap;
-  /* Frosted context band. It stays in flow: overlaying it on content hid
-     rows from pointer interaction while scrolling. */
-  padding-block: 12px;
-  background: var(--glass-chrome);
-  border-bottom: 1px solid var(--border-subtle);
-  -webkit-backdrop-filter: blur(18px) saturate(135%);
-  backdrop-filter: blur(18px) saturate(135%);
+  padding-block: var(--space-3);
+  background: var(--canvas);
+  border-bottom: 1px solid var(--border-default);
 }
 
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more),
-  (forced-colors: active), (max-width: 720px) {
-  .page-header {
-    background: var(--canvas);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
 .page-header-title {
   display: flex;
   align-items: center;
@@ -32,7 +20,8 @@
 }
 .page-header h1 {
   margin: 0;
-  font-size: 21px;
+  font-family: var(--font-editorial);
+  font-size: var(--font-display-size);
   font-weight: var(--font-weight-semibold);
   line-height: var(--line-tight);
   letter-spacing: -0.02em;
@@ -44,6 +33,7 @@
 }
 .page-header .breadcrumb h1 {
   display: inline;
+  font-family: var(--font-ui);
   font-size: inherit;
   font-weight: var(--font-weight-semibold);
 }
@@ -71,7 +61,7 @@
     flex: 1 1 100%;
   }
   .page-header h1 {
-    font-size: 19px;
+    font-size: var(--font-title-size);
   }
 }
 .page-header + * {

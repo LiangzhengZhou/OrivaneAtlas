@@ -921,6 +921,14 @@ function Workbench({
       allItems.filter((item) => item.type !== "PROJECT" && !isArchived(item)),
     [allItems, isArchived],
   );
+  const recentProjects = useMemo(
+    () =>
+      projects
+        .filter((project) => !isArchived(project))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .slice(0, 3),
+    [projects, isArchived],
+  );
   const notes = useMemo(
     () => snapshot.notes.filter((note) => !note.deletedAt),
     [snapshot.notes],
@@ -2243,6 +2251,45 @@ function Workbench({
                               />
                             </section>
                           </div>
+                          {recentProjects.length > 0 && (
+                            <section className="overview-recent-projects">
+                              <div className="panel-heading">
+                                <h2>
+                                  {i18n.language.startsWith("zh")
+                                    ? "最近更新的项目"
+                                    : "Recently updated projects"}
+                                </h2>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  onClick={() => navigateProject(null)}
+                                >
+                                  {t("viewAll")}
+                                  <ArrowUpRight size={15} />
+                                </Button>
+                              </div>
+                              <ul>
+                                {recentProjects.map((project) => (
+                                  <li key={project.id}>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      onClick={() =>
+                                        navigateProject(project.id)
+                                      }
+                                    >
+                                      <span>{project.title}</span>
+                                      <time dateTime={project.updatedAt}>
+                                        {new Date(
+                                          project.updatedAt,
+                                        ).toLocaleDateString(i18n.language)}
+                                      </time>
+                                    </Button>
+                                  </li>
+                                ))}
+                              </ul>
+                            </section>
+                          )}
                           <section className="recent-notes">
                             <div className="panel-heading">
                               <h2>{t("recentNotes")}</h2>
@@ -2772,6 +2819,17 @@ function Workbench({
                           )}
                           {view === "files" ? (
                             <FilesWorkspace
+                              key={JSON.stringify([
+                                runtime.serverOrigin,
+                                context.workspaceId,
+                                context.principalId,
+                              ])}
+                              scopeKey={JSON.stringify([
+                                runtime.serverOrigin,
+                                context.workspaceId,
+                                context.principalId,
+                              ])}
+                              workspaceId={context.workspaceId}
                               notes={notes}
                               library={snapshot.library}
                               fileEntries={snapshot.files ?? []}
@@ -2779,6 +2837,10 @@ function Workbench({
                               projects={projects}
                               folderPanel={folderTree(notes)}
                               folderFilter={effectiveFolderFilter}
+                              clearFilters={() => {
+                                setFolderFilter(null);
+                                setQuery("");
+                              }}
                               query={query}
                               busy={busy}
                               getFolderKey={noteFolderKeyOf}
@@ -2790,7 +2852,7 @@ function Workbench({
                               onOpenNote={openNote}
                               onOpenResource={openEntity}
                               onDeleteResource={trashResource}
-                              onUpload={(file) =>
+                              onUpload={(file, openAfter) =>
                                 run(async () => {
                                   const uploaded = await runtime.uploadFile(
                                     {
@@ -2801,7 +2863,7 @@ function Workbench({
                                     },
                                     file,
                                   );
-                                  openFileLink(uploaded.id);
+                                  if (openAfter) openFileLink(uploaded.id);
                                 })
                               }
                             />
@@ -2935,7 +2997,7 @@ function Workbench({
                     <Button
                       type="button"
                       aria-expanded={mobileNavigationOpen}
-                      aria-controls="workspace-navigation"
+                      aria-controls="mobile-more-sheet"
                       onClick={() => {
                         setMobileNavigationOpen((open) => !open);
                       }}
@@ -2977,9 +3039,17 @@ function Workbench({
                                 }
                               : {}),
                           })),
+                        ...(showFileLibrary
+                          ? [{ id: "file-library", label: t("fileLibrary") }]
+                          : []),
                         { id: "settings", label: viewLabel("settings") },
                       ]}
-                      onNavigate={(next) => navigate(next as View)}
+                      onNavigate={(next) => {
+                        if (next === "file-library") {
+                          setMobileNavigationOpen(false);
+                          void openFileLibrary();
+                        } else navigate(next as View);
+                      }}
                       onClose={() => setMobileNavigationOpen(false)}
                     />
                   )}

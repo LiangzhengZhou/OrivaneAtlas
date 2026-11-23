@@ -100,7 +100,7 @@
   flex: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
+  grid-template-columns: 8px minmax(0, 1fr);
   gap: 10px;
   align-items: start;
   padding: 9px 8px;
@@ -153,26 +153,18 @@
   margin-top: 2px;
 }
 .notification-actions {
-  display: none;
-  align-items: center;
-  gap: 2px;
-  padding-right: 6px;
-}
-.notification-row:hover .notification-actions,
-.notification-row:focus-within .notification-actions {
   display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline-end: var(--space-1);
 }
-.notification-row:hover .notification-time,
-.notification-row:focus-within .notification-time {
-  display: none;
+.notification-time {
+  grid-column: 2;
 }
-/* Touch has no hover: actions stay reachable. */
-@media (hover: none) {
-  .notification-actions {
-    display: inline-flex;
-  }
-  .notification-time {
-    display: none;
+@media (pointer: coarse) {
+  .notification-actions .ui-icon-button {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 .notification-chip {
@@ -194,4 +186,14 @@
   height: 9px;
   border-radius: 50%;
   border: 1.5px solid currentColor;
+}
+
+.notification-filter {
+  display: flex;
+  gap: var(--space-1);
+  margin-block: var(--space-2);
+}
+.notification-filter [aria-pressed="true"] {
+  background: var(--accent-subtle);
+  color: var(--accent);
 }

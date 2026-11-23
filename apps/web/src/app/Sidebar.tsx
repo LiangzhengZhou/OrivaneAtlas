@@ -175,7 +175,7 @@ export function Sidebar({
         <Button
           type="button"
           variant="ghost"
-          className="nav-item"
+          className="nav-item file-library-shortcut"
           aria-label={t("openFileLibrary")}
           onClick={onFileLibrary}
         >

@@ -29,7 +29,7 @@ async function serve(
   url: string,
   response: import("node:http").ServerResponse,
 ) {
-  const dist = resolve("apps/web/dist");
+  const dist = resolve(process.env.ATLAS_UI_FIXTURE_DIST ?? "apps/web/dist");
   try {
     const pathname = new URL(url, "http://127.0.0.1").pathname;
     const path = resolve(
@@ -403,6 +403,17 @@ test("due work becomes one durable notification with read, snooze, dismiss and r
   await center
     .getByRole("button", { name: zh ? "标为已读" : "Mark read" })
     .click();
+  const filters = center.getByRole("group", {
+    name: zh ? "通知筛选" : "Filter notifications",
+  });
+  await filters
+    .getByRole("button", { name: zh ? "未读" : "Unread", exact: true })
+    .click();
+  await expect(center.getByText("Pay invoice")).toHaveCount(0);
+  await filters
+    .getByRole("button", { name: zh ? "全部" : "All", exact: true })
+    .click();
+  await expect(center.getByText("Pay invoice")).toBeVisible();
   await expect(
     page.getByRole("button", { name: zh ? /^通知/ : /^Notifications/ }),
   ).toHaveAccessibleName(zh ? "通知" : "Notifications");
@@ -517,4 +528,152 @@ test("notification privacy, quiet hours and explicit system sources persist offl
     path: info.outputPath("notification-settings.png"),
     animations: "disabled",
   });
+});
+
+test("resource queue preserves successful files through a failed read and scoped layout reload", async ({
+  page,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await offline(page);
+  await page.goto(origin + "/#files");
+  const browser = page.locator(".files-resource-browser");
+  await expect(browser).toBeVisible();
+  await page.evaluate(() => {
+    const read = File.prototype.arrayBuffer;
+    let failed = false;
+    File.prototype.arrayBuffer = function () {
+      if (!failed && this.name === "Field map.png") {
+        failed = true;
+        return Promise.reject(
+          new DOMException("Temporary read failure", "NotReadableError"),
+        );
+      }
+      return read.call(this);
+    };
+  });
+  const printPage = await page.context().newPage();
+  await printPage.setContent("<h1>Field survey</h1>");
+  const pdf = await printPage.pdf();
+  await printPage.close();
+  await browser.locator("input[type=file]").setInputFiles([
+    { name: "Field survey.pdf", mimeType: "application/pdf", buffer: pdf },
+    {
+      name: "Field map.png",
+      mimeType: "image/png",
+      buffer: await readFile("apps/web/public/favicon.png"),
+    },
+    {
+      name: "Readings.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("point,height\nA,12\nB,23"),
+    },
+  ]);
+  const queue = browser.getByRole("region", {
+    name: zh ? "上传队列" : "Upload queue",
+  });
+  await expect(queue.getByRole("status")).toContainText("2 / 3");
+  const retry = queue.getByRole("button", { name: zh ? "重试" : "Retry" });
+  await expect(retry).toBeVisible();
+  await expect(browser.locator(".files-resource-row")).toHaveCount(2);
+  await page.screenshot({ path: info.outputPath("queue-partial-failure.png") });
+  await retry.click();
+  await expect(queue.getByRole("status")).toContainText("3 / 3");
+  await expect(browser.locator(".files-resource-row")).toHaveCount(3);
+  await queue
+    .getByRole("button", { name: zh ? "关闭队列" : "Dismiss queue" })
+    .click();
+  const grid = browser.getByRole("button", {
+    name: zh ? "网格视图" : "Grid view",
+  });
+  await grid.click();
+  await page.reload();
+  await expect(grid).toHaveAttribute("aria-pressed", "true");
+  const row = browser.getByRole("button", { name: /Readings\.csv ·/ });
+  await row.focus();
+  await row.press("Space");
+  const detail = browser.locator(".files-detail-panel");
+  await expect(detail).toContainText("text/csv");
+  await page.screenshot({ path: info.outputPath("resource-grid-details.png") });
+  await page.keyboard.press("Escape");
+  await expect(detail).toHaveCount(0);
+  await expect(row).toBeFocused();
+});
+
+test("palette text and actions meet AA in both appearance modes", async ({
+  page,
+}) => {
+  await offline(page);
+  await page.goto(origin + "/#files");
+  await expect(page.locator(".files-resource-browser")).toBeVisible();
+  const pairs = await page.evaluate(() => {
+    const canvas = document.createElement("canvas").getContext("2d")!;
+    function luminance(css: string) {
+      if (!CSS.supports("color", css.trim()))
+        throw new Error("Unresolved color: " + css);
+      canvas.fillStyle = css.trim();
+      canvas.fillRect(0, 0, 1, 1);
+      const channels = Array.from(
+        canvas.getImageData(0, 0, 1, 1).data.slice(0, 3),
+      )
+        .map((v) => v / 255)
+        .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+      return (
+        channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722
+      );
+    }
+    const rows = [];
+    const root = document.documentElement;
+    for (const palette of [
+      "warm-green",
+      "warm-violet",
+      "warm-orange",
+      "orange-white",
+      "cool-neutral",
+    ])
+      for (const theme of ["dark", "light"]) {
+        root.dataset.palette = palette;
+        root.dataset.theme = theme;
+        const style = getComputedStyle(root);
+        for (const [fg, bg] of [
+          ["--text-muted", "--surface"],
+          ["--text-muted", "--canvas"],
+          ["--text-secondary", "--sidebar-surface"],
+          ["--on-accent", "--accent"],
+          ["--on-accent", "--accent-hover"],
+        ] as const) {
+          const a = luminance(style.getPropertyValue(fg)),
+            b = luminance(style.getPropertyValue(bg));
+          rows.push({
+            palette,
+            theme,
+            fg,
+            bg,
+            ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05),
+          });
+        }
+      }
+    return rows;
+  });
+  for (const row of pairs)
+    expect(row.ratio, JSON.stringify(row)).toBeGreaterThanOrEqual(4.5);
+});
+
+test("calendar keyboard selection follows the date across a month boundary", async ({
+  page,
+}) => {
+  await offline(page);
+  await page.clock.setFixedTime(new Date("2026-01-31T12:00:00Z"));
+  await page.goto(origin + "/#calendar");
+  const today = page.getByRole("button", { name: "2026-01-31", exact: true });
+  await expect(today).toHaveAttribute("aria-current", "date");
+  await today.focus();
+  await today.press("ArrowRight");
+  const first = page.getByRole("button", { name: "2026-02-01", exact: true });
+  await expect(first).toBeFocused();
+  await expect(first).toHaveAttribute("aria-pressed", "true");
+  await first.press("ArrowUp");
+  await expect(
+    page.getByRole("button", { name: "2026-01-25", exact: true }),
+  ).toBeFocused();
+  await expect(page.locator('.calendar-day[tabindex="0"]')).toHaveCount(1);
 });

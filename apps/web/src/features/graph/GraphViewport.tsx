@@ -76,6 +76,7 @@ function GraphControls({ onViewportIntent }: { onViewportIntent(): void }) {
 }
 
 export function GraphViewport({
+  label,
   emptyState,
   toolbar,
   inspector,
@@ -90,6 +91,7 @@ export function GraphViewport({
   initialViewport,
   onViewportChange,
 }: {
+  label: string;
   emptyState?: ReactNode;
   toolbar?: ReactNode;
   inspector?: ReactNode;
@@ -152,13 +154,14 @@ export function GraphViewport({
         if (expanded) setExpanded(false);
       }}
       className={expanded ? "graph-expanded-dialog" : "graph-inline-dialog"}
-      aria-label={t("expandGraph")}
+      aria-label={label}
     >
       <Button
         type="button"
         variant="ghost"
         className="ui-icon-button graph-expand-button"
         aria-label={t(expanded ? "common:close" : "expandGraph")}
+        aria-expanded={expanded}
         onClick={() => setExpanded(!expanded)}
       >
         {expanded ? <X size={18} /> : <Expand size={18} />}

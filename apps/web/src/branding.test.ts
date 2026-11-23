@@ -35,9 +35,9 @@ function generatedAlpha(png: Buffer) {
   expect(visible).toBeGreaterThan(0);
 }
 
-test("Sidebar brand logo remains byte-identical and keeps its independent application reference", () => {
+test("Sidebar serves the approved wordmark independently of platform icons", () => {
   expect(hash("apps/web/public/orivane-atlas.png")).toBe(
-    "12E98E78FD60082975FA0FD655AD1C80C00598186232971AE22CA4971E7BB176",
+    "FAEC5770F342319AB0302B25327449039FB7D7A5A4598FF497231A62188AFA6D",
   );
   expect(bytes("apps/web/src/app/Sidebar.tsx").toString()).toContain(
     'src="/orivane-atlas.png"',
@@ -49,14 +49,14 @@ test("Sidebar brand logo remains byte-identical and keeps its independent applic
 
 test("all application platforms derive their packaged icons from the canonical repository source", () => {
   expect(hash("branding/application-icon-source.png")).toBe(
-    "A9C57AD8206C14995C7E2E078D53DD222685CA02E793DFE07BC124BB3BC835A0",
+    "6F6D36BBD6D2705387C8976D1921667E030A492DDA392C5D31A5EA9049B743E4",
   );
   const source = bytes("branding/application-icon-source.png");
-  expect(source.readUInt32BE(16)).toBe(1007);
-  expect(source.readUInt32BE(20)).toBe(1111);
+  expect(source.readUInt32BE(16)).toBe(512);
+  expect(source.readUInt32BE(20)).toBe(512);
   expect(source[25]).toBe(6);
   const generator = bytes("scripts/make-native-icons.mjs").toString();
-  expect(generator).toContain("branding/application-icon-source.png");
+  expect(generator).toContain("branding/app-icon-master.svg");
   expect(generator).not.toContain("E:\\DownloadTemp");
   expect(generator).toContain("object-fit:contain");
   const config = JSON.parse(bytes("src-tauri/tauri.conf.json").toString());
@@ -70,7 +70,9 @@ test("all application platforms derive their packaged icons from the canonical r
     { length: ico.readUInt16LE(4) },
     (_, index) => ico[6 + index * 16] || 256,
   );
-  expect(sizes).toEqual(expect.arrayContaining([16, 24, 32, 48, 64, 128, 256]));
+  expect(sizes).toEqual(
+    expect.arrayContaining([16, 20, 24, 32, 48, 64, 128, 256]),
+  );
   for (let index = 0; index < sizes.length; index++) {
     const entry = 6 + index * 16;
     expect(ico.readUInt16LE(entry + 6)).toBe(32);

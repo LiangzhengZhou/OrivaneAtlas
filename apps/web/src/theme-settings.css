@@ -88,8 +88,8 @@
 }
 
 .appearance-palette-option[data-palette="warm-green"] {
-  --canvas: #f8f9f6;
-  --accent: #316b5d;
+  --canvas: #f5f4ec;
+  --accent: #165d57;
 }
 
 .appearance-palette-option[data-palette="warm-violet"] {

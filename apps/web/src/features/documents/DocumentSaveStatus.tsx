@@ -18,40 +18,59 @@ export function DocumentSaveStatus({
   error: boolean;
   zh: boolean;
 }) {
-  const [state, setState] = useState({
-    bound: false,
-    pending: true,
-    offline: !navigator.onLine,
-  });
+  type Persistence = Awaited<ReturnType<Runtime["documentPersistenceState"]>>;
+  const [state, setState] = useState<Persistence | "unavailable" | null>(null);
   useEffect(() => {
+    if (!id) return;
     let active = true,
-      sequence = 0;
-    const update = () => {
-      if (!id) return;
-      const current = ++sequence;
-      void runtime
-        .documentPersistenceState(library ? "library" : "notes", id)
-        .then(
-          (next) => {
-            if (active && current === sequence) setState(next);
-          },
-          () => {
-            if (active && current === sequence)
-              setState((old) => ({ ...old, offline: true }));
-          },
+      reading = false,
+      requested = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const update = async () => {
+      if (!active || document.hidden) return;
+      if (reading) {
+        requested = true;
+        return;
+      }
+      clearTimeout(timer);
+      reading = true;
+      requested = false;
+      let delay = 5000;
+      try {
+        const next = await runtime.documentPersistenceState(
+          library ? "library" : "notes",
+          id,
         );
+        if (active)
+          setState((previous) =>
+            previous &&
+            previous !== "unavailable" &&
+            previous.bound === next.bound &&
+            previous.pending === next.pending &&
+            previous.offline === next.offline
+              ? previous
+              : next,
+          );
+        if (next.pending) delay = 1000;
+      } catch {
+        if (active) setState("unavailable");
+      } finally {
+        reading = false;
+        if (active) timer = setTimeout(update, requested ? 0 : delay);
+      }
     };
-    update();
+    void update();
     const stop = runtime.subscribeWorkspace(update);
-    const timer = setInterval(update, 1000);
     window.addEventListener("online", update);
     window.addEventListener("offline", update);
+    document.addEventListener("visibilitychange", update);
     return () => {
       active = false;
       stop();
-      clearInterval(timer);
+      clearTimeout(timer);
       window.removeEventListener("online", update);
       window.removeEventListener("offline", update);
+      document.removeEventListener("visibilitychange", update);
     };
   }, [runtime, library, id]);
   const text = error
@@ -66,23 +85,40 @@ export function DocumentSaveStatus({
         ? zh
           ? "未保存"
           : "Unsaved"
-        : state.offline
+        : !id
           ? zh
-            ? "已保存到本机 · 离线"
-            : "Saved on this device · Offline"
-          : !state.bound
+            ? "草稿"
+            : "Draft"
+          : state === "unavailable"
             ? zh
-              ? "已保存到本机"
-              : "Saved on this device"
-            : state.pending
+              ? "无法读取同步状态"
+              : "Sync status unavailable"
+            : !state
               ? zh
-                ? "已保存到本机 · 正在同步"
-                : "Saved on this device · Syncing"
-              : zh
-                ? "已同步"
-                : "Synced";
+                ? "正在检查保存状态"
+                : "Checking save status"
+              : state.offline
+                ? zh
+                  ? "已保存到本机 · 离线"
+                  : "Saved on this device · Offline"
+                : !state.bound
+                  ? zh
+                    ? "已保存到本机"
+                    : "Saved on this device"
+                  : state.pending
+                    ? zh
+                      ? "已保存到本机 · 正在同步"
+                      : "Saved on this device · Syncing"
+                    : zh
+                      ? "已同步"
+                      : "Synced";
   return (
-    <span role="status" data-locally-saved={!dirty && !busy && !error}>
+    <span
+      role="status"
+      data-locally-saved={
+        !!id && !!state && state !== "unavailable" && !dirty && !busy && !error
+      }
+    >
       {text}
     </span>
   );

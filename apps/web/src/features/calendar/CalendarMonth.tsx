@@ -1,6 +1,10 @@
-import { calendarMonthInfo, formatCalendarDate } from "@arclattice/domain";
+import {
+  calendarDate,
+  calendarMonthInfo,
+  formatCalendarDate,
+} from "@arclattice/domain";
 import { Bell, ChevronLeft, ChevronRight, NotebookPen } from "lucide-react";
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "../../components/ui/Button";
 import { CalendarDayCell } from "../../components/ui/Content";
@@ -30,6 +34,16 @@ export function CalendarMonth({
   const { t, i18n } = useTranslation("desk");
   const { days, offset } = calendarMonthInfo(month);
   const blanks = (7 - ((days + offset) % 7)) % 7;
+  const grid = useRef<HTMLDivElement>(null);
+  const moveFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (moveFocus.current) {
+      moveFocus.current = false;
+      grid.current
+        ?.querySelector<HTMLElement>('.calendar-day[tabindex="0"]')
+        ?.focus();
+    }
+  }, [selected, month]);
   const zh = i18n.language.startsWith("zh");
   const weekdays = useMemo(
     () =>
@@ -95,6 +109,8 @@ export function CalendarMonth({
           ))}
         </div>
         <div
+          ref={grid}
+          role="group"
           className="calendar-grid"
           aria-label={zh ? "月份日期" : "Month days"}
         >
@@ -110,6 +126,36 @@ export function CalendarMonth({
               <CalendarDayCell
                 key={day}
                 aria-label={day}
+                tabIndex={day === selected ? 0 : -1}
+                aria-current={today === day ? "date" : undefined}
+                onKeyDown={(event) => {
+                  if (
+                    event.target !== event.currentTarget ||
+                    event.altKey ||
+                    event.ctrlKey ||
+                    event.metaKey ||
+                    event.shiftKey
+                  )
+                    return;
+                  const steps: Readonly<Record<string, number>> = {
+                    ArrowLeft: -1,
+                    ArrowRight: 1,
+                    ArrowUp: -7,
+                    ArrowDown: 7,
+                  };
+                  const step = steps[event.key];
+                  if (step === undefined) return;
+                  event.preventDefault();
+                  const target = calendarDate(day);
+                  target.setUTCDate(target.getUTCDate() + step);
+                  if (
+                    target.getUTCFullYear() < 1 ||
+                    target.getUTCFullYear() > 9999
+                  )
+                    return;
+                  moveFocus.current = true;
+                  onSelect(target.toISOString().slice(0, 10));
+                }}
                 aria-pressed={selected === day}
                 selected={selected === day}
                 className={"calendar-day " + (today === day ? "is-today" : "")}

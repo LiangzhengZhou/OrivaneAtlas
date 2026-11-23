@@ -89,7 +89,9 @@ export function CalendarView({
         timezone={timezone}
         onShift={shift}
         onToday={() => update({ month: today.slice(0, 7), selected: today })}
-        onSelect={(selected) => update({ ...state, selected })}
+        onSelect={(selected) =>
+          update({ month: selected.slice(0, 7), selected })
+        }
         onCreate={onCreateTask}
       />
       <DayAgenda
