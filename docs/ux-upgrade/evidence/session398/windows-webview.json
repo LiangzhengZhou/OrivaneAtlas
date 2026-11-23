@@ -1,0 +1,13 @@
+{
+  "originalURL": "http://tauri.localhost/",
+  "engine": "Edg/158.0.4370.33",
+  "viewport": [1280, 840],
+  "steps": [
+    "offline files",
+    "two original files",
+    "keyboard inspect",
+    "keyboard open",
+    "CSV preview"
+  ],
+  "overflow": 0
+}

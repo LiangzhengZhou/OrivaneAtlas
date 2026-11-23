@@ -1,0 +1,21 @@
+{
+  "os": "win32",
+  "osRelease": "10.0.26300",
+  "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+  "browser": "153.0.8010.12",
+  "viewport": "1440x900",
+  "measurements": [
+    {
+      "resources": 1000,
+      "renderedRows": 60,
+      "readyMs": 521,
+      "selectMs": 85
+    },
+    {
+      "resources": 10000,
+      "renderedRows": 60,
+      "readyMs": 943,
+      "selectMs": 49
+    }
+  ]
+}

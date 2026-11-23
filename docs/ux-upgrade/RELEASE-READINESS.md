@@ -17,3 +17,27 @@
 4. 跨历史 schema 回滚应使用匹配旧代码与升级前独立快照，在新目标完成恢复核对后再决定切换。原始生产数据、设备缓存和密钥不得作为测试输入。
 
 本轮没有发布、部署或操作生产数据。实际端到端恢复结果、正式版本编号、最低跨版本兼容范围和设备验收仍需补齐。
+
+## Session 398 的兼容验证
+
+数据库仍为 SQLite 51 / PostgreSQL 46。本批涉及本地副本水合覆盖。新副本导入三个既有文件夹关系列表，旧副本对完成标记添加可选 folderLinksIncluded，仍使用已有元数据仓库和 schemaVersion 1。旧客户端可以忽略字段；真正回退后的数据一致性须在独立副本演练。回退到漏读关联的旧客户端可能导致关系在该客户端不可见，不应据此清理数据。
+
+本地补齐前先校验账号、远端身份、epoch 和游标。快照领先时延后关联补齐，继续正常增量，避免跳过其余记录。已有备份路径、权限、原件和 Outbox 继续生效。测试用旧完成标记、领先和同一游标的快照验证一次性提交和只写关系。
+
+Windows GNU 优化构建使用 --no-sign --no-bundle 成功。隔离 WebView2 程序使用专属标识 app.orivane.atlas.ux398fixture、离线样例和独立浏览器数据目录，验证键盘与预览。源代码的连接版 CSP 明确允许同源、data 和 blob 图片，其余资源类型继续用既有规则。此步骤不安装程序、不检查真实账号、不签署发行包。Android 设备体验、版本升级和发行渠道验证单独记录。
+
+### 本机 WebView2 隔离冒烟复跑
+
+在项目根目录从已构建的 Web 资源创建独立测试配置。完整配置位于本机 .artifacts/ux398/webview2-fixture.json，其 identifier 为 app.orivane.atlas.ux398fixture、productName 为 Atlas UX fixture、frontendDist 为已冻结的本地构建、beforeBuildCommand 为空，updater.endpoints 为本机不可用的测试地址。开发测试使用 Windows GNU 本机工具链和离线 Cargo cache。
+
+```powershell
+$cfg=(Resolve-Path .artifacts/ux398/webview2-fixture.json).Path
+pnpm exec tauri build --no-sign --no-bundle --config src-tauri/tauri.connected.conf.json --config $cfg
+node scripts/smoke-windows-webview.mjs .artifacts/ux398/new-webview-result src-tauri/target/release/arclattice.exe
+```
+
+脚本检查 PE 产品名，创建独立 WebView2 配置目录，使用本机回环调试端口读取测试窗口，将本轮原件导入测试应用，最后关闭测试进程。输入目录必须是新路径，以便原始证据可追溯。文档归档的 Windows 图像与结果来自此流程。未进行安装、凭据迁移、代码签名、推送或生产更新。
+
+### Android ARM64 原生编译
+
+Android 使用现有 NDK 26.1.10909125、API 24 和离线锁定 Cargo 依赖，补齐 Tauri Android 包标识后 arm64 release 原生库构建成功（2m37s，5 个警告）。llvm-readelf 核对 ELF64/AArch64，llvm-nm 核对 app.orivane.atlas JNI 导出，14,872,056 字节，SHA-256 3304B4A94FDE716B5AF15452C4706E847376C3B0EE9830A99B323E231D321762。adb devices -l 设备列表为空。该结果覆盖 JNI 编译，不包括 APK 安装、系统输入、返回和生命周期。日志见 .artifacts/ux398/android-arm64-r2.log 与 android-elf.txt。
