@@ -5798,6 +5798,27 @@ test("settings preferences are separated from account, API and model hierarchy",
       exact: true,
     }),
   ).toBeVisible();
+  const identity = page.getByRole("region", {
+    name: zh ? "当前工作区身份" : "Current workspace identity",
+  });
+  const identifiers = identity.locator("summary");
+  const principal = identity.getByText(zh ? "访问主体 ID" : "Principal ID", {
+    exact: true,
+  });
+  await expect(
+    identity.getByText(zh ? "服务器" : "Server", { exact: true }),
+  ).toBeVisible();
+  await expect(principal).toBeHidden();
+  await expect(identifiers).toHaveText(
+    zh ? "工作区标识详情" : "Workspace identifiers",
+  );
+  await identifiers.focus();
+  await identifiers.press("Enter");
+  await expect(principal).toBeVisible();
+  await expect(identity.locator("details dd").first()).toHaveText(/\S/);
+  await identifiers.press("Space");
+  await expect(principal).toBeHidden();
+  await expect(identifiers).toBeFocused();
   await page.screenshot({
     path: info.outputPath("account-security.png"),
     fullPage: true,

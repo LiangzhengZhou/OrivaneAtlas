@@ -127,22 +127,27 @@ export function WorkspaceConnection({
                   : "Account workspace"
                 : runtime.activeWorkspace.title}
           </dd>
-          <dt>Workspace ID</dt>
-          <dd>{runtime.context.workspaceId}</dd>
-          <dt>Principal ID</dt>
-          <dd>{runtime.context.principalId}</dd>
           <dt>{zh ? "服务器" : "Server"}</dt>
           <dd>
             {runtime.activeWorkspace.remote?.serverOrigin ??
               (zh ? "未绑定服务器" : "Not bound to a server")}
           </dd>
-          {runtime.activeWorkspace.remote && (
-            <>
-              <dt>{zh ? "远端工作区" : "Remote workspace"}</dt>
-              <dd>{runtime.activeWorkspace.remote.workspaceId}</dd>
-            </>
-          )}
         </dl>
+        <details>
+          <summary>{zh ? "工作区标识详情" : "Workspace identifiers"}</summary>
+          <dl>
+            <dt>{zh ? "工作区 ID" : "Workspace ID"}</dt>
+            <dd>{runtime.context.workspaceId}</dd>
+            <dt>{zh ? "访问主体 ID" : "Principal ID"}</dt>
+            <dd>{runtime.context.principalId}</dd>
+            {runtime.activeWorkspace.remote && (
+              <>
+                <dt>{zh ? "远端工作区 ID" : "Remote workspace ID"}</dt>
+                <dd>{runtime.activeWorkspace.remote.workspaceId}</dd>
+              </>
+            )}
+          </dl>
+        </details>
       </section>
       <WorkspaceConflictReview runtime={runtime} zh={zh} />
       <WorkspaceImportRecovery
