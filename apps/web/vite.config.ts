@@ -1,4 +1,4 @@
-import { copyFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -7,8 +7,14 @@ export default defineConfig({
     react(),
     {
       name: "api-spec",
-      closeBundle() {
-        copyFileSync("../../docs/api/openapi.json", "dist/openapi.json");
+      generateBundle() {
+        this.emitFile({
+          type: "asset",
+          fileName: "openapi.json",
+          source: readFileSync(
+            new URL("../../docs/api/openapi.json", import.meta.url),
+          ),
+        });
       },
     },
   ],
