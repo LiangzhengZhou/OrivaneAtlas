@@ -28,10 +28,10 @@ Windows GNU 优化构建使用 --no-sign --no-bundle 成功。隔离 WebView2 �
 
 ### 本机 WebView2 隔离冒烟复跑
 
-在项目根目录从已构建的 Web 资源创建独立测试配置。完整配置位于本机 .artifacts/ux398/webview2-fixture.json，其 identifier 为 app.orivane.atlas.ux398fixture、productName 为 Atlas UX fixture、frontendDist 为已冻结的本地构建、beforeBuildCommand 为空，updater.endpoints 为本机不可用的测试地址。开发测试使用 Windows GNU 本机工具链和离线 Cargo cache。
+在项目根目录从已构建的 Web 资源创建独立测试配置。原版 PDF 复验配置位于本机 .artifacts/ux398/webview2-pdf.json，其 identifier 为 app.orivane.atlas.ux398fixture、productName 为 Atlas UX fixture、frontendDist 为已冻结的本地构建、beforeBuildCommand 为空，updater.endpoints 为本机不可用的测试地址。开发测试使用 Windows GNU 本机工具链和离线 Cargo cache。
 
 ```powershell
-$cfg=(Resolve-Path .artifacts/ux398/webview2-fixture.json).Path
+$cfg=(Resolve-Path .artifacts/ux398/webview2-pdf.json).Path
 pnpm exec tauri build --no-sign --no-bundle --config src-tauri/tauri.connected.conf.json --config $cfg
 node scripts/smoke-windows-webview.mjs .artifacts/ux398/new-webview-result src-tauri/target/release/arclattice.exe
 ```
@@ -41,3 +41,13 @@ node scripts/smoke-windows-webview.mjs .artifacts/ux398/new-webview-result src-t
 ### Android ARM64 原生编译
 
 Android 使用现有 NDK 26.1.10909125、API 24 和离线锁定 Cargo 依赖，补齐 Tauri Android 包标识后 arm64 release 原生库构建成功（2m37s，5 个警告）。llvm-readelf 核对 ELF64/AArch64，llvm-nm 核对 app.orivane.atlas JNI 导出，14,872,056 字节，SHA-256 3304B4A94FDE716B5AF15452C4706E847376C3B0EE9830A99B323E231D321762。adb devices -l 设备列表为空。该结果覆盖 JNI 编译，不包括 APK 安装、系统输入、返回和生命周期。日志见 .artifacts/ux398/android-arm64-r2.log 与 android-elf.txt。
+
+### 已执行的 Web 升级与回退演练
+
+2026-11-23，Chromium 153.0.8010.12，使用本地 3.1.14 构建及 398 候选的同一隔离 profile 和同一 origin。真实上传、从 UI 复制引用、下载并比较 SHA-256。基线、升级、回退、再次升级及断网重载五个阶段保留相同字节与深色偏好。脚本 scripts/rehearse-ux-web-upgrade.mjs 接受两个构建目录和全新输出目录。evidence/session398/web-upgrade.json 保存入口和 JS 哈希、原件摘要及实际阶段。生产数据库和平台安装包尚未演练。
+
+PDF 原件页视图复用锁定的 PDF.js 和同源 Worker。发行资产须保留带哈希的 PDF 解析 JS 和 Worker。Windows 本地验证配置 webview2-pdf.json 使用冻结的 pdf398-web，保留原版照片、表格和 PDF 次页证据。随应用部署的缓存资源与大文件策略须在离线升级后复查。
+
+### 已验证的旧数据与备份夹具
+
+全量浏览器 807/807 包含 tests/e2e/local-storage.spec.ts 的 v1 IndexedDB 备份恢复，以及 tests/e2e/legacy-upgrade.spec.ts 的真实旧 SQLite v29 项目、Markdown 与分块 PNG 升级。全量 Vitest 的 305/305 文件包含 packages/storage-sqlite/src/files.test.ts 的 v34/v35 恢复，并由 packages/storage-postgres/src/files.test.ts 和 knowledge-backup.test.ts 在临时 PostgreSQL 集群验证物理备份和内容。Web 资产回退证据单独记录在 web-upgrade.json。这些结果覆盖本机夹具，原生客户端安装降级、其他历史版本及运维侧恢复演练仍开放。

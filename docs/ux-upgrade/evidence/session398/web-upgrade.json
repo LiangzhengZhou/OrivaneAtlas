@@ -1,0 +1,42 @@
+{
+  "baselineIndex": "07a0e3e9a376b5b53874913c39c488280fe20a074afb9e7c7cbb65d7fb1d96d6",
+  "candidateIndex": "5623f437029ca374e2666cc7b0b9a75fe962d6f4d8fe0ce8f8dddcd9a4acd97d",
+  "engine": "153.0.8010.12",
+  "steps": [
+    {
+      "stage": "baseline",
+      "js": "/assets/index-KDtxiwiF.js",
+      "deepLink": "#library?file=0e74f24d-9182-40bb-8a3d-4e09410e93cd",
+      "sha256": "f1553d8900fa1cce125cc6e12dcff03bc2f848aa5d2d0a1073f481fea6c636db",
+      "theme": "dark"
+    },
+    {
+      "stage": "upgrade",
+      "js": "/assets/index-CQkDK8-f.js",
+      "deepLink": "#library?file=0e74f24d-9182-40bb-8a3d-4e09410e93cd",
+      "sha256": "f1553d8900fa1cce125cc6e12dcff03bc2f848aa5d2d0a1073f481fea6c636db",
+      "theme": "dark"
+    },
+    {
+      "stage": "rollback",
+      "js": "/assets/index-KDtxiwiF.js",
+      "deepLink": "#library?file=0e74f24d-9182-40bb-8a3d-4e09410e93cd",
+      "sha256": "f1553d8900fa1cce125cc6e12dcff03bc2f848aa5d2d0a1073f481fea6c636db",
+      "theme": "dark"
+    },
+    {
+      "stage": "reupgrade",
+      "js": "/assets/index-CQkDK8-f.js",
+      "deepLink": "#library?file=0e74f24d-9182-40bb-8a3d-4e09410e93cd",
+      "sha256": "f1553d8900fa1cce125cc6e12dcff03bc2f848aa5d2d0a1073f481fea6c636db",
+      "theme": "dark"
+    },
+    {
+      "stage": "offline",
+      "js": "/assets/index-CQkDK8-f.js",
+      "deepLink": "#library?file=0e74f24d-9182-40bb-8a3d-4e09410e93cd",
+      "sha256": "f1553d8900fa1cce125cc6e12dcff03bc2f848aa5d2d0a1073f481fea6c636db",
+      "theme": "dark"
+    }
+  ]
+}

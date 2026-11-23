@@ -1,0 +1,331 @@
+{
+  "method": "Six AB/BA pairs, fresh profile per stage. Additional checks ran concurrently. Durations in ms.",
+  "summary": [
+    {
+      "variant": "baseline",
+      "resources": 1000,
+      "rows": [1000, 1000, 1000, 1000, 1000, 1000],
+      "readyMs": {
+        "median": 411.5,
+        "min": 368,
+        "max": 516
+      },
+      "selectMs": {
+        "median": 124.5,
+        "min": 98,
+        "max": 140
+      }
+    },
+    {
+      "variant": "baseline",
+      "resources": 10000,
+      "rows": [10000, 10000, 10000, 10000, 10000, 10000],
+      "readyMs": {
+        "median": 1571.5,
+        "min": 1488,
+        "max": 2477
+      },
+      "selectMs": {
+        "median": 583,
+        "min": 458,
+        "max": 635
+      }
+    },
+    {
+      "variant": "candidate",
+      "resources": 1000,
+      "rows": [60, 60, 60, 60, 60, 60],
+      "readyMs": {
+        "median": 396.5,
+        "min": 334,
+        "max": 477
+      },
+      "selectMs": {
+        "median": 78,
+        "min": 73,
+        "max": 85
+      }
+    },
+    {
+      "variant": "candidate",
+      "resources": 10000,
+      "rows": [60, 60, 60, 60, 60, 60],
+      "readyMs": {
+        "median": 1094.5,
+        "min": 908,
+        "max": 1250
+      },
+      "selectMs": {
+        "median": 63.5,
+        "min": 61,
+        "max": 73
+      }
+    }
+  ],
+  "runs": [
+    {
+      "file": "1-baseline.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 1000,
+          "readyMs": 368,
+          "selectMs": 119
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 10000,
+          "readyMs": 1760,
+          "selectMs": 582
+        }
+      ]
+    },
+    {
+      "file": "1-candidate.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 60,
+          "readyMs": 426,
+          "selectMs": 85
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 60,
+          "readyMs": 1151,
+          "selectMs": 62
+        }
+      ]
+    },
+    {
+      "file": "2-baseline.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 1000,
+          "readyMs": 409,
+          "selectMs": 125
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 10000,
+          "readyMs": 1488,
+          "selectMs": 615
+        }
+      ]
+    },
+    {
+      "file": "2-candidate.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 60,
+          "readyMs": 367,
+          "selectMs": 78
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 60,
+          "readyMs": 1038,
+          "selectMs": 61
+        }
+      ]
+    },
+    {
+      "file": "3-baseline.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 1000,
+          "readyMs": 516,
+          "selectMs": 140
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 10000,
+          "readyMs": 2477,
+          "selectMs": 635
+        }
+      ]
+    },
+    {
+      "file": "3-candidate.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 60,
+          "readyMs": 477,
+          "selectMs": 75
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 60,
+          "readyMs": 1250,
+          "selectMs": 73
+        }
+      ]
+    },
+    {
+      "file": "4-baseline.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 1000,
+          "readyMs": 456,
+          "selectMs": 98
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 10000,
+          "readyMs": 1555,
+          "selectMs": 584
+        }
+      ]
+    },
+    {
+      "file": "4-candidate.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 60,
+          "readyMs": 359,
+          "selectMs": 80
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 60,
+          "readyMs": 1032,
+          "selectMs": 61
+        }
+      ]
+    },
+    {
+      "file": "5-baseline.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 1000,
+          "readyMs": 390,
+          "selectMs": 124
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 10000,
+          "readyMs": 1489,
+          "selectMs": 458
+        }
+      ]
+    },
+    {
+      "file": "5-candidate.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 60,
+          "readyMs": 334,
+          "selectMs": 73
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 60,
+          "readyMs": 908,
+          "selectMs": 70
+        }
+      ]
+    },
+    {
+      "file": "6-baseline.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 1000,
+          "readyMs": 414,
+          "selectMs": 126
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 10000,
+          "readyMs": 1588,
+          "selectMs": 499
+        }
+      ]
+    },
+    {
+      "file": "6-candidate.json",
+      "os": "win32",
+      "osRelease": "10.0.26300",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+      "browser": "153.0.8010.12",
+      "viewport": "1440x900",
+      "measurements": [
+        {
+          "resources": 1000,
+          "renderedRows": 60,
+          "readyMs": 443,
+          "selectMs": 78
+        },
+        {
+          "resources": 10000,
+          "renderedRows": 60,
+          "readyMs": 1171,
+          "selectMs": 65
+        }
+      ]
+    }
+  ]
+}

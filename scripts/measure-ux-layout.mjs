@@ -1,7 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { chromium } from "@playwright/test";
-import { serveWebFixture } from "./serve-ux-web-fixture.mjs";
+import {
+  serveWebFixture,
+  workspaceEntryRoutes,
+} from "./serve-ux-web-fixture.mjs";
 
 const [distPath, outputPath] = process.argv.slice(2);
 if (!distPath || !outputPath)
@@ -12,22 +15,7 @@ const output = resolve(outputPath);
 await mkdir(output);
 const server = await serveWebFixture(dist);
 const { origin } = server;
-const routes = [
-  "overview",
-  "files",
-  "notes",
-  "journal",
-  "library",
-  "graph",
-  "projects",
-  "tasks",
-  "focus",
-  "calendar",
-  "ai",
-  "account",
-  "settings",
-  "trash",
-];
+
 const viewports = [
   [1920, 1080],
   [1440, 900],
@@ -54,7 +42,7 @@ try {
         : route.abort(),
     );
     const page = await context.newPage();
-    for (const route of routes) {
+    for (const route of workspaceEntryRoutes) {
       await page.goto(origin + "/?layout=" + route + "#" + route);
       await page.locator("main.workspace-main").waitFor();
       const content = page.locator("main.workspace-main > .content:visible");

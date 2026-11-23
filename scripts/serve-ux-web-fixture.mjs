@@ -42,3 +42,20 @@ export async function serveWebFixture(initialDist) {
     },
   };
 }
+
+export const workspaceEntryRoutes = [
+  "overview",
+  "files",
+  "notes",
+  "journal",
+  "library",
+  "graph",
+  "projects",
+  "tasks",
+  "focus",
+  "calendar",
+  "ai",
+  "account",
+  "settings",
+  "trash",
+];

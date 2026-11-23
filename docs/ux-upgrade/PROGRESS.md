@@ -1,3 +1,20 @@
+# 全产品升级接力 · 当前候选 da0105e
+
+本机记录时间 2026-11-24 00:10 +08:00。项目根目录 D:/Lib/Codex_workplace/ArcLattice，分支 codex/ux-upgrade，生产版本未核证。最新产品代码 da0105e，报告与证据提交可用 `git log -1 -- docs/ux-upgrade/PROGRESS.md` 定位。当前实现、验收缺口和文件清单见 CHECKPOINT-398.md、ACCEPTANCE.md、CHANGES-398.md。以下旧记录按各自时点解读。
+
+|对象|已完成的实测|
+|---|---|
+|资源、回退与 PDF|批量软删除/恢复、父子顺序与部分失败 6/6，冲突专项 13/13。Web 同一隔离工作区历经 5 阶段恢复；原件摘要、主题与深链保留。真实 PDF 两页颜色核验浏览器 3/3、Windows WebView2 七步。|
+|账户（da0105e）|工作区名称、服务器常显，标识及译文可用键盘展开。设置入口和独立工作区切换共 6/6（49.6 秒），记录 account399.log。Web 构建、11 包 typecheck 和本次 lint/边界通过。390 像素深色改前/改后实页图在 evidence/session398/account-*-mobile.png。|
+|布局与无障碍（da0105e）|layout-account399.log 在 392 个组合中外层及 main 均无横向溢出，原始结果字节与 evidence/session398/layout-matrix.json 相同。ax-hydrated.log 的 14 个入口 × 两个配置、770 次可操作角色的计算名称检查无缺漏，每页一个 main；明细在 evidence/session398/accessibility.json。|
+|完整门禁|较早的完整 pnpm check 为 305/305 文件、1577/1577 测试通过，构建 2/2。较早的全量 Playwright 为 807/807。深色有内容关键任务 30/30。完整范围与各提交的专项分见 KEY-FLOWS-398.md。|
+
+**暂停时还在运行。** 00:10 复核 PID 28360 为 c23c2d3 启动的完整 pnpm check，Vitest 未出最终统计。PID 47288 为 1384986 冻结构建的 pnpm test:e2e，已启动第 262/825 条。请保留这两个进程、宿主及临时输出。它们与 da0105e 的账户专项使用不同的构建目录。应用的其他既有进程也应保留。
+
+**恢复命令与下一步。** 在上述项目根先执行 `git status --short --branch`、`git log -4 --oneline`、`Get-Process -Id 28360,47288 -ErrorAction SilentlyContinue`，读取 `Get-Content .artifacts/ux398/check-c23c2d3.log -Tail 40` 和 `Get-Content .artifacts/ux398/browser-825.log -Tail 40`，记录完成/失败总数。若存在失败，先使用该冻结 dist 和失败的 Playwright 标题定位，保留原 trace。证据目录为 .artifacts/ux398，用户可查阅的材料在 docs/ux-upgrade/evidence。工作树状态以提交后的本机 HANDOFF.md 和现场 Git 为准。
+
+随后核对 packages/application/src/folder-links.ts 的 create/remove、packages/application/src/local-folder-links.ts 的 Outbox 与现有 Receipt，按 ADR0147 确认一个资源可属于多个集合。在 apps/web/src/features/files/FilesWorkspace.tsx 增加明确源/目标的批量整理及对应键盘与指针交互，先为目标失败、源版本已变化、已存在目标关联及中途换账号编写验收；读取原始字节及 Document.spaceId 比对。P0 共享权限以及其他模块的逐项验收继续见 ISSUES.md 与 ACCEPTANCE.md。Android 设备、系统镜像及 emulator 未就绪，发布、签名与生产迁移均未执行。
+
 # 全产品升级检查点 · Session 398
 
 2026-11-23。分支 codex/ux-upgrade，从 722f929 的干净工作树恢复。上一轮的 Vitest 已结束；上次浏览器全量回归使用旧资产，最终 780 通过、12 失败。历史检查点仍保留在下方。本轮结果见 CHECKPOINT-398.md。
@@ -76,3 +93,23 @@ Android 使用现有 NDK 26.1.10909125、API 24 和离线锁定 Cargo 依赖，�
 实现 9cfb317。总览通过同一身份下已授权快照显示最近三项资源，空状态可进入资源中心；对已软删除原件的记录不会继续显示。#graph 原先在未指定对象时返回空白，现有可用键盘打开的知识空间与项目入口，分别说明链接和依赖。graph398.log 9/9，graph398-types.log 类型检查通过。
 
 同一浏览器空工作区对 14 条路由、七种宽度、Light/Dark、Comfortable/Compact 共测 392 种组合。首轮暴露图谱缺少入口的 28 项，修复后 root 和 main 均无横向溢出，392 项有可见标题和预期路由。原始数据与截图在 evidence/session398/layout-matrix.json、graph-entry-mobile.png、overview-desktop.png。复跑 node scripts/measure-ux-layout.mjs <候选Web构建目录> <新的结果目录>。测试不覆盖登录后有大量数据的页面、独立画布的内部滚动、真实软键盘和读屏体验。
+
+### 批量回收、恢复与 Web 回退
+
+c23c2d3 接入所选笔记、文档、文件的批量软删除和按筛选恢复。先确认确切数量，逐条沿用版本、权限、事务和 Outbox。删除先子后父、恢复先父后子。遇到拒绝或冲突则停止后续操作并显示已确认数量；用户核对刷新内容后重新选择。测试实际让一个独立笔记先成功、含未选子文档的父文档随后被拒绝，再选择整个层级，核对恢复后的 spaceId、parentDocumentId、版本与原文。
+
+混合恢复首次在三种浏览器配置全部失败。追踪发现旧恢复流程为检查所属空间而读取其未加载的 Markdown，另有跨连接后台提交争用工作区 revision。修复用既有元数据读取契约验证归属与删除状态；本机真正中止的工作区级 CAS 按 ADR 0135 限量重启。实体版本冲突继续报告。hierarchy-r3.log 6/6；contend-final.log 13/13，含一次性/持续争用、过期实体版本和 Outbox 效果。batch398.log 原有回收站与实际批操作共 9/9。
+
+浏览器回退演练在全新目录和同一回环地址使用真实基线构建和候选构建。旧版写入包含中文与 CRLF 的原件，复制正式文件引用，依次基线、升级、回退、再次升级、断网重载。5 次下载的文件名、SHA-256、深链和深色主题一致；实际加载的 JS 文件分别核对。结果 evidence/session398/web-upgrade.json。复跑 node scripts/rehearse-ux-web-upgrade.mjs <旧Web目录> <候选Web目录> <新结果目录>。此实验不覆盖数据库主机降级、服务器回退或已签名设备安装包。
+
+本轮较早启动的 pnpm check 已成功完成，305/305 个测试文件，1577/1577 个测试，Vitest 2657.11 秒，构建 2/2。源代码在运行期间有增量，最新各项专项按单独日志签收。c23c2d3 完整 pnpm check 在 .artifacts/ux398/check-c23c2d3.log 复跑。多个版本的独立输出均保留。
+
+### 键盘、目录、性能和原版 PDF
+
+实现 fdc46d3、1384986。键盘首个 Tab 可跳过整个 Shell 导航并保留深链；资源集合路径按真实目录 ID 向上导航并恢复焦点。详情显示创建日期和直接项目。知识空间首页去掉无目标的返回操作，图谱开关暴露展开状态。skip.log 9/9，spaces398.log 9/9，trail.log 6/6。KEY-FLOWS-398.md 逐项列出 §10.2 的 14 项证据。dark-flows.log 的 15 个有内容任务 × 两种配置共 30/30 通过（3.4 分钟）。
+
+PDF 的文本分页之外，现在可以按需打开原版预览。原件走授权读取，只挂载当前页的有界 canvas，关闭时取消并销毁工作线程；16 MiB 输入、1000 页及 15 秒工作预算沿用现有解析限制。两页真实夹具按像素验证了红色首页与蓝色次页，键盘焦点在关闭后回到触发按钮（pdf398.log 3/3）。Windows 独立 Tauri 测试构建 2m54s，实际 WebView2 绘制第二页蓝色图形、PNG 放大与 CSV 预览均成功；1280×840，无横向溢出。截图和记录见 evidence/session398/windows-pdf.png、windows-pdf-webview.json、pdf-original-mobile.png。PDF 大于上限的分段流式原件读取仍开放。
+
+同机 6 对交错 AB/BA 复跑：1000 项首次可见中位数 411.5→396.5 ms，选择 124.5→78 ms；10000 项首次可见 1571.5→1094.5 ms，选择 583→63.5 ms。基线挂载 1000/10000 行，候选两者都为 60 行。每轮使用全新 Chromium 153 配置，1440×900、i5-12500H、Windows 10.0.26300；同期有其他门禁，原始范围及每个样本在 evidence/session398/performance-paired.json。
+
+较早完整 Playwright 807/807，56.6 分钟。当前包含新增用例的全量收集为 825。23:56 最新浏览器 PID 47288，文件 .artifacts/ux398/browser-825.log；以 c23c2d3 开始的完整 pnpm check PID 28360，文件 check-c23c2d3.log。原始浏览器工件及原生隔离 profile 均须保留。1384986 源码另有 pnpm lint、pnpm typecheck、pnpm build、PDF 浏览器与原生专项通过。生产运行版本未重新核证。源码修改均在本地分支。
