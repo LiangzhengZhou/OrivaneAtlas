@@ -28,6 +28,8 @@ import {
   type FileExtractionDocument,
 } from "@arclattice/domain";
 
+import { fileByteRange } from "./file-byte-range";
+
 interface FileRoutePorts {
   context: ActorContext;
   authorization: AuthorizationService;
@@ -158,20 +160,47 @@ export async function handleFileRoute(
         };
       },
     );
-    res.writeHead(200, {
+    const size = value.bytes.size;
+    const etag = '"' + value.file.contentHash + '"';
+    const validator = req.headers["if-range"];
+    const range =
+      validator === undefined || validator === etag
+        ? fileByteRange(req.headers.range, size)
+        : null;
+    const headers = {
+      "Accept-Ranges": "bytes",
+      ETag: etag,
+      "Cache-Control": "private, no-store",
+    };
+    if (range === "unsatisfiable") {
+      res.writeHead(416, {
+        ...headers,
+        "Content-Range": "bytes */" + size,
+        "Content-Length": 0,
+      });
+      res.end();
+      return true;
+    }
+    const body = range
+      ? value.bytes.slice(range.start, range.end + 1)
+      : value.bytes;
+    res.writeHead(range ? 206 : 200, {
+      ...headers,
+      ...(range
+        ? { "Content-Range": `bytes ${range.start}-${range.end}/${size}` }
+        : {}),
       "Content-Type": "application/octet-stream",
-      "Content-Length": String(value.bytes.size),
+      "Content-Length": String(body.size),
       "Content-Disposition":
         "attachment; filename*=UTF-8''" +
         encodeURIComponent(value.file.originalName),
-      "Cache-Control": "private, no-store",
     });
     await pipeline(
       Readable.from(
         (async function* () {
-          for (let offset = 0; offset < value.bytes.size; offset += 262144)
+          for (let offset = 0; offset < body.size; offset += 262144)
             yield new Uint8Array(
-              await value.bytes.slice(offset, offset + 262144).arrayBuffer(),
+              await body.slice(offset, offset + 262144).arrayBuffer(),
             );
         })(),
       ),

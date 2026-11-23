@@ -1976,6 +1976,19 @@ it("authenticated Host extraction uses the real Node worker, preserves originals
       bearer,
     );
     expect(original.status).toBe(grants.length === 2 ? 200 : 403);
+    const part = await call(`/api/files/bytes?id=${file.id}`, undefined, {
+      ...bearer,
+      Range: "bytes=0-3",
+    });
+    expect(part.status).toBe(grants.length === 2 ? 206 : 403);
+    if (grants.length === 2)
+      expect(Buffer.from(await part.arrayBuffer())).toEqual(
+        bytes.subarray(0, 4),
+      );
+    else {
+      expect(part.headers.get("etag")).toBeNull();
+      expect(part.headers.get("content-range")).toBeNull();
+    }
     if (grants.length === 2)
       expect(Buffer.from(await original.arrayBuffer())).toEqual(bytes);
   }
@@ -2047,6 +2060,71 @@ it("authenticated Host extraction uses the real Node worker, preserves originals
     fileVersion: 2,
     text: bytes.toString("utf8"),
   });
+});
+it("verified download resumes across stored chunk boundaries and reconstructs the original", async () => {
+  await login();
+  const chunkSize = 262144;
+  const bytes = Buffer.alloc(chunkSize * 4 + 17);
+  for (let i = 0; i < bytes.length; i++)
+    bytes[i] = (i * 13 + Math.floor(i / chunkSize)) & 255;
+  const digest = (part: Uint8Array) =>
+    createHash("sha256").update(part).digest("hex");
+  const contentHash = digest(bytes);
+  expect(
+    (
+      await call("/api/v1/files/binary/begin", {
+        contentHash,
+        size: bytes.length,
+        mime: "application/octet-stream",
+        chunkSize,
+      })
+    ).status,
+  ).toBe(200);
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const part = bytes.subarray(offset, offset + chunkSize);
+    expect(
+      (
+        await call(
+          `/api/v1/files/binary/chunk?hash=${contentHash}&index=${offset / chunkSize}`,
+          {},
+          {
+            "Content-Type": "application/octet-stream",
+            "X-File-Chunk-Hash": digest(part),
+          },
+          part,
+        )
+      ).status,
+    ).toBe(200);
+  }
+  expect(
+    (await call("/api/v1/files/binary/complete", { contentHash })).status,
+  ).toBe(200);
+  const registered = await call("/api/v1/files/register", {
+    name: "range-sample.bin",
+    mime: "application/octet-stream",
+    spaceId: null,
+    contentHash,
+    size: bytes.length,
+  });
+  expect(registered.status).toBe(200);
+  const { id } = await registered.json(),
+    path = `/api/v1/files/bytes?id=${id}`;
+  const split = chunkSize + 29;
+  const first = await call(path, undefined, { Range: `bytes=0-${split - 1}` });
+  expect(first.status).toBe(206);
+  const last = await call(path, undefined, {
+    Range: `bytes=${split}-`,
+    "If-Range": first.headers.get("etag")!,
+  });
+  expect(last.status).toBe(206);
+  expect(
+    digest(
+      Buffer.concat([
+        Buffer.from(await first.arrayBuffer()),
+        Buffer.from(await last.arrayBuffer()),
+      ]),
+    ),
+  ).toBe(contentHash);
 });
 it("first-class File binary chunks resume independently and original metadata replay retains exact bytes and receipts", async () => {
   await login();
@@ -2169,8 +2247,50 @@ it("first-class File binary chunks resume independently and original metadata re
     if (deleted)
       expect((await call(`/api/v1/files/bytes?id=${id}`)).status).toBe(404);
   }
-  const download = await call(`/api/v1/files/bytes?id=${id}`);
+  const path = `/api/v1/files/bytes?id=${id}`;
+  const download = await call(path);
   expect(download.status).toBe(200);
+  expect(download.headers.get("accept-ranges")).toBe("bytes");
+  const etag = download.headers.get("etag");
+  expect(etag).toBe('"' + contentHash + '"');
+  for (const [field, start, end] of [
+    ["bytes=1-2", 1, 2],
+    ["bytes=4-", 4, bytes.length - 1],
+    ["bytes=-2", bytes.length - 2, bytes.length - 1],
+    ["bytes=2-999999999999999999999", 2, bytes.length - 1],
+  ] as const) {
+    const part = await call(path, undefined, {
+      Range: field,
+      "If-Range": etag!,
+    });
+    expect(part.status).toBe(206);
+    expect(part.headers.get("content-range")).toBe(
+      `bytes ${start}-${end}/${bytes.length}`,
+    );
+    expect(Number(part.headers.get("content-length"))).toBe(end - start + 1);
+    expect(part.headers.get("cache-control")).toContain("no-store");
+    expect(Buffer.from(await part.arrayBuffer())).toEqual(
+      bytes.subarray(start, end + 1),
+    );
+  }
+  for (const field of ["bytes=-0", "bytes=999999999999999999999-"]) {
+    const invalid = await call(path, undefined, { Range: field });
+    expect(invalid.status).toBe(416);
+    expect(invalid.headers.get("content-range")).toBe(
+      "bytes */" + bytes.length,
+    );
+    expect(await invalid.text()).toBe("");
+  }
+  for (const headers of [
+    { Range: "bytes=0-1", "If-Range": '"changed"' },
+    { Range: "bytes=1-2,4-5" },
+    { Range: "items=2-4" },
+  ]) {
+    const full = await call(path, undefined, headers);
+    expect(full.status).toBe(200);
+    expect(full.headers.get("content-range")).toBeNull();
+    expect(Buffer.from(await full.arrayBuffer())).toEqual(bytes);
+  }
   expect(download.headers.get("content-type")).toBe("application/octet-stream");
   expect(new Uint8Array(await download.arrayBuffer())).toEqual(
     new Uint8Array(bytes),

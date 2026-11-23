@@ -16086,6 +16086,23 @@
               }
             }
           },
+          "206": {
+            "description": "Single inclusive byte interval of a verified File original, with Content-Range, Content-Length and a strong ETag.",
+            "headers": {
+              "Content-Range": { "schema": { "type": "string" } },
+              "ETag": { "schema": { "type": "string" } },
+              "Accept-Ranges": { "schema": { "type": "string" } }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "416": {
+            "description": "Requested interval outside the original. Empty body with Content-Range bytes */length.",
+            "headers": { "Content-Range": { "schema": { "type": "string" } } }
+          },
           "400": {
             "description": "Invalid or incomplete/corrupt binary input"
           },
@@ -16103,6 +16120,18 @@
           }
         },
         "parameters": [
+          {
+            "name": "Range",
+            "in": "header",
+            "description": "Optional single bytes interval for first-class Files. Unsupported units, malformed or multipart ranges receive the full original. Historical project imports always return the full original.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "If-Range",
+            "in": "header",
+            "description": "Serve the range only for the matching strong ETag. Other validators return the complete original.",
+            "schema": { "type": "string" }
+          },
           {
             "name": "id",
             "in": "query",
