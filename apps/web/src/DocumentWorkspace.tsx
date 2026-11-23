@@ -34,6 +34,7 @@ import {
 import { DiffViewer } from "./features/documents/DiffViewer";
 import { DocumentDrilldownPicker } from "./features/documents/DocumentDrilldownPicker";
 import { DocumentPopover } from "./features/documents/DocumentPopover";
+import { DocumentReading } from "./features/documents/DocumentReading";
 import { DocumentSaveStatus } from "./features/documents/DocumentSaveStatus";
 import { mergeMarkdown } from "./features/documents/merge";
 import { FileDetail, type FileDraft } from "./features/files/FileDetail";
@@ -566,6 +567,7 @@ function DocumentPane({
   })();
   const [printing, setPrinting] = useState(false);
   const readingBody = useRef<string | null>(null);
+  const readingPosition = useRef<number | null>(null);
   useEffect(() => {
     if (!active) return;
     const prepare = () =>
@@ -1701,14 +1703,14 @@ function DocumentPane({
         />
       )}
       {readingBody.current !== null && (
-        <div
-          className={
-            "document-reading " + (mode !== "read" ? "print-only" : "")
-          }
-        >
-          <h1 className="print-only">{title}</h1>
-          <Markdown text={readingBody.current} />
-        </div>
+        <DocumentReading
+          text={readingBody.current}
+          title={title}
+          active={active && mode === "read"}
+          readMode={mode === "read"}
+          position={readingPosition}
+          zh={zh}
+        />
       )}
       {base && "spaceId" in base && base.kind === "DOCUMENT" && (
         <DocumentSpaceActions

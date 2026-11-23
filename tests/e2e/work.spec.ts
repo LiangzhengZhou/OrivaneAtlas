@@ -20308,3 +20308,90 @@ test("moves a mixed collection selection with keyboard or drag while preserving 
   await expect(browser.locator(".files-resource-row")).toHaveCount(3);
   await page.screenshot({ path: info.outputPath("collection-move.png") });
 });
+
+test("long Markdown contents jump to rendered headings and preserve reading position across document tabs", async ({
+  page,
+  workbench,
+}, info) => {
+  test.setTimeout(90000);
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const paragraph = "An observation entered in the field record. ".repeat(25);
+  const body = Array.from(
+    { length: 18 },
+    (_, i) =>
+      `# Section ${i + 1}\n\n## Observations\n\n${(paragraph + "\n\n").repeat(6)}\n\n\`\`\`text\n# sample code\n\`\`\`\n`,
+  ).join("\n");
+  for (const [title, bodyMd] of [
+    ["Short reference", "# Reference\n\nSingle heading"],
+    ["Field monograph", body],
+  ] as const)
+    await mutation(page, "/api/note/save", {
+      id: null,
+      version: 0,
+      input: { kind: "NOTE", day: null, title, bodyMd },
+    });
+  await page.goto(workbench.url + "/#notes");
+  await page.reload();
+  const open = (title: string) =>
+    page.locator(".note-card").filter({ hasText: title }).press("Enter");
+  await open("Short reference");
+  await documentMode(page, w.desk.read);
+  await expect(pane(page).locator(".document-outline")).toHaveCount(0);
+  await nav(page, w.desk.notes);
+  await open("Field monograph");
+  const start = Date.now();
+  await documentMode(page, w.desk.read);
+  const select = pane(page).getByRole("combobox", {
+    name: zh ? "目录" : "Contents",
+    exact: true,
+  });
+  await expect(select.locator("option")).toHaveCount(37);
+  const readyMs = Date.now() - start;
+  await select.selectOption({ label: "Section 14 › Observations" });
+  await page.screenshot({ path: info.outputPath("long-reading-outline.png") });
+  const go = pane(page).getByRole("button", {
+    name: zh ? "前往章节" : "Go to heading",
+  });
+  await go.focus();
+  await go.press("Enter");
+  const heading = pane(page).locator(".document-reading h2").nth(13);
+  await expect(heading).toBeFocused();
+  const offset = () => heading.evaluate((el) => el.getBoundingClientRect().top);
+  await expect.poll(offset).toBeGreaterThanOrEqual(0);
+  await expect.poll(offset).toBeLessThan(220);
+  const before = await offset();
+  const route = page.url();
+  await page.screenshot({ path: info.outputPath("long-reading-position.png") });
+  const switchTab = async (name: string) => {
+    const tab = page.getByRole("tab", { name, exact: true });
+    await tab.evaluate((el) => el.focus({ preventScroll: true }));
+    await page.keyboard.press("Enter");
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+  };
+  await switchTab("Short reference");
+  await expect(pane(page).locator(".document-reading")).toContainText(
+    "Single heading",
+  );
+  await switchTab("Field monograph");
+  await expect
+    .poll(async () => Math.abs((await offset()) - before))
+    .toBeLessThan(12);
+  expect(page.url()).toBe(route);
+  writeFileSync(
+    info.outputPath("reading-position.json"),
+    JSON.stringify(
+      {
+        sourceCharacters: body.length,
+        sectionCount: 18,
+        headingCount: 36,
+        readyMs,
+        offsetBefore: before,
+        offsetAfter: await offset(),
+      },
+      null,
+      2,
+    ),
+  );
+});
