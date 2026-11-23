@@ -6660,6 +6660,7 @@ for (const nativeImages of [false, true]) {
       })
       .click();
     await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
+    await expectDeviceWorkspaceAfterLogout(page);
     // Signing out preserves the independent local workspace; reconnect through
     // the explicit account/binding review rather than expecting a login wall.
     await unlock(page, workbench.url, workbench.secret, w);
@@ -8169,6 +8170,15 @@ test("uncertain network retry is idempotent and committed saves close after refr
     contentType: "application/json",
   });
 });
+
+async function expectDeviceWorkspaceAfterLogout(page: Page) {
+  // Wait for the selected database and the actual post-logout navigation.
+  await expect(
+    page
+      .getByRole("navigation", { name: /^(Device workspaces|本机工作区)$/ })
+      .locator('[aria-current="page"]'),
+  ).toContainText(/^(Original device workspace|本机原工作区)$/);
+}
 
 async function unlock(
   page: Page,
@@ -10068,6 +10078,7 @@ test("localized product layouts, unsaved draft guard and lock", async ({
     })
     .click();
   await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
+  await expectDeviceWorkspaceAfterLogout(page);
   await page.goto(workbench.url + "/#account");
   await expect(page.getByLabel(w.spaces.username)).toBeVisible();
   await page.reload();
@@ -13019,6 +13030,7 @@ test("account experience: picker recent survives refresh and isolates workspace 
     })
     .click();
   await page.getByRole("button", { name: w.desk.lock, exact: true }).click();
+  await expectDeviceWorkspaceAfterLogout(page);
   await unlock(page, workbench.url, workbench.secret, w, false, "second-user");
   await nav(page, w.desk.tasks);
   await page

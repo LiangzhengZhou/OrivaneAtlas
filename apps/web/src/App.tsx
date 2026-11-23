@@ -6,6 +6,7 @@ import type {
 } from "@arclattice/application";
 import {
   bodyCharacterCount,
+  defaultWorkspaceEntry,
   privateContentPolicy,
 } from "@arclattice/application";
 import type { LibraryFile, NotificationRecord } from "@arclattice/domain";
@@ -914,6 +915,15 @@ function Workbench({
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
   }, [editor, noteEditor, busy, loading, view]);
+  async function leaveAccountWorkspace() {
+    if (runtime.activeWorkspace.remote) {
+      await runtime.selectLocalWorkspace(defaultWorkspaceEntry.id);
+      location.hash = "account";
+      location.reload();
+    } else {
+      onLogout();
+    }
+  }
   async function run(
     action: () => Promise<unknown>,
     key = "action:" + crypto.randomUUID(),
@@ -2151,8 +2161,9 @@ function Workbench({
                         !(await confirmAction(t("discardHint")))
                       )
                         return;
-                      void run(() => runtime.logout()).then((ok) => {
-                        if (ok) onLogout();
+                      void run(async () => {
+                        await runtime.logout();
+                        await leaveAccountWorkspace();
                       });
                     }}
                   />
@@ -2267,18 +2278,7 @@ function Workbench({
                               ),
                             ),
                         }}
-                        onLogout={async () => {
-                          void (
-                            (documentDirty.current ||
-                              libraryDraft.current ||
-                              editor) &&
-                            !(await confirmAction(t("discardHint")))
-                              ? Promise.resolve(false)
-                              : run(() => runtime.logout())
-                          ).then((ok) => {
-                            if (ok) onLogout();
-                          });
-                        }}
+                        onLogout={() => void run(leaveAccountWorkspace)}
                         confirmLeave={async () =>
                           !(
                             documentDirty.current ||
@@ -2308,7 +2308,7 @@ function Workbench({
                         <AccountView
                           runtime={runtime}
                           snapshot={snapshot}
-                          onLogout={onLogout}
+                          onLogout={() => void run(leaveAccountWorkspace)}
                           confirmLeave={async () =>
                             !(
                               documentDirty.current ||
