@@ -206,7 +206,7 @@ export function GraphWorkspace({
         >
           {text("返回", "Back")}
         </Button>
-        <p>{text("找不到图谱对象", "Graph entity is unavailable")}</p>
+        <h1>{text("找不到图谱对象", "Graph entity is unavailable")}</h1>
       </section>
     );
   return (

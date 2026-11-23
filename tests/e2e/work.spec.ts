@@ -19788,3 +19788,84 @@ test("resource browser finds identical originals and keeps same-name files disti
   await view.selectOption("all");
   await expect(rows).toHaveCount(3);
 });
+
+test("overview resumes the authorized recent file and drops its deleted reference", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, words(info.project.name));
+  const overview = async () => {
+    await page.goto(workbench.url + "/#overview");
+  };
+  await overview();
+  const panel = page.getByRole("region", {
+    name: zh ? "最近打开的资源" : "Recently opened resources",
+  });
+  await expect(
+    panel.getByText(
+      zh
+        ? "在资源中心打开文件、笔记或文档，就能从这里继续阅读。"
+        : "Open a file, note or document in the resource center to resume it here.",
+    ),
+  ).toBeVisible();
+  await panel
+    .getByRole("button", { name: zh ? "浏览资源" : "Browse resources" })
+    .click();
+  const library = page.locator(".files-resource-browser");
+  await library.locator("input[type=file]").setInputFiles({
+    name: "Survey returns.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("fixture line 72"),
+  });
+  await expect(page.locator(".file-text-preview")).toHaveText(
+    "fixture line 72",
+  );
+  await overview();
+  const recent = panel.getByRole("button", { name: /Survey returns\.txt/ });
+  await expect(recent).toBeVisible();
+  await page.screenshot({ path: info.outputPath("overview-resume.png") });
+  await recent.focus();
+  await recent.press("Enter");
+  await expect(page.locator(".file-text-preview")).toHaveText(
+    "fixture line 72",
+  );
+  await page.goto(workbench.url + "/#files");
+  await library.getByRole("button", { name: /Survey returns\.txt ·/ }).click();
+  await library
+    .locator(".files-detail-panel")
+    .getByRole("button", { name: zh ? "移至回收站" : "Move to Trash" })
+    .click();
+  const confirmation = page.getByRole("dialog", {
+    name: zh ? "确认操作" : "Confirm action",
+  });
+  await confirmation
+    .getByRole("button", { name: zh ? "确认" : "Confirm", exact: true })
+    .click();
+  await expect(library.locator(".files-resource-row")).toHaveCount(0);
+  await overview();
+  await expect(
+    panel.getByRole("button", { name: /Survey returns\.txt/ }),
+  ).toHaveCount(0);
+});
+
+test("graph entry distinguishes knowledge links from project dependencies and keeps both reachable by keyboard", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, words(info.project.name));
+  for (const [label, route] of [
+    [zh ? "浏览知识空间" : "Browse knowledge spaces", "library"],
+    [zh ? "浏览项目" : "Browse projects", "projects"],
+  ] as const) {
+    await page.goto(workbench.url + "/#graph");
+    await expect(
+      page.getByRole("heading", { name: zh ? "图谱" : "Graphs", exact: true }),
+    ).toBeVisible();
+    const link = page.getByRole("link", { name: label, exact: true });
+    await link.focus();
+    await link.press("Enter");
+    await expect(page).toHaveURL(new RegExp("#" + route + "$"));
+  }
+});

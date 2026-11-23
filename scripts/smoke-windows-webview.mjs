@@ -100,13 +100,11 @@ try {
   await page.evaluate(() => {
     location.hash = "files";
   });
-  await files
-    .locator("input[type=file]")
-    .setInputFiles({
-      name: "Windows mark.png",
-      mimeType: "image/png",
-      buffer: await readFile(resolve("apps/web/public/favicon.png")),
-    });
+  await files.locator("input[type=file]").setInputFiles({
+    name: "Windows mark.png",
+    mimeType: "image/png",
+    buffer: await readFile(resolve("apps/web/public/favicon.png")),
+  });
   await page.getByRole("button", { name: /^(View image|查看图片)$/ }).click();
   const image = page.getByRole("dialog", { name: "Windows mark.png" });
   await image.getByRole("img", { name: "Windows mark.png" }).waitFor();

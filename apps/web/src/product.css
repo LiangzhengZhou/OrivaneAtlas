@@ -851,32 +851,54 @@ body {
   min-width: 0;
 }
 
-.overview-recent-projects {
+:is(.overview-recent-projects, .overview-recent-resources) {
   margin-block: var(--space-5);
 }
-.overview-recent-projects ul {
+:is(.overview-recent-projects, .overview-recent-resources) ul {
   list-style: none;
   padding: 0;
   margin: 0;
   border-block-start: 1px solid var(--border-default);
 }
-.overview-recent-projects li {
+:is(.overview-recent-projects, .overview-recent-resources) li {
   border-block-end: 1px solid var(--border-subtle);
 }
-.overview-recent-projects li .ui-button {
+:is(.overview-recent-projects, .overview-recent-resources) li .ui-button {
   width: 100%;
   justify-content: space-between;
   min-height: var(--row-height);
   gap: var(--space-3);
   text-align: start;
 }
-.overview-recent-projects li span {
+:is(.overview-recent-projects, .overview-recent-resources) li span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.overview-recent-projects time {
+.overview-recent-resources li svg {
+  flex: none;
+}
+.overview-recent-resources li span {
+  flex: 1;
+}
+.overview-recent-resources > p {
+  color: var(--text-secondary);
+}
+.overview-recent-projects time,
+.overview-recent-resources small {
   flex: none;
   font-size: var(--font-meta-size);
   color: var(--text-secondary);
+}
+
+.graph-scope-entry > div {
+  max-width: 62ch;
+  padding-block: var(--space-4);
+  border-block-end: 1px solid var(--border-subtle);
+}
+.graph-scope-entry > div p {
+  color: var(--text-secondary);
+}
+.graph-scope-entry a {
+  text-decoration: none;
 }

@@ -84,6 +84,7 @@ import { parseConversationRoute } from "./features/ai/conversation-route";
 import { FileLinkContext } from "./features/files/FileLinkContext";
 import { FilesWorkspace } from "./features/files/FilesWorkspace";
 import { parseFileHash } from "./features/files/fileRoute";
+import { RecentResources } from "./features/files/RecentResources";
 import { useFileNavigation } from "./features/files/useFileNavigation";
 import { PickerIdentityContext } from "./features/hierarchy/PickerIdentityContext";
 import { CreateSpaceDialog } from "./features/knowledge/CreateSpaceDialog";
@@ -921,6 +922,11 @@ function Workbench({
       allItems.filter((item) => item.type !== "PROJECT" && !isArchived(item)),
     [allItems, isArchived],
   );
+  const resourceScopeKey = JSON.stringify([
+    runtime.serverOrigin,
+    context.workspaceId,
+    context.principalId,
+  ]);
   const recentProjects = useMemo(
     () =>
       projects
@@ -2293,6 +2299,16 @@ function Workbench({
                               </ul>
                             </section>
                           )}
+                          <RecentResources
+                            key={resourceScopeKey}
+                            scopeKey={resourceScopeKey}
+                            workspaceId={context.workspaceId}
+                            notes={notes}
+                            library={snapshot.library}
+                            files={snapshot.files}
+                            onOpen={openEntity}
+                            onBrowse={() => navigate("files")}
+                          />
                           <section className="recent-notes">
                             <div className="panel-heading">
                               <h2>{t("recentNotes")}</h2>
@@ -2822,16 +2838,8 @@ function Workbench({
                           )}
                           {view === "files" ? (
                             <FilesWorkspace
-                              key={JSON.stringify([
-                                runtime.serverOrigin,
-                                context.workspaceId,
-                                context.principalId,
-                              ])}
-                              scopeKey={JSON.stringify([
-                                runtime.serverOrigin,
-                                context.workspaceId,
-                                context.principalId,
-                              ])}
+                              key={resourceScopeKey}
+                              scopeKey={resourceScopeKey}
                               workspaceId={context.workspaceId}
                               notes={notes}
                               library={snapshot.library}
