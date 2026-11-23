@@ -5210,6 +5210,22 @@ it("clean Wiki link identities survive an actual host restart without a full reb
   } finally {
     before.close();
   }
+  const bootstrap = await (await call("/api/bootstrap")).json();
+  const display = await (await call("/api/snapshot")).json();
+  expect(bootstrap.workspace.wikiLinks).toEqual([
+    {
+      id: links[0]!.id,
+      workspaceId: space.workspaceId,
+      version: links[0]!.version,
+      updatedAt: links[0]!.updated_at,
+      sourceDocumentId: links[0]!.source_document_id,
+      targetDocumentId: null,
+      targetText: "Future target",
+      alias: null,
+      heading: null,
+    },
+  ]);
+  expect(display.wikiLinks[0]).not.toHaveProperty("id");
   await host.close();
   await start();
   const after = new DatabaseSync(join(directory, "work.sqlite"), {

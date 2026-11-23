@@ -331,13 +331,31 @@ export function libraryStore(
       await event("wiki-index", 1, "WIKI_INDEX_REBUILT");
     },
     async wikiLinks() {
+      return (await this.wikiLinkRecords!()).map(
+        ({
+          id: _id,
+          workspaceId: _workspace,
+          version: _version,
+          updatedAt: _updatedAt,
+          ...link
+        }) => link,
+      );
+    },
+    async wikiLinkRecords() {
       guard();
       return (
         await client.query(
-          "SELECT source_document_id, target_document_id, target_text, alias, heading FROM arclattice.document_wiki_link WHERE workspace_id=$1 ORDER BY source_document_id,id",
+          "SELECT id, workspace_id, version, updated_at, source_document_id, target_document_id, target_text, alias, heading FROM arclattice.document_wiki_link WHERE workspace_id=$1 ORDER BY source_document_id,id",
           [context.workspaceId],
         )
       ).rows.map((row) => ({
+        id: String(row.id),
+        workspaceId: String(row.workspace_id),
+        version: Number(row.version),
+        updatedAt:
+          row.updated_at instanceof Date
+            ? row.updated_at.toISOString()
+            : String(row.updated_at),
         sourceDocumentId: String(row.source_document_id),
         targetDocumentId:
           row.target_document_id === null

@@ -74,6 +74,7 @@ export interface LibraryStore {
   searchIds?(query: string): Promise<string[]>;
   rebuildWikiIndex?(): Promise<void>;
   wikiLinks?(): Promise<DocumentWikiLink[]>;
+  wikiLinkRecords?(): Promise<ReplicatedDocumentWikiLink[]>;
   list(): Promise<LibraryEntry[]>;
   get(id: string): Promise<LibraryEntry>;
   save(entry: LibraryEntry, expected: number): Promise<void>;
@@ -94,6 +95,12 @@ export interface DocumentWikiLink {
   targetText: string;
   alias: string | null;
   heading: string | null;
+}
+export interface ReplicatedDocumentWikiLink extends DocumentWikiLink {
+  updatedAt: string;
+  id: string;
+  workspaceId: string;
+  version: number;
 }
 export class LibraryService {
   constructor(

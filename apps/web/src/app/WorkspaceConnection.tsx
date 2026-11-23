@@ -381,13 +381,17 @@ export function WorkspaceConnection({
           <p>
             {!account && loginErrorKey(error) !== "loginError"
               ? desk(loginErrorKey(error))
-              : error === "VERSION_CONFLICT"
+              : error === "WIKI_BOOTSTRAP_UPGRADE_REQUIRED"
                 ? zh
-                  ? "工作区在预览后发生了变化，请重新查看。"
-                  : "The workspace changed after the preview. Review it again."
-                : zh
-                  ? "无法完成连接，请检查账户、服务器或网络。"
-                  : "Could not connect. Check the account, server or network."}
+                  ? "此服务器的 Wiki 索引缺少同步标识。请联系管理员更新服务器，再打开账户工作区。"
+                  : "This server’s Wiki index lacks sync identifiers. Ask your administrator to update the server, then open the account workspace again."
+                : error === "VERSION_CONFLICT"
+                  ? zh
+                    ? "工作区在预览后发生了变化，请重新查看。"
+                    : "The workspace changed after the preview. Review it again."
+                  : zh
+                    ? "无法完成连接，请检查账户、服务器或网络。"
+                    : "Could not connect. Check the account, server or network."}
           </p>
           <details>
             <summary>{zh ? "技术详情" : "Technical details"}</summary>

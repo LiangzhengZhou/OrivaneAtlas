@@ -19528,6 +19528,24 @@
           "heading"
         ],
         "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stored occurrence identity on replica bootstrap."
+          },
+          "workspaceId": {
+            "type": "string",
+            "description": "Owning workspace on replica bootstrap."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Stored row version on replica bootstrap."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Stored row timestamp on replica bootstrap."
+          },
           "sourceDocumentId": {
             "type": "string"
           },

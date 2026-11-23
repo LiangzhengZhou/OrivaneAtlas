@@ -2789,7 +2789,10 @@ export async function createHost(options: HostOptions) {
                     ? await library.listMetadata()
                     : (await library.list()).map(bodyManifest)
                   : await library.list(),
-              wikiLinks: (await library.wikiLinks?.()) ?? [],
+              wikiLinks:
+                path === "/api/bootstrap" && library.wikiLinkRecords
+                  ? await library.wikiLinkRecords()
+                  : ((await library.wikiLinks?.()) ?? []),
               folderLinks: await folderLinks.list(),
               spaceFolderLinks: await spaceFolderLinks.list(),
               projectFolderLinks: await projectFolderLinks.list(),

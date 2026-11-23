@@ -142,13 +142,28 @@ export function libraryStore(
     },
 
     async wikiLinks() {
+      return (await this.wikiLinkRecords!()).map(
+        ({
+          id: _id,
+          workspaceId: _workspace,
+          version: _version,
+          updatedAt: _updatedAt,
+          ...link
+        }) => link,
+      );
+    },
+    async wikiLinkRecords() {
       guard();
       return db
         .prepare(
-          "SELECT source_document_id, target_document_id, target_text, alias, heading FROM document_wiki_link WHERE workspace_id=? ORDER BY source_document_id,id",
+          "SELECT id, workspace_id, version, updated_at, source_document_id, target_document_id, target_text, alias, heading FROM document_wiki_link WHERE workspace_id=? ORDER BY source_document_id,id",
         )
         .all(context.workspaceId)
         .map((row) => ({
+          id: String(row.id),
+          workspaceId: String(row.workspace_id),
+          version: Number(row.version),
+          updatedAt: String(row.updated_at),
           sourceDocumentId: String(row.source_document_id),
           targetDocumentId:
             row.target_document_id === null

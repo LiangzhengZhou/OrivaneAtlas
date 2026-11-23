@@ -249,6 +249,60 @@ it("rejects incomplete, wrong-workspace and stale snapshots before any commit", 
   }
 });
 
+it("requires the host's stored Wiki occurrence identity before activating a replica", async () => {
+  const store = await IndexedDbLocalStore.open(
+    "wiki-occurrences",
+    new IDBFactory(),
+  );
+  try {
+    const base = manifest();
+    const link = {
+      sourceDocumentId: "source",
+      targetDocumentId: null,
+      targetText: "Unresolved",
+      alias: null,
+      heading: null,
+    };
+    const input = (row: object) => ({
+      ...base,
+      workspace: { ...base.workspace, wikiLinks: [row] },
+    });
+    await expect(
+      prepareLocalWorkspaceBootstrap(
+        own,
+        scope,
+        input(link),
+        [],
+        store.metadata,
+      ),
+    ).rejects.toThrow("WIKI_BOOTSTRAP_UPGRADE_REQUIRED");
+    expect(await store.metadata.list(own.workspaceId, "wikiLinks")).toEqual([]);
+    const commit = await prepareLocalWorkspaceBootstrap(
+      own,
+      scope,
+      input({
+        ...link,
+        id: "occurrence",
+        workspaceId: scope.remoteWorkspaceId,
+        version: 2,
+        updatedAt: "2026-11-24T00:00:00Z",
+      }),
+      [],
+      store.metadata,
+    );
+    expect(
+      commit.records.find((write) => write.entity.collection === "wikiLinks")
+        ?.entity,
+    ).toMatchObject({
+      id: "occurrence",
+      version: 2,
+      value: { sourceDocumentId: "source", targetDocumentId: null },
+    });
+  } finally {
+    store.close();
+  }
+});
+
 it.each([false, true])(
   "coordinator completes %s partial replicas before replay and pins completeness across restart",
   async (partial) => {

@@ -43,6 +43,7 @@ export interface WorkspaceBootstrap extends WorkspaceManifest {
     categories?: ProjectCategory[];
     workflows?: WorkflowRecord[];
     reminders?: Reminder[];
+    /** Consumers may encounter historical display-only links. Current hosts include stored replication identities. */
     wikiLinks?: DocumentWikiLink[];
     folderLinks?: FolderLink[];
     spaceFolderLinks?: SpaceFolderLink[];

@@ -42,6 +42,16 @@ export async function wikiTargetVersionScenario(
   );
   let previous = await row();
   expect(previous.target).toBeNull();
+  const [first] = await run((store) => store.wikiLinkRecords!());
+  expect(first).toMatchObject({
+    workspaceId: actor.workspaceId,
+    version: previous.version,
+    targetDocumentId: null,
+  });
+  expect(first!.id).toBeTruthy();
+  expect((await run((store) => store.wikiLinks!()))[0]).not.toHaveProperty(
+    "id",
+  );
   await expect(
     run(async (store) => {
       await service(store).save(actor, null, 0, {
@@ -64,6 +74,16 @@ export async function wikiTargetVersionScenario(
   );
   const changed = async (id: string | null) => {
     const current = await row();
+    const [record] = await run((store) => store.wikiLinkRecords!());
+    expect(record).toMatchObject({
+      id: first!.id,
+      workspaceId: actor.workspaceId,
+      targetDocumentId: id,
+      version: current.version,
+    });
+    expect(Date.parse(record!.updatedAt)).toBe(
+      new Date(current.updated).getTime(),
+    );
     expect(current).toMatchObject({
       target: id,
       version: previous.version + 1,

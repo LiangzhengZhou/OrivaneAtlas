@@ -161,6 +161,14 @@ export async function prepareLocalWorkspaceBootstrap(
     collections[name] = { upserts: entries, removed: [] };
     for (const entry of entries) {
       const entity = localObject(entry);
+      if (
+        name === "wikiLinks" &&
+        entity.id === undefined &&
+        entity.workspaceId === undefined &&
+        entity.version === undefined &&
+        typeof entity.sourceDocumentId === "string"
+      )
+        throw new Error("WIKI_BOOTSTRAP_UPGRADE_REQUIRED");
       records.push({
         workspaceId: binding.remoteWorkspaceId!,
         collection: name,

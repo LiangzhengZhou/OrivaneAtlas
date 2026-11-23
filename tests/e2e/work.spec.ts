@@ -20573,3 +20573,174 @@ test("calendar week day and agenda preserve leap-day context and show only sched
     page.locator('.calendar-day[aria-pressed="true"]'),
   ).toHaveAttribute("aria-label", "2028-02-29");
 });
+
+test("account experience: first activation of an indexed Wiki preserves occurrences and recovers after a host update", async ({
+  page,
+  request,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh"),
+    w = words(info.project.name);
+  const origin = workbench.url;
+  const session = await request.post(origin + "/api/session", {
+    headers: { Origin: origin },
+    data: { username: "image-editor", password: workbench.secret },
+  });
+  expect(session.status()).toBe(200);
+  const { csrf } = await session.json();
+  const save = async (input: {
+    kind: "SPACE" | "DOCUMENT";
+    title: string;
+    bodyMd: string;
+    spaceId: string | null;
+  }) => {
+    const response = await request.post(origin + "/api/library/save", {
+      headers: {
+        Origin: origin,
+        "X-CSRF-Token": csrf,
+        "Idempotency-Key": randomUUID(),
+      },
+      data: { id: null, version: 0, input },
+    });
+    expect(response.status()).toBe(200);
+    return response.json();
+  };
+  const space = await save({
+    kind: "SPACE",
+    title: "Field index",
+    bodyMd: "",
+    spaceId: null,
+  });
+  const target = await save({
+    kind: "DOCUMENT",
+    title: "Field target",
+    spaceId: space.id,
+    bodyMd: "# Target",
+  });
+  const source = await save({
+    kind: "DOCUMENT",
+    title: "Field source",
+    spaceId: space.id,
+    bodyMd: "[[Field target]]\n[[Later sheet]]",
+  });
+  const response = await request.get(origin + "/api/bootstrap");
+  const original = await response.json();
+  const links = original.workspace.wikiLinks;
+  expect(links).toHaveLength(2);
+  expect(new Set(links.map((row: { id: string }) => row.id)).size).toBe(2);
+  for (const row of links)
+    expect(row).toMatchObject({
+      sourceDocumentId: source.id,
+      workspaceId: space.workspaceId,
+      version: expect.any(Number),
+    });
+  const legacy = "**/api/bootstrap*";
+  await page.route(legacy, async (route) => {
+    const result = await route.fetch();
+    const json = await result.json();
+    if (json.workspace?.wikiLinks)
+      json.workspace.wikiLinks = json.workspace.wikiLinks.map(
+        ({
+          sourceDocumentId,
+          targetDocumentId,
+          targetText,
+          alias,
+          heading,
+        }: Record<string, unknown>) => ({
+          sourceDocumentId,
+          targetDocumentId,
+          targetText,
+          alias,
+          heading,
+        }),
+      );
+    await route.fulfill({ response: result, json });
+  });
+  await page.goto(origin + "/#account");
+  const connection = page.getByRole("region", {
+    name: /^(Account and workspace connection|连接账户与工作区)$/,
+  });
+  await connection
+    .getByLabel(w.spaces.username, { exact: true })
+    .fill("image-editor");
+  await connection
+    .getByLabel(w.spaces.password, { exact: true })
+    .fill(workbench.secret);
+  await connection
+    .getByRole("button", {
+      name: /^(Sign in and review options|登录并查看选项)$/,
+    })
+    .click();
+  const open = connection.getByRole("button", {
+    name: /^(Open account workspace|打开账户工作区)$/,
+  });
+  await open.click();
+  await expect(connection.getByRole("alert")).toContainText(
+    zh
+      ? "请联系管理员更新服务器"
+      : "Ask your administrator to update the server",
+  );
+  await page.unroute(legacy);
+  await Promise.all([page.waitForEvent("load"), open.click()]);
+  await expect(
+    page
+      .getByRole("navigation", { name: /^(Device workspaces|本机工作区)$/ })
+      .locator('[aria-current="page"]'),
+  ).toContainText(zh ? "账户工作区" : "Account workspace");
+  await page.goto(origin + "/#knowledge");
+  await page
+    .getByRole("button", {
+      name: zh ? "知识图谱" : "Knowledge graph",
+      exact: true,
+    })
+    .click();
+  const graph = page.locator(".graph-section");
+  await graph
+    .getByRole("button", {
+      name: zh ? "工作区" : "Entire workspace",
+      exact: true,
+    })
+    .click();
+  await expect(
+    graph
+      .locator(".react-flow__node-default")
+      .filter({ hasText: target.title }),
+  ).toBeVisible();
+  await save({
+    kind: "DOCUMENT",
+    title: "Later sheet",
+    bodyMd: "Late target",
+    spaceId: space.id,
+  });
+  await page.reload();
+  await page
+    .getByRole("button", {
+      name: zh ? "知识图谱" : "Knowledge graph",
+      exact: true,
+    })
+    .click();
+  await graph
+    .getByRole("button", {
+      name: zh ? "工作区" : "Entire workspace",
+      exact: true,
+    })
+    .click();
+  await expect(
+    graph
+      .locator(".react-flow__node-default")
+      .filter({ hasText: "Later sheet" }),
+  ).toBeVisible();
+  const after = await (await request.get(origin + "/api/bootstrap")).json();
+  const beforeLater = links.find(
+    (row: { targetText: string }) => row.targetText === "Later sheet",
+  );
+  expect(
+    after.workspace.wikiLinks.find(
+      (row: { id: string }) => row.id === beforeLater.id,
+    ),
+  ).toMatchObject({
+    targetText: "Later sheet",
+    sourceDocumentId: source.id,
+    version: beforeLater.version + 1,
+  });
+});
