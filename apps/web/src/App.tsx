@@ -1443,6 +1443,7 @@ function Workbench({
     const startRoute = location.hash;
     const origin = runtime.serverOrigin;
     const current = () =>
+      !runtime.replicaAccess.locked() &&
       runtime.serverOrigin === origin &&
       runtime.context?.workspaceId === context.workspaceId &&
       runtime.context?.principalId === context.principalId &&
@@ -1513,6 +1514,7 @@ function Workbench({
       route = location.hash,
       account = runtime.account?.id;
     const current = () =>
+      !runtime.replicaAccess.locked() &&
       runtime.serverOrigin === origin &&
       runtime.context?.workspaceId === context.workspaceId &&
       runtime.context?.principalId === context.principalId &&

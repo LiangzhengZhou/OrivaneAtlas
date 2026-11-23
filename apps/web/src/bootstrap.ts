@@ -384,13 +384,46 @@ export async function bootstrap() {
     }
     accessEvents.dispatchEvent(new Event("change"));
   }
-  function isBoundOwner() {
+  // A resource can reject an otherwise valid session. Only the scoped
+  // session endpoint is authoritative for locking the entire replica.
+  let pendingSessionCheck: Promise<void> | undefined;
+  function recheckReplicaSession() {
     const remote = activeWorkspace.remote;
-    return (
-      !!remote &&
-      remote.serverOrigin === serverOrigin &&
-      context?.principalId === remote.principalId
-    );
+    if (
+      replicaLocked ||
+      !remote ||
+      remote.serverOrigin !== serverOrigin ||
+      navigator.onLine === false
+    )
+      return Promise.resolve();
+    if (pendingSessionCheck) return pendingSessionCheck;
+    const generation = serverGeneration;
+    const check = async () => {
+      const reply = await transport(
+        "/api/session",
+        undefined,
+        "",
+        remote.workspaceId,
+      );
+      if (generation !== serverGeneration) return;
+      if (reply.status === 401 || reply.status === 403) {
+        setReplicaLocked(true);
+        return;
+      }
+      if (!reply.ok) return;
+      const current = await reply.json();
+      if (
+        generation === serverGeneration &&
+        (current.context?.principalId !== remote.principalId ||
+          current.context?.workspaceId !== remote.workspaceId)
+      )
+        setReplicaLocked(true);
+    };
+    const pending = check().finally(() => {
+      if (pendingSessionCheck === pending) pendingSessionCheck = undefined;
+    });
+    pendingSessionCheck = pending;
+    return pending;
   }
   let serverGeneration = 0;
   let requestController = new AbortController();
@@ -511,8 +544,8 @@ export async function bootstrap() {
       throw new Error("NETWORK_ERROR");
     }
     if (generation !== serverGeneration) throw new Error("SERVER_CHANGED");
-    if (response.status === 401 && payload === undefined && isBoundOwner())
-      setReplicaLocked(true);
+    if (response.status === 401 && path !== "/api/session")
+      void recheckReplicaSession().catch(() => undefined);
     return response;
   }
   function requireRemoteBindingScope(
@@ -827,6 +860,7 @@ export async function bootstrap() {
   let context: ActorContext | null = null;
   let unavailable = false;
   function resetIdentity() {
+    pendingSessionCheck = undefined;
     serverGeneration += 1;
     requestController.abort();
     requestController = new AbortController();
@@ -1575,12 +1609,8 @@ export async function bootstrap() {
               "If-Range": '"' + file.contentHash + '"',
             },
           });
-          if (
-            response.status === 401 &&
-            generation === serverGeneration &&
-            isBoundOwner()
-          )
-            setReplicaLocked(true);
+          if (response.status === 401 && generation === serverGeneration)
+            void recheckReplicaSession().catch(() => undefined);
           bytes = await readFilePageResponse(
             response,
             file.size,
@@ -2912,27 +2942,7 @@ export async function bootstrap() {
         accessEvents.addEventListener("change", listener);
         return () => accessEvents.removeEventListener("change", listener);
       },
-      async recheck() {
-        if (replicaLocked || !isBoundOwner() || navigator.onLine === false)
-          return;
-        const remote = activeWorkspace.remote!;
-        const generation = serverGeneration;
-        const reply = await transport(
-          "/api/session",
-          undefined,
-          "",
-          remote.workspaceId,
-        );
-        if (reply.status === 403) setReplicaLocked(true);
-        if (!reply.ok) return;
-        const current = await reply.json();
-        if (
-          generation === serverGeneration &&
-          (current.context?.principalId !== remote.principalId ||
-            current.context?.workspaceId !== remote.workspaceId)
-        )
-          setReplicaLocked(true);
-      },
+      recheck: recheckReplicaSession,
       async unlock(username: string, password: string) {
         const remote = activeWorkspace.remote;
         if (!remote || remote.serverOrigin !== serverOrigin)

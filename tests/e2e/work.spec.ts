@@ -20939,6 +20939,19 @@ test("account experience: large PDF originals read bounded pages and stop showin
     await page.goto(workbench.url + "/#files");
     await page.reload();
     await expect(locked).toBeVisible();
+    // A newly opened tab has no inherited denial marker. Recheck its own session.
+    const fresh = await page.context().newPage();
+    try {
+      await fresh.goto(workbench.url + "/#library?file=" + id);
+      await expect(
+        fresh.getByRole("heading", {
+          name: /^(Sign back in to your workspace|重新登录工作区)$/,
+        }),
+      ).toBeVisible();
+      await expect(fresh.locator(".app-shell:visible")).toHaveCount(0);
+    } finally {
+      await fresh.close();
+    }
     const login = page.locator(".login-form");
     const username = login.locator('input[autocomplete="username"]'),
       password = login.locator('input[type="password"]');

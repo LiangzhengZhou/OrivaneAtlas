@@ -10,7 +10,8 @@ test("real browser cookie and bearer grants keep knowledge read, write, MCP, Fil
   page,
 }, info) => {
   const directory = await mkdtemp(join(tmpdir(), "arclattice-grants-browser-"));
-  const port = 1420 + info.parallelIndex;
+  const port =
+    Number(process.env.ATLAS_E2E_BASE_PORT ?? 1420) + info.parallelIndex;
   const origin = `http://127.0.0.1:${port}`;
   const host = await createHost({
     database: join(directory, "data.sqlite"),
