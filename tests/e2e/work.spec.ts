@@ -21058,3 +21058,51 @@ test("personal PDF reading jumps directly to a page and keeps a valid page on in
   await page.keyboard.press("Escape");
   await expect(open).toBeFocused();
 });
+
+test("personal folder names keep the input method candidate until editing finishes", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  await page.goto(workbench.url + "/#files");
+  await showFilesFolders(page);
+  const tree = page.locator(".folder-tree");
+  const input = tree.getByRole("textbox", {
+    name: w.desk.folderName,
+    exact: true,
+  });
+  const newFolder = tree.getByRole("button", {
+    name: w.desk.newFolder,
+    exact: true,
+  });
+  const named = (name: string) =>
+    tree.getByRole("button", { name, exact: true });
+  async function compose(finalName: string) {
+    await input.dispatchEvent("compositionstart");
+    await input.fill("cao");
+    await input.dispatchEvent("keydown", { key: "Escape", isComposing: true });
+    await expect(input).toBeFocused();
+    await input.dispatchEvent("keydown", { key: "Enter", isComposing: true });
+    await input.dispatchEvent("keydown", { key: "Enter", keyCode: 229 });
+    await input.fill(finalName);
+    await input.dispatchEvent("compositionend", { data: finalName });
+    await input.press("Enter");
+    await expect(named(finalName)).toBeVisible();
+    await expect(named("cao")).toHaveCount(0);
+  }
+  await newFolder.click();
+  await compose("草稿");
+  await named("草稿").click();
+  await newFolder.click();
+  await compose("每日记录");
+  await named("每日记录").dblclick();
+  await compose("阅读札记");
+  await named("阅读札记").dblclick();
+  await input.fill("未保存");
+  await input.press("Escape");
+  await expect(input).toHaveCount(0);
+  await page.reload();
+  await showFilesFolders(page);
+  await expect(named("阅读札记")).toBeVisible();
+  await expect(named("未保存")).toHaveCount(0);
+});

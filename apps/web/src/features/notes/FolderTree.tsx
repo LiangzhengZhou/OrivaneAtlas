@@ -14,7 +14,7 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { type KeyboardEvent, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "../../components/ui/Button";
 import { confirmAction } from "../../components/ui/ConfirmationHost";
@@ -30,6 +30,20 @@ import {
   type LegacyFolderGroup,
   unfiledKey,
 } from "./folder-model";
+
+function handleNameKey(
+  event: KeyboardEvent<HTMLInputElement>,
+  save: () => void,
+  cancel: () => void,
+) {
+  // Some input methods mark the final candidate key with 229 after compositionend.
+  if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
+    event.stopPropagation();
+    return;
+  }
+  if (event.key === "Enter") save();
+  if (event.key === "Escape") cancel();
+}
 
 function countLabel(value: number): string {
   return String(value);
@@ -218,10 +232,13 @@ export function FolderTree({
               maxLength={80}
               autoFocus
               onChange={(event) => setRenameDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void commitRename(folder);
-                if (event.key === "Escape") setRenaming(null);
-              }}
+              onKeyDown={(event) =>
+                handleNameKey(
+                  event,
+                  () => void commitRename(folder),
+                  () => setRenaming(null),
+                )
+              }
             />
           ) : (
             <button
@@ -348,10 +365,13 @@ export function FolderTree({
               value={draft}
               maxLength={80}
               onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void commitCreate();
-                if (event.key === "Escape") setCreating(null);
-              }}
+              onKeyDown={(event) =>
+                handleNameKey(
+                  event,
+                  () => void commitCreate(),
+                  () => setCreating(null),
+                )
+              }
             />
             <Button
               type="button"
@@ -514,10 +534,13 @@ export function FolderTree({
             value={draft}
             maxLength={80}
             onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void commitCreate();
-              if (event.key === "Escape") setCreating(null);
-            }}
+            onKeyDown={(event) =>
+              handleNameKey(
+                event,
+                () => void commitCreate(),
+                () => setCreating(null),
+              )
+            }
           />
           <Button
             type="button"

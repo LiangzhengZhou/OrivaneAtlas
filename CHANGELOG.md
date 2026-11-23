@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep a folder name open while choosing characters with an input method. Press Enter to save or Escape to cancel after composition ends.
 - Jump directly to a page in longer PDFs and retry a failed page in the reader. Repeated online reads of the same original now fetch only the required verified chunks after the first full integrity check.
 
 - Move selected notes, documents and files between collections using the keyboard, touch controls or drag and drop. Documents keep their original space, and a resource can still belong to other collections.
