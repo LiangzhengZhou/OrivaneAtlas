@@ -20395,3 +20395,86 @@ test("long Markdown contents jump to rendered headings and preserve reading posi
     ),
   );
 });
+
+test("graph search bounds the visible results and supports keyboard selection and empty search recovery", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, words(info.project.name));
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: { kind: "SPACE", spaceId: null, title: "Field atlas", bodyMd: "" },
+  });
+  for (let i = 1; i <= 24; i++)
+    await mutation(page, "/api/library/save", {
+      id: null,
+      version: 0,
+      input: {
+        kind: "DOCUMENT",
+        spaceId: space.id,
+        title: "Folio " + i,
+        bodyMd: "",
+      },
+    });
+  await page.goto(workbench.url + "/#knowledge");
+  await page.reload();
+  await page
+    .getByRole("button", {
+      name: zh ? "知识图谱" : "Knowledge graph",
+      exact: true,
+    })
+    .click();
+  const graph = page.locator(".graph-section");
+  await graph
+    .getByRole("button", {
+      name: zh ? "工作区" : "Entire workspace",
+      exact: true,
+    })
+    .click();
+  const search = graph.getByLabel(zh ? "图谱搜索" : "Graph search", {
+    exact: true,
+  });
+  await search.fill("Missing sheet");
+  await expect(
+    graph
+      .getByRole("status")
+      .filter({ hasText: zh ? "没有匹配" : "No matching" }),
+  ).toBeVisible();
+  await graph
+    .getByRole("button", { name: zh ? "清除搜索" : "Clear search" })
+    .click();
+  await expect(search).toBeFocused();
+  await search.fill("Folio");
+  const options = graph.getByRole("option");
+  await expect(options).toHaveCount(20);
+  await search.press("ArrowDown");
+  await expect(options.first()).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(options.last()).toBeFocused();
+  await graph
+    .getByRole("button", { name: zh ? "下一页" : "Next", exact: true })
+    .click();
+  await expect(options).toHaveCount(4);
+  await expect(search).toBeFocused();
+  await search.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(options.nth(1)).toBeFocused();
+  const label = await options.nth(1).innerText();
+  await page.screenshot({ path: info.outputPath("graph-search-page.png") });
+  await page.keyboard.press("Enter");
+  await expect(search).toHaveValue("");
+  await expect(search).toBeFocused();
+  await expect(
+    graph.getByRole("button", {
+      name: zh ? "局部" : "Connected documents",
+      exact: true,
+    }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    graph
+      .locator(".react-flow__node")
+      .filter({ hasText: label.split(" / ").at(-1) ?? label }),
+  ).toBeVisible();
+});

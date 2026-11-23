@@ -16,6 +16,7 @@ import { collectionRevision } from "../graph/graph-revision";
 import { openGraph } from "../graph/graph-route";
 import { knowledgeForceLayout } from "../graph/layouts/KnowledgeForceLayout";
 import { useStructuralLayout } from "../graph/layouts/useStructuralLayout";
+import { KnowledgeGraphSearch } from "./KnowledgeGraphSearch";
 import {
   buildKnowledgeGraphIndex,
   knowledgeNeighborhood,
@@ -67,7 +68,6 @@ export function KnowledgeGraph({
   );
   const [focusId, setFocusId] = useState(initialFocus ?? documentId ?? "");
   const [hops, setHops] = useState(initialHops);
-  const [query, setQuery] = useState("");
   useEffect(() => {
     if (initialFocus !== undefined) setFocusId(initialFocus);
     if (initialScope !== undefined) setScope(initialScope);
@@ -143,10 +143,10 @@ export function KnowledgeGraph({
     }));
   const layoutKey = `${collectionRevision(snapshot.library)}:${snapshot.wikiLinks ? collectionRevision(snapshot.wikiLinks) : 0}:${collectionRevision(snapshot.items)}:${collectionRevision(snapshot.projectMaterials)}:${scope}:${focus?.id}:${hops}:${currentSpaceId}:${projectId}`;
   const positions = useStructuralLayout(
-    [...ids],
-    edges,
+    scope === "local" ? [...ids] : [],
+    scope === "local" ? edges : [],
     knowledgeForceLayout,
-    layoutKey,
+    scope === "local" ? layoutKey : "space-grid",
   );
   const positionsById = new Map(
     positions.map((position) => [position.id, position.position]),
@@ -249,11 +249,6 @@ export function KnowledgeGraph({
         toolbar={
           <>
             <div className="action-row">
-              <input
-                aria-label={zh ? "图谱搜索" : "Graph search"}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
               {(["local", "space", "project", "workspace"] as const).map(
                 (value) => (
                   <Button
@@ -282,6 +277,7 @@ export function KnowledgeGraph({
               <Button
                 type="button"
                 variant="toggle"
+                aria-pressed={hops === 2}
                 onClick={() => update({ hops: hops === 1 ? 2 : 1 })}
               >
                 {hops === 1
@@ -289,39 +285,25 @@ export function KnowledgeGraph({
                   : text("扩展两层", "Expand two levels")}
               </Button>
             </div>
-            {query && (
-              <div
-                role="listbox"
-                aria-label={zh ? "图谱搜索结果" : "Graph search results"}
-              >
-                {candidates
-                  .filter(
-                    (entry) =>
-                      (scope !== "project" || projectDocuments.has(entry.id)) &&
-                      entry.title
-                        .toLocaleLowerCase()
-                        .includes(query.toLocaleLowerCase()),
-                  )
-                  .map((entry) => (
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      role="option"
-                      aria-selected={entry.id === focusId}
-                      key={entry.id}
-                      onClick={() => {
-                        update({ focus: entry.id, scope: "local" });
-                        setQuery("");
-                      }}
-                    >
-                      {entry.title} ·{" "}
-                      {graphIndex.spaceById.get(entry.spaceId ?? "")?.title}
-                      {" / "}
-                      {graphIndex.hierarchyPathByDocumentId.get(entry.id)}
-                    </Button>
-                  ))}
-              </div>
-            )}
+            <KnowledgeGraphSearch
+              entries={
+                scope === "project"
+                  ? candidates.filter((entry) => projectDocuments.has(entry.id))
+                  : candidates
+              }
+              focusId={focusId}
+              zh={zh}
+              path={(id) => {
+                const entry = graphIndex.documentsById.get(id);
+                return [
+                  graphIndex.spaceById.get(entry?.spaceId ?? "")?.title,
+                  graphIndex.hierarchyPathByDocumentId.get(id),
+                ]
+                  .filter(Boolean)
+                  .join(" / ");
+              }}
+              onChoose={(id) => update({ focus: id, scope: "local" })}
+            />
           </>
         }
         nodes={nodes}

@@ -10,6 +10,7 @@ export function knowledgeForceLayout(
   ids: readonly string[],
   edges: readonly { source: string; target: string }[],
 ) {
+  if (ids.length === 0) return [];
   const nodes: (SimulationNodeDatum & { id: string })[] = ids.map((id) => ({
     id,
   }));

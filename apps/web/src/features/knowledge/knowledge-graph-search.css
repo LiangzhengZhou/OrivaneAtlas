@@ -1,0 +1,29 @@
+.knowledge-graph-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.knowledge-graph-search input {
+  max-width: 100%;
+}
+.knowledge-graph-search [role="status"] {
+  color: var(--text-secondary);
+}
+.knowledge-graph-search [role="listbox"] {
+  flex-basis: 100%;
+  max-height: min(32vh, 18rem);
+  overflow: auto;
+  display: grid;
+  border-block: 1px solid var(--border-subtle);
+}
+.knowledge-graph-search [role="option"] {
+  justify-content: flex-start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+.knowledge-graph-search [role="option"]:focus-visible {
+  outline-offset: -2px;
+}
