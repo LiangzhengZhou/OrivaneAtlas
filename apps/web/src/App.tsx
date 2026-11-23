@@ -1550,6 +1550,9 @@ function Workbench({
         onSelection={setSelectedNotes}
         pending={busy}
         searching={Boolean(query.trim())}
+        clearSearch={() => setQuery("")}
+        today={calendarDay}
+        onOpenDay={openJournal}
         date={date}
         onOpen={openNote}
         onInspect={(note) => {
@@ -2833,6 +2836,8 @@ function Workbench({
                               notes={notes}
                               library={snapshot.library}
                               fileEntries={snapshot.files ?? []}
+                              relations={snapshot}
+                              active={!documentVisible}
                               projectMaterials={snapshot.projectMaterials ?? []}
                               projects={projects}
                               folderPanel={folderTree(notes)}
@@ -2852,8 +2857,9 @@ function Workbench({
                               onOpenNote={openNote}
                               onOpenResource={openEntity}
                               onDeleteResource={trashResource}
-                              onUpload={(file, openAfter) =>
-                                run(async () => {
+                              onUpload={async (file) => {
+                                let id: string | null = null;
+                                await run(async () => {
                                   const uploaded = await runtime.uploadFile(
                                     {
                                       name: file.name,
@@ -2863,9 +2869,10 @@ function Workbench({
                                     },
                                     file,
                                   );
-                                  if (openAfter) openFileLink(uploaded.id);
-                                })
-                              }
+                                  id = uploaded.id;
+                                });
+                                return id;
+                              }}
                             />
                           ) : view === "notes" || view === "journal" ? (
                             (() => {

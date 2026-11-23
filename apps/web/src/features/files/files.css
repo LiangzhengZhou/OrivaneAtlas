@@ -36,3 +36,36 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+.file-preview-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.file-table-scroll {
+  max-width: 100%;
+  overflow: auto;
+}
+.file-table-scroll table {
+  border-collapse: collapse;
+  white-space: pre-wrap;
+}
+.file-table-scroll caption {
+  text-align: start;
+  color: var(--text-secondary);
+  padding-block: var(--space-2);
+}
+.file-table-scroll td,
+.file-table-scroll th {
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  max-width: 28rem;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.file-table-scroll th {
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  font-variant-numeric: tabular-nums;
+}

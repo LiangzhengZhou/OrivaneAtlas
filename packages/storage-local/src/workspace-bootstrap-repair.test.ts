@@ -348,3 +348,125 @@ it.each([false, true])(
     }
   },
 );
+
+it("hydrates old folder coverage at the same cursor without replacing unrelated records and does it once", async () => {
+  const store = await IndexedDbLocalStore.open(
+    "old-folder-coverage",
+    new IDBFactory(),
+  );
+  try {
+    const oldValue = {
+      schemaVersion: 1,
+      serverOrigin: scope.serverOrigin,
+      remoteWorkspaceId: scope.remoteWorkspaceId,
+      remotePrincipalId: "remote-owner",
+      epoch: scope.epoch,
+      cursor: scope.cursor,
+    };
+    const entity = {
+      workspaceId: own.workspaceId,
+      collection: "$local.workspaceBootstrap",
+      id: "complete",
+      version: 1,
+      value: oldValue,
+    };
+    await store.metadata.restoreEmptyWorkspace!(
+      {
+        schemaVersion: 2,
+        identity: own,
+        syncState: scope,
+        entities: [entity],
+        mutations: [],
+      },
+      own.deviceId,
+    );
+    const link = {
+      id: "collection-reference",
+      workspaceId: "remote",
+      folderId: "coast",
+      targetKind: "DOCUMENT",
+      targetId: "spec",
+      version: 1,
+      createdAt: "2026-11-23",
+      updatedAt: "2026-11-23",
+      createdBy: "remote-owner",
+      updatedBy: "remote-owner",
+      deletedAt: null,
+    };
+    const full = manifest();
+    const snapshot = {
+      ...full,
+      workspace: {
+        ...full.workspace,
+        folderLinks: [link],
+        projectFolderLinks: [],
+        spaceFolderLinks: [],
+      },
+    };
+    const bootstrap = vi
+      .fn()
+      .mockResolvedValueOnce({ ...snapshot, cursor: 273 })
+      .mockResolvedValue(snapshot);
+    const backup = vi.fn(async () => {});
+    const ports = {
+      metadata: store.metadata,
+      outbox: store.outbox,
+      syncState: store.syncState,
+      replica: store.replica,
+      beforeBootstrap: backup,
+      transport: {
+        bootstrap,
+        lookup: async () => null,
+        send: async () => {
+          throw Error("Unexpected send");
+        },
+        pull: async () => ({
+          epoch: "epoch",
+          cursor: 272,
+          recovery: false,
+          hasMore: false,
+          snapshot: null,
+          records: [],
+          changes: { collections: {}, values: {} },
+        }),
+      },
+      clock: { now: () => "2026-11-23T00:00:00Z" },
+    };
+    const run = () => new LocalWorkSyncCoordinator(own, ports).run();
+    await run();
+    expect(
+      await store.metadata.get(
+        own.workspaceId,
+        "$local.workspaceBootstrap",
+        "complete",
+      ),
+    ).toMatchObject({ version: 1 });
+    expect((await store.syncState.get(own.workspaceId))?.cursor).toBe(272);
+    await run();
+    expect(
+      await store.metadata.get(own.workspaceId, "folderLinks", link.id),
+    ).toMatchObject({
+      value: {
+        workspaceId: own.workspaceId,
+        folderId: "coast",
+        targetId: "spec",
+      },
+    });
+    expect(await store.metadata.list(own.workspaceId, "items")).toHaveLength(0);
+    expect(
+      await store.metadata.get(
+        own.workspaceId,
+        "$local.workspaceBootstrap",
+        "complete",
+      ),
+    ).toMatchObject({
+      version: 2,
+      value: { folderLinksIncluded: true, cursor: 272 },
+    });
+    await run();
+    expect(bootstrap).toHaveBeenCalledTimes(2);
+    expect(backup).toHaveBeenCalledTimes(1);
+  } finally {
+    store.close();
+  }
+});

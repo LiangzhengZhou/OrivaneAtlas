@@ -5843,7 +5843,11 @@ test("note folders keep stable identity through nesting, rename, offline replay 
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await unlock(page, workbench.url, workbench.secret, w);
-  await nav(page, w.desk.files);
+  const openFolders = async () => {
+    await nav(page, w.desk.files);
+    await showFilesFolders(page);
+  };
+  await openFolders();
   const tree = page.locator(".folder-tree");
   const createRootFolder = async (name: string) => {
     await tree
@@ -5878,7 +5882,7 @@ test("note folders keep stable identity through nesting, rename, offline replay 
   await createRootFolder("Empty");
   // Empty folders are first-class rows: they survive a reload before any note exists.
   await page.reload();
-  await nav(page, w.desk.files);
+  await openFolders();
   await expect(
     tree.getByRole("button", { name: "Empty", exact: true }),
   ).toBeVisible();
@@ -5955,7 +5959,7 @@ test("note folders keep stable identity through nesting, rename, offline replay 
   await page
     .getByRole("button", { name: /^(Workspace|工作台)$/, exact: true })
     .click();
-  await nav(page, w.desk.files);
+  await openFolders();
   await tree.getByRole("button", { name: "Alpha", exact: true }).click();
   await expect(page.locator(".note-card")).toHaveCount(1);
   await expect(page.locator(".note-card .note-folder")).toHaveText("Alpha");
@@ -5963,7 +5967,7 @@ test("note folders keep stable identity through nesting, rename, offline replay 
   await page.route("**/api/v1/sync?*", (route) => route.abort("failed"));
   await createRootFolder("Offline");
   await page.reload();
-  await nav(page, w.desk.files);
+  await openFolders();
   await expect(
     tree.getByRole("button", { name: "Offline", exact: true }),
   ).toBeVisible();
@@ -5977,7 +5981,7 @@ test("note folders keep stable identity through nesting, rename, offline replay 
   ).toBe(true);
   // Non-empty folders can be deleted; notes are retained and the folder tree
   // reports the subtree through the unified trash route.
-  await nav(page, w.desk.files);
+  await openFolders();
   await openActions("Alpha");
   await page
     .getByRole("menuitem", { name: w.desk.deleteFolder, exact: true })
@@ -6003,6 +6007,7 @@ test("note folders keep stable identity through nesting, rename, offline replay 
     .getByRole("button", { name: w.common.restore, exact: true })
     .click();
   await page.goto(workbench.url + "/#files");
+  await openFolders();
   await expect(
     tree.getByRole("button", { name: "Alpha", exact: true }),
   ).toBeVisible();
@@ -8313,6 +8318,15 @@ async function openAdvancedSettings(page: Page) {
     !(await details.evaluate((node) => (node as HTMLDetailsElement).open))
   )
     await details.locator("summary").first().click();
+}
+async function showFilesFolders(page: Page) {
+  if (
+    (page.viewportSize()?.width ?? 1280) <= 1100 &&
+    !(await page.locator(".files-folders-dialog").isVisible())
+  )
+    await page
+      .getByRole("button", { name: /^(Note folders|笔记文件夹)$/, exact: true })
+      .click();
 }
 async function nav(page: Page, name: string) {
   await expect(page.locator(".app-shell")).toBeVisible();
@@ -17357,6 +17371,7 @@ test("local content imports into a newly created owned workspace before explicit
   const w = words(info.project.name);
   // A nested folder, a filed note and presentation icons must survive the merge copy.
   await nav(page, w.desk.files);
+  await showFilesFolders(page);
   const sourceTree = page.locator(".folder-tree");
   await sourceTree
     .getByRole("button", { name: w.desk.newFolder, exact: true })
@@ -18848,6 +18863,7 @@ test("folder cover uploads, persists and can be removed", async ({
   const w = words(info.project.name);
   await unlock(page, workbench.url, workbench.secret, w);
   await nav(page, w.desk.files);
+  await showFilesFolders(page);
   const tree = page.locator(".folder-tree");
   await tree
     .getByRole("button", { name: w.desk.newFolder, exact: true })
@@ -18864,10 +18880,11 @@ test("folder cover uploads, persists and can be removed", async ({
       name: new RegExp(`^(Folder actions|文件夹操作): Cover folder$`),
     })
     .click();
+  const choosing = page.waitForEvent("filechooser");
   await page
     .getByRole("menuitem", { name: w.desk.setFolderCover, exact: true })
     .click();
-  await tree.locator('input[type="file"]').setInputFiles({
+  await (await choosing).setFiles({
     name: "cover.png",
     mimeType: "image/png",
     buffer: Buffer.from(
@@ -18875,9 +18892,11 @@ test("folder cover uploads, persists and can be removed", async ({
       "base64",
     ),
   });
+  await showFilesFolders(page);
   await expect(row.locator(".folder-tree-cover")).toBeVisible();
   await page.reload();
   await nav(page, w.desk.files);
+  await showFilesFolders(page);
   await expect(
     tree
       .locator(".folder-tree-row")
@@ -19059,9 +19078,15 @@ test("sidebar opens the independent file library", async ({
   const w = words(info.project.name);
   const zh = info.project.name.includes("zh");
   await unlock(page, workbench.url, workbench.secret, w);
+  if (info.project.name.startsWith("mobile"))
+    await page.locator(".mobile-navigation-toggle").click();
   await page
     .getByRole("button", {
-      name: zh ? "打开文件库" : "Open file library",
+      name: info.project.name.startsWith("mobile")
+        ? w.desk.fileLibrary
+        : zh
+          ? "打开文件库"
+          : "Open file library",
       exact: true,
     })
     .click();
@@ -19429,4 +19454,283 @@ test("archive project hides it from the project list and stamps archivedAt", asy
     version: document.version + 2,
     bodyMd: "# Keep original Markdown",
   });
+});
+
+test("account experience: file search, favorites, recent items and previews follow the active account", async ({
+  page,
+  workbench,
+}, info) => {
+  test.setTimeout(100_000);
+  const w = words(info.project.name);
+  const zh = info.project.name.endsWith("zh");
+  const library = page.locator(".files-resource-browser");
+  const view = library.getByRole("combobox", {
+    name: zh ? "个人资源视图" : "Personal resource view",
+  });
+  const details = library.locator(".files-detail-panel");
+  const title = "Survey notebook.txt";
+  const original = "Local fixture — sample 307";
+  const row = library.getByRole("button", { name: /Survey notebook\.txt ·/ });
+  const files = async () => {
+    await page.goto(workbench.url + "/#files");
+    await expect(library).toBeVisible();
+  };
+  await unlock(page, workbench.url, workbench.secret, w);
+  await files();
+  await library.locator("input[type=file]").setInputFiles([
+    { name: title, mimeType: "text/plain", buffer: Buffer.from(original) },
+    {
+      name: "Appendix.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("sample,value\nA,32"),
+    },
+  ]);
+  await expect(library.locator(".files-resource-row")).toHaveCount(2);
+  await row.click();
+  const favorite = details.getByRole("button", {
+    name: zh ? "收藏" : "Favorite",
+    exact: true,
+  });
+  await favorite.click();
+  await expect(favorite).toHaveAttribute("aria-pressed", "true");
+  await details
+    .getByRole("button", { name: zh ? "打开" : "Open", exact: true })
+    .click();
+  await expect(page.locator(".file-text-preview")).toHaveText(original);
+  const firstAccountBookmark = page.url();
+  await files();
+  await view.selectOption("recent");
+  await expect(row).toBeVisible();
+  await expect(library.locator(".files-resource-row")).toHaveCount(1);
+  await page.reload();
+  await view.selectOption("favorites");
+  await expect(row).toBeVisible();
+  await page.screenshot({ path: info.outputPath("personal-files.png") });
+  await view.selectOption("all");
+  const batch = library.getByRole("group", {
+    name: zh ? "批量操作" : "Batch actions",
+  });
+  await batch
+    .getByRole("button", { name: zh ? "多选" : "Select items", exact: true })
+    .click();
+  await batch
+    .getByRole("checkbox", { name: zh ? "选择本页" : "Select this page" })
+    .check();
+  await batch
+    .getByRole("button", { name: zh ? "添加到收藏" : "Add to favorites" })
+    .click();
+  await view.selectOption("favorites");
+  await expect(library.locator(".files-resource-row")).toHaveCount(2);
+  await batch
+    .getByRole("button", { name: zh ? "多选" : "Select items", exact: true })
+    .click();
+  await library
+    .getByRole("checkbox", { name: "Appendix.csv", exact: true })
+    .check();
+  await page.screenshot({ path: info.outputPath("batch-favorites.png") });
+  await batch
+    .getByRole("button", { name: zh ? "移出收藏" : "Remove from favorites" })
+    .click();
+  await expect(library.locator(".files-resource-row")).toHaveCount(1);
+  await page.goto(workbench.url + "/#account");
+  await page
+    .getByRole("button", { name: w.spaces.switchAccount, exact: true })
+    .click();
+  await unlock(page, workbench.url, workbench.secret, w, false, "second-user");
+  await page.goto(firstAccountBookmark);
+  await expect(page.locator(".app-shell")).toBeVisible();
+  await expect(page.getByRole("tab", { name: title, exact: true })).toHaveCount(
+    0,
+  );
+  await expect(page.getByText(original, { exact: true })).toHaveCount(0);
+  await files();
+  await expect(library.locator(".files-resource-heading small")).toHaveText(
+    "0",
+  );
+  const search = page.getByPlaceholder(w.desk.search, { exact: true });
+  await search.fill(title);
+  await expect(library.locator(".files-resource-row")).toHaveCount(0);
+  for (const collection of ["favorites", "recent"]) {
+    await view.selectOption(collection);
+    await expect(library.locator(".files-resource-heading small")).toHaveText(
+      "0",
+    );
+    await expect(details).toHaveCount(0);
+  }
+  await expect(page.locator(".file-text-preview")).toHaveCount(0);
+  await search.fill("");
+  await view.selectOption("all");
+  await library.locator("input[type=file]").setInputFiles({
+    name: title,
+    mimeType: "text/plain",
+    buffer: Buffer.from("Second account's own copy"),
+  });
+  await expect(page.locator(".file-text-preview")).toHaveText(
+    "Second account's own copy",
+  );
+  await files();
+  await view.selectOption("favorites");
+  await expect(library.locator(".files-resource-heading small")).toHaveText(
+    "0",
+  );
+  await page.goto(workbench.url + "/#account");
+  const confirm = answerConfirmation(page, true);
+  await page
+    .getByRole("button", { name: w.spaces.revokeAllSessions, exact: true })
+    .click();
+  await confirm;
+  await expect(
+    page.getByLabel(w.spaces.username, { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".file-text-preview")).toHaveCount(0);
+  await unlock(page, workbench.url, workbench.secret, w);
+  await files();
+  await view.selectOption("favorites");
+  await row.click();
+  await favorite.click();
+  await expect(library.locator(".files-resource-heading small")).toHaveText(
+    "0",
+  );
+  await expect(view).toBeFocused();
+});
+
+test("resource collections show scoped paths and preserve the document when its link is removed", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const space = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: { kind: "SPACE", spaceId: null, title: "Field archive", bodyMd: "" },
+  });
+  const doc = await mutation(page, "/api/library/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "DOCUMENT",
+      spaceId: space.id,
+      title: "Sampling method",
+      bodyMd: "Original transect protocol",
+    },
+  });
+  const project = await mutation(page, "/api/work/create", {
+    type: "PROJECT",
+    title: "2026 Field trip",
+  });
+  const parent = randomUUID(),
+    child = randomUUID();
+  for (const [id, name, parentId] of [
+    [parent, "Projects", ""],
+    [child, "Coastal survey", parent],
+  ]) {
+    await mutation(page, "/api/organize", {
+      kind: "FOLDER",
+      action: "create",
+      id,
+      name,
+      parentId,
+      scope: "GENERAL",
+    });
+  }
+  const link = await mutation(page, "/api/folders/link", {
+    folderId: child,
+    targetId: doc.id,
+    targetKind: "DOCUMENT",
+  });
+  await mutation(page, "/api/space-folders/link", {
+    spaceId: space.id,
+    folderId: child,
+  });
+  await mutation(page, "/api/project-folders/link", {
+    projectId: project.id,
+    folderId: child,
+  });
+  await page.goto(workbench.url + "/#files");
+  await page.reload();
+  const browser = page.locator(".files-resource-browser");
+  const folder = browser.getByRole("combobox", {
+    name: zh ? "集合文件夹" : "Collection folder",
+  });
+  await folder.selectOption({ label: "Projects / Coastal survey" });
+  await expect(browser.locator(".files-resource-row")).toHaveCount(1);
+  await browser.getByRole("button", { name: /Sampling method ·/ }).click();
+  const facts = browser.locator(".files-detail-facts");
+  await expect(facts).toContainText("Projects / Coastal survey");
+  await expect(facts).toContainText("2026 Field trip");
+  await expect(facts).toContainText("Field archive");
+  await page.screenshot({ path: info.outputPath("collection-relations.png") });
+  await mutation(page, "/api/folders/unlink", {
+    id: link.id,
+    version: link.version,
+  });
+  await page.reload();
+  await folder.selectOption(child);
+  await expect(browser.locator(".files-resource-heading small")).toHaveText(
+    "0",
+  );
+  await folder.selectOption("");
+  await expect(
+    browser.getByRole("button", { name: /Sampling method ·/ }),
+  ).toBeVisible();
+  const saved = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    saved.library.find((entry: { id: string }) => entry.id === doc.id),
+  ).toMatchObject({
+    spaceId: space.id,
+    bodyMd: "Original transect protocol",
+    deletedAt: null,
+  });
+});
+
+test("journal date navigation opens the selected original without creating another entry", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  const day = "2024-02-29",
+    title = "Leap day field journal";
+  const created = await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: { kind: "JOURNAL", day, title, bodyMd: "Original field log" },
+  });
+  await page.goto(workbench.url + "/#journal");
+  await page.reload();
+  const browser = page.locator(".note-browser");
+  await expect(
+    browser.getByRole("button", { name: title, exact: true }),
+  ).toBeVisible();
+  const input = browser.getByLabel(zh ? "日记日期" : "Journal entry date", {
+    exact: true,
+  });
+  await input.fill(day);
+  await page.screenshot({
+    path: info.outputPath("journal-date-navigation.png"),
+  });
+  await browser
+    .getByRole("button", { name: zh ? "打开该日" : "Open date", exact: true })
+    .click();
+  await expect(
+    page.locator(".document-pane").getByRole("textbox", {
+      name: zh ? "日记标题" : "Journal title",
+      exact: true,
+    }),
+  ).toHaveValue(title);
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(snapshot.notes.filter((n: { day: string }) => n.day === day)).toEqual([
+    expect.objectContaining({
+      id: created.id,
+      bodyMd: "Original field log",
+      version: created.version,
+    }),
+  ]);
 });

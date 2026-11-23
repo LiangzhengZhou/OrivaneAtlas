@@ -14,10 +14,12 @@ export function ResourceUploadQueue({
   zh,
   busy,
   onUpload,
+  onOpenUploaded,
 }: {
   zh: boolean;
   busy: boolean;
-  onUpload(file: File, openAfter: boolean): Promise<boolean>;
+  onUpload(file: File): Promise<string | null>;
+  onOpenUploaded(id: string): void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const entries = useRef<Entry[]>([]);
@@ -44,12 +46,15 @@ export function ResourceUploadQueue({
         job.state = "writing";
         publish();
         try {
-          job.state = (await onUpload(
-            job.file,
-            openSingle && entries.current.length === 1,
-          ))
-            ? "done"
-            : "failed";
+          const id = await onUpload(job.file);
+          job.state = id ? "done" : "failed";
+          if (
+            id &&
+            openSingle &&
+            entries.current.length === 1 &&
+            mounted.current
+          )
+            onOpenUploaded(id);
         } catch {
           job.state = "failed";
         }

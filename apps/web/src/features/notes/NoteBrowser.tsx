@@ -51,6 +51,9 @@ export function NoteBrowser({
   onInspect,
   onDelete,
   searching,
+  clearSearch,
+  today,
+  onOpenDay,
 }: {
   entries: WorkspaceNote[];
   journal: boolean;
@@ -73,6 +76,9 @@ export function NoteBrowser({
   onInspect(note: WorkspaceNote): void;
   onDelete(note: WorkspaceNote): void;
   searching: boolean;
+  clearSearch(): void;
+  today: string;
+  onOpenDay(day: string): void;
 }) {
   const { t, i18n } = useTranslation("desk");
   const zh = i18n.language.startsWith("zh");
@@ -91,6 +97,7 @@ export function NoteBrowser({
   }, [folderOpen]);
   const [selecting, setSelecting] = useState(false);
   const groupId = useId();
+  const [chosenDay, setChosenDay] = useState<string | null>(null);
   const { layout, grouping, sort, collapsed } = presentation;
   const sorted = entries
     .filter(
@@ -245,6 +252,32 @@ export function NoteBrowser({
         onKeyDown={moveFocus}
       >
         <div className="organization-toolbar note-view-toolbar">
+          {journal && (
+            <form
+              className="journal-date-navigation"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (chosenDay ?? today) onOpenDay(chosenDay ?? today);
+              }}
+            >
+              <label>
+                {zh ? "日记日期" : "Journal entry date"}{" "}
+                <input
+                  type="date"
+                  required
+                  value={chosenDay ?? today}
+                  onChange={(event) => setChosenDay(event.target.value)}
+                />
+              </label>
+              <Button
+                type="submit"
+                variant="secondary"
+                disabled={!(chosenDay ?? today)}
+              >
+                {zh ? "打开该日" : "Open date"}
+              </Button>
+            </form>
+          )}
           {folderPanel && (
             <Button
               type="button"
@@ -487,7 +520,28 @@ export function NoteBrowser({
           ),
         )}
         {sorted.length === 0 && (
-          <p className="note-browser-empty">{t("noResults")}</p>
+          <div className="note-browser-empty">
+            <p role="status">
+              {searching
+                ? t("noResults")
+                : folderFilter !== null
+                  ? zh
+                    ? "这个文件夹中没有笔记。"
+                    : "This folder has no notes."
+                  : journal
+                    ? zh
+                      ? "还没有日记。选择日期即可开始写作。"
+                      : "Choose a date to write your first journal entry."
+                    : zh
+                      ? "还没有笔记。创建第一篇笔记以开始写作。"
+                      : "Create your first note to start writing."}
+            </p>
+            {searching && (
+              <Button variant="secondary" type="button" onClick={clearSearch}>
+                {zh ? "清除搜索" : "Clear search"}
+              </Button>
+            )}
+          </div>
         )}
       </div>
     </div>

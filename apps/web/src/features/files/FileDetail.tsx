@@ -22,7 +22,8 @@ import { EntityMenu } from "../../components/ui/EntityMenu";
 import { projectHash } from "../../projectRoute";
 import { HierarchyPicker } from "../hierarchy/HierarchyPicker";
 import { ProjectDrilldownPicker } from "../projects/ProjectDrilldownPicker";
-import { VirtualTaskCollection } from "../tasks/VirtualTaskCollection";
+import { FilePreview } from "./FilePreview";
+import { RasterFilePreview } from "./RasterFilePreview";
 import "./files.css";
 import { EntityMemo } from "../memos/EntityMemo";
 import { type FileAtlasDraft, FileAtlasFloat } from "./FileAtlasFloat";
@@ -217,11 +218,6 @@ export function FileDetail({
     [projectLinks],
   );
   const [extracting, setExtracting] = useState(false);
-  const previewChunks = useMemo(
-    () =>
-      preview?.chunks.map((chunk) => ({ ...chunk, id: chunk.locator })) ?? [],
-    [preview],
-  );
   const tier = fileReadTier(file.extension);
   useEffect(() => {
     if (file.deletedAt) return;
@@ -673,26 +669,41 @@ export function FileDetail({
           </Button>
         </div>
       </details>
+      {["png", "jpeg", "jpg", "webp"].includes(file.extension ?? "") &&
+        file.size <= fileExtractionLimits.inputBytes && (
+          <RasterFilePreview
+            key={JSON.stringify([
+              runtime.serverOrigin,
+              runtime.context.principalId,
+              file.workspaceId,
+              file.id,
+              file.version,
+              file.contentHash,
+            ])}
+            runtime={runtime}
+            id={file.id}
+            name={file.name}
+            zh={zh}
+          />
+        )}
       {extracting && (
         <p role="status">
           {zh ? "正在读取文件内容…" : "Reading file content…"}
         </p>
       )}
-      {preview !== null && (
-        <div className="file-text-preview">
-          <VirtualTaskCollection
-            items={previewChunks}
-            virtualizeAfter={10}
-            estimatedRowHeight={240}
-            render={(chunk) => (
-              <section key={chunk.locator}>
-                {chunk.title && <h3>{chunk.title}</h3>}
-                <pre>{chunk.text}</pre>
-              </section>
-            )}
+      {preview !== null &&
+        !file.deletedAt &&
+        preview.fileId === file.id &&
+        preview.workspaceId === file.workspaceId &&
+        preview.fileVersion === file.version &&
+        preview.contentHash === file.contentHash && (
+          <FilePreview
+            key={file.id}
+            document={preview}
+            extension={file.extension ?? ""}
+            zh={zh}
           />
-        </div>
-      )}
+        )}
     </section>
   );
 }

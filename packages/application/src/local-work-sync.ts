@@ -200,24 +200,39 @@ export class LocalWorkSyncCoordinator {
           )
         )
           throw new DomainError("FORBIDDEN");
-      } else {
+      }
+      if (!marker || localObject(marker.value).folderLinksIncluded !== true) {
+        if (marker) await pull();
         const scope = await binding();
         const manifest = await ports.transport.bootstrap(scope);
-        const prepared = await prepareLocalWorkspaceBootstrap(
-          actor,
-          scope,
-          manifest,
-          await ports.outbox.list(actor.workspaceId),
-          ports.metadata,
-          ports.memoIdentity,
-        );
-        if (ports.beforeBootstrap)
-          await ports.beforeBootstrap(
+        // A relation-only repair must never advance past unrelated delta records.
+        const ahead =
+          marker &&
+          manifest &&
+          typeof manifest === "object" &&
+          "cursor" in manifest &&
+          typeof manifest.cursor === "number" &&
+          manifest.cursor > scope.cursor &&
+          "epoch" in manifest &&
+          manifest.epoch === scope.epoch;
+        if (!ahead) {
+          const prepared = await prepareLocalWorkspaceBootstrap(
+            actor,
             scope,
-            prepared.expectedWorkspaceVersion,
-            prepared.nextCursor,
+            manifest,
+            await ports.outbox.list(actor.workspaceId),
+            ports.metadata,
+            ports.memoIdentity,
+            marker ? "folderLinks" : "all",
           );
-        await ports.replica.commit(prepared);
+          if (ports.beforeBootstrap)
+            await ports.beforeBootstrap(
+              scope,
+              prepared.expectedWorkspaceVersion,
+              prepared.nextCursor,
+            );
+          await ports.replica.commit(prepared);
+        }
       }
     }
     if (ports.memoIdentity) {

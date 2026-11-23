@@ -677,3 +677,83 @@ test("calendar keyboard selection follows the date across a month boundary", asy
   ).toBeFocused();
   await expect(page.locator('.calendar-day[tabindex="0"]')).toHaveCount(1);
 });
+
+test("table preview preserves quoted cells and the original delimited text", async ({
+  page,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await offline(page);
+  await page.goto(origin + "/#files");
+  const text =
+    'station,reading\r\n"East, coast",=1+1\r\n"line one\nline two",42';
+  await page.locator(".files-resource-browser input[type=file]").setInputFiles({
+    name: "Tide.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(text),
+  });
+  const grid = page.getByRole("table", {
+    name: zh ? "表格内容" : "Table contents",
+  });
+  await expect(grid.getByRole("row")).toHaveCount(3);
+  await expect(
+    grid.getByRole("cell", { name: "East, coast", exact: true }),
+  ).toBeVisible();
+  await expect(
+    grid.getByRole("cell", { name: "=1+1", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({ path: info.outputPath("csv-preview.png") });
+  await page
+    .getByRole("button", { name: zh ? "源文本" : "Source text", exact: true })
+    .click();
+  expect(await page.locator(".file-text-preview pre").textContent()).toBe(text);
+});
+
+test("the file viewer opens a private raster and pages extracted PDF text", async ({
+  page,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await offline(page);
+  await page.goto(origin + "/#files");
+  const input = page.locator(".files-resource-browser input[type=file]");
+  await input.setInputFiles({
+    name: "Survey mark.png",
+    mimeType: "image/png",
+    buffer: await readFile("apps/web/public/favicon.png"),
+  });
+  const detail = page.locator(".file-detail");
+  await detail
+    .getByRole("button", { name: zh ? "查看图片" : "View image", exact: true })
+    .click();
+  const viewer = page.getByRole("dialog", { name: "Survey mark.png" });
+  await expect(
+    viewer.getByRole("img", { name: "Survey mark.png" }),
+  ).toBeVisible();
+  await viewer
+    .getByRole("button", { name: zh ? "放大" : "Zoom in", exact: true })
+    .click();
+  await page.screenshot({ path: info.outputPath("private-image-viewer.png") });
+  await viewer
+    .getByRole("button", { name: zh ? "关闭" : "Close", exact: true })
+    .click();
+  await expect(viewer).toHaveCount(0);
+  await page.goto(origin + "/#files");
+  const print = await page.context().newPage();
+  await print.setContent(
+    '<main style="break-after:page">North station</main><main>South station</main>',
+  );
+  const bytes = await print.pdf();
+  await print.close();
+  await input.setInputFiles({
+    name: "Stations.pdf",
+    mimeType: "application/pdf",
+    buffer: bytes,
+  });
+  const preview = page.locator(".file-text-preview");
+  await expect(preview.locator("pre")).toContainText("North station");
+  await preview
+    .getByRole("button", { name: zh ? "下一页" : "Next page", exact: true })
+    .click();
+  await expect(preview.locator("pre")).toContainText("South station");
+  await expect(preview).not.toContainText("North station");
+  await page.screenshot({ path: info.outputPath("pdf-text-page.png") });
+});

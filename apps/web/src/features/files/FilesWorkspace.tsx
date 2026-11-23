@@ -1,6 +1,7 @@
 import {
   type EntityRef,
   type ProjectMaterial,
+  type ResourceFolderSource,
   selectResourceCatalog,
   type WorkspaceLibraryEntry,
   type WorkspaceNote,
@@ -29,7 +30,9 @@ import { confirmAction } from "../../components/ui/ConfirmationHost";
 import { EntityRow } from "../../components/ui/Content";
 import { Dialog, Select } from "../../components/ui/Surfaces";
 import { EntityIcon } from "../notes/EntityIcon";
+import { fileHash } from "./fileRoute";
 import { ResourceUploadQueue } from "./ResourceUploadQueue";
+import { useResourceShortcuts } from "./useResourceShortcuts";
 import "./files-workspace.css";
 
 type ResourceKind = "ALL" | "NOTE" | "DOCUMENT" | "FILE";
@@ -57,12 +60,14 @@ interface ResourceRow {
  */
 export function FilesWorkspace({
   scopeKey,
+  active,
   workspaceId,
   notes,
   library,
   fileEntries,
   projectMaterials,
   projects,
+  relations,
   folderPanel,
   folderFilter,
   clearFilters,
@@ -78,11 +83,13 @@ export function FilesWorkspace({
   onUpload,
 }: {
   scopeKey: string;
+  active: boolean;
   workspaceId: string;
   notes: readonly WorkspaceNote[];
   library: readonly WorkspaceLibraryEntry[];
   fileEntries: readonly LibraryFile[];
   projectMaterials?: readonly ProjectMaterial[];
+  relations: ResourceFolderSource;
   projects?: readonly {
     id: string;
     title: string;
@@ -101,13 +108,26 @@ export function FilesWorkspace({
   onOpenNote(note: WorkspaceNote): void;
   onOpenResource(ref: EntityRef): void;
   onDeleteResource(ref: EntityRef): Promise<void>;
-  onUpload(file: globalThis.File, openAfter: boolean): Promise<boolean>;
+  onUpload(file: globalThis.File): Promise<string | null>;
 }) {
   const { t, i18n } = useTranslation("desk");
   const zh = i18n.language.startsWith("zh");
   const titleId = useId();
+  const shortcuts = useResourceShortcuts(scopeKey);
+  const [collection, setCollection] = useState<"all" | "favorites" | "recent">(
+    "all",
+  );
+  const favoriteKeys = useMemo(
+    () => new Set(shortcuts.favorites),
+    [shortcuts.favorites],
+  );
+  const recentOrder = useMemo(
+    () => new Map(shortcuts.recent.map((key, index) => [key, index])),
+    [shortcuts.recent],
+  );
   const [kind, setKind] = useState<ResourceKind>("ALL");
   const [sort, setSort] = useState<"updated" | "name">("updated");
+  const [generalFolder, setGeneralFolder] = useState("");
   const [libraryOnly, setLibraryOnly] = useState(false);
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
   function setLibraryMode(value: boolean) {
@@ -144,8 +164,17 @@ export function FilesWorkspace({
         files: fileEntries,
         projects: projects ?? [],
         materials: projectMaterials ?? [],
+        relations,
       }),
-    [workspaceId, notes, library, fileEntries, projects, projectMaterials],
+    [
+      workspaceId,
+      notes,
+      library,
+      fileEntries,
+      projects,
+      projectMaterials,
+      relations,
+    ],
   );
   const rows = useMemo(() => {
     const result: ResourceRow[] = [
@@ -186,23 +215,47 @@ export function FilesWorkspace({
         ref: { kind: "FILE" as const, id: entry.id },
       })),
     ];
+    for (const row of result) {
+      const ids = catalog.folderIndex.memberships.get(row.key);
+      if (!ids) continue;
+      const projects = new Set(row.projectIds);
+      for (const id of ids) {
+        for (const project of catalog.folderIndex.folders
+          .get(id)!
+          .projects.keys())
+          projects.add(project);
+      }
+      row.projectIds = projects;
+    }
     return result;
   }, [catalog, libraryOnly, zh, getFolderKey, getFolderLabel, getIcon]);
+  const collectionRows = useMemo(() => {
+    if (collection === "favorites")
+      return rows.filter((row) => favoriteKeys.has(row.key));
+    if (collection === "recent")
+      return rows.filter((row) => recentOrder.has(row.key));
+    return rows;
+  }, [collection, rows, favoriteKeys, recentOrder]);
   const projectCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const row of rows)
+    for (const row of collectionRows)
       for (const id of row.projectIds ?? [])
         counts.set(id, (counts.get(id) ?? 0) + 1);
     return counts;
-  }, [rows]);
+  }, [collectionRows]);
   const deferredQuery = useDeferredValue(query);
   const searched = deferredQuery.trim().toLocaleLowerCase(i18n.language);
+  const activeFolder = catalog.folderIndex.folders.get(generalFolder);
   const visible = useMemo(
     () =>
-      rows
+      collectionRows
         .filter(
           (row) =>
             (kind === "ALL" || row.kind === kind) &&
+            (!activeFolder ||
+              catalog.folderIndex.memberships
+                .get(row.key)
+                ?.has(activeFolder.id)) &&
             (projectFilter === null || row.projectIds?.has(projectFilter)) &&
             (kind !== "NOTE" ||
               folderFilter === null ||
@@ -213,47 +266,82 @@ export function FilesWorkspace({
                 .includes(searched)),
         )
         .sort((a, b) => {
+          if (collection === "recent")
+            return recentOrder.get(a.key)! - recentOrder.get(b.key)!;
           const byUpdated = b.updatedAt.localeCompare(a.updatedAt);
           if (sort === "updated")
             return byUpdated || a.title.localeCompare(b.title);
           return a.title.localeCompare(b.title, i18n.language) || byUpdated;
         }),
-    [rows, searched, projectFilter, folderFilter, kind, sort, i18n.language],
+    [
+      collectionRows,
+      collection,
+      activeFolder,
+      catalog.folderIndex,
+      recentOrder,
+      searched,
+      projectFilter,
+      folderFilter,
+      kind,
+      sort,
+      i18n.language,
+    ],
   );
   const counts = useMemo(
     () => ({
-      ALL: rows.length,
-      NOTE: rows.filter((row) => row.kind === "NOTE").length,
-      DOCUMENT: rows.filter((row) => row.kind === "DOCUMENT").length,
-      FILE: rows.filter((row) => row.kind === "FILE").length,
+      ALL: collectionRows.length,
+      NOTE: collectionRows.filter((row) => row.kind === "NOTE").length,
+      DOCUMENT: collectionRows.filter((row) => row.kind === "DOCUMENT").length,
+      FILE: collectionRows.filter((row) => row.kind === "FILE").length,
     }),
-    [rows],
+    [collectionRows],
   );
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const selectedTrigger = useRef<HTMLElement | null>(null);
+  const collectionSelect = useRef<HTMLSelectElement>(null);
+  const focusCollection = useRef(false);
+  useEffect(() => {
+    if (!selectedKey && focusCollection.current) {
+      focusCollection.current = false;
+      collectionSelect.current?.focus();
+    }
+  }, [selectedKey]);
   function closeDetails() {
     setSelectedKey(null);
     selectedTrigger.current?.focus();
   }
   const [pageIndex, setPageIndex] = useState(0);
+  const [selection, setSelection] = useState<Set<string> | null>(null);
+  const selectionButton = useRef<HTMLButtonElement>(null);
   const pageSize = 60;
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
   const page = Math.min(pageIndex, pageCount - 1);
   const filterSignature = JSON.stringify([
     searched,
     projectFilter,
+    generalFolder,
     folderFilter,
     kind,
     sort,
     libraryOnly,
+    collection,
   ]);
   const [previousFilter, setPreviousFilter] = useState(filterSignature);
   if (filterSignature !== previousFilter) {
     setPreviousFilter(filterSignature);
+    setSelection(null);
     setPageIndex(0);
     setSelectedKey(null);
   }
   const pageRows = visible.slice(page * pageSize, (page + 1) * pageSize);
+  const checked = pageRows
+    .filter((row) => selection?.has(row.key))
+    .map((row) => row.key);
+  function saveSelection(favorite: boolean) {
+    shortcuts.setFavorites(checked, favorite);
+    setSelection(null);
+    selectionButton.current?.focus();
+  }
   const layoutKey = "orivane-atlas.files.layout." + scopeKey;
   const [grid, setGrid] = useState(() => {
     try {
@@ -263,6 +351,12 @@ export function FilesWorkspace({
     }
   });
   const [foldersOpen, setFoldersOpen] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setFoldersOpen(false);
+      setSelectedKey(null);
+    }
+  }, [active]);
   const [narrow, setNarrow] = useState(
     () => matchMedia("(max-width: 1100px)").matches,
   );
@@ -274,6 +368,10 @@ export function FilesWorkspace({
     return () => media.removeEventListener("change", update);
   }, []);
   const selectedRow = pageRows.find((row) => row.key === selectedKey) ?? null;
+  const linkedFolders = Array.from(
+    catalog.folderIndex.memberships.get(selectedRow?.key ?? "") ?? [],
+    (id) => catalog.folderIndex.folders.get(id)!,
+  );
   const formatSize = (bytes: number | undefined) => {
     if (bytes === undefined) return "";
     if (bytes < 1024) return `${bytes} B`;
@@ -301,6 +399,7 @@ export function FilesWorkspace({
           ? "文件"
           : "File";
   const open = (row: ResourceRow) => {
+    shortcuts.markOpened(row.key);
     setSelectedKey(null);
     if (row.note) onOpenNote(row.note);
     else if (row.ref) onOpenResource(row.ref);
@@ -349,6 +448,28 @@ export function FilesWorkspace({
           <dt>{zh ? "关联位置" : "Linked location"}</dt>
           <dd>{selectedRow.location || (zh ? "工作区" : "Workspace")}</dd>
         </div>
+        {linkedFolders.length > 0 && (
+          <div>
+            <dt>{zh ? "所属集合" : "Collections"}</dt>
+            {linkedFolders.map((folder) => (
+              <dd key={folder.id}>
+                {folder.path}
+                {folder.spaces.size > 0 && (
+                  <small>
+                    {zh ? "关联空间" : "Linked spaces"} ·{" "}
+                    {[...folder.spaces.values()].join(" · ")}
+                  </small>
+                )}
+                {folder.projects.size > 0 && (
+                  <small>
+                    {zh ? "关联项目" : "Linked projects"} ·{" "}
+                    {[...folder.projects.values()].join(" · ")}
+                  </small>
+                )}
+              </dd>
+            ))}
+          </div>
+        )}
         {selectedRow.mime && (
           <div>
             <dt>{zh ? "类型" : "Type"}</dt>
@@ -363,6 +484,21 @@ export function FilesWorkspace({
           onClick={() => open(selectedRow)}
         >
           {zh ? "打开" : "Open"}
+        </Button>
+        <Button
+          variant="ghost"
+          type="button"
+          aria-pressed={favoriteKeys.has(selectedRow.key)}
+          onClick={() => {
+            const wasFavorite = favoriteKeys.has(selectedRow.key);
+            if (wasFavorite && collection === "favorites") {
+              focusCollection.current = true;
+              setSelectedKey(null);
+            }
+            shortcuts.setFavorites([selectedRow.key], !wasFavorite);
+          }}
+        >
+          {zh ? "收藏" : "Favorite"}
         </Button>
         {selectedRow.ref && selectedRow.kind !== "NOTE" && (
           <Button
@@ -408,7 +544,7 @@ export function FilesWorkspace({
           {folderPanel}
         </aside>
       )}
-      {foldersOpen && narrow && !libraryOnly && (
+      {active && foldersOpen && narrow && !libraryOnly && (
         <Dialog
           className="ui-dialog files-folders-dialog"
           aria-label={zh ? "笔记文件夹" : "Note folders"}
@@ -518,20 +654,62 @@ export function FilesWorkspace({
               <LayoutGrid size={17} />
             </Button>
             <Select
-              aria-label={zh ? "资源排序" : "Resource order"}
-              value={sort}
+              ref={collectionSelect}
+              aria-label={zh ? "个人资源视图" : "Personal resource view"}
+              value={collection}
               onChange={(event) =>
-                setSort(event.target.value as "updated" | "name")
+                setCollection(event.target.value as typeof collection)
               }
             >
-              <option value="updated">
-                {zh ? "最近更新" : "Last updated"}
+              <option value="all">{zh ? "所有条目" : "All items"}</option>
+              <option value="favorites">{zh ? "收藏" : "Favorites"}</option>
+              <option value="recent">
+                {zh ? "最近打开" : "Recently opened"}
               </option>
-              <option value="name">{zh ? "名称" : "Name"}</option>
             </Select>
-            <ResourceUploadQueue zh={zh} busy={busy} onUpload={onUpload} />
+            {collection !== "recent" && (
+              <Select
+                aria-label={zh ? "资源排序" : "Resource order"}
+                value={sort}
+                onChange={(event) =>
+                  setSort(event.target.value as "updated" | "name")
+                }
+              >
+                <option value="updated">
+                  {zh ? "最近更新" : "Last updated"}
+                </option>
+                <option value="name">{zh ? "名称" : "Name"}</option>
+              </Select>
+            )}
+            {active && (
+              <ResourceUploadQueue
+                zh={zh}
+                busy={busy}
+                onUpload={onUpload}
+                onOpenUploaded={(id) => {
+                  shortcuts.markOpened("FILE:" + id);
+                  location.hash = fileHash(id);
+                }}
+              />
+            )}
           </div>
         </header>
+        {catalog.folderIndex.folders.size > 0 && (
+          <label className="files-collection-filter">
+            {zh ? "集合文件夹" : "Collection folder"}
+            <Select
+              value={activeFolder?.id ?? ""}
+              onChange={(event) => setGeneralFolder(event.target.value)}
+            >
+              <option value="">{zh ? "所有集合" : "All collections"}</option>
+              {Array.from(catalog.folderIndex.folders.values(), (folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.path}
+                </option>
+              ))}
+            </Select>
+          </label>
+        )}
         {catalog.projects.length > 0 && (
           <div className="files-project-folders">
             <span>{zh ? "项目文件夹" : "Project folders"}</span>
@@ -566,6 +744,73 @@ export function FilesWorkspace({
             )}
           </div>
         )}
+        {rows.length > 0 && (
+          <div
+            className="files-selection-toolbar"
+            role="group"
+            aria-label={zh ? "批量操作" : "Batch actions"}
+          >
+            <Button
+              ref={selectionButton}
+              variant="ghost"
+              aria-pressed={selection !== null}
+              onClick={() => {
+                setSelectedKey(null);
+                setSelection(selection === null ? new Set() : null);
+              }}
+            >
+              {selection === null
+                ? zh
+                  ? "多选"
+                  : "Select items"
+                : zh
+                  ? "取消多选"
+                  : "Cancel selection"}
+            </Button>
+            {selection !== null && (
+              <>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={
+                      pageRows.length > 0 && checked.length === pageRows.length
+                    }
+                    disabled={!pageRows.length}
+                    onChange={(e) =>
+                      setSelection(
+                        new Set(
+                          e.target.checked
+                            ? pageRows.map((row) => row.key)
+                            : [],
+                        ),
+                      )
+                    }
+                  />
+                  {zh ? "选择本页" : "Select this page"}
+                </label>
+                <span role="status">
+                  {zh
+                    ? `已选 ${checked.length} 项`
+                    : `${checked.length} selected`}
+                </span>
+                <Button
+                  variant="secondary"
+                  disabled={!checked.some((id) => !favoriteKeys.has(id))}
+                  onClick={() => saveSelection(true)}
+                >
+                  {zh ? "添加到收藏" : "Add to favorites"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={!checked.some((id) => favoriteKeys.has(id))}
+                  onClick={() => saveSelection(false)}
+                >
+                  {zh ? "移出收藏" : "Remove from favorites"}
+                </Button>
+              </>
+            )}
+          </div>
+        )}
         <div className="files-resource-body">
           {visible.length > 0 ? (
             <div className="files-results">
@@ -576,7 +821,7 @@ export function FilesWorkspace({
                 {pageRows.map((row) => {
                   const content = (
                     <>
-                      {row.kind === "NOTE" ? (
+                      {row.kind === "NOTE" && selection === null ? (
                         <EntityIcon
                           className="files-resource-icon note-file-icon"
                           icon={row.icon}
@@ -594,7 +839,9 @@ export function FilesWorkspace({
                           className="files-resource-icon"
                           aria-hidden="true"
                         >
-                          {row.kind === "DOCUMENT" ? (
+                          {row.kind === "NOTE" ? (
+                            <BookOpen size={17} />
+                          ) : row.kind === "DOCUMENT" ? (
                             <FileText size={17} />
                           ) : (
                             <File size={17} />
@@ -624,6 +871,25 @@ export function FilesWorkspace({
                       </time>
                     </>
                   );
+                  if (selection !== null)
+                    return (
+                      <label key={row.key} className="files-select-row">
+                        <input
+                          type="checkbox"
+                          aria-label={row.title}
+                          checked={selection.has(row.key)}
+                          onChange={(event) => {
+                            const next = new Set(selection);
+                            if (event.target.checked) next.add(row.key);
+                            else next.delete(row.key);
+                            setSelection(next);
+                          }}
+                        />
+                        <span className="files-resource-row ui-list-row">
+                          {content}
+                        </span>
+                      </label>
+                    );
                   return (
                     <EntityRow
                       key={row.key}
@@ -659,6 +925,7 @@ export function FilesWorkspace({
                     disabled={page === 0}
                     onClick={() => {
                       setSelectedKey(null);
+                      if (selection) setSelection(new Set());
                       setPageIndex(page - 1);
                     }}
                   >
@@ -672,6 +939,7 @@ export function FilesWorkspace({
                     disabled={page + 1 === pageCount}
                     onClick={() => {
                       setSelectedKey(null);
+                      if (selection) setSelection(new Set());
                       setPageIndex(page + 1);
                     }}
                   >
@@ -686,23 +954,35 @@ export function FilesWorkspace({
               <span>
                 {searched
                   ? t("noResults")
-                  : folderFilter !== null && kind === "NOTE"
+                  : collection === "favorites" && !collectionRows.length
                     ? zh
-                      ? "这个文件夹还没有笔记。"
-                      : "This folder has no notes yet."
-                    : zh
-                      ? "上传文件或创建笔记即可开始整理。"
-                      : "Upload a file or create a note to start your collection."}
+                      ? "在资源详情中收藏条目，即可在这里找到。"
+                      : "Choose Favorite in resource details to keep an item here."
+                    : collection === "recent" && !collectionRows.length
+                      ? zh
+                        ? "从资源中心打开的条目会出现在这里。"
+                        : "Items you open from the resource center appear here."
+                      : folderFilter !== null && kind === "NOTE"
+                        ? zh
+                          ? "这个文件夹还没有笔记。"
+                          : "This folder has no notes yet."
+                        : zh
+                          ? "上传文件或创建笔记即可开始整理。"
+                          : "Upload a file or create a note to start your collection."}
               </span>
               {(searched ||
                 projectFilter ||
+                activeFolder ||
                 folderFilter ||
-                kind !== "ALL") && (
+                kind !== "ALL" ||
+                collection !== "all") && (
                 <Button
                   variant="secondary"
                   onClick={() => {
                     setKind("ALL");
+                    setCollection("all");
                     setProjectFilter(null);
+                    setGeneralFolder("");
                     clearFilters();
                   }}
                 >
@@ -711,7 +991,8 @@ export function FilesWorkspace({
               )}
             </div>
           )}
-          {selectedRow &&
+          {active &&
+            selectedRow &&
             (narrow ? (
               <Dialog
                 className="ui-dialog files-detail-panel files-detail-dialog"

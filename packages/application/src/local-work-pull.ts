@@ -99,6 +99,7 @@ export async function prepareLocalWorkspaceBootstrap(
   pending: readonly LocalMutation[],
   metadata: LocalMetadataStore,
   memoIdentity?: Pick<EntityMemoIdentity, "forTarget">,
+  coverage: "all" | "folderLinks" = "all",
 ): Promise<LocalReplicaCommit> {
   const manifest = localObject(localDto(manifestInput));
   const workspace = localObject(manifest.workspace!);
@@ -106,7 +107,8 @@ export async function prepareLocalWorkspaceBootstrap(
     manifest.schemaVersion !== 1 ||
     manifest.epoch !== binding.epoch ||
     typeof manifest.cursor !== "number" ||
-    manifest.cursor < binding.cursor
+    manifest.cursor < binding.cursor ||
+    (coverage === "folderLinks" && manifest.cursor !== binding.cursor)
   )
     throw new DomainError("VERSION_CONFLICT", { field: "workspaceBootstrap" });
   const collections: Record<
@@ -114,21 +116,29 @@ export async function prepareLocalWorkspaceBootstrap(
     { upserts: LocalJson[]; removed: string[] }
   > = {};
   const records: LocalJson[] = [];
-  for (const name of [
-    "items",
-    "edges",
-    "categories",
-    "organization",
-    "projectMaterials",
-    "links",
-    "reminders",
-    "workflows",
-    "manualOrders",
-    "wikiLinks",
-    "files",
-    "notes",
-    "library",
-  ]) {
+  const folderCollections = [
+    "folderLinks",
+    "spaceFolderLinks",
+    "projectFolderLinks",
+  ];
+  for (const name of coverage === "folderLinks"
+    ? folderCollections
+    : [
+        ...folderCollections,
+        "items",
+        "edges",
+        "categories",
+        "organization",
+        "projectMaterials",
+        "links",
+        "reminders",
+        "workflows",
+        "manualOrders",
+        "wikiLinks",
+        "files",
+        "notes",
+        "library",
+      ]) {
     const source =
       name === "notes" || name === "library" ? manifest[name] : workspace[name];
     if (
@@ -162,7 +172,9 @@ export async function prepareLocalWorkspaceBootstrap(
     }
   }
   const values: Record<string, LocalJson> = {};
-  for (const name of ["calendarSettings", "navigationPreference"]) {
+  for (const name of coverage === "folderLinks"
+    ? []
+    : ["calendarSettings", "navigationPreference"]) {
     const value = workspace[name];
     if (value === undefined || localObject(value).version === 0) continue;
     values[name] = value;
@@ -221,6 +233,7 @@ export async function prepareLocalWorkspaceBootstrap(
           version: (marker?.version ?? 0) + 1,
           value: {
             schemaVersion: 1,
+            folderLinksIncluded: true,
             serverOrigin: binding.serverOrigin,
             remoteWorkspaceId: binding.remoteWorkspaceId,
             remotePrincipalId: binding.remotePrincipalId!,

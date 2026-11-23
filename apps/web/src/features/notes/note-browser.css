@@ -683,3 +683,33 @@
   object-fit: cover;
   background: var(--surface-subtle);
 }
+
+.journal-date-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-2);
+}
+.journal-date-navigation label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--font-meta-size);
+}
+.journal-date-navigation input {
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  min-height: var(--control-height);
+}
+.note-browser-empty p {
+  margin: 0 0 var(--space-2);
+}
+@media (pointer: coarse) {
+  .journal-date-navigation input,
+  .journal-date-navigation button {
+    min-height: 44px;
+  }
+}
