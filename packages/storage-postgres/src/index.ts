@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import type {
   ActivityEvent,
   AgentSessionStore,
@@ -20,6 +21,7 @@ import {
   requireMutationReceipt,
   requireReviewedMutationReceiptProof,
   requireStableUuid,
+  VerifiedFileRanges,
 } from "@arclattice/application";
 import {
   type ActorContext,
@@ -60,6 +62,9 @@ export interface PostgresOptions {
 
 /** Owns its pool. Host-only adapter; no auth, no web endpoint, no global parser. */
 export class PostgresUnitOfWork implements UnitOfWork {
+  private readonly fileRanges = new VerifiedFileRanges(() =>
+    createHash("sha256"),
+  );
   private closing = false;
   private closePromise: Promise<void> | undefined;
   private readonly pending = new Set<Promise<unknown>>();
@@ -372,7 +377,7 @@ export class PostgresUnitOfWork implements UnitOfWork {
             agentSessionStore(client, actor, guard),
             notebookStore(client, actor, guard),
             fileStore(client, actor, guard),
-            binaryStore(client, actor, guard),
+            binaryStore(client, actor, guard, this.fileRanges),
             connectedStore(client, actor, guard),
             entityMemoStore(client, actor, guard),
           );

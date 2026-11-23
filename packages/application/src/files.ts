@@ -284,8 +284,35 @@ export class FileService {
     await this.location(context, value.spaceId, value.parentDocumentId);
     return value;
   }
-  async originalBytes(context: ActorContext, id: string) {
+  async originalBytes(
+    context: ActorContext,
+    id: string,
+    range?: { begin: number; end: number },
+  ) {
     const file = await this.read(context, id);
+    if (range) {
+      const { begin, end } = range;
+      if (
+        !Number.isSafeInteger(begin) ||
+        !Number.isSafeInteger(end) ||
+        begin < 0 ||
+        end <= begin ||
+        end > file.size
+      )
+        throw new DomainError("VALIDATION_ERROR", { field: "fileRange" });
+      if (this.blobs.getVerifiedRange) {
+        const bytes = await this.blobs.getVerifiedRange(
+          context.workspaceId,
+          file.contentHash,
+          file.size,
+          begin,
+          end,
+        );
+        if (!bytes || bytes.size !== end - begin)
+          throw new FileBytesUnavailableError(id);
+        return bytes;
+      }
+    }
     const bytes = await this.blobs.get(context.workspaceId, file.contentHash);
     if (!bytes) throw new FileBytesUnavailableError(id);
     if (!this.blobs.digest) throw new Error("FILE_HASH_PORT_INCOMPLETE");
@@ -294,7 +321,7 @@ export class FileService {
       (await this.blobs.digest(bytes)) !== file.contentHash
     )
       throw new Error("FILE_BLOB_MISSING_OR_CORRUPT");
-    return bytes;
+    return range ? bytes.slice(range.begin, range.end) : bytes;
   }
   async rename(
     context: ActorContext,

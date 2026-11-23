@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Jump directly to a page in longer PDFs and retry a failed page in the reader. Repeated online reads of the same original now fetch only the required verified chunks after the first full integrity check.
+
 - Move selected notes, documents and files between collections using the keyboard, touch controls or drag and drop. Documents keep their original space, and a resource can still belong to other collections.
 - Jump to a rendered Markdown heading and resume at the same passage when returning to an open tab. Search within the current knowledge graph, page through all matches and bring the selected nodes into view in either theme.
 - Switch between month, week, day and agenda without losing the selected date. Scheduled occurrences appear with their recorded status.

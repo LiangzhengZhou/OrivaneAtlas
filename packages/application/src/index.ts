@@ -1526,6 +1526,7 @@ export * from "./retrieval";
 export * from "./retrieval-context-resolver";
 export * from "./trusted-ai-endpoint";
 export type { AppUpdateInfo, AppUpdateProgress, AppUpdates } from "./updates";
+export * from "./verified-file-ranges";
 export * from "./work-replay-effects";
 export * from "./workspace-binding-preview";
 export * from "./workspace-bootstrap";

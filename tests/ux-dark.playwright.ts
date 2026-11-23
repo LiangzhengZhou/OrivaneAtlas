@@ -6,7 +6,7 @@ export default defineConfig({
   ...base,
   testDir: "./e2e",
   testMatch: "work.spec.ts",
-  grep: /mixed resource selection|resource batch trash and filtered restore|resource collections show scoped|journal date navigation|notes, safe reading|knowledge references and AI approval|quick completion and restore|v2.2 recurrence skip|account experience: file search|project settings preserve brief|first keyboard stop|overview resumes the authorized|graph entry distinguishes|moves a mixed collection|long Markdown contents|graph search bounds|calendar week day and agenda|two independent sessions sync|files page opens real documents|large PDF originals/,
+  grep: /mixed resource selection|resource batch trash and filtered restore|resource collections show scoped|journal date navigation|notes, safe reading|knowledge references and AI approval|quick completion and restore|v2.2 recurrence skip|account experience: file search|project settings preserve brief|first keyboard stop|overview resumes the authorized|graph entry distinguishes|moves a mixed collection|long Markdown contents|graph search bounds|calendar week day and agenda|two independent sessions sync|files page opens real documents|large PDF originals|personal PDF reading/,
   projects: [
     {
       name: "desktop-en",

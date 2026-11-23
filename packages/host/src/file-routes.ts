@@ -144,29 +144,32 @@ export async function handleFileRoute(
     return true;
   }
   if (read && path === "/api/files/bytes") {
-    const value = await ports.transaction(
+    const { file, range, body } = await ports.transaction(
       null,
       async (files, library, blobs) => {
-        const file = await service(files, library, blobs).read(
+        const app = service(files, library, blobs);
+        const file = await app.read(
           ports.context,
           text(url.searchParams.get("id")),
         );
-        return {
-          file,
-          bytes: await service(files, library, blobs).originalBytes(
-            ports.context,
-            file.id,
-          ),
-        };
+        const validator = req.headers["if-range"];
+        const range =
+          validator === undefined || validator === '"' + file.contentHash + '"'
+            ? fileByteRange(req.headers.range, file.size)
+            : null;
+        // Keep the established full integrity check before reporting 416 or 200.
+        const body = await app.originalBytes(
+          ports.context,
+          file.id,
+          range && range !== "unsatisfiable"
+            ? { begin: range.start, end: range.end + 1 }
+            : undefined,
+        );
+        return { file, range, body } as const;
       },
     );
-    const size = value.bytes.size;
-    const etag = '"' + value.file.contentHash + '"';
-    const validator = req.headers["if-range"];
-    const range =
-      validator === undefined || validator === etag
-        ? fileByteRange(req.headers.range, size)
-        : null;
+    const size = file.size;
+    const etag = '"' + file.contentHash + '"';
     const headers = {
       "Accept-Ranges": "bytes",
       ETag: etag,
@@ -181,9 +184,6 @@ export async function handleFileRoute(
       res.end();
       return true;
     }
-    const body = range
-      ? value.bytes.slice(range.start, range.end + 1)
-      : value.bytes;
     res.writeHead(range ? 206 : 200, {
       ...headers,
       ...(range
@@ -192,8 +192,7 @@ export async function handleFileRoute(
       "Content-Type": "application/octet-stream",
       "Content-Length": String(body.size),
       "Content-Disposition":
-        "attachment; filename*=UTF-8''" +
-        encodeURIComponent(value.file.originalName),
+        "attachment; filename*=UTF-8''" + encodeURIComponent(file.originalName),
     });
     await pipeline(
       Readable.from(

@@ -59,6 +59,33 @@ export function fileBinaryContract(
       return [...new Uint8Array(await original.arrayBuffer())];
     });
     expect(original).toEqual([0, 1, 127, 128, 255]);
+    await fixture.run(workspace, async (store) => {
+      for (const [begin, end] of [
+        [1, 4],
+        [4, 5],
+        [0, 2],
+      ] as const) {
+        const part = await store.getVerifiedRange!(
+          workspace,
+          hash,
+          5,
+          begin,
+          end,
+        );
+        expect(part && [...new Uint8Array(await part.arrayBuffer())]).toEqual(
+          original.slice(begin, end),
+        );
+      }
+      await expect(
+        store.getVerifiedRange!(workspace, hash, 6, 1, 3),
+      ).rejects.toThrow("FILE_BLOB_MISSING_OR_CORRUPT");
+      await expect(
+        store.getVerifiedRange!(workspace, hash, 5, 2, 2),
+      ).rejects.toThrow("INVALID_FILE_RANGE");
+      await expect(
+        store.getVerifiedRange!("workspace-b", hash, 5, 1, 3),
+      ).rejects.toThrow("FORBIDDEN");
+    });
     await expect(
       fixture.run(workspace, async (store) => {
         const wrong = new Blob([new Uint8Array([2, 3])]);
@@ -110,6 +137,9 @@ export function fileBinaryContract(
       escaped = store;
     });
     if (!escaped) throw new Error("MISSING_BINARY_PORT");
+    await expect(
+      escaped.getVerifiedRange!(workspace, hash, 5, 0, 2),
+    ).rejects.toThrow("TRANSACTION_CLOSED");
     await expect(escaped.get(workspace, hash)).rejects.toThrow(
       "TRANSACTION_CLOSED",
     );

@@ -140,6 +140,14 @@ export interface LocalNotificationStore {
 }
 
 export interface LocalBlobStore {
+  /** Returns a half-open interval verified against the completed original identity. */
+  getVerifiedRange?(
+    workspaceId: string,
+    sha256: string,
+    size: number,
+    begin: number,
+    end: number,
+  ): Promise<Blob | null>;
   listHashes?(workspaceId: string): Promise<readonly string[]>;
   digest?(bytes: Blob): Promise<string>;
   put(workspaceId: string, expectedSha256: string, bytes: Blob): Promise<void>;

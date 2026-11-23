@@ -54,6 +54,9 @@ function PdfDialog({
 }) {
   const [pdf, setPdf] = useState<PdfPageView | null>(null);
   const [page, setPage] = useState(1);
+  const [targetPage, setTargetPage] = useState("1");
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState(false);
   const [ready, setReady] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -81,7 +84,7 @@ function PdfDialog({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [runtime, id]);
+  }, [runtime, id, attempt]);
   useEffect(() => {
     const el = canvas.current;
     if (!pdf || !el) return;
@@ -105,6 +108,9 @@ function PdfDialog({
     };
   }, [pdf, page]);
   function turn(next: number) {
+    if (!pdf || !Number.isInteger(next) || next < 1 || next > pdf.pages) return;
+    setTargetPage(String(next));
+    if (next === page) return;
     setReady(false);
     setPage(next);
   }
@@ -117,16 +123,29 @@ function PdfDialog({
     >
       <header>
         <h2>{name}</h2>
-        <Button variant="ghost" onClick={onClose}>
+        <Button ref={closeButton} variant="ghost" onClick={onClose}>
           {zh ? "关闭" : "Close"}
         </Button>
       </header>
       {error ? (
-        <p role="alert">
-          {zh
-            ? "无法显示此页。请关闭预览后重试，或下载原件。"
-            : "Could not display this page. Close the preview to retry, or download the original."}
-        </p>
+        <>
+          <p role="alert">
+            {zh
+              ? "此页未能显示。你可以重试，或关闭预览并下载原件。"
+              : "This page could not be displayed. Retry or close the preview to download the original."}
+          </p>
+          <Button
+            onClick={() => {
+              closeButton.current?.focus();
+              setReady(false);
+              setError(false);
+              setPdf(null);
+              setAttempt((previous) => previous + 1);
+            }}
+          >
+            {zh ? "重试此页" : "Retry this page"}
+          </Button>
+        </>
       ) : (
         <>
           {pdf && (
@@ -151,6 +170,32 @@ function PdfDialog({
               >
                 {zh ? "下一页" : "Next page"}
               </Button>
+              {pdf.pages > 2 && (
+                <form
+                  className="pdf-page-jump"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    turn(Number(targetPage));
+                  }}
+                >
+                  <label>
+                    {zh ? "跳至页码" : "Go to page"}
+                    <input
+                      type="number"
+                      min={1}
+                      max={pdf.pages}
+                      required
+                      inputMode="numeric"
+                      value={targetPage}
+                      onFocus={(event) => event.currentTarget.select()}
+                      onChange={(event) => setTargetPage(event.target.value)}
+                    />
+                  </label>
+                  <Button type="submit" variant="secondary">
+                    {zh ? "前往" : "Go"}
+                  </Button>
+                </form>
+              )}
             </nav>
           )}
           {!ready && (

@@ -20895,6 +20895,20 @@ test("account experience: large PDF originals read bounded pages and stop showin
     });
     await dialog.getByRole("button", { name: /^(Close|关闭)$/ }).click();
     const pattern = "**/api/v1/files/bytes?**";
+    // Retry a transient server read in place using the same authorized original.
+    await page.route(
+      pattern,
+      (route) =>
+        route.fulfill({ status: 503, body: "Temporarily unavailable" }),
+      { times: 1 },
+    );
+    await open.click();
+    await expect(dialog.getByRole("alert")).toBeVisible();
+    await dialog
+      .getByRole("button", { name: /^(Retry this page|重试此页)$/ })
+      .click();
+    await expect.poll(color).toEqual([255, 0, 0, 255]);
+    await dialog.getByRole("button", { name: /^(Close|关闭)$/ }).click();
     // Hold one real browser fetch before delivery, then close the dialog.
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
@@ -20981,4 +20995,66 @@ test("account experience: large PDF originals read bounded pages and stop showin
   } finally {
     await owner.dispose();
   }
+});
+
+test("personal PDF reading jumps directly to a page and keeps a valid page on input error", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  const { pageJumpPdf } = await import("./large-pdf-fixture");
+  await unlock(page, workbench.url, workbench.secret, words(info.project.name));
+  await page.goto(workbench.url + "/#library");
+  const name = "Field notes.pdf";
+  await page
+    .getByLabel(zh ? "上传文件" : "Upload file", { exact: true })
+    .setInputFiles({
+      name,
+      mimeType: "application/pdf",
+      buffer: pageJumpPdf(),
+    });
+  const open = page.getByRole("button", {
+    name: zh ? "查看 PDF 原始页面" : "View original PDF pages",
+    exact: true,
+  });
+  await open.click();
+  const reader = page.getByRole("dialog", { name });
+  const target = reader.getByRole("spinbutton", {
+    name: zh ? "跳至页码" : "Go to page",
+  });
+  const pixel = () =>
+    reader
+      .locator("canvas:visible")
+      .evaluate((el: HTMLCanvasElement) =>
+        Array.from(el.getContext("2d")!.getImageData(12, 12, 1, 1).data),
+      );
+  await expect.poll(pixel).toEqual([255, 0, 0, 255]);
+  await target.fill("4");
+  await target.press("Enter");
+  await expect.poll(pixel).toEqual([0, 0, 255, 255]);
+  await expect(target).toBeFocused();
+  await target.fill("5");
+  await target.press("Enter");
+  await expect(target).toBeFocused();
+  expect(
+    await target.evaluate((el: HTMLInputElement) => el.validity.rangeOverflow),
+  ).toBe(true);
+  await target.fill("2");
+  await reader
+    .getByRole("button", { name: zh ? "前往" : "Go", exact: true })
+    .click();
+  await expect.poll(pixel).toEqual([0, 255, 0, 255]);
+  await reader
+    .getByRole("button", { name: zh ? "下一页" : "Next page", exact: true })
+    .click();
+  await expect(target).toHaveValue("3");
+  await expect.poll(pixel).toEqual([255, 255, 0, 255]);
+  expect(
+    await reader.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+  ).toBe(true);
+  await page.screenshot({
+    path: info.outputPath("personal-pdf-page-jump.png"),
+  });
+  await page.keyboard.press("Escape");
+  await expect(open).toBeFocused();
 });

@@ -1,6 +1,8 @@
 import { DomainError } from "@arclattice/domain";
 import type { LocalBlobUpload, LocalChunkBlobStore } from "./local-persistence";
 
+import type { VerifiedFileRanges } from "./verified-file-ranges";
+
 export interface FileBinaryDescriptor extends LocalBlobUpload {
   readonly complete: boolean;
 }
@@ -13,7 +15,11 @@ export interface FileBinaryChunk {
 export interface FileBinaryRepository {
   descriptor(hash: string): Promise<FileBinaryDescriptor | null>;
   begin(upload: LocalBlobUpload): Promise<FileBinaryDescriptor>;
-  chunks(hash: string): Promise<readonly FileBinaryChunk[]>;
+  chunkCount(hash: string): Promise<number>;
+  chunks(
+    hash: string,
+    bounds?: { first: number; last: number },
+  ): Promise<readonly FileBinaryChunk[]>;
   putChunk(hash: string, chunk: FileBinaryChunk): Promise<void>;
   complete(hash: string): Promise<void>;
 }
@@ -21,6 +27,7 @@ export interface FileBinaryRepository {
 export function fileBinaryStore(
   workspaceId: string,
   repository: FileBinaryRepository,
+  ranges: VerifiedFileRanges,
 ): LocalChunkBlobStore {
   const scope = (workspace: string, hash: string) => {
     if (workspace !== workspaceId) throw new DomainError("FORBIDDEN");
@@ -108,6 +115,18 @@ export function fileBinaryStore(
     complete: async (workspace, hash) => {
       await verified(await descriptor(workspace, hash));
       await repository.complete(hash);
+    },
+    getVerifiedRange: async (workspace, hash, size, begin, end) => {
+      scope(workspace, hash);
+      const value = await repository.descriptor(hash);
+      if (!value?.complete) return null;
+      if (
+        value.size !== size ||
+        value.workspaceId !== workspace ||
+        value.sha256 !== hash
+      )
+        throw new Error("FILE_BLOB_MISSING_OR_CORRUPT");
+      return ranges.read(repository, value, begin, end);
     },
     get: async (workspace, hash) => {
       scope(workspace, hash);

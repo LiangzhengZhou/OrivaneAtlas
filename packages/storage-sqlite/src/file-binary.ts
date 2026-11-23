@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import {
   type FileBinaryRepository,
   fileBinaryStore,
+  type VerifiedFileRanges,
 } from "@arclattice/application";
 import type { ActorContext } from "@arclattice/domain";
 
@@ -9,6 +10,7 @@ export function binaryStore(
   db: DatabaseSync,
   actor: ActorContext,
   guard: () => void,
+  ranges: VerifiedFileRanges,
 ) {
   const repository: FileBinaryRepository = {
     descriptor: async (hash) => {
@@ -44,13 +46,31 @@ export function binaryStore(
       if (!value) throw new Error("FILE_UPLOAD_NOT_FOUND");
       return value;
     },
-    chunks: async (hash) => {
+    chunkCount: async (hash) => {
       guard();
+      return Number(
+        db
+          .prepare(
+            "SELECT count(*) AS n FROM file_blob_chunk WHERE workspace_id=? AND content_hash=?",
+          )
+          .get(actor.workspaceId, hash)?.n,
+      );
+    },
+    chunks: async (hash, bounds) => {
+      guard();
+      const query =
+        "SELECT chunk_index,chunk_hash,bytes FROM file_blob_chunk WHERE workspace_id=? AND content_hash=?";
       return db
         .prepare(
-          "SELECT chunk_index,chunk_hash,bytes FROM file_blob_chunk WHERE workspace_id=? AND content_hash=? ORDER BY chunk_index",
+          query +
+            (bounds ? " AND chunk_index BETWEEN ? AND ?" : "") +
+            " ORDER BY chunk_index",
         )
-        .all(actor.workspaceId, hash)
+        .all(
+          actor.workspaceId,
+          hash,
+          ...(bounds ? [bounds.first, bounds.last] : []),
+        )
         .map((row) => {
           if (!(row.bytes instanceof Uint8Array))
             throw new Error("FILE_BYTES_CORRUPT");
@@ -92,5 +112,5 @@ export function binaryStore(
       if (!result.changes) throw new Error("FILE_UPLOAD_NOT_FOUND");
     },
   };
-  return fileBinaryStore(actor.workspaceId, repository);
+  return fileBinaryStore(actor.workspaceId, repository, ranges);
 }

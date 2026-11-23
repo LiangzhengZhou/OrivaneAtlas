@@ -1,6 +1,7 @@
 import {
   type FileBinaryRepository,
   fileBinaryStore,
+  type VerifiedFileRanges,
 } from "@arclattice/application";
 import type { ActorContext } from "@arclattice/domain";
 import type { PoolClient } from "pg";
@@ -9,6 +10,7 @@ export function binaryStore(
   client: PoolClient,
   actor: ActorContext,
   guard: () => void,
+  ranges: VerifiedFileRanges,
 ) {
   const repository: FileBinaryRepository = {
     descriptor: async (hash) => {
@@ -46,11 +48,26 @@ export function binaryStore(
       if (!value) throw new Error("FILE_UPLOAD_NOT_FOUND");
       return value;
     },
-    chunks: async (hash) => {
+    chunkCount: async (hash) => {
       guard();
       const result = await client.query(
-        "SELECT chunk_index,chunk_hash,bytes FROM arclattice.file_blob_chunk WHERE workspace_id=$1 AND content_hash=$2 ORDER BY chunk_index",
+        "SELECT count(*) AS n FROM arclattice.file_blob_chunk WHERE workspace_id=$1 AND content_hash=$2",
         [actor.workspaceId, hash],
+      );
+      guard();
+      return Number(result.rows[0].n);
+    },
+    chunks: async (hash, bounds) => {
+      guard();
+      const query =
+        "SELECT chunk_index,chunk_hash,bytes FROM arclattice.file_blob_chunk WHERE workspace_id=$1 AND content_hash=$2";
+      const result = await client.query(
+        query +
+          (bounds ? " AND chunk_index BETWEEN $3 AND $4" : "") +
+          " ORDER BY chunk_index",
+        bounds
+          ? [actor.workspaceId, hash, bounds.first, bounds.last]
+          : [actor.workspaceId, hash],
       );
       guard();
       return result.rows.map((row) => {
@@ -94,5 +111,5 @@ export function binaryStore(
       if (!result.rowCount) throw new Error("FILE_UPLOAD_NOT_FOUND");
     },
   };
-  return fileBinaryStore(actor.workspaceId, repository);
+  return fileBinaryStore(actor.workspaceId, repository, ranges);
 }

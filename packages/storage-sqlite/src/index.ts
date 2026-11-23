@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type {
@@ -25,6 +25,7 @@ import {
   requireMutationReceipt,
   requireReviewedMutationReceiptProof,
   requireStableUuid,
+  VerifiedFileRanges,
 } from "@arclattice/application";
 import type {
   ActorContext,
@@ -174,6 +175,9 @@ export interface SqliteOptions {
 
 /** Node-only adapter. Construct through open(); never expose this object to UI. */
 export class SqliteUnitOfWork implements UnitOfWork {
+  private readonly fileRanges = new VerifiedFileRanges(() =>
+    createHash("sha256"),
+  );
   private readonly workspaceRevisions = new Map<string, number>();
   private readonly workspaceListeners = new Map<string, Set<() => void>>();
   workspaceRevision(workspaceId: string): number {
@@ -942,7 +946,7 @@ export class SqliteUnitOfWork implements UnitOfWork {
               projectStore(this.db, context, guard),
               agentSessionStore(this.db, context, guard),
               fileStore(this.db, context, guard),
-              binaryStore(this.db, context, guard),
+              binaryStore(this.db, context, guard, this.fileRanges),
               entityMemoStore(this.db, context, guard),
               folderLinkStore(this.db, context, guard),
               folderLinkTargets(this.db, context, guard),
