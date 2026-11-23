@@ -194,11 +194,15 @@ export class LocalRuntime {
 
   moveFolderLink(input: import("./folder-links").MoveFolderLinkInput) {
     const captured = structuredClone(input);
-    return this.restartAbortedWorkspaceWrite(() =>
-      this.workspace.run(
-        (services) => services.folderLinks.move(this.context, captured),
-        () => ({ name: "folderLink.move", input: localDto(captured) }),
-      ),
+    // A recovered queue can acknowledge several unrelated revisions in a
+    // burst. Yield between fresh transactions; keep the captured link CAS.
+    return this.restartAbortedWorkspaceWrite(
+      () =>
+        this.workspace.run(
+          (services) => services.folderLinks.move(this.context, captured),
+          () => ({ name: "folderLink.move", input: localDto(captured) }),
+        ),
+      [0, 0, 25, 50, 100, 200, 400, 800],
     );
   }
 
@@ -706,19 +710,22 @@ export class LocalRuntime {
   }
   private async restartAbortedWorkspaceWrite<T>(
     operation: () => Promise<T>,
+    retryDelaysMs: readonly number[] = [0, 0],
   ): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       try {
         return await operation();
       } catch (error) {
         if (
-          attempt >= 2 ||
+          attempt >= retryDelaysMs.length ||
           !(error instanceof LocalStorageError) ||
           error.code !== "VERSION_CONFLICT" ||
           error.conflict?.collection !== "$local.workspace" ||
           error.conflict.entityId !== "revision"
         )
           throw error;
+        const delay = retryDelaysMs[attempt];
+        if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }

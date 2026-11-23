@@ -367,6 +367,7 @@ export async function bootstrap() {
   const lockKey = "atlas.revoked-replica." + activeWorkspace.databaseName;
   const accessEvents = new EventTarget();
   let replicaLocked = false;
+  let replicaLockVersion = 0;
   try {
     replicaLocked =
       !!activeWorkspace.remote && sessionStorage.getItem(lockKey) === "1";
@@ -376,6 +377,7 @@ export async function bootstrap() {
   function setReplicaLocked(value: boolean) {
     if (replicaLocked === value) return;
     replicaLocked = value;
+    if (value) replicaLockVersion++;
     try {
       if (value) sessionStorage.setItem(lockKey, "1");
       else sessionStorage.removeItem(lockKey);
@@ -2938,6 +2940,7 @@ export async function bootstrap() {
     },
     replicaAccess: {
       locked: () => replicaLocked,
+      lockVersion: () => replicaLockVersion,
       subscribe(listener: () => void) {
         accessEvents.addEventListener("change", listener);
         return () => accessEvents.removeEventListener("change", listener);
