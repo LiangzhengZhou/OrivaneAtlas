@@ -15,18 +15,19 @@
 
 ### 本轮检查点与恢复顺序
 
-产品提交 `eeef72c` 已快进合入主工作树，最新检查点提交用 `git log -1 -- docs/ux-upgrade/PROGRESS.md` 获取。2026-11-24 03:08（+08:00）在本机核对如下。各后台任务使用隔离夹具和独立输出目录。
+产品提交 `eeef72c` 已快进合入主工作树，随后 `3b84038` 收紧了 E2E 等待源集合确认的条件，最新检查点提交用 `git log -1 -- docs/ux-upgrade/PROGRESS.md` 获取。2026-11-24 03:24（+08:00）在本机核对如下。各后台任务使用隔离夹具和独立输出目录。
 
 |任务|现场状态与保护范围|
 |---|---|
 |db711d7 全量检查|已结束，307 个测试文件、1588 个测试、两项构建全部通过。793.60 秒是 Vitest 时长，日志 `.artifacts/ux400/check-db711d7-r2.log`。|
 |eeef72c 整页集合移动|此前 5 项成功、55 项未移动；修复后的真实浏览器两次均完成 60/60，核对 60 份原始正文、30 个文档的 spaceId 和一条第三集合关联。专项合同 14/14。日志 `collection-page.log`、`collection-retry.log`、`collection-retry-contract.log`。|
-|eeef72c 完整检查|主工作树 PID 53456，`.artifacts/ux400/check-eeef72c.log`。当时类型检查已通过，Vitest 在运行。|
-|57cdd9e 完整浏览器|独立工作树 `../ArcLattice-ux-graph`，PID 31128 / 53312，`.artifacts/ux400/browser-57cdd9e.log`，已启动第 483/837 项。保持该工作树、构建目录、宿主及输出。|
-|eeef72c 完整浏览器|独立工作树 `../ArcLattice-ux401`，分支 `codex/ux-collection-contention`，PID 41420 正等待上行全量结束以复用旧测试的固定端口。构建通过，清单 15 文件、840 项。原排队 db711d7 的浏览器任务在尚未启动前由本修复版本替代。新日志 `.artifacts/ux400/browser-eeef72c.log` 会在实际开始后出现。|
-|平台与可访问性|真实 Windows Tauri 四步、Android ARM64/JNI 构建、11 月 24 日 03:11 离线重跑 JVM 7/7（通知 4、更新 3）、38/38 深色流程及 18/18 强制色与减少动态效果流程已完成。无 Android 真机/模拟器镜像，真人读屏与系统安装升级未验证。|
+|eeef72c 完整检查|类型检查、构建通过，Vitest 306 个文件/1587 项通过，1 个文件/1 项因未指定原生测试程序跳过。指定本轮测试 EXE 后对原生传输单独重跑 1/1。记录在 `check-eeef72c.log`、`native-check-eeef72c.log`。|
+|3b84038 含原生传输的完整检查|主工作树 PID 46816，`.artifacts/ux400/check-3b84038-native.log`；使用 ATLAS_NATIVE_TEST_EXE 指定已验证的本地 Rust 测试程序。|
+|57cdd9e 完整浏览器|独立工作树 `../ArcLattice-ux-graph`，PID 31128 / 53312，`.artifacts/ux400/browser-57cdd9e.log`，已启动第 699/837 项。保持该工作树、构建目录、宿主及输出。|
+|eeef72c 完整浏览器|独立工作树 `../ArcLattice-ux401`，分支 `codex/ux-collection-contention`，其产品代码为 eeef72c，测试已在运行前更新到 3b84038。PID 41420 正等待上行全量结束以复用旧测试的固定端口。构建通过，清单 15 文件、840 项。原排队 db711d7 的浏览器任务在尚未启动前由本修复版本替代。新日志 `.artifacts/ux400/browser-eeef72c.log` 会在实际开始后出现。|
+|平台与可访问性|真实 Windows Tauri 四步、Android ARM64/JNI 构建、11 月 24 日 03:11 离线重跑 JVM 7/7（通知 4、更新 3）、eeef72c 的强制色与减少动态效果 18/18、3b84038 更新等待条件后完整深色 38/38（4.1 分钟）。392 组布局、28 组页面无障碍树与回退五阶段在该产品代码上已复测。无 Android 真机/模拟器镜像，真人读屏与系统安装升级未验证。|
 
-恢复先读 `docs/HANDOFF.md`，核对 `git status --short --branch`、`git rev-parse HEAD`、`git worktree list`，用 `Get-Process -Id 31128,53312,41420,53456 -ErrorAction SilentlyContinue` 和上述日志判断各任务终态。若测试失败，按确切标题、提交、trace 在新的输出目录重跑。测试运行期间保留相应工作树及 dist。
+恢复先读 `docs/HANDOFF.md`，核对 `git status --short --branch`、`git rev-parse HEAD`、`git worktree list`，用 `Get-Process -Id 31128,53312,41420,46816 -ErrorAction SilentlyContinue` 和上述日志判断各任务终态。若测试失败，按确切标题、提交、trace 在新的输出目录重跑。测试运行期间保留相应工作树及 dist。
 
 接下来在 `tests/e2e/work.spec.ts` 的账户/资源流程覆盖持有已开详情时撤销会话、再次打开搜索与下载，以及中断整页移动后重新打开。依 ADR0108/0124 区分已登录所有者、细粒度凭据和设备上保存的离线副本。用 2 个合成主体逐项核对原件和元数据。大文件在 `apps/web/src/features/files/PdfOriginalPreview.tsx`、`packages/file-parsers/src/pdf-page-view.ts` 和应用层取件契约接入可取消的受权分段源；以 evidence/session400/large-pdf.mjs 的 18 MiB 夹具比对首屏、在途请求、内存及下载摘要。其他模块继续按 [§13 验收台账](ACCEPTANCE.md) 和 [问题列表](ISSUES.md) 执行。
 

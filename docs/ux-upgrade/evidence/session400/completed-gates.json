@@ -1,0 +1,119 @@
+[
+  {
+    "log": "full-browser.log",
+    "sha256": "4268f210174a5d198eb80477bbc519f529875da13ada24ae1f7f88f830a2da46",
+    "terminal": ["828 passed (56.9m)"]
+  },
+  {
+    "log": "check-db711d7-r2.log",
+    "sha256": "c9680a78d7ea72ce8245505c0c0a2490518eeb5de77b598d2821624388d62e46",
+    "terminal": [
+      "Tasks:    11 successful, 11 total",
+      "Test Files  307 passed (307)",
+      "Tests  1588 passed (1588)",
+      "Duration  793.60s (tests 96%, import 3%, transform 1%)",
+      "Tasks:    2 successful, 2 total"
+    ]
+  },
+  {
+    "log": "check-eeef72c.log",
+    "sha256": "a2ee2977c6a56ec09094999b231e3e5311d58a6ee16063d5505b468d43b67bd4",
+    "terminal": [
+      "Tasks:    11 successful, 11 total",
+      "Test Files  306 passed | 1 skipped (307)",
+      "Tests  1587 passed | 1 skipped (1588)",
+      "Duration  686.72s (tests 96%, import 3%, transform 1%)",
+      "Tasks:    2 successful, 2 total"
+    ]
+  },
+  {
+    "log": "native-check-eeef72c.log",
+    "sha256": "47a66128f671c054ece9cd0a635ab8941e5a66370e6b10075dad428b3571620d",
+    "terminal": [
+      "Test Files  1 passed (1)",
+      "Tests  1 passed (1)",
+      "Duration  6.92s (transform 60%, tests 32%, import 7%)"
+    ]
+  },
+  {
+    "log": "native-release.log",
+    "sha256": "c04b99b45a13d94238199612743407af5a2ff743198a9c0afe6acae6a1de2139",
+    "terminal": [
+      "Finished `release` profile [optimized] target(s) in 1m 08s",
+      "test result: ok. 32 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 8.02s"
+    ]
+  },
+  {
+    "log": "android-arm64.log",
+    "sha256": "d86dcecf295016b8e834b8eb6ce269da1903503274463bb9e0c499fe11b5b21f",
+    "terminal": ["Finished `release` profile [optimized] target(s) in 7m 05s"]
+  },
+  {
+    "log": "android-jvm.log",
+    "sha256": "ec124df28a4ca7ea8c1f5e943d756c290fc9465797e6eefa28a3e1cc409f1e45",
+    "terminal": ["BUILD SUCCESSFUL in 46s"]
+  },
+  {
+    "log": "collection-page.log",
+    "sha256": "e8ad0b2f78c06ea500a9dddb6c0de5edd17da02aeaf9090cfaefa70c6b0e3f9f",
+    "terminal": ["1 failed"]
+  },
+  {
+    "log": "collection-retry.log",
+    "sha256": "24f8269359b806c084919e172db071c9d897dab1e12e1a5481902efd59909109",
+    "terminal": ["2 passed (24.9s)"]
+  },
+  {
+    "log": "collection-retry-contract.log",
+    "sha256": "a419edec4d9e54d2811c865d59a2695da13d8dbfa6f3716c187be270b496f57a",
+    "terminal": [
+      "Test Files  3 passed (3)",
+      "Tests  14 passed (14)",
+      "Duration  3.84s (transform 83%, import 11%, tests 4%, setup 2%, worker 1%)"
+    ]
+  },
+  {
+    "log": "dark-eeef72c.log",
+    "sha256": "38db77aebfdaeb4cdacf136bfeb591cad716a3abef04f1d2e6c9780c43fb2901",
+    "terminal": ["1 failed", "37 passed (4.3m)"]
+  },
+  {
+    "log": "collection-dark-r2.log",
+    "sha256": "85015a2637e721c4cbf5242079b9a727480a1f977d5bb8f7a43a13ff9e47185f",
+    "terminal": ["6 passed (1.1m)"]
+  },
+  {
+    "log": "dark-3b84038.log",
+    "sha256": "1f1944d1a745588c9dd8dd81dfe6b5d485585d308fbc5e0753d6c2e29e66d6eb",
+    "terminal": ["38 passed (4.1m)"]
+  },
+  {
+    "log": "assistive-eeef72c.log",
+    "sha256": "d8ffd9638be8805934275514b84f1015881a7db43715f61e3a8e195c415931d3",
+    "terminal": ["18 passed (1.8m)"]
+  },
+  {
+    "log": "wiki-activation.log",
+    "sha256": "05af4868862457fc88b5a8d61572ce974b73ea885181a2bcc2507a2fc652f0ae",
+    "terminal": ["3 passed (22.1s)"]
+  },
+  {
+    "log": "upgrade-eeef72c.log",
+    "sha256": "d6fd57a3962849014df71fa98d0d3c67c23c407da5225d278d43127837ad1059",
+    "terminal": [
+      "Five stages preserved the same link, theme and downloaded SHA-256"
+    ]
+  },
+  {
+    "log": "layout-eeef72c.log",
+    "sha256": "10a471d83b5ea8e6f76d75a2cd15c52a681b7931b3e00671264a586d8af3442c",
+    "terminal": ["392 measured, 0 outside layout bounds"]
+  },
+  {
+    "log": "ax-eeef72c.log",
+    "sha256": "62d5daca44c868efc0b4ae998e329cc19443811a956297e053461ea36f05622f",
+    "terminal": [
+      "28 routes checked, 0 with unnamed controls or incorrect main landmarks"
+    ]
+  }
+]

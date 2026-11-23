@@ -1,6 +1,6 @@
 # Session 400 变更文件
 
-范围为本地 9929884 到 eeef72c。根目录 CHANGELOG.md 的 Unreleased 说明、阶段报告、四份台账、恢复手册和 evidence/session400 另随检查点提交。
+范围为本地 9929884 到 eeef72c。3b84038 后续在同一 tests/e2e/work.spec.ts 中收紧服务端确认条件。根目录 CHANGELOG.md 的 Unreleased 说明、阶段报告、四份台账、恢复手册和 evidence/session400 另随检查点提交。
 
 |状态|路径|
 |---|---|

@@ -6,6 +6,8 @@
 
 细粒度凭据读取混合资源关联需 `knowledge:read` 及 `files:read`，项目关联需 `knowledge:read` 及 `projects:read`。审核调用方原本需要的能力，权限不足时返回 403。历史凭据不能写新增移动路由。首次分发时连同静态资产提供本版 `openapi.json`。正式文件原件 GET 经过原先的读取授权与完整校验后可响应单个 Range，断点重试携带响应的强 ETag。历史项目附件导入仍使用其原来的版本约束。生产部署版本和平台升级包无本轮证据。本轮 Windows 使用新测试标识及独立 WebView2 用户目录构建并运行未签名夹具，见 evidence/session400/windows-calendar.json。2026-11-24 02:51 查询既有 ADB 服务，已连接和就绪设备均为 0；既有 SDK 有 Android 35 平台及 NDK，缺少 emulator 和系统镜像。
 
+本轮候选 eeef72c 使用同一隔离浏览器副本完成五阶段回退，基线 da0105e，证据包含每一阶段的深链、脚本与原件摘要。复核命令为 `node scripts/rehearse-ux-web-upgrade.mjs .artifacts/ux398/account399-web .artifacts/ux400/collection-retry-web <新的输出目录>`。[原始结果](evidence/session400/web-upgrade-eeef72c.json)
+
 NDK 26.1 以 API 24 目标构建 Android ARM64 原生库，ELF64、AArch64 和 JNI 符号已验证。源自 bdc9d1c 工作树，原生源码至 db711d7 无变化。编译 7 分 5 秒，5 条编译器警告。二进制摘要见 [ARM64 构建证据](evidence/session400/android-arm64.json)。离线重跑 Android JVM 通知与更新策略 7/7，通过 Gradle 的两份 JUnit XML 核对，未打安装包。安装升级、Android 软键盘与生命周期仍须设备验收。
 
 # 升级候选的兼容与回滚
