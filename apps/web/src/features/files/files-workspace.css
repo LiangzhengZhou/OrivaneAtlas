@@ -527,3 +527,28 @@
 .files-selection-toolbar input {
   accent-color: var(--accent);
 }
+
+.files-folder-breadcrumb ol {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+}
+.files-folder-breadcrumb li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.files-folder-breadcrumb li button {
+  white-space: normal;
+  text-align: start;
+}
+.files-folder-breadcrumb li > [aria-hidden] {
+  color: var(--text-secondary);
+}

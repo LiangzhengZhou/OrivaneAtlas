@@ -18977,6 +18977,20 @@ test("space cover uploads and can be removed", async ({
     })
     .click();
   await expect(cover.locator("img")).toHaveCount(0);
+  const back = page.getByRole("button", {
+    name: zh ? "返回知识空间" : "Back to spaces",
+    exact: true,
+  });
+  await back.click();
+  await expect(back).toHaveCount(0);
+  const graph = page.locator(".library-toolbar").getByRole("button", {
+    name: zh ? "知识图谱" : "Knowledge graph",
+    exact: true,
+  });
+  await graph.click();
+  await expect(graph).toHaveAttribute("aria-expanded", "true");
+  await graph.click();
+  await expect(graph).toHaveAttribute("aria-expanded", "false");
 });
 
 test("task saved views apply a named grouping", async ({
@@ -19655,6 +19669,17 @@ test("resource collections show scoped paths and preserve the document when its 
     name: zh ? "集合文件夹" : "Collection folder",
   });
   await folder.selectOption({ label: "Projects / Coastal survey" });
+  const trail = browser.getByRole("navigation", {
+    name: zh ? "集合路径" : "Collection path",
+  });
+  await expect(trail.locator('[aria-current="location"]')).toHaveText(
+    "Coastal survey",
+  );
+  await trail.getByRole("button", { name: "Projects", exact: true }).click();
+  await expect(folder).toBeFocused();
+  await expect(folder).toHaveValue(parent);
+  await expect(browser.locator(".files-resource-row")).toHaveCount(0);
+  await folder.selectOption(child);
   await expect(browser.locator(".files-resource-row")).toHaveCount(1);
   await browser.getByRole("button", { name: /Sampling method ·/ }).click();
   const facts = browser.locator(".files-detail-facts");
@@ -20057,4 +20082,30 @@ test("mixed resource selection reports partial trash and recovers a nested docum
       deletedAt: null,
       version: child.version + 2,
     });
+});
+
+test("first keyboard stop skips shell navigation without changing the resource route", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, words(info.project.name));
+  await page.goto(workbench.url + "/#files");
+  await page.reload();
+  const main = page.locator("main.workspace-main");
+  await expect(main.locator(".files-resource-browser")).toBeVisible();
+  await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+  await page.keyboard.press("Tab");
+  const skip = page.getByRole("link", {
+    name: zh ? "跳到主要内容" : "Skip to main content",
+  });
+  await expect(skip).toBeFocused();
+  await expect(skip).toBeInViewport();
+  await page.keyboard.press("Enter");
+  await expect(main).toBeFocused();
+  await expect(page).toHaveURL(/#files$/);
+  await page.keyboard.press("Tab");
+  await expect
+    .poll(() => main.evaluate((el) => el.contains(document.activeElement)))
+    .toBe(true);
 });

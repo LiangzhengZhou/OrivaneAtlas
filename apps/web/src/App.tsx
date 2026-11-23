@@ -1854,6 +1854,18 @@ function Workbench({
                   collapsed={sidebarCollapsed}
                   mobileOpen={mobileNavigationOpen}
                 >
+                  <a
+                    className="workspace-skip-link"
+                    href="#workspace-main"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      document.getElementById("workspace-main")?.focus();
+                    }}
+                  >
+                    {i18n.language.startsWith("zh")
+                      ? "跳到主要内容"
+                      : "Skip to main content"}
+                  </a>
                   <ToastHost />
                   {commandOpen && (
                     <CommandPalette
@@ -2033,7 +2045,11 @@ function Workbench({
                       });
                     }}
                   />
-                  <main className="workspace-main">
+                  <main
+                    className="workspace-main"
+                    id="workspace-main"
+                    tabIndex={-1}
+                  >
                     <DocumentWorkspace
                       request={documentRequest}
                       visible={documentVisible}

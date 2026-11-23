@@ -12,6 +12,8 @@ export interface ResourceFolderSource {
 interface CatalogFolder {
   id: string;
   path: string;
+  name: string;
+  parentId: string | null;
   projects: Map<string, string>;
   spaces: Map<string, string>;
 }
@@ -50,6 +52,9 @@ export function indexResourceFolders(
     folders.set(folder.id, {
       id: folder.id,
       path: path.join(" / "),
+      name: folder.name ?? "",
+      parentId:
+        folder.parentId && live.has(folder.parentId) ? folder.parentId : null,
       projects: new Map(),
       spaces: new Map(),
     });

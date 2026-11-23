@@ -45,6 +45,8 @@ interface ResourceRow {
   title: string;
   location: string;
   updatedAt: string;
+  createdAt: string;
+  directProjectIds?: ReadonlySet<string> | undefined;
   version: number;
   parentDocumentId?: string | null | undefined;
   icon: string;
@@ -193,6 +195,7 @@ export function FilesWorkspace({
             title: note.title || (zh ? "未命名笔记" : "Untitled note"),
             location: getFolderLabel(note) || (zh ? "未归档" : "Unfiled"),
             updatedAt: note.updatedAt,
+            createdAt: note.createdAt,
             version: note.version,
             icon: getIcon(note),
             folderKey: getFolderKey(note),
@@ -203,6 +206,8 @@ export function FilesWorkspace({
         key: `DOCUMENT:${entry.id}`,
         version: entry.version,
         kind: "DOCUMENT" as const,
+        createdAt: entry.createdAt,
+        directProjectIds: projectIds,
         parentDocumentId: entry.parentDocumentId,
         title: entry.title || (zh ? "未命名文档" : "Untitled document"),
         location,
@@ -216,6 +221,8 @@ export function FilesWorkspace({
         key: `FILE:${entry.id}`,
         version: entry.version,
         kind: "FILE" as const,
+        createdAt: entry.createdAt,
+        directProjectIds: projectIds,
         parentDocumentId: entry.parentDocumentId,
         title: entry.name,
         location,
@@ -263,7 +270,25 @@ export function FilesWorkspace({
   }, [collectionRows]);
   const deferredQuery = useDeferredValue(query);
   const searched = deferredQuery.trim().toLocaleLowerCase(i18n.language);
+  const folderPicker = useRef<HTMLSelectElement>(null);
   const activeFolder = catalog.folderIndex.folders.get(generalFolder);
+  const folderTrail = useMemo(() => {
+    const trail: { id: string; name: string }[] = [];
+    const visited = new Set<string>();
+    let cursor = activeFolder;
+    while (cursor && !visited.has(cursor.id)) {
+      trail.push(cursor);
+      visited.add(cursor.id);
+      cursor = cursor.parentId
+        ? catalog.folderIndex.folders.get(cursor.parentId)
+        : undefined;
+    }
+    return trail.reverse();
+  }, [activeFolder, catalog.folderIndex.folders]);
+  function browseAncestor(id: string) {
+    setGeneralFolder(id);
+    folderPicker.current?.focus();
+  }
   const visible = useMemo(
     () =>
       collectionRows
@@ -458,6 +483,16 @@ export function FilesWorkspace({
       </div>
       <dl className="files-detail-facts">
         <div>
+          <dt>{zh ? "创建时间" : "Created"}</dt>
+          <dd>
+            <time dateTime={selectedRow.createdAt}>
+              {new Date(selectedRow.createdAt).toLocaleDateString(
+                i18n.language,
+              )}
+            </time>
+          </dd>
+        </div>
+        <div>
           <dt>{zh ? "更新时间" : "Updated"}</dt>
           <dd>
             {new Date(selectedRow.updatedAt).toLocaleDateString(i18n.language, {
@@ -470,6 +505,14 @@ export function FilesWorkspace({
           <dt>{zh ? "关联位置" : "Linked location"}</dt>
           <dd>{selectedRow.location || (zh ? "工作区" : "Workspace")}</dd>
         </div>
+        {!!selectedRow.directProjectIds?.size && (
+          <div>
+            <dt>{zh ? "直接关联项目" : "Direct project links"}</dt>
+            {[...selectedRow.directProjectIds].map((id) => (
+              <dd key={id}>{catalog.projectNames.get(id)}</dd>
+            ))}
+          </div>
+        )}
         {linkedFolders.length > 0 && (
           <div>
             <dt>{zh ? "所属集合" : "Collections"}</dt>
@@ -739,6 +782,7 @@ export function FilesWorkspace({
           <label className="files-collection-filter">
             {zh ? "集合文件夹" : "Collection folder"}
             <Select
+              ref={folderPicker}
               value={activeFolder?.id ?? ""}
               onChange={(event) => setGeneralFolder(event.target.value)}
             >
@@ -750,6 +794,35 @@ export function FilesWorkspace({
               ))}
             </Select>
           </label>
+        )}
+        {activeFolder && (
+          <nav
+            className="files-folder-breadcrumb"
+            aria-label={zh ? "集合路径" : "Collection path"}
+          >
+            <ol>
+              <li>
+                <Button variant="text" onClick={() => browseAncestor("")}>
+                  {zh ? "所有集合" : "All collections"}
+                </Button>
+              </li>
+              {folderTrail.map((folder) => (
+                <li key={folder.id}>
+                  <span aria-hidden="true">/</span>
+                  {folder.id === activeFolder.id ? (
+                    <span aria-current="location">{folder.name}</span>
+                  ) : (
+                    <Button
+                      variant="text"
+                      onClick={() => browseAncestor(folder.id)}
+                    >
+                      {folder.name}
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </nav>
         )}
         {catalog.projects.length > 0 && (
           <div className="files-project-folders">

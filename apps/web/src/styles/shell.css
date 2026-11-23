@@ -567,3 +567,21 @@ body {
     display: none;
   }
 }
+
+.workspace-skip-link {
+  position: fixed;
+  inset-block-start: max(8px, env(safe-area-inset-top));
+  inset-inline-start: max(8px, env(safe-area-inset-left));
+  z-index: 100;
+  transform: translateY(calc(-100% - max(12px, env(safe-area-inset-top))));
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+.workspace-skip-link:focus {
+  transform: none;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

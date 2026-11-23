@@ -407,18 +407,21 @@ export function LibraryView({
           type="button"
           variant="toggle"
           aria-pressed={graphOpen}
+          aria-expanded={graphOpen}
           onClick={() => setGraphOpen(!graphOpen)}
         >
           {zh ? "知识图谱" : "Knowledge graph"}
         </Button>
 
-        <Button
-          variant="secondary"
-          type="button"
-          onClick={() => setSpaceId(null)}
-        >
-          {t("back")}
-        </Button>
+        {spaceId && (
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={() => setSpaceId(null)}
+          >
+            {t("back")}
+          </Button>
+        )}
         <Button variant="primary" type="button" onClick={() => open()}>
           <Plus size={16} />
           {t(space ? "newLecture" : "newSpace")}
