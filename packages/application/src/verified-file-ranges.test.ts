@@ -4,21 +4,28 @@ import { VerifiedFileRanges } from "./verified-file-ranges";
 
 const sha = () => createHash("sha256");
 const digest = (bytes: Uint8Array) => sha().update(bytes).digest("hex");
-function fixture() {
-  const source = Buffer.from("abcdefg");
-  const rows = [0, 2, 4, 6].map((start, index) => {
-    const bytes = source.subarray(start, start + 2);
-    return { index, bytes, hash: digest(bytes) };
-  });
+function fixture(
+  source = Buffer.from("abcdefg"),
+  chunkSize = 2,
+  proofs = new VerifiedFileRanges(sha),
+  workspaceId = "personal",
+) {
+  const rows = Array.from(
+    { length: Math.ceil(source.length / chunkSize) },
+    (_, index) => {
+      const bytes = source.subarray(index * chunkSize, (index + 1) * chunkSize);
+      return { index, bytes, hash: digest(bytes) };
+    },
+  );
   const file = {
-    workspaceId: "personal",
+    workspaceId,
     size: source.length,
     sha256: digest(source),
-    chunkSize: 2,
+    chunkSize,
     complete: true,
     mime: "application/pdf",
   };
-  const reads: number[][] = [];
+  const reads: [number, number][] = [];
   const repo = {
     chunkCount: async () => rows.length,
     chunks: async (_hash: string, bounds?: { first: number; last: number }) => {
@@ -27,7 +34,6 @@ function fixture() {
       return rows.slice(bounds.first, bounds.last + 1);
     },
   };
-  const proofs = new VerifiedFileRanges(sha);
   return {
     rows,
     reads,
@@ -59,4 +65,30 @@ test("subsequent ranges verify the selected bytes against the original even if t
     [3, 3],
     [2, 2],
   ]);
+});
+
+test("historical one-byte chunks above the manifest budget are scanned in bounded batches on each read", async () => {
+  const f = fixture(Buffer.alloc(1025, 65), 1);
+  expect(await (await f.read(1024, 1025)).text()).toBe("A");
+  expect(f.reads).toHaveLength(9);
+  expect(f.reads.every(([first, last]) => last - first + 1 <= 128)).toBe(true);
+  const bytes = Buffer.from("X");
+  f.rows[0] = { index: 0, bytes, hash: digest(bytes) };
+  await expect(f.read(1024, 1025)).rejects.toThrow("FILE_HASH_MISMATCH");
+});
+test("identical originals in distinct workspaces establish their own proofs and evicted originals are reverified", async () => {
+  const proofs = new VerifiedFileRanges(sha);
+  const workspaces = Array.from({ length: 17 }, (_, index) =>
+    fixture(Buffer.from("abcd"), 2, proofs, "workspace-" + index),
+  );
+  for (const f of workspaces) {
+    expect(await (await f.read(0, 1)).text()).toBe("a");
+    expect(f.reads).toEqual([[0, 1]]);
+  }
+  const first = workspaces[0]!,
+    last = workspaces[16]!;
+  await last.read(0, 1);
+  await first.read(0, 1);
+  expect(last.reads.at(-1)).toEqual([0, 0]);
+  expect(first.reads.at(-1)).toEqual([0, 1]);
 });
