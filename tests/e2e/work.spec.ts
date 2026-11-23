@@ -19734,3 +19734,57 @@ test("journal date navigation opens the selected original without creating anoth
     }),
   ]);
 });
+
+test("resource browser finds identical originals and keeps same-name files distinct", async ({
+  page,
+  workbench,
+}, info) => {
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, words(info.project.name));
+  await page.goto(workbench.url + "/#files");
+  const library = page.locator(".files-resource-browser");
+  const view = library.getByRole("combobox", {
+    name: zh ? "个人资源视图" : "Personal resource view",
+  });
+  await view.selectOption("duplicates");
+  await expect(
+    library.getByText(
+      zh
+        ? "当前工作区没有内容相同的文件。"
+        : "No files in this workspace have identical content.",
+    ),
+  ).toBeVisible();
+  await library.locator("input[type=file]").setInputFiles([
+    {
+      name: "Field copy.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("fixture A"),
+    },
+    {
+      name: "Archive.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("fixture A"),
+    },
+    {
+      name: "Field copy.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("fixture B"),
+    },
+  ]);
+  const rows = library.locator(".files-resource-row");
+  await expect(rows).toHaveCount(2);
+  await library.getByRole("button", { name: /Archive\.txt ·/ }).click();
+  const details = library.locator(".files-detail-panel");
+  await expect(
+    details.getByText(zh ? "工作区内共 2 项" : "2 in this workspace"),
+  ).toBeVisible();
+  await expect(
+    details.getByText("Field copy.txt", { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({ path: info.outputPath("duplicate-originals.png") });
+  await details
+    .getByRole("button", { name: zh ? "关闭详情" : "Close details" })
+    .click();
+  await view.selectOption("all");
+  await expect(rows).toHaveCount(3);
+});

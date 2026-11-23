@@ -52,6 +52,19 @@ export function selectResourceCatalog(
     (note) => visible(note) && note.kind === "NOTE",
   );
   const files = source.files.filter(visible);
+  const byContent = new Map<string, LibraryFile[]>();
+  for (const file of files) {
+    if (!/^[0-9a-f]{64}$/.test(file.contentHash)) continue;
+    const key = file.contentHash + ":" + file.size;
+    const group = byContent.get(key);
+    if (group) group.push(file);
+    else byContent.set(key, [file]);
+  }
+  const duplicateFiles = new Map<string, readonly LibraryFile[]>();
+  for (const group of byContent.values()) {
+    if (group.length > 1)
+      for (const file of group) duplicateFiles.set(file.id, group);
+  }
   const documents = entries.filter((entry) => entry.kind === "DOCUMENT");
   const resourceKeys = new Set([
     ...notes.map((n) => "NOTE:" + n.id),
@@ -71,6 +84,7 @@ export function selectResourceCatalog(
       spaceNames,
     ),
     projectNames,
+    duplicateFiles,
     projects,
     notes,
     documents: documents.map((entry) => ({

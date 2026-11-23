@@ -87,6 +87,26 @@ test("catalog preserves typed memberships and uses only live rows in the authori
       { ...material, id: "m5", kind: "FILE", workspaceId: "other" },
     ],
   });
+  const hashed = { ...file, contentHash: "a".repeat(64) };
+  const copy = { ...hashed, id: "copy", name: "different-name.pdf" };
+  const grouped = selectResourceCatalog("atlas", {
+    notes: [],
+    library: [],
+    projects: [],
+    materials: [],
+    files: [
+      hashed,
+      copy,
+      { ...hashed, id: "same-name", contentHash: "b".repeat(64) },
+      { ...hashed, id: "wrong-size", size: 99 },
+      { ...hashed, id: "other", workspaceId: "other" },
+      { ...hashed, id: "removed", deletedAt: shared.updatedAt },
+      { ...hashed, id: "legacy-a", contentHash: "" },
+      { ...hashed, id: "legacy-b", contentHash: "" },
+    ],
+  });
+  expect([...grouped.duplicateFiles.keys()]).toEqual([hashed.id, copy.id]);
+  expect(grouped.duplicateFiles.get(copy.id)).toEqual([hashed, copy]);
   expect(result.documents).toEqual([
     { entry: document, location: "Fieldwork", projectIds: new Set(["a", "b"]) },
   ]);

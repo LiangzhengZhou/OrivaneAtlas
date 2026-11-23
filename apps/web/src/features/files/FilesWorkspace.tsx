@@ -114,9 +114,9 @@ export function FilesWorkspace({
   const zh = i18n.language.startsWith("zh");
   const titleId = useId();
   const shortcuts = useResourceShortcuts(scopeKey);
-  const [collection, setCollection] = useState<"all" | "favorites" | "recent">(
-    "all",
-  );
+  const [collection, setCollection] = useState<
+    "all" | "favorites" | "recent" | "duplicates"
+  >("all");
   const favoriteKeys = useMemo(
     () => new Set(shortcuts.favorites),
     [shortcuts.favorites],
@@ -230,12 +230,17 @@ export function FilesWorkspace({
     return result;
   }, [catalog, libraryOnly, zh, getFolderKey, getFolderLabel, getIcon]);
   const collectionRows = useMemo(() => {
+    if (collection === "duplicates")
+      return rows.filter(
+        (row) =>
+          row.ref?.kind === "FILE" && catalog.duplicateFiles.has(row.ref.id),
+      );
     if (collection === "favorites")
       return rows.filter((row) => favoriteKeys.has(row.key));
     if (collection === "recent")
       return rows.filter((row) => recentOrder.has(row.key));
     return rows;
-  }, [collection, rows, favoriteKeys, recentOrder]);
+  }, [collection, rows, favoriteKeys, recentOrder, catalog.duplicateFiles]);
   const projectCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of collectionRows)
@@ -368,6 +373,10 @@ export function FilesWorkspace({
     return () => media.removeEventListener("change", update);
   }, []);
   const selectedRow = pageRows.find((row) => row.key === selectedKey) ?? null;
+  const matchingFiles =
+    selectedRow?.ref?.kind === "FILE"
+      ? catalog.duplicateFiles.get(selectedRow.ref.id)
+      : undefined;
   const linkedFolders = Array.from(
     catalog.folderIndex.memberships.get(selectedRow?.key ?? "") ?? [],
     (id) => catalog.folderIndex.folders.get(id)!,
@@ -468,6 +477,22 @@ export function FilesWorkspace({
                 )}
               </dd>
             ))}
+          </div>
+        )}
+        {matchingFiles && (
+          <div>
+            <dt>{zh ? "相同内容的文件" : "Files with identical content"}</dt>
+            <dd>
+              {zh
+                ? `工作区内共 ${matchingFiles.length} 项`
+                : `${matchingFiles.length} in this workspace`}
+            </dd>
+            {matchingFiles
+              .filter((file) => file.id !== selectedRow.ref?.id)
+              .slice(0, 5)
+              .map((file) => (
+                <dd key={file.id}>{file.name}</dd>
+              ))}
           </div>
         )}
         {selectedRow.mime && (
@@ -663,6 +688,9 @@ export function FilesWorkspace({
             >
               <option value="all">{zh ? "所有条目" : "All items"}</option>
               <option value="favorites">{zh ? "收藏" : "Favorites"}</option>
+              <option value="duplicates">
+                {zh ? "重复文件" : "Duplicate files"}
+              </option>
               <option value="recent">
                 {zh ? "最近打开" : "Recently opened"}
               </option>
@@ -954,21 +982,25 @@ export function FilesWorkspace({
               <span>
                 {searched
                   ? t("noResults")
-                  : collection === "favorites" && !collectionRows.length
+                  : collection === "duplicates" && !collectionRows.length
                     ? zh
-                      ? "在资源详情中收藏条目，即可在这里找到。"
-                      : "Choose Favorite in resource details to keep an item here."
-                    : collection === "recent" && !collectionRows.length
+                      ? "当前工作区没有内容相同的文件。"
+                      : "No files in this workspace have identical content."
+                    : collection === "favorites" && !collectionRows.length
                       ? zh
-                        ? "从资源中心打开的条目会出现在这里。"
-                        : "Items you open from the resource center appear here."
-                      : folderFilter !== null && kind === "NOTE"
+                        ? "在资源详情中收藏条目，即可在这里找到。"
+                        : "Choose Favorite in resource details to keep an item here."
+                      : collection === "recent" && !collectionRows.length
                         ? zh
-                          ? "这个文件夹还没有笔记。"
-                          : "This folder has no notes yet."
-                        : zh
-                          ? "上传文件或创建笔记即可开始整理。"
-                          : "Upload a file or create a note to start your collection."}
+                          ? "从资源中心打开的条目会出现在这里。"
+                          : "Items you open from the resource center appear here."
+                        : folderFilter !== null && kind === "NOTE"
+                          ? zh
+                            ? "这个文件夹还没有笔记。"
+                            : "This folder has no notes yet."
+                          : zh
+                            ? "上传文件或创建笔记即可开始整理。"
+                            : "Upload a file or create a note to start your collection."}
               </span>
               {(searched ||
                 projectFilter ||
