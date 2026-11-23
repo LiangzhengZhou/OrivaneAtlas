@@ -1,0 +1,56 @@
+{
+  "source": "60553a4",
+  "repetitions": [
+    {
+      "browser": "153.0.8010.12",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "notes": 30,
+      "documents": 30,
+      "clearedMs": 6761,
+      "displayedMs": 6874,
+      "canonicalMs": 7346,
+      "canonicalMovesWhileLocked": 1,
+      "recoveredAfterReauth": true,
+      "unchangedOriginals": 60,
+      "unchangedThirdMembership": 1,
+      "reopened": 60
+    },
+    {
+      "browser": "153.0.8010.12",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "notes": 30,
+      "documents": 30,
+      "clearedMs": 5916,
+      "displayedMs": 6008,
+      "canonicalMs": 6988,
+      "canonicalMovesWhileLocked": 1,
+      "recoveredAfterReauth": true,
+      "unchangedOriginals": 60,
+      "unchangedThirdMembership": 1,
+      "reopened": 60
+    },
+    {
+      "browser": "153.0.8010.12",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "notes": 30,
+      "documents": 30,
+      "clearedMs": 6305,
+      "displayedMs": 6467,
+      "canonicalMs": 6931,
+      "canonicalMovesWhileLocked": 1,
+      "recoveredAfterReauth": true,
+      "unchangedOriginals": 60,
+      "unchangedThirdMembership": 1,
+      "reopened": 60
+    }
+  ]
+}

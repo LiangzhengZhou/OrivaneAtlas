@@ -1,0 +1,68 @@
+[
+  {
+    "profile": "desktop-en",
+    "size": 18875129,
+    "ranges": [
+      {
+        "status": 206,
+        "length": 262144,
+        "interval": "bytes 0-262143/18875129"
+      },
+      {
+        "status": 206,
+        "length": 262144,
+        "interval": "bytes 18612224-18874367/18875129"
+      },
+      {
+        "status": 206,
+        "length": 761,
+        "interval": "bytes 18874368-18875128/18875129"
+      }
+    ],
+    "sha256": "cbcef6f5d63d2e40dcdac8314331c80b3434c91e34178464d133bc8cd92885f3"
+  },
+  {
+    "profile": "desktop-zh",
+    "size": 18875129,
+    "ranges": [
+      {
+        "status": 206,
+        "length": 262144,
+        "interval": "bytes 0-262143/18875129"
+      },
+      {
+        "status": 206,
+        "length": 262144,
+        "interval": "bytes 18612224-18874367/18875129"
+      },
+      {
+        "status": 206,
+        "length": 761,
+        "interval": "bytes 18874368-18875128/18875129"
+      }
+    ],
+    "sha256": "cbcef6f5d63d2e40dcdac8314331c80b3434c91e34178464d133bc8cd92885f3"
+  },
+  {
+    "profile": "mobile-zh",
+    "size": 18875129,
+    "ranges": [
+      {
+        "status": 206,
+        "length": 262144,
+        "interval": "bytes 0-262143/18875129"
+      },
+      {
+        "status": 206,
+        "length": 262144,
+        "interval": "bytes 18612224-18874367/18875129"
+      },
+      {
+        "status": 206,
+        "length": 761,
+        "interval": "bytes 18874368-18875128/18875129"
+      }
+    ],
+    "sha256": "cbcef6f5d63d2e40dcdac8314331c80b3434c91e34178464d133bc8cd92885f3"
+  }
+]

@@ -1,0 +1,182 @@
+[
+  {
+    "log": "ux400/browser-57cdd9e.log",
+    "revision": "57cdd9e",
+    "suite": "全量浏览器",
+    "status": "passed",
+    "sha256": "d11bf89b0e609a99261a4ecd5b435c70ee5bf63ddbdc171732c3d85af16491cf",
+    "terminal": ["837 passed (57.5m)"]
+  },
+  {
+    "log": "ux400/browser-eeef72c.log",
+    "revision": "3b84038",
+    "suite": "全量浏览器",
+    "status": "passed",
+    "sha256": "76240df9628c8818b07792a13df1ad2f9ee25a3769df164a57bfcf9cddb7a931",
+    "terminal": ["840 passed (48.4m)"]
+  },
+  {
+    "log": "ux400/check-3b84038-native.log",
+    "revision": "3b84038",
+    "suite": "含原生可执行文件的 pnpm check",
+    "status": "passed",
+    "sha256": "f1a9b51ceaa36963f211dd4b42603f895608cb53210fa94b6432bec5a355c1bb",
+    "terminal": [
+      "Architecture boundaries passed.",
+      "Tasks:    11 successful, 11 total",
+      "Test Files  307 passed (307)",
+      "Tests  1588 passed (1588)",
+      "Duration  655.80s (tests 96%, import 2%, transform 1%)",
+      "Tasks:    2 successful, 2 total"
+    ]
+  },
+  {
+    "log": "ux401/check-r2.log",
+    "revision": "54a6f07",
+    "suite": "pnpm check（六个 initdb 设置阶段失败）",
+    "status": "failed",
+    "sha256": "1699c1999d892ef1ad19e449b7b70c281b659a74eab1d1080c13a6be23de4e27",
+    "terminal": [
+      "Tasks:    11 successful, 11 total",
+      "Test Files  6 failed | 302 passed (308)",
+      "Tests  1515 passed | 75 skipped (1590)",
+      "Duration  640.53s (tests 92%, transform 4%, import 4%)",
+      "[ELIFECYCLE] Test failed. See above for more details.",
+      "[ELIFECYCLE] Command failed with exit code 1."
+    ]
+  },
+  {
+    "log": "ux401/full-browser.log",
+    "revision": "54a6f07",
+    "suite": "浏览器，复现图片 401 误锁；已替换候选",
+    "status": "superseded",
+    "sha256": "27017f357f2663e0b7c297cb1647f409440e79506612d0907d9c9f362e3b071b",
+    "terminal": ["[ELIFECYCLE] Command failed with exit code 4294967295."]
+  },
+  {
+    "log": "ux401/browser-4d4ecfc.log",
+    "revision": "4d4ecfc",
+    "suite": "浏览器，已替换为含集合恢复修复的候选",
+    "status": "superseded",
+    "sha256": "3af73b73e3cb5fbf0e53b21a2a0fedade2ae0d85dde63180e7c45f38bf2ec2ae",
+    "terminal": ["[ELIFECYCLE] Command failed with exit code 4294967295."]
+  },
+  {
+    "log": "ux401/scoped-recheck.log",
+    "revision": "24f1df3",
+    "suite": "图片和 PDF 权限，检出重复退出",
+    "status": "failed",
+    "sha256": "50408c6403790ba319c8bb6c32da9101023908770738babe06cd1e8fc9666a5a",
+    "terminal": ["3 failed", "6 passed (7.0m)"]
+  },
+  {
+    "log": "ux401/account-exit.log",
+    "revision": "4d4ecfc",
+    "suite": "账户退出、文档图片、最近项目与 PDF",
+    "status": "passed",
+    "sha256": "f2fa888126326b5171231c5558bfed2cb7f352126620868b4b30cb5a14cc782a",
+    "terminal": ["12 passed (5.0m)"]
+  },
+  {
+    "log": "ux401/recovery-feedback.log",
+    "revision": "4d4ecfc",
+    "suite": "中断回执后恢复移动，发现工作区修订持续竞争",
+    "status": "failed",
+    "sha256": "dc0fb3279fc1ab7f7448a9b766ad3f96eafb3636bf4beb1807dba0a32774ab0b",
+    "terminal": ["1 failed"]
+  },
+  {
+    "log": "ux401/recovery-confirmed.log",
+    "revision": "60553a4",
+    "suite": "三次 60 项中断、撤权与恢复",
+    "status": "passed",
+    "sha256": "a75cc335191ee615925832da559a0c9b3b0cda88cc0a795110f3d12a61b17478",
+    "terminal": ["3 passed (1.0m)"]
+  },
+  {
+    "log": "ux401/page-cancel.log",
+    "revision": "54a6f07",
+    "suite": "PDF 网络级取消及三配置撤权",
+    "status": "passed",
+    "sha256": "c60eb465d99b97fbbbaf8e7dbcd6191973d632b90dba93f0ade2f6380d22e9f9",
+    "terminal": ["3 passed (53.7s)"]
+  },
+  {
+    "log": "ux401/dark-pdf.log",
+    "revision": "54a6f07",
+    "suite": "深色桌面与移动",
+    "status": "passed",
+    "sha256": "ea77afe02a83c88345cc83bcbbfc469237e486ac90da3293dc0464b171b4f1c2",
+    "terminal": ["2 passed (49.4s)"]
+  },
+  {
+    "log": "ux401/draft.log",
+    "revision": "54a6f07",
+    "suite": "恢复未提交编辑器文本",
+    "status": "passed",
+    "sha256": "6a7b880b0768c97ddb1d8b0bf47d24a7ccf8a7bb2bd9b3403c2f8eb85295463a",
+    "terminal": ["1 passed (26.5s)"]
+  },
+  {
+    "log": "ux401/web-contract.log",
+    "revision": "54a6f07",
+    "suite": "206 及取消",
+    "status": "passed",
+    "sha256": "9c6a65aea38c74c2b0eaca3677a72f492dd7062488ec14c21d57b67fb3a507a3",
+    "terminal": [
+      "Test Files  1 passed (1)",
+      "Tests  2 passed (2)",
+      "Duration  5.46s (transform 90%, import 8%, tests 1%, setup 1%)"
+    ]
+  },
+  {
+    "log": "ux401/revocation.log",
+    "revision": "54a6f07",
+    "suite": "撤销细粒度凭据",
+    "status": "passed",
+    "sha256": "94ee145d6296a470627dfbf8a9b30203ead0299c2720f8b96758b9cd499f072e",
+    "terminal": [
+      "Test Files  1 passed (1)",
+      "Tests  1 passed | 125 skipped (126)",
+      "Duration  9.68s (transform 60%, tests 26%, import 13%)"
+    ]
+  },
+  {
+    "log": "ux401/rust-lease.log",
+    "revision": "54a6f07",
+    "suite": "Rust 原生测试与原件请求生命周期",
+    "status": "passed-with-ignored",
+    "sha256": "acfddb66be77c21bd425d6cb71efa0c86da28bd46ae7276d3947be520a37ef19",
+    "terminal": [
+      "Finished `release` profile [optimized] target(s) in 28.30s",
+      "test result: ok. 34 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 8.35s"
+    ]
+  },
+  {
+    "log": "ux401/android-r2.log",
+    "revision": "54a6f07",
+    "suite": "Android ARM64 Release 编译",
+    "status": "passed",
+    "sha256": "faa071470c17bd7a9d3fe94393c769e8ce75030d37f6b085a0580936eba4a062",
+    "terminal": ["Finished `release` profile [optimized] target(s) in 1m 46s"]
+  },
+  {
+    "log": "ux401/windows-build.log",
+    "revision": "54a6f07",
+    "suite": "隔离 Windows Tauri 未签名夹具构建",
+    "status": "passed",
+    "sha256": "4e11ec83172c1f5564a9b94e4448322d4bf0fb0c8ecddc2aa251b3b24dece861",
+    "terminal": [
+      "Finished `release` profile [optimized] target(s) in 8m 55s",
+      "Built application at: D:\\Lib\\Codex_workplace\\ArcLattice\\.artifacts\\ux401\\windows-target\\release\\arclattice.exe"
+    ]
+  },
+  {
+    "log": "ux401/final-lint-r2.log",
+    "revision": "60553a4 及本地证据",
+    "suite": "Biome 与边界检查",
+    "status": "passed",
+    "sha256": "7e8cc038bbe4d04b8ef01648b2d0c54c8a80fba1b85f172869ab0d15af58cc10",
+    "terminal": ["Architecture boundaries passed."]
+  }
+]

@@ -1,0 +1,17 @@
+{
+  "browser": "153.0.8010.12",
+  "source": "Isolated offline workspace, actual file input and download",
+  "fixtureBytes": 18874810,
+  "sourceSha256": "bd29c773482b7809eca470fa710158aa0f2b9f9b05410dcd6b5cd6cb1b359a8e",
+  "downloadedSha256": "bd29c773482b7809eca470fa710158aa0f2b9f9b05410dcd6b5cd6cb1b359a8e",
+  "previewButtonPresent": true,
+  "firstPageMs": 2928,
+  "detailReadyMs": 1921,
+  "downloadedMs": 6376,
+  "samples": 48,
+  "samplingIntervalMs": 125,
+  "rendererMainThreadJsHeapBefore": 11017688,
+  "rendererMainThreadJsHeapMaxObserved": 13174356,
+  "backingStorageBefore": 3130863,
+  "backingStorageMaxObserved": 97735191
+}

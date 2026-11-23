@@ -5,7 +5,8 @@
 - Move selected notes, documents and files between collections using the keyboard, touch controls or drag and drop. Documents keep their original space, and a resource can still belong to other collections.
 - Jump to a rendered Markdown heading and resume at the same passage when returning to an open tab. Search within the current knowledge graph, page through all matches and bring the selected nodes into view in either theme.
 - Switch between month, week, day and agenda without losing the selected date. Scheduled occurrences appear with their recorded status.
-- Resume an authorized original-file download using a single byte range and a strong ETag. Previewing PDF originals larger than 16 MiB remains pending.
+- Resume an authorized original-file download using a single byte range and a strong ETag. Open original PDFs up to the 100 MiB file limit and turn pages on demand. Online requests validate the original hash and stop when the preview closes.
+- Lock an open account workspace when its server session is confirmed revoked. Signing in as the original owner restores the active editor and its unsaved draft.
 - Upgrade the Host before clients. First workspace activation now receives stored Wiki link identities and versions. A client that encounters an older manifest can retry after the Host update. This batch uses the existing schema. See the [upgrade and rollback notes](docs/ux-upgrade/RELEASE-READINESS.md).
 
 ## [3.0.3]

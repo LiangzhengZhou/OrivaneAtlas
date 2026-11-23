@@ -156,10 +156,109 @@ test("move a full page of 60 collection members and reopen the canonical destina
       .click();
     const confirm = page.getByRole("dialog", { name: "Confirm action" });
     await expect(confirm).toContainText("Reviewed");
+    // Optional recovery rehearsal: retain one committed response while the
+    // owner revokes the browser, then verify all association IDs after recovery.
+    const interrupt = process.env.ATLAS_BENCH_REVOKE_MOVE === "1";
+    let markCommitted!: () => void, releaseReply!: () => void;
+    const committed = new Promise<void>((resolve) => {
+      markCommitted = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      releaseReply = resolve;
+    });
+    const moveRoute = /\/api\/(?:v1\/)?folders\/move(?:\?|$)/;
+    if (interrupt) {
+      await page.route(
+        moveRoute,
+        async (route) => {
+          const upstream = await route.fetch();
+          try {
+            expect(upstream.status()).toBe(200);
+            markCommitted();
+            await held;
+            await route.fulfill({ response: upstream }).catch(() => undefined);
+          } finally {
+            await upstream.dispose();
+          }
+        },
+        { times: 1 },
+      );
+    }
     const start = performance.now();
     await confirm.getByRole("button", { name: "Confirm", exact: true }).click();
+    let atRevocation: number | undefined;
+    if (interrupt) {
+      try {
+        await committed;
+        await mutate("account/sessions/revoke", { all: true });
+        await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+        await expect(
+          page.getByRole("heading", { name: "Sign back in to your workspace" }),
+        ).toBeVisible();
+        await expect(browserView).toBeHidden();
+      } finally {
+        releaseReply();
+        await page.unroute(moveRoute);
+      }
+      // Re-authenticate the independent auditor before reading canonical state.
+      const loginReply = await request.post(origin + "/api/session", {
+        headers: { Origin: origin },
+        data: { username: "collectionreader", password: secret },
+      });
+      expect(loginReply.status()).toBe(200);
+      await loginReply.dispose();
+      const during = await snapshot();
+      atRevocation = (during.folderLinks as Association[]).filter(
+        (item) => item.folderId === folders[1] && !item.deletedAt,
+      ).length;
+      expect(atRevocation).toBe(1);
+      const login = page.locator(".login-form");
+      await login
+        .locator("input[autocomplete=username]")
+        .fill("collectionreader");
+      await login.locator("input[type=password]").fill(secret);
+      await login.locator("button[type=submit]").click();
+      await expect(browserView).toBeVisible();
+      const { waitForLocalReplay } = await import(
+        "../../../../tests/e2e/replica-evidence"
+      );
+      await waitForLocalReplay(page);
+      // Reopen the persisted replica after resolving the interrupted receipt.
+      await page.reload();
+      await expect(browserView).toBeVisible();
+      // Previously enqueued work can replay. Explicitly finish only the rows
+      // that still belong to the source collection on this device.
+      await folder.selectOption(folders[0]);
+      const remaining = browserView.locator(".files-resource-row");
+      if (await remaining.count()) {
+        const selectPage = browserView.getByRole("checkbox", {
+          name: "Select this page",
+        });
+        if (!(await selectPage.isVisible()))
+          await browserView
+            .getByRole("button", { name: "Select items", exact: true })
+            .click();
+        await selectPage.check();
+        await browserView
+          .getByRole("combobox", {
+            name: "Destination collection",
+            exact: true,
+          })
+          .selectOption(folders[1]);
+        await browserView
+          .getByRole("button", { name: "Move to selected collection" })
+          .click();
+        await info.attach("recovery-selection", {
+          body: await confirm.innerText(),
+          contentType: "text/plain",
+        });
+        await confirm
+          .getByRole("button", { name: "Confirm", exact: true })
+          .click();
+      }
+    }
     await expect(browserView.locator(".files-resource-row")).toHaveCount(0, {
-      timeout: 120000,
+      timeout: interrupt ? 30000 : 120000,
     });
     const clearedMs = Math.round(performance.now() - start);
     await folder.selectOption(folders[1]);
@@ -235,6 +334,12 @@ test("move a full page of 60 collection members and reopen the canonical destina
           clearedMs,
           displayedMs,
           canonicalMs,
+          ...(interrupt
+            ? {
+                canonicalMovesWhileLocked: atRevocation,
+                recoveredAfterReauth: true,
+              }
+            : {}),
           unchangedOriginals: 60,
           unchangedThirdMembership: 1,
           reopened: 60,
