@@ -85,7 +85,7 @@ import { WorkspaceRouter } from "./app/WorkspaceRouter";
 import { type Runtime, readPreference, savePreference } from "./bootstrap";
 import { Button, Toolbar } from "./components/ui/Button";
 import { confirmAction } from "./components/ui/ConfirmationHost";
-import { Popover, Select } from "./components/ui/Surfaces";
+import { Select } from "./components/ui/Surfaces";
 import { DocumentWorkspace, type WorkspaceRequest } from "./DocumentWorkspace";
 import { AssistantPane } from "./features/ai/AssistantPane";
 import { AtlasFloatingSurface } from "./features/ai/AtlasFloatingSurface";
@@ -408,8 +408,6 @@ function Workbench({
     !loading && (!documentVisible || view === "graph"),
   );
   const searchQuery = useDebouncedValue(query, 200);
-  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
-  const advancedFiltersAnchor = useRef<HTMLButtonElement>(null);
   const [showFileLibrary, setShowFileLibrary] = useState(
     () => localStorage.getItem("orivane-atlas.file-library-visible") !== "0",
   );
@@ -1908,6 +1906,123 @@ function Workbench({
       "ai",
     ] as string[]
   ).includes(view);
+  const taskFilterFields = view === "tasks" && (
+    <Toolbar className="filter-bar">
+      <div className="task-project-filter">
+        <span>{t("project")}</span>
+        <div className="project-filter-picker">
+          <Button
+            type="button"
+            variant="toggle"
+            aria-pressed={projectFilter === "ALL"}
+            onClick={() => setProjectFilter("ALL")}
+          >
+            {t("all")}
+          </Button>
+          <Button
+            type="button"
+            variant="toggle"
+            aria-pressed={projectFilter === "NONE"}
+            onClick={() => setProjectFilter("NONE")}
+          >
+            {t("noProject")}
+          </Button>
+          <ProjectDrilldownPicker
+            mode="single"
+            projects={projects}
+            value={
+              ["ALL", "NONE"].includes(projectFilter) ? null : projectFilter
+            }
+            onChange={(value) =>
+              setProjectFilter(typeof value === "string" ? value : "ALL")
+            }
+          />
+        </div>{" "}
+      </div>
+      <label>
+        <span>{t("status")}</span>
+        <Select
+          aria-label={t("status")}
+          value={status}
+          onChange={(event) => {
+            const next = event.target.value;
+            setStatus(next);
+            if (view === "tasks")
+              setTaskPresentation((current) => ({
+                ...current,
+                tab:
+                  next === "DONE"
+                    ? "completed"
+                    : next === "ALL"
+                      ? "all"
+                      : "now",
+              }));
+          }}
+        >
+          <option value="ALL">{t("all")}</option>
+          <option value="UNFINISHED">{t("unfinishedTasks")}</option>
+          {workStatuses.map((s) => (
+            <option key={s} value={s}>
+              {t("work:statuses." + s)}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <label>
+        <span>{t("priority")}</span>
+        <Select
+          aria-label={t("priority")}
+          value={priority}
+          onChange={(event) => setPriority(event.target.value)}
+        >
+          <option value="ALL">{t("all")}</option>
+          {priorities.map((p) => (
+            <option key={p} value={p}>
+              {t("work:priorities." + p)}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <label className="sort-control">
+        <span>{t("sort")}</span>
+        <Select
+          aria-label={t("sort")}
+          value={sort}
+          onChange={(event) => setSort(event.target.value)}
+        >
+          <option value="updated">{t("recentlyUpdated")}</option>
+          <option value="manual">
+            {i18n.language.startsWith("zh") ? "自定义顺序" : "Custom order"}
+          </option>
+          <option value="due">
+            {i18n.language.startsWith("zh") ? "截止时间" : "Due date"}
+          </option>
+          <option value="priority">{t("priority")}</option>
+          <option value="title">{t("title")}</option>
+        </Select>
+      </label>
+      <label>
+        <span>{t("activationState")}</span>
+        <Select
+          aria-label={t("activationState")}
+          value={activationFilter}
+          onChange={(event) => setActivationFilter(event.target.value)}
+        >
+          <option value="ALL">{t("all")}</option>
+          <option value="ACTIVE">{t("activationStates.ACTIVE")}</option>
+          <option value="INACTIVE">{t("activationStates.INACTIVE")}</option>
+        </Select>
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={showArchived}
+          onChange={(e) => setShowArchived(e.target.checked)}
+        />
+        {t("showArchived")}
+      </label>
+    </Toolbar>
+  );
   const createAction = !(
     [
       "graph",
@@ -2860,187 +2975,6 @@ function Workbench({
                             }
                             actions={createAction}
                           />
-                          {view === "tasks" && (
-                            <section className="task-query-panel">
-                              <Toolbar className="filter-bar">
-                                <div className="task-project-filter">
-                                  <span>{t("project")}</span>
-                                  <div className="project-filter-picker">
-                                    <Button
-                                      type="button"
-                                      variant="toggle"
-                                      aria-pressed={projectFilter === "ALL"}
-                                      onClick={() => setProjectFilter("ALL")}
-                                    >
-                                      {t("all")}
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="toggle"
-                                      aria-pressed={projectFilter === "NONE"}
-                                      onClick={() => setProjectFilter("NONE")}
-                                    >
-                                      {t("noProject")}
-                                    </Button>
-                                    <ProjectDrilldownPicker
-                                      mode="single"
-                                      projects={projects}
-                                      value={
-                                        ["ALL", "NONE"].includes(projectFilter)
-                                          ? null
-                                          : projectFilter
-                                      }
-                                      onChange={(value) =>
-                                        setProjectFilter(
-                                          typeof value === "string"
-                                            ? value
-                                            : "ALL",
-                                        )
-                                      }
-                                    />
-                                  </div>{" "}
-                                </div>
-                                <label>
-                                  <span>{t("status")}</span>
-                                  <Select
-                                    aria-label={t("status")}
-                                    value={status}
-                                    onChange={(event) => {
-                                      const next = event.target.value;
-                                      setStatus(next);
-                                      if (view === "tasks")
-                                        setTaskPresentation((current) => ({
-                                          ...current,
-                                          tab:
-                                            next === "DONE"
-                                              ? "completed"
-                                              : next === "ALL"
-                                                ? "all"
-                                                : "now",
-                                        }));
-                                    }}
-                                  >
-                                    <option value="ALL">{t("all")}</option>
-                                    <option value="UNFINISHED">
-                                      {t("unfinishedTasks")}
-                                    </option>
-                                    {workStatuses.map((s) => (
-                                      <option key={s} value={s}>
-                                        {t("work:statuses." + s)}
-                                      </option>
-                                    ))}
-                                  </Select>
-                                </label>
-                                <label>
-                                  <span>{t("priority")}</span>
-                                  <Select
-                                    aria-label={t("priority")}
-                                    value={priority}
-                                    onChange={(event) =>
-                                      setPriority(event.target.value)
-                                    }
-                                  >
-                                    <option value="ALL">{t("all")}</option>
-                                    {priorities.map((p) => (
-                                      <option key={p} value={p}>
-                                        {t("work:priorities." + p)}
-                                      </option>
-                                    ))}
-                                  </Select>
-                                </label>
-                                <label className="sort-control">
-                                  <span>{t("sort")}</span>
-                                  <Select
-                                    aria-label={t("sort")}
-                                    value={sort}
-                                    onChange={(event) =>
-                                      setSort(event.target.value)
-                                    }
-                                  >
-                                    <option value="updated">
-                                      {t("recentlyUpdated")}
-                                    </option>
-                                    {view === "tasks" && (
-                                      <option value="manual">
-                                        {i18n.language.startsWith("zh")
-                                          ? "自定义顺序"
-                                          : "Custom order"}
-                                      </option>
-                                    )}
-                                    <option value="due">
-                                      {i18n.language.startsWith("zh")
-                                        ? "截止时间"
-                                        : "Due date"}
-                                    </option>
-                                    <option value="priority">
-                                      {t("priority")}
-                                    </option>
-                                    <option value="title">{t("title")}</option>
-                                  </Select>
-                                </label>
-                                <Button
-                                  ref={advancedFiltersAnchor}
-                                  aria-expanded={advancedFiltersOpen}
-                                  onClick={() =>
-                                    setAdvancedFiltersOpen((value) => !value)
-                                  }
-                                >
-                                  {i18n.language.startsWith("zh")
-                                    ? "更多筛选"
-                                    : "More filters"}
-                                </Button>
-                                {advancedFiltersOpen && (
-                                  <Popover
-                                    anchorRef={advancedFiltersAnchor}
-                                    label={
-                                      i18n.language.startsWith("zh")
-                                        ? "更多筛选"
-                                        : "More filters"
-                                    }
-                                    onDismiss={() =>
-                                      setAdvancedFiltersOpen(false)
-                                    }
-                                  >
-                                    {" "}
-                                    {view === "tasks" && (
-                                      <label>
-                                        <span>{t("activationState")}</span>
-                                        <Select
-                                          aria-label={t("activationState")}
-                                          value={activationFilter}
-                                          onChange={(event) =>
-                                            setActivationFilter(
-                                              event.target.value,
-                                            )
-                                          }
-                                        >
-                                          <option value="ALL">
-                                            {t("all")}
-                                          </option>
-                                          <option value="ACTIVE">
-                                            {t("activationStates.ACTIVE")}
-                                          </option>
-                                          <option value="INACTIVE">
-                                            {t("activationStates.INACTIVE")}
-                                          </option>
-                                        </Select>
-                                      </label>
-                                    )}
-                                    <label>
-                                      <input
-                                        type="checkbox"
-                                        checked={showArchived}
-                                        onChange={(e) =>
-                                          setShowArchived(e.target.checked)
-                                        }
-                                      />
-                                      {t("showArchived")}
-                                    </label>
-                                  </Popover>
-                                )}
-                              </Toolbar>
-                            </section>
-                          )}
                           {view === "files" ? (
                             <FilesWorkspace
                               key={resourceScopeKey}
@@ -3163,6 +3097,46 @@ function Workbench({
                           ) : view === "tasks" ? (
                             <TasksRoute
                               presentationStore={taskPresentationStore}
+                              filterFields={taskFilterFields}
+                              filterLabels={[
+                                projectFilter === "NONE"
+                                  ? t("noProject")
+                                  : projectFilter !== "ALL"
+                                    ? (projects.find(
+                                        (p) => p.id === projectFilter,
+                                      )?.title ?? t("project"))
+                                    : "",
+                                status !== "UNFINISHED" && status !== "ALL"
+                                  ? t("work:statuses." + status)
+                                  : "",
+                                priority !== "ALL"
+                                  ? t("work:priorities." + priority)
+                                  : "",
+                                activationFilter !== "ALL"
+                                  ? t("activationStates." + activationFilter)
+                                  : "",
+                                showArchived ? t("showArchived") : "",
+                              ].filter(Boolean)}
+                              sortLabel={
+                                sort === "updated"
+                                  ? ""
+                                  : sort === "manual"
+                                    ? i18n.language.startsWith("zh")
+                                      ? "自定义顺序"
+                                      : "Custom order"
+                                    : t(sort === "due" ? "dueDate" : sort)
+                              }
+                              searching={Boolean(normalizedQuery)}
+                              loading={loading}
+                              onCreate={create}
+                              onClearFilters={() => {
+                                setQuery("");
+                                setProjectFilter("ALL");
+                                setStatus("UNFINISHED");
+                                setPriority("ALL");
+                                setActivationFilter("ALL");
+                                setShowArchived(false);
+                              }}
                               runtime={runtime}
                               context={context}
                               snapshot={snapshot}

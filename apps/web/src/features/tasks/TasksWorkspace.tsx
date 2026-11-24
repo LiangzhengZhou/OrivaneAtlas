@@ -20,6 +20,7 @@ import {
 } from "./saved-task-views";
 import { TaskGantt } from "./TaskGantt";
 import { TaskTimeline } from "./TaskTimeline";
+import "./personal-tasks.css";
 export type TaskPresentation = {
   tab: "now" | "later" | "scheduled" | "completed" | "all";
   view: "list" | "board" | "timeline";
@@ -96,6 +97,8 @@ export function TasksWorkspace({
   onPresentationChange,
   timelineMode = "timeline",
   filterControls,
+  viewActions,
+  emptyList,
   ...props
 }: WorkProps & {
   initialTab?: "now" | "later" | "scheduled" | "completed" | "all";
@@ -106,6 +109,8 @@ export function TasksWorkspace({
   onPresentationChange?(state: TaskPresentation): void;
   timelineMode?: "timeline" | "gantt";
   filterControls?: ReactNode;
+  viewActions?: ReactNode;
+  emptyList?: ReactNode;
 }) {
   const { t, i18n } = useTranslation("desk");
   const { t: tWork } = useTranslation("work");
@@ -161,7 +166,7 @@ export function TasksWorkspace({
   const zh = i18n.language.startsWith("zh");
   const chooseTab = (next: TaskPresentation["tab"]) => {
     if (!presentation) setTab(next);
-    onPresentationChange?.({ tab: next, view });
+    onPresentationChange?.({ tab: next, view, group });
   };
   const selected = props.taskIndex;
   const scopedCollections = useMemo(() => {
@@ -212,26 +217,84 @@ export function TasksWorkspace({
       setSelectedIds(new Set());
     }
   }, [view]);
+  const scopeCount = (
+    <span
+      className="muted"
+      data-testid="task-scope-count"
+      data-count={items.length}
+    >
+      {t("taskWorkspace.count", { count: items.length })}
+    </span>
+  );
   return (
     <section className="tasks-workspace">
       <Toolbar
         className="organization-toolbar"
-        role="tablist"
+        role="toolbar"
         aria-label={t("tasks")}
       >
-        {(["now", "later", "scheduled"] as const).map((value) => (
-          <Button
-            type="button"
-            role="tab"
-            aria-selected={tab === value}
-            variant="toggle"
-            aria-pressed={tab === value}
-            key={value}
-            onClick={() => chooseTab(value)}
-          >
-            {t("taskWorkspace." + value)}
-          </Button>
-        ))}
+        <div
+          className="task-scope-tabs"
+          role="tablist"
+          aria-label={zh ? "任务范围" : "Task scope"}
+        >
+          {(["now", "later", "scheduled"] as const).map((value) => (
+            <Button
+              type="button"
+              role="tab"
+              tabIndex={
+                tab === value ||
+                (value === "now" && (tab === "completed" || tab === "all"))
+                  ? 0
+                  : -1
+              }
+              onKeyDown={(event) => {
+                if (
+                  event.altKey ||
+                  event.ctrlKey ||
+                  event.metaKey ||
+                  event.shiftKey ||
+                  event.nativeEvent.isComposing
+                )
+                  return;
+                const buttons = Array.from(
+                  event.currentTarget.parentElement!.querySelectorAll<HTMLButtonElement>(
+                    '[role="tab"]',
+                  ),
+                );
+                const index = buttons.indexOf(event.currentTarget);
+                let next: HTMLButtonElement | undefined;
+                switch (event.key) {
+                  case "ArrowRight":
+                    next = buttons[(index + 1) % buttons.length];
+                    break;
+                  case "ArrowLeft":
+                    next =
+                      buttons[(index + buttons.length - 1) % buttons.length];
+                    break;
+                  case "Home":
+                    next = buttons[0];
+                    break;
+                  case "End":
+                    next = buttons.at(-1);
+                    break;
+                  default:
+                    return;
+                }
+                event.preventDefault();
+                next?.focus();
+                next?.click();
+              }}
+              aria-selected={tab === value}
+              variant="toggle"
+              aria-pressed={tab === value}
+              key={value}
+              onClick={() => chooseTab(value)}
+            >
+              {t("taskWorkspace." + value)}
+            </Button>
+          ))}
+        </div>
         <TaskScopeMenu
           tab={tab}
           onChoose={chooseTab}
@@ -317,37 +380,36 @@ export function TasksWorkspace({
               : t("taskWorkspace.select")}
           </Button>
         )}
-        <span
-          className="muted"
-          data-testid="task-scope-count"
-          data-count={items.length}
-        >
-          {items.length} {t("tasks")}
-        </span>
+
+        {!viewActions && scopeCount}
       </Toolbar>
-      <SegmentedControl<"list" | "board" | "timeline">
-        label={t("tasks")}
-        value={view}
-        options={[
-          { value: "list", label: t("taskWorkspace.list") },
-          { value: "board", label: t("taskWorkspace.board") },
-          {
-            value: "timeline",
-            label:
-              timelineMode === "gantt"
-                ? zh
-                  ? "甘特图"
-                  : "Gantt"
-                : zh
-                  ? "时间线"
-                  : "Timeline",
-          },
-        ]}
-        onChange={(next) => {
-          if (!presentation) setView(next);
-          onPresentationChange?.({ tab, view: next });
-        }}
-      />
+      <div className="task-view-tools">
+        <SegmentedControl<"list" | "board" | "timeline">
+          label={t("tasks")}
+          value={view}
+          options={[
+            { value: "list", label: t("taskWorkspace.list") },
+            { value: "board", label: t("taskWorkspace.board") },
+            {
+              value: "timeline",
+              label:
+                timelineMode === "gantt"
+                  ? zh
+                    ? "甘特图"
+                    : "Gantt"
+                  : zh
+                    ? "时间线"
+                    : "Timeline",
+            },
+          ]}
+          onChange={(next) => {
+            if (!presentation) setView(next);
+            onPresentationChange?.({ tab, view: next, group });
+          }}
+        />
+        {viewActions}
+        {viewActions && scopeCount}
+      </div>
       {selecting && (
         <div
           className="task-selection-bar"
@@ -418,6 +480,8 @@ export function TasksWorkspace({
           items={items}
           derived={props.derived ?? selected.derived}
         />
+      ) : items.length === 0 && emptyList ? (
+        emptyList
       ) : group === "none" ? (
         <TaskList
           {...props}

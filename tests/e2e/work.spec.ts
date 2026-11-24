@@ -683,6 +683,7 @@ test("v2.2 1500 tasks release virtualization and scope benchmark", async ({
   }
   await page.reload();
   await nav(page, w.desk.tasks);
+  await openTaskFilters(page);
   await page.getByLabel(w.desk.sort, { exact: true }).selectOption("title");
   const scroll = page.locator(".task-list .virtual-task-scroll");
   await expect(scroll).toHaveAttribute("data-task-count", "1500");
@@ -1140,6 +1141,7 @@ test("v2.3 task rows expose completion and defer management to the menu", async 
     .click();
   await expect(row).toHaveCount(0);
   await taskScope(page, w.desk.taskWorkspace.completed);
+  await openTaskFilters(page);
   await page.getByLabel(w.desk.status, { exact: true }).selectOption("DONE");
   await expect(
     row.getByRole("button", {
@@ -1154,6 +1156,73 @@ test("v2.3 task rows expose completion and defer management to the menu", async 
   expect(
     snapshot.items.find((item: { id: string }) => item.id === task.id).status,
   ).toBe("DONE");
+});
+
+test("personal task workspace supports first capture, keyboard scopes and filter recovery", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.tasks);
+  const workspace = page.locator(".personal-tasks");
+  const empty = workspace.locator(".task-list-empty");
+  const summary = workspace.locator(".task-query-panel > summary");
+  const title = zh ? "整理明天要用的资料" : "Gather materials for tomorrow";
+  await expect(
+    workspace.getByLabel(w.desk.priority, { exact: true }),
+  ).toBeHidden();
+  await expect(empty).toContainText(w.desk.taskWorkspace.firstTask);
+  await page.screenshot({ path: info.outputPath("tasks-empty.png") });
+  await empty
+    .getByRole("button", { name: w.desk.taskWorkspace.createFirst })
+    .click();
+  const editor = page.getByRole("dialog");
+  await editor.getByLabel(w.work.title, { exact: true }).fill(title);
+  await editor
+    .getByRole("button", { name: w.common.create, exact: true })
+    .click();
+  await expect(workspace.locator(".task-title")).toHaveText(title);
+  const scopes = workspace.getByRole("tablist");
+  await scopes
+    .getByRole("tab", { name: w.desk.taskWorkspace.now, exact: true })
+    .focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(
+    scopes.getByRole("tab", { name: w.desk.taskWorkspace.later, exact: true }),
+  ).toBeFocused();
+  await expect(empty).toContainText(w.desk.taskWorkspace.later);
+  await empty
+    .getByRole("button", { name: w.desk.taskWorkspace.viewAll })
+    .click();
+  await expect(workspace.locator(".task-title")).toHaveText(title);
+  await expect(summary).toBeFocused();
+  await scopes
+    .getByRole("tab", { name: w.desk.taskWorkspace.now, exact: true })
+    .click();
+  await openTaskFilters(page);
+  await workspace
+    .getByLabel(w.desk.priority, { exact: true })
+    .selectOption("HIGH");
+  await summary.click();
+  await expect(summary).toContainText(w.work.priorities.HIGH);
+  await expect(empty).toContainText(w.desk.taskWorkspace.noMatches);
+  await empty
+    .getByRole("button", { name: w.desk.taskWorkspace.clearFilters })
+    .click();
+  await expect(summary).toBeFocused();
+  await expect(workspace.locator(".task-title")).toHaveText(title);
+  if (info.project.name.includes("mobile"))
+    await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(workspace.locator(".task-title")).toBeInViewport();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: info.outputPath("tasks-list.png") });
 });
 
 test("quick completion and restore arm without mutation and support cancellation and version-safe Undo", async ({
@@ -1674,6 +1743,7 @@ test("v2.3 feature navigation preserves task query priority scope and presentati
   await nav(page, w.desk.tasks);
   const searchField = page.locator(".content .search input");
   await searchField.fill("Preserved");
+  await openTaskFilters(page);
   await page.getByLabel(w.desk.priority, { exact: true }).selectOption("HIGH");
   await page
     .getByRole("tab", { name: zh ? "已计划" : "Scheduled", exact: true })
@@ -2181,6 +2251,7 @@ test("activation separates execution views from task planning", async ({
     "4",
   );
   await expect(cards.filter({ hasText: "Active blocked" })).toBeVisible();
+  await openTaskFilters(page);
   await page.getByLabel(w.desk.status, { exact: true }).selectOption("ALL");
   await expect(cards).toHaveCount(9);
   await page
@@ -2192,6 +2263,7 @@ test("activation separates execution views from task planning", async ({
     "Inactive unassigned",
   );
   await page.getByRole("textbox", { name: w.desk.search }).fill("");
+  await openTaskFilters(page);
   await page
     .getByLabel(w.desk.status, { exact: true })
     .selectOption("UNFINISHED");
@@ -2209,7 +2281,7 @@ test("activation separates execution views from task planning", async ({
   });
   await taskScope(page, w.desk.taskWorkspace.all);
   await expect(cards).toHaveCount(9);
-  await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
+  await openTaskFilters(page);
   await page
     .getByLabel(w.desk.activationState, { exact: true })
     .selectOption("INACTIVE");
@@ -2231,7 +2303,7 @@ test("activation separates execution views from task planning", async ({
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(cards).toHaveCount(2);
   await nav(page, w.desk.tasks);
-  await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
+  await openTaskFilters(page);
   await page
     .getByLabel(w.desk.activationState, { exact: true })
     .selectOption("ALL");
@@ -2258,7 +2330,7 @@ test("activation separates execution views from task planning", async ({
     ),
   ).toBe(true);
   await nav(page, w.desk.planning);
-  await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
+  await openTaskFilters(page);
   await expect(
     page.getByLabel(w.desk.activationState, { exact: true }),
   ).toHaveValue("ALL");
@@ -5467,6 +5539,7 @@ test("organization selection archive delete scannable rows and readable typograp
     });
   await page.reload();
   await nav(page, w.desk.tasks);
+  await openTaskFilters(page);
   await page.getByLabel(w.desk.status, { exact: true }).selectOption("ALL");
   await expect(page.locator(".task-card")).toHaveCount(3);
   await expect(page.locator(".task-title").first()).toHaveCSS(
@@ -5490,7 +5563,7 @@ test("organization selection archive delete scannable rows and readable typograp
     })
     .click();
   await expect(page.locator(".task-card")).toHaveCount(2);
-  await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
+  await openTaskFilters(page);
   await page.getByLabel(w.desk.showArchived).check();
   await expect(page.locator(".task-card")).toHaveCount(1);
   await (await taskMenu(page, "First task"))
@@ -5500,7 +5573,7 @@ test("organization selection archive delete scannable rows and readable typograp
     })
     .click();
   await expect(page.locator(".task-card")).toHaveCount(0);
-  await page.getByRole("button", { name: /^(More filters|更多筛选)$/ }).click();
+  await openTaskFilters(page);
   await page.getByLabel(w.desk.showArchived).uncheck();
 
   await (await taskMenu(page, "Second task"))
@@ -8531,6 +8604,14 @@ async function saveDocument(page: Page, w: ReturnType<typeof words>) {
     /^(Saved on this device(?: · (?:Syncing|Offline))?|Synced|已保存到本机(?: · (?:正在同步|离线))?|已同步)$/,
   );
 }
+async function openTaskFilters(page: Page) {
+  const panel = page.locator(".personal-tasks details.task-query-panel");
+  await expect(panel).toBeVisible();
+  if (!(await panel.evaluate((el: HTMLDetailsElement) => el.open))) {
+    await panel.locator("summary").click();
+  }
+}
+
 async function createTask(
   page: Page,
   w: ReturnType<typeof words>,
@@ -8638,6 +8719,7 @@ test("manual task order survives scope switches and reload with keyboard and des
   await nav(page, w.desk.tasks);
   for (const title of ["Order Alpha", "Order Bravo", "Order Charlie"])
     await createTask(page, w, title);
+  await openTaskFilters(page);
   const sort = page.locator(".sort-control select");
   await sort.selectOption("title");
   await expect(page.locator(".task-list .ui-drag-handle")).toHaveCount(0);
@@ -8691,6 +8773,7 @@ test("manual task order survives scope switches and reload with keyboard and des
   const expected = await titles.allTextContents();
   await page.reload();
   await nav(page, w.desk.tasks);
+  await openTaskFilters(page);
   await sort.selectOption("manual");
   await expect(titles).toHaveText(expected);
   await sort.selectOption("due");
@@ -9027,6 +9110,7 @@ test("dependencies, filters and board transitions", async ({
   await taskMenu(page, "Dependent B");
   await statusB.selectOption("IN_PROGRESS");
   await expect(statusB).toHaveValue("IN_PROGRESS");
+  await openTaskFilters(page);
   await page.getByLabel(w.desk.priority, { exact: true }).selectOption("HIGH");
   await expect(page.locator("article.task-card")).toHaveCount(0);
   await page.getByLabel(w.desk.status, { exact: true }).selectOption("ALL");
@@ -11423,6 +11507,7 @@ test("overview task count excludes non-tasks and clears a previous project filte
   });
   await page.reload();
   await nav(page, w.desk.tasks);
+  await openTaskFilters(page);
   await chooseProject(
     page.locator(".project-filter-picker .hierarchy-picker"),
     [project.title],
@@ -11439,6 +11524,7 @@ test("overview task count excludes non-tasks and clears a previous project filte
   });
   await countLink.click();
   await expect(page.locator(".task-card")).toHaveCount(2);
+  await openTaskFilters(page);
   await expect(
     page
       .locator(".project-filter-picker")
@@ -12065,6 +12151,7 @@ test("current level hierarchy search is shared by Task filters and AI scope", as
   await mutation(page, "/api/work/create", { title: "Unscoped task" });
   await page.reload();
   await nav(page, w.desk.tasks);
+  await openTaskFilters(page);
   const filter = page.locator(".project-filter-picker .hierarchy-picker");
   await filter.locator(".hierarchy-selected > button").last().click();
   const browser = page.locator(".hierarchy-browser");
@@ -12968,6 +13055,7 @@ test("account experience: picker recent survives refresh and isolates workspace 
   });
   await page.reload();
   await nav(page, w.desk.tasks);
+  await openTaskFilters(page);
   await chooseProject(
     page.locator(".project-filter-picker .hierarchy-picker"),
     ["Z recent"],
@@ -13001,6 +13089,7 @@ test("account experience: picker recent survives refresh and isolates workspace 
   });
   await page.reload();
   await nav(page, w.desk.tasks);
+  await openTaskFilters(page);
   await page
     .locator(".project-filter-picker .hierarchy-selected > button")
     .last()
@@ -13029,6 +13118,7 @@ test("account experience: picker recent survives refresh and isolates workspace 
   await expectDeviceWorkspaceAfterLogout(page);
   await unlock(page, workbench.url, workbench.secret, w, false, "second-user");
   await nav(page, w.desk.tasks);
+  await openTaskFilters(page);
   await page
     .locator(".project-filter-picker .hierarchy-selected > button")
     .last()
@@ -13043,6 +13133,7 @@ test("account experience: picker recent survives refresh and isolates workspace 
   });
   await page.reload();
   await nav(page, w.desk.tasks);
+  await openTaskFilters(page);
   await chooseProject(
     page.locator(".project-filter-picker .hierarchy-picker"),
     ["Second account"],
@@ -15226,6 +15317,7 @@ test("v2.2 complete release fixture interaction and editor benchmark", async ({
   );
   evidence.liveListRows = await page.locator(".task-list .task-card").count();
   expect(Number(evidence.liveListRows)).toBeLessThan(100);
+  await openTaskFilters(page);
   const projectPicker = page.locator(
     ".project-filter-picker .hierarchy-picker",
   );
@@ -17145,6 +17237,7 @@ for (const recoveryMode of ["RETRY", "REVIEW"] as const) {
       })
       .click();
     await expect(editor).toHaveCount(0);
+    await openTaskFilters(page);
     await page
       .getByRole("combobox", { name: zh ? "排序" : "Sort", exact: true })
       .selectOption("manual");
@@ -17972,6 +18065,7 @@ for (const choice of ["LOCAL", "REMOTE"] as const) {
         .click();
       await expect(editor).toHaveCount(0);
     }
+    await openTaskFilters(page);
     await page
       .getByRole("combobox", { name: zh ? "排序" : "Sort", exact: true })
       .selectOption("manual");
@@ -18112,6 +18206,7 @@ for (const choice of ["LOCAL", "REMOTE"] as const) {
       route.abort("internetdisconnected"),
     );
     await page.goto(workbench.url + "/#tasks");
+    await openTaskFilters(page);
     await page
       .getByRole("combobox", { name: zh ? "排序" : "Sort", exact: true })
       .selectOption("manual");
