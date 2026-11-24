@@ -21219,3 +21219,68 @@ test("long Chinese note keeps only confirmed composition in its recovery draft",
     .scrollIntoViewIfNeeded();
   await page.screenshot({ path: info.outputPath("confirmed-long-note.png") });
 });
+
+test("personal document tabs keep keyboard focus and the confirmed Chinese title", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const titles = ["山野一", "山野二", "山野三"];
+  await unlock(page, workbench.url, workbench.secret, w);
+  for (const title of titles)
+    await mutation(page, "/api/note/save", {
+      id: null,
+      version: 0,
+      input: { kind: "NOTE", day: null, title, bodyMd: title + "的正文" },
+    });
+  await page.goto(workbench.url + "/#notes");
+  await page.reload();
+  for (const title of titles) {
+    await nav(page, w.desk.notes);
+    await page.locator(".note-card").filter({ hasText: title }).press("Enter");
+    await expect(pane(page).getByLabel(w.desk.noteTitle)).toHaveValue(title);
+  }
+  const strip = page.locator(".document-tabs");
+  const tab = (title: string) =>
+    strip.getByRole("tab", { name: title, exact: true });
+  await tab("山野三").focus();
+  await tab("山野三").press("Home");
+  await expect(tab("山野一")).toBeFocused();
+  await expect(tab("山野一")).toHaveAttribute("aria-selected", "true");
+  await tab("山野一").press("ArrowLeft");
+  await expect(tab("山野三")).toBeFocused();
+  await tab("山野三").press("ArrowRight");
+  await expect(tab("山野一")).toBeFocused();
+  await tab("山野一").press("End");
+  await expect(tab("山野三")).toBeFocused();
+  await tab("山野三").press("ArrowLeft");
+  await expect(tab("山野二")).toBeFocused();
+  await expect(page.getByRole("tabpanel", { name: "山野二", exact: true })).toBeVisible();
+  const panel = page.getByRole("tabpanel").filter({ has: page.locator(".document-title") });
+  const input = panel.getByLabel(w.desk.noteTitle);
+  await input.focus();
+  await input.press("End");
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.imeSetComposition", {
+    text: "biji",
+    selectionStart: 4,
+    selectionEnd: 4,
+  });
+  await cdp.send("Input.insertText", { text: "笔记" });
+  await cdp.detach();
+  await expect(input).toHaveValue("山野二笔记");
+  await strip
+    .getByRole("button", { name: /^(Close|关闭) 山野二笔记$/ })
+    .press("Enter");
+  await expect(tab("山野三")).toBeFocused();
+  await expect(page.getByRole("tabpanel", { name: "山野三" })).toBeVisible();
+  await expect(strip.getByRole("tab")).toHaveCount(2);
+  await page.screenshot({ path: info.outputPath("adjacent-note-focus.png") });
+  await waitForLocalReplay(page);
+  const snapshot = await (
+    await page.request.get(workbench.url + "/api/snapshot")
+  ).json();
+  expect(
+    snapshot.notes.find((note: { title: string }) => note.title === "山野二笔记")?.bodyMd,
+  ).toBe("山野二的正文");
+});

@@ -14,6 +14,7 @@ import {
   type ComponentProps,
   memo,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -105,6 +106,11 @@ export function DocumentWorkspace({
     [active, setActive] = useState("");
   const tabsRef = useRef(tabs);
   const tabStrip = useRef<HTMLDivElement>(null);
+  const workspaceId = useId();
+  const tabId = (key: string) =>
+    workspaceId + "-tab-" + encodeURIComponent(key);
+  const panelId = (key: string) =>
+    workspaceId + "-panel-" + encodeURIComponent(key);
   useEffect(() => {
     const strip = tabStrip.current;
     if (!strip) return;
@@ -211,6 +217,12 @@ export function DocumentWorkspace({
   }, [tabs]);
   async function close(tab: Tab) {
     if (tab.busy) return;
+    const closingTab = document.getElementById(tabId(tab.key));
+    const closingPanel = document.getElementById(panelId(tab.key));
+    const focusInClosingTab = () =>
+      closingTab?.parentElement?.contains(document.activeElement) ||
+      closingPanel?.contains(document.activeElement);
+    const ownedFocus = focusInClosingTab();
     const prepared = tab.dirty
       ? await closeHandlers.current.get(tab.key)?.()
       : undefined;
@@ -228,9 +240,29 @@ export function DocumentWorkspace({
       ))
     )
       return;
-    const next = tabsRef.current.filter((t) => t.key !== tab.key);
+    const previous = tabsRef.current;
+    const index = previous.findIndex((t) => t.key === tab.key);
+    if (index < 0) return;
+    const next = previous.filter((t) => t.key !== tab.key);
+    const neighbor = next[index] ?? next.at(-1);
+    // Saving disables the close button, which drops its focus to the body.
+    if (
+      neighbor &&
+      (focusInClosingTab() ||
+        (ownedFocus && document.activeElement === document.body))
+    ) {
+      const selected = tabStrip.current?.querySelector<HTMLElement>(
+        '[role="tab"][aria-selected="true"]',
+      );
+      (selected && selected !== closingTab
+        ? selected
+        : document.getElementById(tabId(neighbor.key))
+      )?.focus();
+    }
     setTabs(next);
-    if (active === tab.key) setActive(next.at(-1)?.key ?? "");
+    setActive((current) =>
+      current === tab.key ? (neighbor?.key ?? "") : current,
+    );
     if (!next.length) onBrowse();
   }
   return (
@@ -244,12 +276,47 @@ export function DocumentWorkspace({
         <Button type="button" variant="toggle" onClick={onBrowse}>
           {zh ? "工作台" : "Workspace"}
         </Button>
-        {tabs.map((tab) => (
+        {tabs.map((tab, index) => (
           <div className="document-tab" key={tab.key}>
             <Button
               type="button"
               role="tab"
+              id={tabId(tab.key)}
+              aria-controls={panelId(tab.key)}
               aria-selected={visible && active === tab.key}
+              tabIndex={active === tab.key ? 0 : -1}
+              onKeyDown={(event) => {
+                if (
+                  event.nativeEvent.isComposing ||
+                  event.altKey ||
+                  event.ctrlKey ||
+                  event.metaKey ||
+                  event.shiftKey
+                )
+                  return;
+                let target: Tab | undefined;
+                switch (event.key) {
+                  case "Home":
+                    target = tabs[0];
+                    break;
+                  case "End":
+                    target = tabs.at(-1);
+                    break;
+                  case "ArrowLeft":
+                    target = tabs[(index + tabs.length - 1) % tabs.length];
+                    break;
+                  case "ArrowRight":
+                    target = tabs[(index + 1) % tabs.length];
+                    break;
+                  default:
+                    return;
+                }
+                if (!target) return;
+                event.preventDefault();
+                document.getElementById(tabId(target.key))?.focus();
+                setActive(target.key);
+                onVisibility();
+              }}
               onClick={() => {
                 setActive(tab.key);
                 onVisibility();
@@ -283,7 +350,13 @@ export function DocumentWorkspace({
         ))}
       </div>
       {tabs.map((tab) => (
-        <div key={tab.key} hidden={!visible || active !== tab.key}>
+        <div
+          key={tab.key}
+          id={panelId(tab.key)}
+          role="tabpanel"
+          aria-labelledby={tabId(tab.key)}
+          hidden={!visible || active !== tab.key}
+        >
           {tab.kind === "FILE" ? (
             visible &&
             active === tab.key && (
