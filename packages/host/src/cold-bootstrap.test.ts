@@ -16,6 +16,7 @@ test("closing a host before listening releases storage and stops recurrence scan
     const host = await createHost({
       database: join(directory, "fixture.sqlite"),
       origin: "http://127.0.0.1",
+      webRoot: directory,
       secret: randomBytes(32).toString("hex"),
     });
     await host.close();
