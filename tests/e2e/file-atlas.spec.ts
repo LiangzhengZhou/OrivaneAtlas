@@ -1,8 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, readFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -37,12 +35,8 @@ test("File Atlas uses the real Host and canonical worker, waits for approval and
       ),
     ).href
   )) as typeof hostApi;
-  const reserve = createServer();
-  await new Promise<void>((done) => reserve.listen(0, "127.0.0.1", done));
-  const port = (reserve.address() as AddressInfo).port;
-  await new Promise<void>((done, reject) =>
-    reserve.close((error) => (error ? reject(error) : done())),
-  );
+  const port =
+    Number(process.env.ATLAS_E2E_BASE_PORT ?? 1420) + info.parallelIndex;
   const origin = `http://127.0.0.1:${port}`,
     directory = await mkdtemp(join(tmpdir(), "orivane-file-atlas-"));
   let calls = 0;

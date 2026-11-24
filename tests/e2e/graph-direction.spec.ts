@@ -6,14 +6,16 @@ import { expect, type Page, test } from "@playwright/test";
 let assetServer: Server;
 let origin: string;
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, info) => {
   assetServer = createServer((request, response) => {
     void serve(request.url ?? "/", response);
   });
-  await new Promise<void>((done) => assetServer.listen(0, "127.0.0.1", done));
-  const address = assetServer.address();
-  if (!address || typeof address === "string") throw new Error("NO_PORT");
-  origin = `http://127.0.0.1:${address.port}`;
+  const port =
+    Number(process.env.ATLAS_E2E_BASE_PORT ?? 1420) + info.parallelIndex;
+  await new Promise<void>((done) =>
+    assetServer.listen(port, "127.0.0.1", done),
+  );
+  origin = `http://127.0.0.1:${port}`;
 });
 test.afterAll(async () => {
   await new Promise<void>((done, fail) =>
