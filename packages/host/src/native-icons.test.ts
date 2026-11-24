@@ -36,8 +36,18 @@ describe("generated application brand", () => {
     const icon = readFileSync("src-tauri/icons/icon.ico");
     expect(icon.readUInt16LE(0)).toBe(0);
     expect(icon.readUInt16LE(2)).toBe(1);
-    expect(icon.readUInt16LE(4)).toBe(8);
-    [16, 20, 24, 32, 48, 64, 128, 256].forEach((size, index) => {
+    // The runtime uses the first frame; the Windows shell chooses by size.
+    expect(icon[6]).toBe(0); // 256px in the ICO directory.
+    const count = icon.readUInt16LE(4);
+    const sizes = Array.from(
+      { length: count },
+      (_, i) => icon[6 + 16 * i] || 256,
+    );
+    expect(new Set(sizes).size).toBe(count);
+    for (const scale of [1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4]) {
+      for (const dip of [16, 24, 32]) expect(sizes).toContain(dip * scale);
+    }
+    sizes.forEach((size, index) => {
       const frame = 6 + index * 16;
       expect(icon[frame] || 256).toBe(size);
       expect(icon[frame + 1] || 256).toBe(size);
@@ -50,7 +60,11 @@ describe("generated application brand", () => {
       );
       expect(icon.readUInt32BE(offset + 16)).toBe(size);
       expect(icon.readUInt32BE(offset + 20)).toBe(size);
-      assertTransparentRgba(icon.subarray(offset, offset + length));
+      const pixels = icon.subarray(offset, offset + length);
+      expect(
+        pixels.equals(readFileSync(`src-tauri/icons/${size}x${size}.png`)),
+      ).toBe(true);
+      assertTransparentRgba(pixels);
     });
   });
   it("preserves alpha in normal web, Tauri and legacy Android icons with an independent adaptive background", () => {

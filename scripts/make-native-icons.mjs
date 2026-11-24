@@ -111,9 +111,15 @@ try {
   }
   await save("branding/application-icon-source.png", await png(512));
   const frames = [];
-  for (const size of [16, 20, 24, 32, 48, 64, 128, 256]) {
-    // Give antialiased small frames a full transparent perimeter.
-    const bytes = await png(size, { padding: size <= 24 ? 0.05 : 0 });
+  // Tauri decodes entry zero for the live window and tray. Explorer selects
+  // by dimensions from the whole directory. Include 175% as well as the
+  // standard taskbar (24 DIP), caption (16 DIP) and Start (32 DIP) scales.
+  const windowsSizes = [
+    256, 16, 20, 24, 28, 30, 32, 36, 40, 42, 48, 56, 60, 64, 72, 80, 96, 128,
+  ];
+  for (const size of windowsSizes) {
+    // Half a pixel of extra inset keeps small antialiased edges clear.
+    const bytes = await png(size, { padding: size <= 24 ? 0.5 / size : 0 });
     frames.push({ size, bytes });
     await save(`src-tauri/icons/${size}x${size}.png`, bytes);
   }
