@@ -556,12 +556,6 @@ export function LiveMarkdown({
               callbacks.current.onImages(files);
               return true;
             },
-            compositionstart: () => {
-              callbacks.current.onComposition(true);
-            },
-            compositionend: () => {
-              callbacks.current.onComposition(false);
-            },
           }),
           EditorView.updateListener.of((update) => {
             if (
@@ -582,8 +576,32 @@ export function LiveMarkdown({
         ],
       }),
     });
+    // Capture the confirmed document before mobile input handlers process the candidate.
+    // Chromium may deliver these events to EditContext instead of the editable DOM.
+    const editContext =
+      "editContext" in view.contentDOM ? view.contentDOM.editContext : null;
+    const compositionTarget =
+      editContext instanceof EventTarget ? editContext : view.contentDOM;
+    const startComposition = () => callbacks.current.onComposition(true);
+    const endComposition = () => callbacks.current.onComposition(false);
+    compositionTarget.addEventListener(
+      "compositionstart",
+      startComposition,
+      true,
+    );
+    compositionTarget.addEventListener("compositionend", endComposition, true);
     editorRef.current = view;
     return () => {
+      compositionTarget.removeEventListener(
+        "compositionstart",
+        startComposition,
+        true,
+      );
+      compositionTarget.removeEventListener(
+        "compositionend",
+        endComposition,
+        true,
+      );
       flush();
       editorRef.current = null;
       view.destroy();

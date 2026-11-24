@@ -21120,3 +21120,106 @@ test("personal folder names keep the input method candidate until editing finish
   await expect(named("阅读札记")).toBeVisible();
   await expect(named("未保存")).toHaveCount(0);
 });
+
+test("long Chinese note keeps only confirmed composition in its recovery draft", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    title = "山野手记";
+  const body =
+    ("# 观察\n\n" + "沿着山脊记录植物与天气。".repeat(48) + "\n\n").repeat(96) +
+    "末段";
+  await unlock(page, workbench.url, workbench.secret, w);
+  const note = await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: { kind: "NOTE", day: null, title, bodyMd: body },
+  });
+  await page.goto(workbench.url + "/#notes");
+  await page.reload();
+  const open = () =>
+    page.locator(".note-card").filter({ hasText: title }).press("Enter");
+  await open();
+  await documentMode(page, /^(Source|源码)$/);
+  const input = pane(page).getByLabel(w.desk.noteBody, { exact: true });
+  const cdp = await page.context().newCDPSession(page);
+  await input.focus();
+  await input.press("Control+End");
+  await cdp.send("Input.insertText", { text: "已校对" });
+  await cdp.send("Input.imeSetComposition", {
+    text: "shanye",
+    selectionStart: 6,
+    selectionEnd: 6,
+  });
+  // Hold composition beyond both the editor's publication and recovery-write debounces.
+  await page.waitForTimeout(950);
+  const recovered = await page.evaluate(async (id) => {
+    const db = await new Promise<IDBDatabase>((ok, fail) => {
+      const r = indexedDB.open("orivane-atlas-local", 1);
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => fail(r.error);
+    });
+    try {
+      return await new Promise<string | undefined>((ok, fail) => {
+        const r = db.transaction("drafts").objectStore("drafts").getAll();
+        r.onsuccess = () =>
+          ok(r.result.find((row) => row.entityId === id)?.body);
+        r.onerror = () => fail(r.error);
+      });
+    } finally {
+      db.close();
+    }
+  }, note.id);
+  expect(recovered?.slice(-10)).toBe((body + "已校对").slice(-10));
+  expect(recovered === body + "已校对").toBe(true);
+  // Reload while the candidate window is still open, then resume from the stored draft.
+  await page.reload();
+  await nav(page, w.desk.notes);
+  await open();
+  await documentMode(page, w.desk.read);
+  await expect(pane(page).locator(".document-reading")).toContainText(
+    "末段已校对",
+  );
+  await expect(pane(page).locator(".document-reading")).not.toContainText(
+    "shanye",
+  );
+  await documentMode(page, /^(Edit|编辑)$/);
+  await documentMode(page, /^(Source|源码)$/);
+  await input.focus();
+  await input.press("Control+End");
+  await cdp.send("Input.imeSetComposition", {
+    text: "shanye",
+    selectionStart: 6,
+    selectionEnd: 6,
+  });
+  await cdp.send("Input.insertText", { text: "山野" });
+  await cdp.detach();
+  await documentMode(page, w.desk.read);
+  await expect(pane(page).locator(".document-reading")).toContainText(
+    "末段已校对山野",
+  );
+  await saveDocument(page, w);
+  const canonical = async () => {
+    const snapshot = await (
+      await page.request.get(workbench.url + "/api/snapshot")
+    ).json();
+    return snapshot.notes.find((n: { id: string }) => n.id === note.id)?.bodyMd;
+  };
+  await expect
+    .poll(async () => (await canonical()) === body + "已校对山野")
+    .toBe(true);
+  await page.goto(workbench.url + "/#notes");
+  await page.reload();
+  await open();
+  await documentMode(page, w.desk.read);
+  await expect(pane(page).locator(".document-reading")).toContainText(
+    "末段已校对山野",
+  );
+  await pane(page)
+    .locator(".document-reading p")
+    .filter({ hasText: "末段已校对山野" })
+    .last()
+    .scrollIntoViewIfNeeded();
+  await page.screenshot({ path: info.outputPath("confirmed-long-note.png") });
+});

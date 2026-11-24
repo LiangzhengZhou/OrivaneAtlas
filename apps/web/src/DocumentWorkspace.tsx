@@ -605,7 +605,10 @@ function DocumentPane({
   const [mode, setMode] = useState<"live" | "source" | "read">("live"),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [composing, setComposing] = useState(false),
+    [compositionBase, setCompositionBase] = useState<{
+      title: string;
+      body: string;
+    } | null>(null),
     [history, setHistory] = useState<(Note | LibraryEntry)[]>([]);
   const [historyOpenRequest, setHistoryOpenRequest] = useState(0);
   if (mode === "read" || printing) readingBody.current = body;
@@ -680,8 +683,21 @@ function DocumentPane({
   const [editorAtlasDraft, setEditorAtlasDraft] = useState<
     EditorAtlasDraft | undefined
   >();
-  const current = useRef({ title, body, composing, aiPolicy });
-  current.current = { title, body, composing, aiPolicy };
+  const composing = compositionBase !== null;
+  const recoveryTitle = compositionBase?.title ?? title;
+  const recoveryBody = compositionBase?.body ?? body;
+  const current = useRef({ title, body, compositionBase, aiPolicy });
+  current.current = { title, body, compositionBase, aiPolicy };
+  function compositionChanged(active: boolean) {
+    const confirmed = active
+      ? {
+          title: current.current.title,
+          body: editor.current?.state.doc.toString() ?? current.current.body,
+        }
+      : null;
+    current.current.compositionBase = confirmed;
+    setCompositionBase(confirmed);
+  }
   const callbacks = useRef({ onStatus, onSaved });
   callbacks.current = { onStatus, onSaved };
   const library = request.kind === "SPACE" || request.kind === "DOCUMENT";
@@ -737,8 +753,8 @@ function DocumentPane({
     const timer = setTimeout(
       () =>
         void saveDraft(draftKey, {
-          title,
-          body,
+          title: recoveryTitle,
+          body: recoveryBody,
           updatedAt: Date.now(),
           savedAt: Date.now(),
           entityId: base?.id ?? request.key,
@@ -750,8 +766,8 @@ function DocumentPane({
     return () => clearTimeout(timer);
   }, [
     draftKey,
-    title,
-    body,
+    recoveryTitle,
+    recoveryBody,
     dirty,
     base,
     request.key,
@@ -779,7 +795,7 @@ function DocumentPane({
       !restored.current ||
       recoveryRequired.current ||
       gate.current ||
-      current.current.composing ||
+      current.current.compositionBase ||
       (!explicit && failed.current)
     )
       return false;
@@ -923,8 +939,11 @@ function DocumentPane({
         return { saved: false, draftStored: false };
       }
       const draftStored = await saveDraft(draftKey, {
-        title: draft.title,
-        body: editor.current?.state.doc.toString() ?? draft.body,
+        title: draft.compositionBase?.title ?? draft.title,
+        body:
+          draft.compositionBase?.body ??
+          editor.current?.state.doc.toString() ??
+          draft.body,
         updatedAt: Date.now(),
         savedAt: Date.now(),
         entityId: baseRef.current?.id ?? request.key,
@@ -1575,8 +1594,8 @@ function DocumentPane({
               : t("noteTitle")
         }
         value={title}
-        onCompositionStart={() => setComposing(true)}
-        onCompositionEnd={() => setComposing(false)}
+        onCompositionStart={() => compositionChanged(true)}
+        onCompositionEnd={() => compositionChanged(false)}
         onChange={(e) => setTitle(e.target.value)}
         onKeyDown={(e) => {
           if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -1665,7 +1684,7 @@ function DocumentPane({
             setBody(text);
           }}
           onSave={() => void save(true)}
-          onComposition={setComposing}
+          onComposition={compositionChanged}
           editorRef={editor}
           onImages={insertImages}
         />
