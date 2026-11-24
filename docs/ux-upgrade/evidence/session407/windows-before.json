@@ -1,0 +1,32 @@
+{
+  "phase": "before",
+  "engine": "Edg/158.0.4370.33",
+  "wide": {
+    "dpi": 96,
+    "windowWidth": 1936,
+    "windowHeight": 1048
+  },
+  "wideView": {
+    "width": 1920,
+    "height": 1009,
+    "ratio": 1,
+    "overflow": false
+  },
+  "narrow": {
+    "dpi": 96,
+    "windowWidth": 690,
+    "windowHeight": 1024
+  },
+  "narrowView": {
+    "width": 674,
+    "height": 985,
+    "ratio": 1,
+    "overflow": false
+  },
+  "mainTop": 985,
+  "titleY": 145,
+  "statusY": 233,
+  "deadline": "2026-11-15",
+  "completedAndUndone": true,
+  "pausedAfterReload": true
+}

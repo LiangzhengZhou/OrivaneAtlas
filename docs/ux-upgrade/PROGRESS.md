@@ -1,3 +1,9 @@
+## Session 407 · Windows 任务行与编辑
+
+2026-11-24，分支 `codex/ux-upgrade`，起点 89f51d0，任务交互 3396ef2，窄窗 564eb63，最终界面 8de2c4c。Windows 96 DPI 真实 WebView2 窗口完成鼠标计时、键盘编辑、勾选、修改截止日期、完成与撤销并刷新。674×985 内容上缘从 985 移至 51 CSS 像素；390×844 浏览器仍完整显示三项。产品改动限于 Shell、个人任务 UI 与通用编辑器的可选键盘焦点，数据契约沿用旧版。
+
+日志 .artifacts/ux407，截图与前后测量见 docs/ux-upgrade/evidence/session407。18 项任务专项、3 项键盘焦点、2 项深色完成撤销、3 项断点专项通过。Windows 测试程序已退出。pnpm check 和完整浏览器门禁尚待核对；独立浏览器监督进程 PID 3616 串行执行 desktop-zh、desktop-en、mobile-zh，每组 287 项。不要中断其临时宿主与全检便携 PG。恢复时检查 git status --short --branch、HEAD、check.log、delivery-*.log 及 delivery-*.json；若失败，从相应的 error-context.md 定位，复验后记录终态。多人开发暂缓。
+
 ## Session 406 · 个人任务列表
 
 2026-11-24，分支 `codex/ux-upgrade`，起点 `56e7c52`，界面提交 `56abeda`，测试修订 `4a880be`、`2a5b89f`、`e98a88d`。任务列表将范围放在前面，筛选和排序默认收起；首次使用、空范围与搜索筛选无结果各有对应操作。范围切换保留分组，窄屏长标题可显示两行。无数据迁移。

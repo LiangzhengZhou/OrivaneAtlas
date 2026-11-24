@@ -1,0 +1,98 @@
+[
+  {
+    "phase": "after",
+    "engine": "Edg/158.0.4370.33",
+    "wide": {
+      "dpi": 96,
+      "windowWidth": 1936,
+      "windowHeight": 1048
+    },
+    "wideView": {
+      "width": 1536,
+      "height": 808,
+      "ratio": 1.25,
+      "overflow": false
+    },
+    "narrow": {
+      "dpi": 96,
+      "windowWidth": 690,
+      "windowHeight": 1024
+    },
+    "narrowView": {
+      "width": 540,
+      "height": 788,
+      "ratio": 1.25,
+      "overflow": false
+    },
+    "mainTop": 44,
+    "titleY": 144,
+    "statusY": 144,
+    "deadline": "2026-11-15",
+    "completedAndUndone": true,
+    "pausedAfterReload": true
+  },
+  {
+    "phase": "after",
+    "engine": "Edg/158.0.4370.33",
+    "wide": {
+      "dpi": 96,
+      "windowWidth": 1936,
+      "windowHeight": 1048
+    },
+    "wideView": {
+      "width": 1280,
+      "height": 673,
+      "ratio": 1.5,
+      "overflow": false
+    },
+    "narrow": {
+      "dpi": 96,
+      "windowWidth": 690,
+      "windowHeight": 1024
+    },
+    "narrowView": {
+      "width": 450,
+      "height": 657,
+      "ratio": 1.5,
+      "overflow": false
+    },
+    "mainTop": 44,
+    "titleY": 144,
+    "statusY": 144,
+    "deadline": "2026-11-15",
+    "completedAndUndone": true,
+    "pausedAfterReload": true
+  },
+  {
+    "phase": "after",
+    "engine": "Edg/158.0.4370.33",
+    "wide": {
+      "dpi": 96,
+      "windowWidth": 1936,
+      "windowHeight": 1048
+    },
+    "wideView": {
+      "width": 960,
+      "height": 505,
+      "ratio": 2,
+      "overflow": false
+    },
+    "narrow": {
+      "dpi": 96,
+      "windowWidth": 690,
+      "windowHeight": 1024
+    },
+    "narrowView": {
+      "width": 337,
+      "height": 493,
+      "ratio": 2,
+      "overflow": false
+    },
+    "mainTop": 44,
+    "titleY": 145,
+    "statusY": 145,
+    "deadline": "2026-11-15",
+    "completedAndUndone": true,
+    "pausedAfterReload": true
+  }
+]

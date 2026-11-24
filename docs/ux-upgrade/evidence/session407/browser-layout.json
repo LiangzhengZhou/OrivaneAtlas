@@ -1,0 +1,55 @@
+{
+  "build": "shipping-dist",
+  "measurements": [
+    {
+      "width": 1440,
+      "height": 900,
+      "forcedColors": "none",
+      "top": 221,
+      "bottom": 284,
+      "entireRowsVisible": 3,
+      "overflow": false,
+      "theme": "light"
+    },
+    {
+      "width": 900,
+      "height": 800,
+      "forcedColors": "none",
+      "top": 221,
+      "bottom": 324,
+      "entireRowsVisible": 3,
+      "overflow": false,
+      "theme": "light"
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "forcedColors": "none",
+      "top": 384.625,
+      "bottom": 507.625,
+      "entireRowsVisible": 3,
+      "overflow": false,
+      "theme": "light"
+    },
+    {
+      "width": 360,
+      "height": 800,
+      "forcedColors": "none",
+      "top": 384.625,
+      "bottom": 507.625,
+      "entireRowsVisible": 2,
+      "overflow": false,
+      "theme": "dark"
+    },
+    {
+      "width": 320,
+      "height": 700,
+      "forcedColors": "active",
+      "top": 461.625,
+      "bottom": 584.625,
+      "entireRowsVisible": 1,
+      "overflow": false,
+      "theme": "light"
+    }
+  ]
+}
