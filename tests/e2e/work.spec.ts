@@ -8920,12 +8920,12 @@ test("quick task create keeps advanced fields unmounted and full editor has stab
     exact: true,
   });
   await more.click();
-  await expect(
-    editor.getByRole("region", {
-      name: zh ? "工作关系" : "Work relationships",
-      exact: true,
-    }),
-  ).toBeVisible();
+  const prerequisites = editor.locator(".task-relationships");
+  const prerequisiteFields = prerequisites.getByRole("group", {
+    name: w.work.prerequisites,
+    exact: true,
+  });
+  await expect(prerequisiteFields).toBeVisible();
   await editor
     .getByRole("button", {
       name: zh ? "收起更多设置" : "Hide extra settings",
@@ -8967,11 +8967,16 @@ test("quick task create keeps advanced fields unmounted and full editor has stab
     .press("Enter");
   await expect(editor).toHaveClass(/task-full-editor/);
   for (const label of zh
-    ? ["任务是什么", "属于哪里", "什么时候", "工作关系"]
-    : ["What is the task?", "Where it belongs", "When", "Work relationships"])
+    ? ["任务是什么", "属于哪里", "什么时候"]
+    : ["What is the task?", "Where it belongs", "When"])
     await expect(
       editor.getByRole("region", { name: label, exact: true }),
     ).toBeVisible();
+  const relationshipSummary = prerequisites.locator("summary");
+  await expect(relationshipSummary).toContainText(w.work.prerequisites);
+  await expect(prerequisiteFields).toBeHidden();
+  await relationshipSummary.press("Enter");
+  await expect(prerequisiteFields).toBeVisible();
   await expect(
     editor.getByLabel(w.work.description, { exact: true }),
   ).toHaveValue("Original Markdown\nSecond line");
