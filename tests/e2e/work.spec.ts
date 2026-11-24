@@ -640,13 +640,9 @@ const test = base.extend<{
         },
       });
     } finally {
-      if (host.server.listening) {
-        // Test assertions are finished; do not let browser preconnect sockets
-        // keep the disposable HTTP fixture alive during teardown.
-        const closing = host.close();
-        host.server.closeAllConnections();
-        await closing;
-      } else await host.db.close();
+      const closing = host.close();
+      host.server.closeAllConnections();
+      await closing;
       if (
         !resolve(directory).startsWith(
           resolve(tmpdir()) + sep + "arclattice-e2e-",

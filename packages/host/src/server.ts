@@ -6817,9 +6817,10 @@ export async function createHost(options: HostOptions) {
       await recurrenceWorker.close();
       for (const response of workspaceStreams) response.end();
       for (const controller of controllers) controller.abort();
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
+      if (server.listening)
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
       await Promise.allSettled([...inFlight]);
       await db.close();
     },

@@ -258,11 +258,9 @@ test("real pre-change-log v29 workspace upgrades with original projects, Markdow
       contentType: "application/json",
     });
   } finally {
-    await new Promise<void>((done) => {
-      host.server.close(() => done());
-      host.server.closeAllConnections();
-    });
-    await host.db.close();
+    const closing = host.close();
+    host.server.closeAllConnections();
+    await closing;
     if (
       !resolve(directory).startsWith(
         resolve(tmpdir()) + sep + "atlas-legacy-upgrade-",

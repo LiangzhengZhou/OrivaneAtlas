@@ -10,6 +10,24 @@ import { expect, test } from "vitest";
 import { v22PerformanceFixture } from "../../../tests/performance/v2.2-fixture";
 import { createHost } from "./server";
 
+test("closing a host before listening releases storage and stops recurrence scans", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "atlas-unbound-host-"));
+  try {
+    const host = await createHost({
+      database: join(directory, "fixture.sqlite"),
+      origin: "http://127.0.0.1",
+      secret: randomBytes(32).toString("hex"),
+    });
+    await host.close();
+    await expect(host.db.accounts((store) => store.list())).rejects.toThrow(
+      "STORAGE_CLOSED",
+    );
+    await host.reconcileRecurrences();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("real bootstrap transfer stays independent of a 500-document corpus", async () => {
   const directory = mkdtempSync(join(tmpdir(), "atlas-cold-bootstrap-"));
   const database = join(directory, "fixture.sqlite");
