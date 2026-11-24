@@ -562,7 +562,7 @@ body {
     filter: none;
   }
 }
-@media (max-width: 800px) {
+@media (580px < width <= 800px) {
   .app-shell .sidebar {
     height: auto;
     flex-direction: row;
@@ -577,7 +577,11 @@ body {
     margin: 0;
     padding-inline-end: 0;
   }
-  .sidebar .sidebar-collapse-button,
+  .sidebar .sidebar-collapse-button {
+    display: none;
+  }
+}
+@media (max-width: 800px) {
   .sidebar .file-library-shortcut {
     display: none;
   }
