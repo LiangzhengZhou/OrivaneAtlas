@@ -358,6 +358,7 @@
   "unfinishedSubprojects": "{{count}} unfinished subprojects",
   "projectBreadcrumb": "Project path",
   "calendarTimezone": "Calendar timezone: {{timezone}}",
+  "selectTaskTitle": "Select task: {{title}}",
   "taskWorkspace": {
     "filters": "Filter and sort",
     "clearFilters": "Clear search and filters",

@@ -163,11 +163,7 @@ function Task({
             type="checkbox"
             className="task-select-checkbox"
             checked={taskSelection.selected.has(item.id)}
-            aria-label={
-              (i18n.language.startsWith("zh")
-                ? "选择任务："
-                : "Select task: ") + item.title
-            }
+            aria-label={t("desk:selectTaskTitle", { title: item.title })}
             onClick={(event) => event.stopPropagation()}
             onChange={() => taskSelection.toggle(item.id)}
           />
@@ -222,21 +218,20 @@ function Task({
           type="button"
           className="task-title"
           data-reorder-surface={manualOrder ? true : undefined}
-          aria-label={t("openTask", { title: item.title })}
+          title={item.title}
+          aria-pressed={
+            taskSelection?.active
+              ? taskSelection.selected.has(item.id)
+              : undefined
+          }
+          aria-label={t(
+            taskSelection?.active ? "desk:selectTaskTitle" : "openTask",
+            { title: item.title },
+          )}
           onClick={(event) => {
             event.stopPropagation();
             if (taskSelection?.active) taskSelection.toggle(item.id);
             else onOpen(item);
-          }}
-          onDoubleClick={(event) => {
-            event.stopPropagation();
-            onOpen(item);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              onOpen(item);
-            }
           }}
         >
           <TaskTitleText text={item.title} />

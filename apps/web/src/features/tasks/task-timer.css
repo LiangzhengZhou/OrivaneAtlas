@@ -1,30 +1,47 @@
 .task-timer {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 1px 4px;
-  border-radius: 999px;
-  color: var(--muted);
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
-  background: color-mix(in oklab, var(--surface-strong) 70%, transparent);
 }
 
-.task-timer[data-running="true"] {
+.task-timer .ui-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-height);
+  padding-inline: var(--space-2);
+  font-size: var(--font-meta-size);
+  white-space: nowrap;
+}
+
+.task-timer[data-running="true"] .ui-button,
+.task-timer[data-running="true"] .task-timer-elapsed {
   color: var(--accent);
-  background: color-mix(in oklab, var(--accent) 14%, transparent);
 }
 
-.task-timer .task-timer-elapsed {
-  margin: 0 2px;
+.task-timer-elapsed {
+  font-size: var(--font-meta-size);
   font-weight: 600;
 }
 
-.task-timer .ui-icon-button {
-  width: 20px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0;
+.task-timer .ui-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (pointer: coarse) {
+  .task-timer .ui-button {
+    min-height: 44px;
+  }
+}
+
+@media (forced-colors: active) {
+  .task-timer .ui-button:focus-visible {
+    outline-color: Highlight;
+  }
 }
 
 .task-list .task-card.timer-running,

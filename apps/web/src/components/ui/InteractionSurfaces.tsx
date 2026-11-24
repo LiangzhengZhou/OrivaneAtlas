@@ -2,6 +2,7 @@ import { ChevronRight, MoreHorizontal, X } from "lucide-react";
 import {
   type ComponentProps,
   type ReactNode,
+  type RefObject,
   useId,
   useRef,
   useState,
@@ -66,6 +67,7 @@ export function EditorShell({
   footer,
   pending = false,
   modal = true,
+  keyboardEntry,
   actions,
   onClose,
   className = "",
@@ -75,6 +77,7 @@ export function EditorShell({
   footer: ReactNode;
   pending?: boolean;
   modal?: boolean;
+  keyboardEntry?: RefObject<HTMLElement | null>;
   actions?: ReactNode;
   onClose(): void;
   className?: string;
@@ -84,6 +87,7 @@ export function EditorShell({
   return (
     <Dialog
       modal={modal}
+      keyboardEntry={keyboardEntry}
       className={`ui-editor-shell ${className}`}
       aria-labelledby={id}
       onRequestClose={() => {

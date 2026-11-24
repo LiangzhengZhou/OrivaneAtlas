@@ -1,8 +1,8 @@
 import { timerElapsedMs, type WorkItem } from "@arclattice/domain";
-import { Pause, Play, Timer } from "lucide-react";
+import { Pause, Play } from "lucide-react";
 import { createContext, useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { IconButton } from "../../components/ui/Button";
+import { Button } from "../../components/ui/Button";
 import "./task-timer.css";
 
 export type TaskTimerAction = "START" | "PAUSE" | "STOP";
@@ -50,35 +50,31 @@ export function TaskTimerControl({
     return null;
   const elapsed = timerElapsedMs(item, now);
   const active = running || elapsed > 0;
+  const action = running ? "PAUSE" : "START";
+  const label = t(
+    running ? "timerPause" : active ? "timerContinue" : "timerStart",
+  );
+  const Icon = running ? Pause : Play;
   return (
     <span
       className="task-timer"
-      data-running={running ? "true" : "false"}
-      aria-label={t("timer")}
+      data-running={running}
+      role="group"
+      aria-label={t("timer") + " · " + item.title}
     >
-      <Timer size={12} aria-hidden="true" />
       {active && (
-        <output className="task-timer-elapsed">{formatTimer(elapsed)}</output>
+        <span className="task-timer-elapsed" role="timer" aria-live="off">
+          {formatTimer(elapsed)}
+        </span>
       )}
-      {running ? (
-        <>
-          <IconButton
-            label={t("timerPause")}
-            disabled={busy}
-            onClick={() => void run(item, "PAUSE")}
-          >
-            <Pause size={12} aria-hidden="true" />
-          </IconButton>
-        </>
-      ) : (
-        <IconButton
-          label={t(active ? "timerContinue" : "timerStart")}
-          disabled={busy}
-          onClick={() => void run(item, "START")}
-        >
-          <Play size={12} aria-hidden="true" />
-        </IconButton>
-      )}
+      <Button
+        variant="ghost"
+        disabled={busy}
+        onClick={() => void run(item, action)}
+      >
+        <Icon size={14} aria-hidden="true" />
+        {label}
+      </Button>
     </span>
   );
 }

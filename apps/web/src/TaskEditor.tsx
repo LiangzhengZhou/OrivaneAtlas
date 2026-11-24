@@ -39,6 +39,7 @@ import {
 } from "./components/RepeatFields";
 import { Button, SegmentedControl } from "./components/ui/Button";
 import {
+  DisclosureSection,
   EditorActionsMenu,
   EditorShell,
   FormSection,
@@ -86,6 +87,7 @@ function TaskEditorSurface({
   const { t, i18n } = useTranslation(["common", "work"]);
   const formId = useId();
   const [more, setMore] = useState(mode === "full");
+  const titleInput = useRef<HTMLInputElement>(null);
   const [descriptionOpen, setDescriptionOpen] = useState(mode === "full");
   const pendingChange = useRef<(() => void) | null>(null);
   const [discard, setDiscard] = useState(false);
@@ -255,6 +257,7 @@ function TaskEditorSurface({
   }, [dirty]);
   return (
     <EditorShell
+      keyboardEntry={titleInput}
       modal={
         mode === "quick" || window.matchMedia("(max-width: 767px)").matches
       }
@@ -398,35 +401,38 @@ function TaskEditorSurface({
           </div>
         )}
         <FormSection title={t("taskIdentity")} hideTitle={mode === "quick"}>
-          <label className="field">
-            <span>{t("work:title")}</span>
-            <input
-              aria-label={t("work:title")}
-              required
-              maxLength={240}
-              value={title}
-              placeholder={t("work:titlePlaceholder")}
-              onChange={(event) => setTitle(event.target.value)}
-            />
-          </label>
-          {item && (
+          <div className="task-identity-fields">
             <label className="field">
-              <span>{t("work:status")}</span>
-              <Select
-                aria-label={t("work:status")}
-                value={status}
-                onChange={(event) =>
-                  setStatus(event.target.value as WorkStatus)
-                }
-              >
-                {workStatuses.map((value) => (
-                  <option key={value} value={value}>
-                    {t("work:statuses." + value)}
-                  </option>
-                ))}
-              </Select>
+              <span>{t("work:title")}</span>
+              <input
+                ref={titleInput}
+                aria-label={t("work:title")}
+                required
+                maxLength={240}
+                value={title}
+                placeholder={t("work:titlePlaceholder")}
+                onChange={(event) => setTitle(event.target.value)}
+              />
             </label>
-          )}
+            {item && (
+              <label className="field">
+                <span>{t("work:status")}</span>
+                <Select
+                  aria-label={t("work:status")}
+                  value={status}
+                  onChange={(event) =>
+                    setStatus(event.target.value as WorkStatus)
+                  }
+                >
+                  {workStatuses.map((value) => (
+                    <option key={value} value={value}>
+                      {t("work:statuses." + value)}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            )}
+          </div>
         </FormSection>
         <FormSection title={t("taskPlacement")} hideTitle={mode === "quick"}>
           {(item?.type ?? createType) === "TASK" && (
@@ -607,25 +613,27 @@ function TaskEditorSurface({
             </div>
           </FormSection>
         )}
-        {more && (
-          <FormSection title={t("taskRelationships")}>
-            {(item?.type ?? createType) === "TASK" && (
-              <fieldset className="field">
-                <legend>{t("work:prerequisites")}</legend>
-                <p className="muted">
-                  {t("work:availability")}:{" "}
-                  {t(`work:${previewAvailability.toLowerCase()}`)}
-                </p>
-                <TaskEntityPicker
-                  items={items}
-                  values={prerequisiteIds}
-                  excludedId={item?.id}
-                  disabled={busy}
-                  onChange={setPrerequisiteIds}
-                />
-              </fieldset>
-            )}
-          </FormSection>
+        {more && (item?.type ?? createType) === "TASK" && (
+          <DisclosureSection
+            className="task-relationships"
+            open={mode === "quick" || initialPrerequisites.length > 0}
+            title={
+              t("work:prerequisites") +
+              " · " +
+              t("work:" + previewAvailability.toLowerCase())
+            }
+          >
+            <fieldset className="field">
+              <legend>{t("work:prerequisites")}</legend>
+              <TaskEntityPicker
+                items={items}
+                values={prerequisiteIds}
+                excludedId={item?.id}
+                disabled={busy}
+                onChange={setPrerequisiteIds}
+              />
+            </fieldset>
+          </DisclosureSection>
         )}
         {more && (
           <details className="task-advanced">

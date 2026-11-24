@@ -1,16 +1,18 @@
-import { type ComponentProps, useEffect, useRef } from "react";
+import { type ComponentProps, type RefObject, useEffect, useRef } from "react";
 
 export type DismissReason = "escape" | "outside" | "close-button";
 
 export function DismissibleDialog({
   onRequestClose,
   modal = true,
+  keyboardEntry,
   closeOnOutside = true,
   className = "",
   ...props
 }: Omit<ComponentProps<"dialog">, "onCancel"> & {
   modal?: boolean;
   closeOnOutside?: boolean;
+  keyboardEntry?: RefObject<HTMLElement | null> | undefined;
   onRequestClose(reason: DismissReason): void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -21,8 +23,10 @@ export function DismissibleDialog({
     const node = ref.current;
     if (!node) return;
     const previous = document.activeElement;
+    const keyboardOpened = previous?.matches(":focus-visible");
     if (modal) node.showModal();
     else node.show();
+    if (keyboardOpened) keyboardEntry?.current?.focus({ preventScroll: true });
     let startedOutside = false;
     const outside = (event: PointerEvent) => {
       const rect = node.getBoundingClientRect();
@@ -88,7 +92,7 @@ export function DismissibleDialog({
       )
         previous.focus({ preventScroll: true });
     };
-  }, [modal, closeOnOutside]);
+  }, [modal, closeOnOutside, keyboardEntry]);
   return (
     <dialog
       {...props}

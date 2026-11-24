@@ -1786,6 +1786,10 @@ test("task single click opens the editable task surface without an Inspector", a
   await page.keyboard.press("Escape");
   await expect(editor).toHaveCount(0);
   await expect(page.locator(".context-pane")).toHaveCount(0);
+  await title.press("Enter");
+  await expect(editor.getByLabel(w.work.title, { exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(title).toBeFocused();
 });
 
 test("command palette contextual create and document trash undo preserve content", async ({
@@ -5669,6 +5673,7 @@ test("task timer persists timestamp transitions without per-second writes", asyn
     .getByRole("button", { name: zh ? "开始计时" : "Start timer" })
     .click();
   await expect(timer).toHaveAttribute("data-running", "true");
+  await expect(timer.getByRole("button")).toHaveText(w.work.timerPause);
   await page.waitForTimeout(1300);
   await expect(timer.locator(".task-timer-elapsed")).not.toHaveText("00:00:00");
   // The one-second display tick is local; only the transition reaches the Host.
@@ -10748,7 +10753,9 @@ test("inline prerequisites save atomically with availability and reject stale gr
     .locator(".hierarchy-browser")
     .getByRole("button", { name: "Prerequisite source", exact: true })
     .click();
-  await expect(prerequisites.locator("p")).toContainText(w.work.blocked);
+  await expect(dialog.locator(".task-relationships > summary")).toContainText(
+    w.work.blocked,
+  );
   await page.keyboard.press("Escape");
   await dialog
     .getByRole("button", { name: w.common.create, exact: true })
@@ -10784,11 +10791,15 @@ test("inline prerequisites save atomically with availability and reject stale gr
   await prerequisites
     .getByRole("button", { name: "Prerequisite source ×", exact: true })
     .click();
-  await expect(prerequisites.locator("p")).toContainText(w.work.ready);
+  await expect(dialog.locator(".task-relationships > summary")).toContainText(
+    w.work.ready,
+  );
   await dialog
     .getByLabel(w.desk.activationState, { exact: true })
     .selectOption("INACTIVE");
-  await expect(prerequisites.locator("p")).toContainText(w.work.paused);
+  await expect(dialog.locator(".task-relationships > summary")).toContainText(
+    w.work.paused,
+  );
   await dialog
     .getByLabel(w.desk.activationPolicy, { exact: true })
     .selectOption("AT_SCHEDULED_TIME");
@@ -10797,7 +10808,9 @@ test("inline prerequisites save atomically with availability and reject stale gr
     dialog.getByLabel(w.desk.startDate, { exact: true }),
     "2099-01-01",
   );
-  await expect(prerequisites.locator("p")).toContainText(w.work.waiting);
+  await expect(dialog.locator(".task-relationships > summary")).toContainText(
+    w.work.waiting,
+  );
   await dialog
     .getByLabel(w.desk.activationPolicy, { exact: true })
     .selectOption("IMMEDIATE");
@@ -18894,6 +18907,17 @@ test("task selection mode batches priority and completion", async ({
     .click();
   const selection = page.locator(".task-selection-bar");
   await expect(selection).toBeVisible();
+  const firstTitle = page
+    .locator(".task-card")
+    .filter({ hasText: first.title })
+    .locator(".task-title");
+  await firstTitle.press("Enter");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(firstTitle).toHaveAttribute("aria-pressed", "true");
+  await firstTitle.press("Space");
+  await expect(
+    page.getByRole("checkbox", { name: /Batch selection one/ }),
+  ).not.toBeChecked();
   await page.getByRole("checkbox", { name: /Batch selection one/ }).check();
   await page.getByRole("checkbox", { name: /Batch selection two/ }).check();
   await expect(selection).toContainText("2");
