@@ -1,3 +1,15 @@
+## Session 403 · 中断检查点
+
+个人笔记修复 d1e998f 已验证 56,066 字符正文在组字期间刷新后可恢复已确认内容，桌面中英文与移动中文 3/3，深色专项 2/2。早期候选的完整浏览器回归 852/852，第一次 CI 调度全检 1594/1594。68a7c01、5651181 修正宿主关闭和测试夹具，关闭后扫描探针 3/3，Host 专项 4/4。
+
+中断后核对：最终 browser-final.log 最后启动第 771/852 项，退出码 1073807364，已记录的扫描重试为零。check-verified.log 显示 11/11 包类型检查通过，PostgreSQL connected.test.ts 两项失败，缺少整套测试终态。未发现仍在运行的 Vitest 或 Playwright 测试进程。两个最终全量门禁均待重新验收。
+
+恢复时先核对分支 codex/ux-upgrade、HEAD 和 git status --short。优先单独运行 pnpm exec vitest run packages/storage-postgres/src/connected.test.ts 并保留临时数据库日志；定位失败后重跑本地 pnpm check 和 pnpm test:e2e。日志位于 .artifacts/ux403，前后截图见 docs/ux-upgrade/evidence/session403。Android 真机和系统输入法待验，多人开发继续暂缓。
+
+# Session 403 · 长中文笔记恢复
+
+从 7b7d262 继续。d1e998f 修复原生组合输入期间的草稿快照，68a7c01 修复升级测试关闭数据库后遗留的重复任务扫描。详见 [复现、交互与检查点](CHECKPOINT-403.md)。
+
 # Session 402 · 个人阅读
 
 从 d52ccc0 恢复，产品提交 4cf727e。桌面与移动浏览器完成页码直达、错误页码、出错重试、原件绘制、取消和撤权回归。SQL 读取与完整性验证收录于 [本轮检查点](CHECKPOINT-402.md)。独立人类账号的多人功能已暂缓。8256fa7 修复笔记文件夹命名时的组合输入，原版本上已复现，修复后三种配置均保留输入并在显式提交后持久化。进一步用 Chromium IME 复现了窄屏原生 cancel 关闭整个面板的问题，bba4419 修复并通过三配置联合 9/9。
