@@ -2,7 +2,9 @@
 
 2026-11-24，分支 `codex/ux-upgrade`，起点 89f51d0，任务交互 3396ef2，窄窗 564eb63，最终界面 8de2c4c。Windows 96 DPI 真实 WebView2 窗口完成鼠标计时、键盘编辑、勾选、修改截止日期、完成与撤销并刷新。674×985 内容上缘从 985 移至 51 CSS 像素；390×844 浏览器仍完整显示三项。产品改动限于 Shell、个人任务 UI 与通用编辑器的可选键盘焦点，数据契约沿用旧版。
 
-日志 .artifacts/ux407，截图与前后测量见 docs/ux-upgrade/evidence/session407。18 项任务专项、3 项键盘焦点、2 项深色完成撤销、3 项断点专项通过。Windows 测试程序已退出。pnpm check 和完整浏览器门禁尚待核对；独立浏览器监督进程 PID 3616 串行执行 desktop-zh、desktop-en、mobile-zh，每组 287 项。不要中断其临时宿主与全检便携 PG。恢复时检查 git status --short --branch、HEAD、check.log、delivery-*.log 及 delivery-*.json；若失败，从相应的 error-context.md 定位，复验后记录终态。多人开发暂缓。
+本轮门禁已结束。pnpm check 退出 0，309 个文件、1595 个测试全部通过，两项构建成功。完整桌面中文、桌面英文、移动中文各 287/287，合计 861/861。首轮桌面中文 286/287；旧区域定位器已在 84dc44b 更新，专项 3/3 后又完整重跑通过。实测 WebView2 内容缩放 100%、125%、150%、200%。详见 docs/ux-upgrade/CHECKPOINT-407.md 与 evidence/session407/gates.json。
+
+后续个人体验验收可用独立 Windows 配置，在文件预览与笔记列表重放侧栏收窄、键盘开关及保存归焦；在两台不同 DPI 的显示器之间移动窗口核对焦点和任务栏图标，使用 Windows 讲述人复核详情与计时的播报。混合 DPI 设备、真人读屏、用户已固定的任务栏快捷方式升级与 Android 真机仍待验收。多人工作继续暂缓。
 
 ## Session 406 · 个人任务列表
 

@@ -1,0 +1,60 @@
+{
+  "branch": "codex/ux-upgrade",
+  "product": "8de2c4c",
+  "updatedEditorTest": "84dc44b",
+  "platform": "Windows, isolated fixtures",
+  "check": {
+    "exitCode": 0,
+    "files": 309,
+    "passed": 1595,
+    "unitDurationSeconds": 2071.14,
+    "packagesTypechecked": 11,
+    "builds": 2,
+    "log": "check.log"
+  },
+  "browser": [
+    {
+      "project": "desktop-zh",
+      "exitCode": 0,
+      "started": "2026-11-24T22:23:10.5710140+08:00",
+      "ended": "2026-11-24T23:02:44.0849416+08:00",
+      "passed": 287,
+      "duration": "39.5m",
+      "log": "reviewed-desktop-zh.log"
+    },
+    {
+      "project": "desktop-en",
+      "exitCode": 0,
+      "started": "2026-11-24T22:22:36.4083562+08:00",
+      "ended": "2026-11-24T22:42:36.5894891+08:00",
+      "passed": 287,
+      "duration": "20.0m",
+      "log": "delivery-desktop-en.log"
+    },
+    {
+      "project": "mobile-zh",
+      "exitCode": 0,
+      "started": "2026-11-24T22:42:36.6025847+08:00",
+      "ended": "2026-11-24T23:01:58.9287435+08:00",
+      "passed": 287,
+      "duration": "19.3m",
+      "log": "delivery-mobile-zh.log"
+    }
+  ],
+  "firstChineseRun": {
+    "project": "desktop-zh",
+    "exitCode": 1,
+    "started": "2026-11-24T22:05:18.8338181+08:00",
+    "ended": "2026-11-24T22:22:36.3672861+08:00",
+    "passed": 286,
+    "duration": "17.3m",
+    "log": "delivery-desktop-zh.log"
+  },
+  "editorDisclosureReplay": 3,
+  "taskInteractions": 18,
+  "keyboardFocus": 3,
+  "darkCompletionUndo": 2,
+  "breakpointConfigurations": 3,
+  "windowsContentScaleFactors": [1, 1.25, 1.5, 2],
+  "windowsReportedDPI": 96
+}
