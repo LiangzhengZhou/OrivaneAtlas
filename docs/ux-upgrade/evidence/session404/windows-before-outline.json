@@ -1,0 +1,11 @@
+{
+  "engine": "Edg/158.0.4370.33",
+  "productName": "Atlas UX 404 fixture",
+  "confirmedTitleAfterReload": "山野二笔记",
+  "focus": {
+    "visible": true,
+    "shadow": "rgb(237, 240, 235) 0px -1px 0px 0px inset, rgb(237, 240, 235) 1px 0px 0px 0px inset, rgb(237, 240, 235) -1px 0px 0px 0px inset",
+    "outline": "none",
+    "panelVisible": true
+  }
+}

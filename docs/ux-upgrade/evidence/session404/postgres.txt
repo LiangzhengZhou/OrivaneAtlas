@@ -1,0 +1,8 @@
+Session 403 physical-backup fixture, selected PostgreSQL server.log lines
+2026-11-24 12:33:08.684 CST [25472] LOG:  listening on IPv4 address "127.0.0.1", port 17713
+2026-11-24 12:33:33.545 CST [54844] LOG:  could not bind IPv4 address "127.0.0.1": Permission denied
+2026-11-24 12:33:33.545 CST [54844] FATAL:  could not create any TCP/IP sockets
+
+Session 404 connected.test.ts isolated replay, selected server.log lines
+2026-11-24 14:41:03.958 CST [22708] LOG:  listening on IPv4 address "127.0.0.1", port 33513
+2026-11-24 14:41:04.458 CST [22708] LOG:  database system is ready to accept connections

@@ -1,0 +1,83 @@
+{
+  "product": "ff18859d378116400f68a89cb266dc39e1357b9b",
+  "environment": "Windows 11 build 26300, i5-12500H, Node 24.20.0, pnpm 11.25.0",
+  "recurrences": 0,
+  "gates": [
+    {
+      "log": "connected.log",
+      "revision": "c781ed4",
+      "suite": "PostgreSQL connected transactions",
+      "sha256": "fc04a800fbc718b935133e51cd487ba95282c9247cc1f6431a045f93a79cd6bf",
+      "result": [
+        "Test Files  1 passed (1)",
+        "Tests  2 passed (2)",
+        "Duration  34.14s (tests 90%, transform 9%, import 1%)"
+      ]
+    },
+    {
+      "log": "tabs-before.log",
+      "revision": "c781ed4",
+      "suite": "Baseline keyboard failure",
+      "sha256": "e7f04badf9708583dc9ea2ad1e2365b52465de65db7c7d21d1dc7e397f7f95c9",
+      "result": ["1 failed"]
+    },
+    {
+      "log": "tabs-recheck.log",
+      "revision": "8de38ba precursor",
+      "suite": "Close focus failure before disabled-button fix",
+      "sha256": "3f3c0cd02dc5acd273bc3995eb6fe6da0093913888b51e9398667afec31f763d",
+      "result": ["3 failed"]
+    },
+    {
+      "log": "check-focus.log",
+      "revision": "ff18859",
+      "suite": "Full local check",
+      "sha256": "573ef7404a6da46e5c6ef4963aa0066e7d9b547e20ebd58c9bee053d56a45853",
+      "result": [
+        "Architecture boundaries passed.",
+        "Tasks:    11 successful, 11 total",
+        "Test Files  309 passed (309)",
+        "Tests  1595 passed (1595)",
+        "Duration  727.29s (tests 93%, import 4%, transform 2%)",
+        "Tasks:    2 successful, 2 total"
+      ]
+    },
+    {
+      "log": "browser-final.log",
+      "revision": "ff18859",
+      "suite": "Full default browser regression",
+      "sha256": "5de9128183fec1e750d70c9b96c528b3c99809181e707a0997d6f8a6af31dc04",
+      "result": ["855 passed (1.2h)"]
+    },
+    {
+      "log": "dark-all.log",
+      "revision": "ff18859",
+      "suite": "Full dark regression",
+      "sha256": "619df13778199ad9506b9cf6d3f4cf8d4563db040818881fa252fcb7927c0bd2",
+      "result": ["48 passed (7.4m)"]
+    },
+    {
+      "log": "contrast-focus.log",
+      "revision": "ff18859",
+      "suite": "320px forced colors and reduced motion",
+      "sha256": "bae786812d920584a4065c7d77675f252f355a3f5b9b12aea6515f2a2fd21e3a",
+      "result": ["1 passed (23.5s)"]
+    },
+    {
+      "log": "narrow-focus.log",
+      "revision": "ff18859",
+      "suite": "900px keyboard navigation",
+      "sha256": "f20a0de53d42a44c9392a3fe2742e576836eef81c96f5caff2c50d1483628b85",
+      "result": ["1 passed (16.5s)"]
+    },
+    {
+      "log": "windows-build-focus.log",
+      "revision": "ff18859 Web / 8de38ba native",
+      "suite": "Unsigned isolated Windows build",
+      "sha256": "d49f4d9852ceef96e270c258fd6ea9cbd91a71f436bd150cb3f5ddfb80453b17",
+      "result": [
+        "Built application at: D:\\Lib\\Codex_workplace\\ArcLattice\\.artifacts\\ux404\\windows-target\\release\\arclattice.exe"
+      ]
+    }
+  ]
+}

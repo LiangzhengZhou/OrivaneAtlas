@@ -1,0 +1,10 @@
+{
+  "engine": "Edg/158.0.4370.33",
+  "bytes": 1132,
+  "firstPagePixel": [255, 0, 0, 255],
+  "fourthPagePixel": [0, 0, 255, 255],
+  "jumpFocus": true,
+  "closeRestoresFocus": true,
+  "nativeCompositionRetainsDialog": true,
+  "storedFolder": "阅读草稿"
+}

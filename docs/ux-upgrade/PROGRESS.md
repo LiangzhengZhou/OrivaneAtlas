@@ -1,3 +1,11 @@
+## Session 404 · 个人文档标签与完整回归
+
+2026-11-24 16:15 +08:00，分支 `codex/ux-upgrade`，产品候选 `ff18859d378116400f68a89cb266dc39e1357b9b`，夹具 `68da806`、键盘交互 `8de38ba`、焦点轮廓 `ff18859`。交付时已完成全部本轮测试；无在途测试、原生构建或待保护的测试进程。Windows 测试工作树 ../ArcLattice-ux404-native 位于 8de38ba，已核对干净。
+
+最终 `pnpm check` 通过 1595/1595、309 文件、11/11 包和 2/2 构建；默认 Playwright 855/855，完整深色 48/48，窄屏和 320 像素强制颜色各 1/1。默认完整日志里关闭后的扫描重试为 0。Windows 实窗已验证中文标题重载、键盘焦点、18,875,129 字节 PDF 翻页及四页样本跳页。本轮没有数据迁移。原始日志 .artifacts/ux404，长期证据 docs/ux-upgrade/evidence/session404，报告 CHECKPOINT-404.md。
+
+开放项含 Android 低内存设备、系统输入法、真人读屏和安装升级。下次先核对 git status --short --branch、git rev-parse HEAD、git worktree list 和本节；从 ACCEPTANCE.md 第 6、7、14、15 项恢复。在无真实设备时先用 tests/e2e/work.spec.ts 中“v2.3 closing a document flushes latest text”回放保存失败后的取消、重试、关闭最后一个标签与返回列表的焦点，并对照同一笔记的已确认正文；可用真机时用合成笔记和 PDF 重放系统组字中断和后台回收。多人开发按用户指示暂缓。
+
 ## Session 403 · 中断检查点
 
 个人笔记修复 d1e998f 已验证 56,066 字符正文在组字期间刷新后可恢复已确认内容，桌面中英文与移动中文 3/3，深色专项 2/2。早期候选的完整浏览器回归 852/852，第一次 CI 调度全检 1594/1594。68a7c01、5651181 修正宿主关闭和测试夹具，关闭后扫描探针 3/3，Host 专项 4/4。
