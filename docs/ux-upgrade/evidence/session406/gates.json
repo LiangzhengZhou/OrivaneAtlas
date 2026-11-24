@@ -1,0 +1,44 @@
+{
+  "product": "56abeda",
+  "fixtureChanges": ["4a880be", "2a5b89f", "e98a88d"],
+  "platform": "Windows Chromium, isolated fixtures",
+  "check": {
+    "files": 309,
+    "passed": 1595,
+    "unitDurationSeconds": 2381.29,
+    "builds": 2,
+    "packagesTypechecked": 11
+  },
+  "browser": [
+    {
+      "project": "mobile-zh",
+      "exitCode": 0,
+      "started": "2026-11-24T17:53:38.0984106+08:00",
+      "ended": "2026-11-24T18:07:25.1380703+08:00",
+      "passed": 286,
+      "duration": "13.8m",
+      "log": "final-mobile-zh.log"
+    },
+    {
+      "project": "desktop-zh",
+      "exitCode": 0,
+      "started": "2026-11-24T18:07:25.1684803+08:00",
+      "ended": "2026-11-24T18:21:13.4511523+08:00",
+      "passed": 286,
+      "duration": "13.8m",
+      "log": "final-desktop-zh.log"
+    },
+    {
+      "project": "desktop-en",
+      "exitCode": 0,
+      "started": "2026-11-24T18:37:16.8405405+08:00",
+      "ended": "2026-11-24T18:52:46.0440860+08:00",
+      "passed": 286,
+      "duration": "15.4m",
+      "log": "verified-desktop-en.log"
+    }
+  ],
+  "dark": 4,
+  "narrow": 1,
+  "portFixtureReplay": 9
+}

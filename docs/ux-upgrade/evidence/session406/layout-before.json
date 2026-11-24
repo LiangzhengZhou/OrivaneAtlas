@@ -1,0 +1,55 @@
+{
+  "build": "tabs-dist-focus",
+  "measurements": [
+    {
+      "width": 1440,
+      "height": 900,
+      "forcedColors": "none",
+      "top": 325.59375,
+      "bottom": 390.59375,
+      "entireRowsVisible": 3,
+      "overflow": false,
+      "theme": "light"
+    },
+    {
+      "width": 900,
+      "height": 800,
+      "forcedColors": "none",
+      "top": 417.1875,
+      "bottom": 522.1875,
+      "entireRowsVisible": 3,
+      "overflow": false,
+      "theme": "light"
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "forcedColors": "none",
+      "top": 617.40625,
+      "bottom": 742.40625,
+      "entireRowsVisible": 1,
+      "overflow": false,
+      "theme": "light"
+    },
+    {
+      "width": 360,
+      "height": 800,
+      "forcedColors": "none",
+      "top": 626,
+      "bottom": 751,
+      "entireRowsVisible": 0,
+      "overflow": false,
+      "theme": "dark"
+    },
+    {
+      "width": 320,
+      "height": 700,
+      "forcedColors": "active",
+      "top": 626,
+      "bottom": 751,
+      "entireRowsVisible": 0,
+      "overflow": false,
+      "theme": "light"
+    }
+  ]
+}
