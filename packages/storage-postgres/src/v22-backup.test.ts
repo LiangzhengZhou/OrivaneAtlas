@@ -26,6 +26,15 @@ it("PostgreSQL physical backup restores v2.2 reminder, skipped occurrence, conve
   await db.close();
   const backup = await harness.cluster().snapshot();
   await harness.cluster().withRestoredSnapshot(backup, async (restored) => {
+    const livePort = await harness.query(
+      name,
+      "SELECT inet_server_port() AS port",
+    );
+    const copyPort = await restored.query(
+      name,
+      "SELECT inet_server_port() AS port",
+    );
+    expect(copyPort.rows[0].port).not.toBe(livePort.rows[0].port);
     const copy = await PostgresUnitOfWork.open({
       connection: { ...restored.connection, database: name },
     });

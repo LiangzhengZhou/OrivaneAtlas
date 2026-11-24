@@ -1,3 +1,4 @@
+import { createServer } from "node:net";
 import type { WorkTransaction } from "@arclattice/application";
 import { describe, expect, it } from "vitest";
 import { repositoryContract } from "../../../tests/contracts/work-repository";
@@ -34,8 +35,22 @@ describe("real PostgreSQL storage", () => {
     expect(events.activity).toHaveLength(5);
     expect(events.outbox).toHaveLength(5);
     await db.close();
+    const previousPort = h.cluster().connection.port;
     await h.cluster().stop();
-    await h.cluster().boot();
+    const otherListener = createServer();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        otherListener.once("error", reject);
+        otherListener.listen(previousPort, "127.0.0.1", resolve);
+      });
+      await h.cluster().boot();
+      expect(h.cluster().connection.port).not.toBe(previousPort);
+    } finally {
+      if (otherListener.listening)
+        await new Promise<void>((resolve, reject) =>
+          otherListener.close((error) => (error ? reject(error) : resolve())),
+        );
+    }
     const reopened = await h.open(name);
     expect(await service(reopened).snapshot(context, true)).toEqual(before);
     expect(await reopened.inspectEvents(context.workspaceId)).toEqual(events);

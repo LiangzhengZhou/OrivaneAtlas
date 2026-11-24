@@ -45,21 +45,8 @@ export class TemporaryPostgres {
     const directory = await mkdtemp(join(tmpdir(), "arclattice-pg-"));
     const password = randomBytes(32).toString("hex");
     const pwfile = join(directory, "init-password");
-    const listener = createServer();
-    await new Promise<void>((accept, reject) => {
-      listener.once("error", reject);
-      listener.listen(0, "127.0.0.1", accept);
-    });
-    const address = listener.address();
-    if (!address || typeof address === "string")
-      throw new Error("No loopback port");
-    const port = address.port;
-    await new Promise<void>((accept, reject) =>
-      listener.close((error) => (error ? reject(error) : accept())),
-    );
     const cluster = new TemporaryPostgres(directory, binaries.pg_ctl, {
       host: "127.0.0.1",
-      port,
       user: "arclattice_test",
       password,
       database: "postgres",
@@ -83,9 +70,7 @@ export class TemporaryPostgres {
       await rm(pwfile);
       await appendFile(
         join(directory, "data", "postgresql.conf"),
-        "\nlisten_addresses='127.0.0.1'\nport=" +
-          port +
-          "\nunix_socket_directories=''\nmax_connections=30\n",
+        "\nlisten_addresses='127.0.0.1'\nunix_socket_directories=''\nmax_connections=30\n",
       );
       await cluster.boot();
       return cluster;
@@ -97,6 +82,19 @@ export class TemporaryPostgres {
     }
   }
   async boot() {
+    // Offline backups and restores release their old port. Ask the OS for a
+    // fresh endpoint immediately before starting this specific data directory.
+    const listener = createServer();
+    await new Promise<void>((accept, reject) => {
+      listener.once("error", reject);
+      listener.listen(0, "127.0.0.1", accept);
+    });
+    const address = listener.address();
+    if (!address || typeof address === "string")
+      throw new Error("No loopback port");
+    await new Promise<void>((accept, reject) =>
+      listener.close((error) => (error ? reject(error) : accept())),
+    );
     await execute(
       this.control,
       [
@@ -104,6 +102,8 @@ export class TemporaryPostgres {
         join(this.directory, "data"),
         "-l",
         join(this.directory, "server.log"),
+        "-o",
+        "-p " + address.port,
         "-w",
         "-t",
         "15",
@@ -111,6 +111,7 @@ export class TemporaryPostgres {
       ],
       { windowsHide: true, timeout: 20_000 },
     );
+    this.connection.port = address.port;
   }
   async stop() {
     await execute(
@@ -152,26 +153,24 @@ export class TemporaryPostgres {
     )
       throw new Error("Unsafe snapshot path");
     const directory = await mkdtemp(join(tmpdir(), "arclattice-pg-"));
-    const restored = new TemporaryPostgres(
-      directory,
-      this.control,
-      this.connection,
-    );
-    await this.stop();
+    const restored = new TemporaryPostgres(directory, this.control, {
+      ...this.connection,
+    });
+    await cp(snapshot, join(directory, "data"), {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+    });
     try {
-      await cp(snapshot, join(directory, "data"), {
-        recursive: true,
-        errorOnExist: true,
-        force: false,
-      });
       await restored.boot();
+    } catch (error) {
+      await restored.stop().catch(() => undefined);
+      throw error;
+    }
+    try {
       return await action(restored);
     } finally {
-      try {
-        await restored.dispose();
-      } finally {
-        await this.boot();
-      }
+      await restored.dispose();
     }
   }
   async dispose() {
