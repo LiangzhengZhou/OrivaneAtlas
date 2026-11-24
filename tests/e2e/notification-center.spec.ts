@@ -793,3 +793,26 @@ test("the file viewer opens a private raster and pages extracted PDF text", asyn
     .click();
   await expect(openOriginal).toBeFocused();
 });
+
+test("resizing Tasks keeps the content and the correct navigation control in the first viewport", async ({
+  page,
+}) => {
+  await offline(page);
+  await page.goto(origin + "/#tasks");
+  const heading = page.locator(".page-header h1");
+  const menu = page.locator(".sidebar .mobile-navigation-toggle");
+  for (const width of [1024, 801, 800, 768, 674, 581, 580, 390, 1024]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(heading).toBeInViewport();
+    expect(
+      await heading.evaluate((el) => el.getBoundingClientRect().top),
+    ).toBeLessThan(140);
+    if (width <= 800) {
+      await expect(menu).toBeVisible();
+      await expect(page.locator(".sidebar-collapse-button")).toBeHidden();
+    } else {
+      await expect(menu).toBeHidden();
+      await expect(page.locator(".sidebar-collapse-button")).toBeVisible();
+    }
+  }
+});

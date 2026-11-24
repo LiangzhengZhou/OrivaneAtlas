@@ -562,7 +562,22 @@ body {
     filter: none;
   }
 }
-@media (max-width: 767px) {
+@media (max-width: 800px) {
+  .app-shell .sidebar {
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .app-shell .sidebar .mobile-navigation-toggle {
+    position: static;
+    display: inline-flex;
+  }
+  .sidebar .brand {
+    margin: 0;
+    padding-inline-end: 0;
+  }
+  .sidebar .sidebar-collapse-button,
   .sidebar .file-library-shortcut {
     display: none;
   }
