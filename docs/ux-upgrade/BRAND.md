@@ -15,7 +15,7 @@ Orivane Atlas 面向在项目、原始资料和写作之间往返的用户。字
 
 |载体|实现与使用规则|
 |---|---|
-|启动器、favicon、系统托盘|从 `branding/app-icon-master.svg` 生成。Web 使用透明 PNG；ICO 为 16/20/24/32/48/64/128/256 像素独立帧。Tauri 包装配置引用同一 ICO。|
+|启动器、favicon、系统托盘|从 `branding/app-icon-master.svg` 生成。Web 使用透明 PNG。Windows ICO 将 256px 放在第一帧，供 Tauri 的默认窗口和托盘使用。EXE 和安装程序引用同一 ICO。|
 |横向字标|登录、启动和展开的侧栏使用相同 PNG。深色背景用单色亮色版，折叠侧栏用独立图标。SVG 为可编辑字标源。|
 |Android|普通、圆形、自适应图标按五种密度生成，前景与背景独立。单色通知图标采用透明镂空。自适应安全圆按实际像素测试。|
 |排版|页面大标题 Georgia / Songti SC / SimSun，默认 28px，窄屏 24px。操作与元信息使用既有 Inter / Segoe UI / PingFang / Microsoft YaHei 等本机字体栈。字号随语义与密度继承。|
@@ -27,3 +27,14 @@ Orivane Atlas 面向在项目、原始资料和写作之间往返的用户。字
 资源选择使用单击或空格，打开使用双击、Enter 或详情中的“打开”。窄屏详情使用已有原生 dialog 封装，Escape 关闭后恢复焦点。月份日期使用方向键跨日、跨周及跨月，Tab 经过选中日期一次。
 
 仍待完整验收的内容包括全套基础控件、空状态插画/引导图、密度组合、系统托盘与物理 Android 启动器显示。
+
+### Windows 图标尺寸
+
+用 `pnpm icons:generate` 从矢量母版直接绘制各帧。当前 Tauri Windows 运行时只解码 ICO 首帧，保持 256px 在首位。Windows Shell 按请求像素数选择资源，16–24px 帧保留额外半像素内边距。尺寸依据 [Microsoft Windows 图标规范](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)。
+
+|载体|100%|125%|150%|175%|200%|250%|300%|400%|
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+|标题栏和通知区域尺寸（px）|16|20|24|28|32|40|48|64|
+|任务栏尺寸（px）|24|30|36|42|48|60|72|96|
+
+以上像素数均有独立帧，另外提供 56、80、128 和 256px 供其他入口选用。回归用例核对首帧、尺寸、透明通道和独立 PNG 的内容。

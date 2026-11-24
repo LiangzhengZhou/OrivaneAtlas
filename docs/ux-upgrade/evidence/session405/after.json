@@ -1,0 +1,80 @@
+{
+  "product": "Atlas UX 405 icon fixture",
+  "dpi": 144,
+  "windowIconWidth": 256,
+  "windowIconHeight": 256,
+  "shellFrames": [
+    {
+      "px": 16,
+      "resourceId": 2
+    },
+    {
+      "px": 20,
+      "resourceId": 3
+    },
+    {
+      "px": 24,
+      "resourceId": 4
+    },
+    {
+      "px": 28,
+      "resourceId": 5
+    },
+    {
+      "px": 30,
+      "resourceId": 6
+    },
+    {
+      "px": 32,
+      "resourceId": 7
+    },
+    {
+      "px": 36,
+      "resourceId": 8
+    },
+    {
+      "px": 40,
+      "resourceId": 9
+    },
+    {
+      "px": 42,
+      "resourceId": 10
+    },
+    {
+      "px": 48,
+      "resourceId": 11
+    },
+    {
+      "px": 56,
+      "resourceId": 12
+    },
+    {
+      "px": 60,
+      "resourceId": 13
+    },
+    {
+      "px": 64,
+      "resourceId": 14
+    },
+    {
+      "px": 72,
+      "resourceId": 15
+    },
+    {
+      "px": 80,
+      "resourceId": 16
+    },
+    {
+      "px": 96,
+      "resourceId": 17
+    },
+    {
+      "px": 128,
+      "resourceId": 18
+    },
+    {
+      "px": 256,
+      "resourceId": 1
+    }
+  ]
+}

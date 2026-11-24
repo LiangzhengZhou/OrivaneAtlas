@@ -1,0 +1,80 @@
+{
+  "product": "Atlas UX 404 fixture",
+  "dpi": 144,
+  "windowIconWidth": 16,
+  "windowIconHeight": 16,
+  "shellFrames": [
+    {
+      "px": 16,
+      "resourceId": 1
+    },
+    {
+      "px": 20,
+      "resourceId": 2
+    },
+    {
+      "px": 24,
+      "resourceId": 3
+    },
+    {
+      "px": 28,
+      "resourceId": 4
+    },
+    {
+      "px": 30,
+      "resourceId": 4
+    },
+    {
+      "px": 32,
+      "resourceId": 4
+    },
+    {
+      "px": 36,
+      "resourceId": 4
+    },
+    {
+      "px": 40,
+      "resourceId": 5
+    },
+    {
+      "px": 42,
+      "resourceId": 5
+    },
+    {
+      "px": 48,
+      "resourceId": 5
+    },
+    {
+      "px": 56,
+      "resourceId": 6
+    },
+    {
+      "px": 60,
+      "resourceId": 6
+    },
+    {
+      "px": 64,
+      "resourceId": 6
+    },
+    {
+      "px": 72,
+      "resourceId": 6
+    },
+    {
+      "px": 80,
+      "resourceId": 6
+    },
+    {
+      "px": 96,
+      "resourceId": 7
+    },
+    {
+      "px": 128,
+      "resourceId": 7
+    },
+    {
+      "px": 256,
+      "resourceId": 8
+    }
+  ]
+}
