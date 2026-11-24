@@ -21255,8 +21255,12 @@ test("personal document tabs keep keyboard focus and the confirmed Chinese title
   await expect(tab("山野三")).toBeFocused();
   await tab("山野三").press("ArrowLeft");
   await expect(tab("山野二")).toBeFocused();
-  await expect(page.getByRole("tabpanel", { name: "山野二", exact: true })).toBeVisible();
-  const panel = page.getByRole("tabpanel").filter({ has: page.locator(".document-title") });
+  await expect(
+    page.getByRole("tabpanel", { name: "山野二", exact: true }),
+  ).toBeVisible();
+  const panel = page
+    .getByRole("tabpanel")
+    .filter({ has: page.locator(".document-title") });
   const input = panel.getByLabel(w.desk.noteTitle);
   await input.focus();
   await input.press("End");
@@ -21275,12 +21279,16 @@ test("personal document tabs keep keyboard focus and the confirmed Chinese title
   await expect(tab("山野三")).toBeFocused();
   await expect(page.getByRole("tabpanel", { name: "山野三" })).toBeVisible();
   await expect(strip.getByRole("tab")).toHaveCount(2);
+  await expect(tab("山野三")).toHaveCSS("outline-style", "solid");
+  await expect(tab("山野三")).toHaveCSS("outline-width", "2px");
   await page.screenshot({ path: info.outputPath("adjacent-note-focus.png") });
   await waitForLocalReplay(page);
   const snapshot = await (
     await page.request.get(workbench.url + "/api/snapshot")
   ).json();
   expect(
-    snapshot.notes.find((note: { title: string }) => note.title === "山野二笔记")?.bodyMd,
+    snapshot.notes.find(
+      (note: { title: string }) => note.title === "山野二笔记",
+    )?.bodyMd,
   ).toBe("山野二的正文");
 });

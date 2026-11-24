@@ -95,6 +95,15 @@
   width: 30px;
   padding-inline: 6px;
 }
+.document-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+@media (forced-colors: active) {
+  .document-tabs button:focus-visible {
+    outline-color: Highlight;
+  }
+}
 @media (pointer: coarse) {
   .document-tabs {
     min-height: 44px;
