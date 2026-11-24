@@ -13064,6 +13064,7 @@ test("account experience: picker recent survives refresh and isolates workspace 
   );
   await page.reload();
   await nav(page, w.desk.tasks);
+  await openTaskFilters(page);
   const picker = page.locator(".project-filter-picker .hierarchy-picker");
   await picker.locator(".hierarchy-selected > button").last().click();
   await expect(page.locator(".hierarchy-browser li").first()).toContainText(
