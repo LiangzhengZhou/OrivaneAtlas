@@ -9025,6 +9025,7 @@ test("task edits, persistence, language, trash and recovery", async ({
   await taskMenu(page, "Edited 中文 task");
   await page.getByLabel("Status for Edited 中文 task").selectOption("DONE");
   await expect(page.getByLabel("Status for Edited 中文 task")).toHaveCount(0);
+  await openTaskFilters(page);
   await page.getByLabel("Status", { exact: true }).selectOption("DONE");
   await taskMenu(page, "Edited 中文 task");
   await expect(page.getByLabel("Status for Edited 中文 task")).toHaveValue(
@@ -9048,6 +9049,7 @@ test("task edits, persistence, language, trash and recovery", async ({
   await expect(
     page.locator(".task-card").filter({ hasText: "Edited 中文 task" }),
   ).toHaveCount(0);
+  await openTaskFilters(page);
   await page.getByLabel("Status", { exact: true }).selectOption("DONE");
   await taskMenu(page, "Edited 中文 task");
   await expect(page.getByLabel("Status for Edited 中文 task")).toHaveValue(
