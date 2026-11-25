@@ -21513,4 +21513,40 @@ test("HTML authoring starts from a blank note and rejects invalid imports", asyn
     pane(page).frameLocator(".html-note-preview").getByText("First line"),
   ).toBeVisible();
   await saveDocument(page, w);
+  const replacement = {
+    name: "replacement.html",
+    mimeType: "text/html",
+    buffer: Buffer.from("<p>Replacement paragraph</p>"),
+  };
+  const dialog = page.getByRole("dialog", {
+    name: zh ? "确认操作" : "Confirm action",
+  });
+  for (const accept of [false, true]) {
+    const tools = pane(page).locator(".document-tools");
+    if (!(await tools.isVisible())) {
+      await pane(page).locator(".document-actions-menu > button").click();
+    }
+    if (
+      (await tools.locator(":scope > button").getAttribute("aria-expanded")) !==
+      "true"
+    )
+      await tools.locator(":scope > button").click();
+    await tools
+      .locator('input[accept=".html,.htm"]')
+      .setInputFiles(replacement);
+    await dialog
+      .getByRole("button", {
+        name: accept ? (zh ? "确认" : "Confirm") : zh ? "取消" : "Cancel",
+        exact: true,
+      })
+      .click();
+    await expect(
+      pane(page)
+        .frameLocator(".html-note-preview")
+        .getByText(accept ? "Replacement paragraph" : "First line"),
+    ).toBeVisible();
+  }
+  await expect(
+    pane(page).getByLabel(w.desk.noteTitle, { exact: true }),
+  ).toHaveValue("Seed page");
 });
