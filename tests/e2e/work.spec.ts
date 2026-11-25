@@ -21419,3 +21419,98 @@ test("personal document tabs keep keyboard focus and the confirmed Chinese title
     )?.bodyMd,
   ).toBe("山野二的正文");
 });
+
+test("HTML note imports directly, renders static markup and round-trips edited source", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name);
+  const zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.notes);
+  const source =
+    '\uFEFF<!doctype html><html><head><title>Field journal</title><style>h2{color:rgb(12, 72, 96)}</style></head><body><h2>Garden</h2><table><tr><td>Lavender</td></tr></table><pre>~~~</pre><img src="https://assets.invalid/garden.jpg"></body></html>';
+  let requests = 0;
+  await page.route("https://assets.invalid/**", (route) => {
+    requests++;
+    return route.abort();
+  });
+  await page.locator('.page-header input[accept=".html,.htm"]').setInputFiles({
+    name: "garden.HTM",
+    mimeType: "text/html",
+    buffer: Buffer.from(source),
+  });
+  const current = pane(page);
+  const frame = current.frameLocator(".html-note-preview");
+  await expect(frame.getByRole("heading", { name: "Garden" })).toHaveCSS(
+    "color",
+    "rgb(12, 72, 96)",
+  );
+  await expect(frame.getByRole("cell")).toHaveText("Lavender");
+  await expect(frame.locator("img[src]")).toHaveCount(0);
+  await expect(current.locator(".html-note-preview")).toHaveAttribute(
+    "sandbox",
+    "",
+  );
+  await expect(
+    current.getByLabel(w.desk.noteTitle, { exact: true }),
+  ).toHaveValue("Field journal");
+  await page.screenshot({ path: info.outputPath("html-note-reading.png") });
+  await documentMode(page, /^(编辑|Edit)$/);
+  const area = current.getByRole("textbox", {
+    name: zh ? "HTML 源码" : "HTML source",
+    exact: true,
+  });
+  await expect(area).toHaveValue(source);
+  const edited = source.replace("Lavender", "Rosemary");
+  await area.fill(edited);
+  await saveDocument(page, w);
+  await page.reload();
+  await page
+    .locator(".note-card, .library-document-row, .space-card")
+    .filter({ hasText: "Field journal" })
+    .first()
+    .press("Enter");
+  await expect(frame.getByRole("cell")).toHaveText("Rosemary");
+  const download = page.waitForEvent("download");
+  await documentAction(
+    page,
+    zh ? "导出 HTML 源文件" : "Export HTML source",
+    true,
+  );
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("Field journal.html");
+  expect(await readFile((await file.path())!, "utf8")).toBe(edited);
+  expect(requests).toBe(0);
+});
+
+test("HTML authoring starts from a blank note and rejects invalid imports", async ({
+  page,
+  workbench,
+}, info) => {
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  await nav(page, w.desk.notes);
+  await page.locator('.page-header input[accept=".html,.htm"]').setInputFiles({
+    name: "invalid.html",
+    mimeType: "text/html",
+    buffer: Buffer.from([0xff, 0xfe]),
+  });
+  await expect(
+    page.locator(".page-header .html-note-import [role=alert]"),
+  ).toBeVisible();
+  await page.locator(".page-header .compact-create").click();
+  await documentMode(page, zh ? "使用 HTML 编写" : "Write in HTML");
+  await pane(page)
+    .getByLabel(w.desk.noteTitle, { exact: true })
+    .fill("Seed page");
+  await pane(page)
+    .getByRole("textbox", { name: zh ? "HTML 源码" : "HTML source" })
+    .fill("<p>First line</p>");
+  await documentMode(page, w.desk.read);
+  await expect(
+    pane(page).frameLocator(".html-note-preview").getByText("First line"),
+  ).toBeVisible();
+  await saveDocument(page, w);
+});

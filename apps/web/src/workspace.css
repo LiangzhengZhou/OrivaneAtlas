@@ -592,3 +592,50 @@
   justify-content: flex-start;
   text-align: start;
 }
+.html-note-editor,
+.html-note-preview {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 1rem auto;
+}
+.html-note-editor textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 45vh;
+  resize: vertical;
+  font-family: ui-monospace, monospace;
+  tab-size: 2;
+}
+.html-note-preview {
+  height: 65vh;
+  min-height: 16rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+}
+.html-note-import {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.html-note-import [role="alert"] {
+  max-width: 30ch;
+}
+.page-header-actions:has(.html-note-import [role="alert"]) {
+  flex-wrap: wrap;
+  justify-content: end;
+  flex-shrink: 1;
+  max-width: 100%;
+}
+.page-header-actions .html-note-import:has([role="alert"]) {
+  display: contents;
+}
+.page-header-actions .html-note-import [role="alert"] {
+  order: 1;
+  flex-basis: 100%;
+  max-width: 100%;
+  text-align: end;
+  overflow-wrap: anywhere;
+}

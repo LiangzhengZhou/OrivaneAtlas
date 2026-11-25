@@ -91,6 +91,7 @@ import { AssistantPane } from "./features/ai/AssistantPane";
 import { AtlasFloatingSurface } from "./features/ai/AtlasFloatingSurface";
 import { parseConversationRoute } from "./features/ai/conversation-route";
 import type { CalendarViewState } from "./features/calendar/CalendarWorkspace";
+import { HtmlNoteImport } from "./features/documents/HtmlNoteImport";
 import { FileLinkContext } from "./features/files/FileLinkContext";
 import { FilesWorkspace } from "./features/files/FilesWorkspace";
 import { parseFileHash } from "./features/files/fileRoute";
@@ -2034,24 +2035,58 @@ function Workbench({
       "admin",
     ] as string[]
   ).includes(view) ? (
-    <Button
-      variant={view === "projects" && activeProjectId ? "ghost" : "primary"}
-      className="compact-create"
-      type="button"
-      disabled={busy || loading}
-      onClick={create}
-    >
-      <Plus size={17} />
-      {t(
-        view === "notes" || view === "files"
-          ? "newNote"
-          : view === "journal"
-            ? "todayJournal"
-            : view === "projects"
-              ? "newProject"
-              : "newTask",
+    <>
+      {view === "notes" && (
+        <HtmlNoteImport
+          key={JSON.stringify([
+            runtime.serverOrigin,
+            context.workspaceId,
+            context.principalId,
+            folderFilter,
+          ])}
+          zh={i18n.language.startsWith("zh")}
+          disabled={busy || loading}
+          onImport={async (note) => {
+            if (
+              runtime.context?.workspaceId !== context.workspaceId ||
+              runtime.context?.principalId !== context.principalId
+            )
+              return;
+            await run(async () => {
+              const created = await runtime.saveNote(null, 0, {
+                kind: "NOTE",
+                day: null,
+                title: note.title,
+                bodyMd: note.body,
+                aiPolicy: privateContentPolicy,
+                ...(folderFilter?.startsWith("folder:")
+                  ? { primaryFolderId: folderFilter.slice(7) }
+                  : {}),
+              });
+              openNote(created);
+            });
+          }}
+        />
       )}
-    </Button>
+      <Button
+        variant={view === "projects" && activeProjectId ? "ghost" : "primary"}
+        className="compact-create"
+        type="button"
+        disabled={busy || loading}
+        onClick={create}
+      >
+        <Plus size={17} />
+        {t(
+          view === "notes" || view === "files"
+            ? "newNote"
+            : view === "journal"
+              ? "todayJournal"
+              : view === "projects"
+                ? "newProject"
+                : "newTask",
+        )}
+      </Button>
+    </>
   ) : null;
   const shellActions = (
     <>

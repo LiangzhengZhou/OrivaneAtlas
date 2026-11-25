@@ -37,6 +37,8 @@ import { DocumentDrilldownPicker } from "./features/documents/DocumentDrilldownP
 import { DocumentPopover } from "./features/documents/DocumentPopover";
 import { DocumentReading } from "./features/documents/DocumentReading";
 import { DocumentSaveStatus } from "./features/documents/DocumentSaveStatus";
+import { HtmlNoteImport } from "./features/documents/HtmlNoteImport";
+import { htmlNoteBody, htmlNoteSource } from "./features/documents/htmlNote";
 import { mergeMarkdown } from "./features/documents/merge";
 import { FileDetail, type FileDraft } from "./features/files/FileDetail";
 import { fileMarkdownLink } from "./features/files/fileRoute";
@@ -616,6 +618,7 @@ function DocumentPane({
   const [base, setBase] = useState(request.entity),
     [title, setTitle] = useState(request.entity?.title ?? request.day ?? ""),
     [body, setBody] = useState(request.entity?.bodyMd ?? "");
+  const htmlSource = useMemo(() => htmlNoteSource(body), [body]);
   const [editorPending, setEditorPending] = useState(false);
   const editorPendingRef = useRef(false);
   const folderTrail = (() => {
@@ -675,7 +678,9 @@ function DocumentPane({
   const [aiPolicy, setAiPolicy] = useState(
     request.entity?.aiPolicy ?? privateContentPolicy,
   );
-  const [mode, setMode] = useState<"live" | "source" | "read">("live"),
+  const [mode, setMode] = useState<"live" | "source" | "read">(
+      htmlSource !== null ? "read" : "live",
+    ),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [compositionBase, setCompositionBase] = useState<{
@@ -880,7 +885,13 @@ function DocumentPane({
       },
       previous = baseRef.current;
     if (request.kind === "NOTE" && !draft.title.trim() && draft.body.trim()) {
-      draft.title = draft.body
+      draft.title = (
+        htmlNoteSource(draft.body) !== null
+          ? zh
+            ? "HTML 笔记"
+            : "HTML note"
+          : draft.body
+      )
         .trim()
         .split(/\r?\n/, 1)[0]!
         .replace(/^#{1,6}\s+/, "")
@@ -1159,29 +1170,52 @@ function DocumentPane({
         />
         <DocumentPopover
           className="document-mode-menu"
-          label={<>Markdown ▾</>}
+          label={<>{htmlSource === null ? "Markdown" : "HTML"} ▾</>}
           closeOnClick
         >
-          {(["live", "source"] as const).map((value) => (
+          {htmlSource === null && !body && (
             <Button
-              key={value}
               type="button"
               variant="toggle"
-              aria-pressed={mode === value}
-              onClick={() => setMode(value)}
+              onClick={() => {
+                setBody(htmlNoteBody(""));
+                setMode("source");
+              }}
             >
-              {value === "live"
-                ? zh
-                  ? "实时预览"
-                  : "Live preview"
-                : zh
-                  ? "源码"
-                  : "Source"}
+              {zh ? "使用 HTML 编写" : "Write in HTML"}
             </Button>
-          ))}
+          )}
+          {htmlSource !== null && (
+            <Button
+              type="button"
+              variant="toggle"
+              onClick={() => setMode("source")}
+            >
+              {zh ? "HTML 源码" : "HTML source"}
+            </Button>
+          )}
+          {htmlSource === null &&
+            (["live", "source"] as const).map((value) => (
+              <Button
+                key={value}
+                type="button"
+                variant="toggle"
+                aria-pressed={mode === value}
+                onClick={() => setMode(value)}
+              >
+                {value === "live"
+                  ? zh
+                    ? "实时预览"
+                    : "Live preview"
+                  : zh
+                    ? "源码"
+                    : "Source"}
+              </Button>
+            ))}
         </DocumentPopover>
         <span className="action-spacer" />
         <span
+          hidden={htmlSource !== null}
           className="document-atlas-action"
           style={mode === "read" ? { visibility: "hidden" } : undefined}
           aria-hidden={mode === "read" || undefined}
@@ -1238,10 +1272,26 @@ function DocumentPane({
               variant="toggle"
               type="button"
               onClick={() =>
-                void exportHtml(title || "document", body, runtime.loadImage)
+                htmlSource === null
+                  ? void exportHtml(
+                      title || "document",
+                      body,
+                      runtime.loadImage,
+                    )
+                  : downloadText(
+                      (title || "document") + ".html",
+                      htmlSource,
+                      "text/html;charset=utf-8",
+                    )
               }
             >
-              {zh ? "导出 HTML" : "Export HTML"}
+              {htmlSource !== null
+                ? zh
+                  ? "导出 HTML 源文件"
+                  : "Export HTML source"
+                : zh
+                  ? "导出 HTML"
+                  : "Export HTML"}
             </Button>
             <Button
               variant="toggle"
@@ -1327,6 +1377,28 @@ function DocumentPane({
             }
           >
             <div className="document-upload-grid">
+              <HtmlNoteImport
+                zh={zh}
+                disabled={busy || !!base?.deletedAt}
+                onImport={async (note) => {
+                  const existingBody =
+                    editor.current?.state.doc.toString() ??
+                    current.current.body;
+                  if (
+                    existingBody &&
+                    !(await confirmAction(
+                      zh
+                        ? "用导入的 HTML 替换当前正文？"
+                        : "Replace the current body with the imported HTML?",
+                    ))
+                  )
+                    return;
+                  if (!current.current.title.trim()) setTitle(note.title);
+                  current.current.body = note.body;
+                  setBody(note.body);
+                  setMode("read");
+                }}
+              />
               <FilePicker
                 label={t("importMarkdown")}
                 hint={
@@ -1358,23 +1430,27 @@ function DocumentPane({
                   });
                 }}
               />
-              <FilePicker
-                label={s("image")}
-                hint={
-                  zh
-                    ? "PNG / JPEG / WebP · 原图先保存到本机"
-                    : "PNG / JPEG / WebP · Originals saved on this device first"
-                }
-                disabled={busy || !!base?.deletedAt}
-                accept="image/png,image/jpeg,image/webp"
-                onFile={(file) => insertImages([file])}
-              />
+              {htmlSource === null && (
+                <FilePicker
+                  label={s("image")}
+                  hint={
+                    zh
+                      ? "PNG / JPEG / WebP · 原图先保存到本机"
+                      : "PNG / JPEG / WebP · Originals saved on this device first"
+                  }
+                  disabled={busy || !!base?.deletedAt}
+                  accept="image/png,image/jpeg,image/webp"
+                  onFile={(file) => insertImages([file])}
+                />
+              )}
             </div>
-            <p className="upload-hint">
-              {zh
-                ? "也可直接粘贴图片（Ctrl/⌘ V）。原图先保存到本机，连接工作区后在后台同步。Markdown ZIP 可包含原图。"
-                : "Paste images with Ctrl/⌘ V. Originals are saved on this device first and sync in the background when connected. Markdown ZIP can include originals."}
-            </p>
+            {htmlSource === null && (
+              <p className="upload-hint">
+                {zh
+                  ? "也可直接粘贴图片（Ctrl/⌘ V）。原图先保存到本机，连接工作区后在后台同步。Markdown ZIP 可包含原图。"
+                  : "Paste images with Ctrl/⌘ V. Originals are saved on this device first and sync in the background when connected. Markdown ZIP can include originals."}
+              </p>
+            )}
             {history.map((revision) => (
               <details key={revision.version}>
                 <summary>
@@ -1741,26 +1817,44 @@ function DocumentPane({
             />
           </label>
         )}
-        <LiveMarkdown
-          onAttachFile={() => attachmentInput.current?.click()}
-          onAtlas={() => setEditorAtlasOpen(true)}
-          onPendingChange={(pending) => {
-            editorPendingRef.current = pending;
-            setEditorPending(pending);
-          }}
-          wikiPages={wikiPages}
-          value={body}
-          source={mode === "source"}
-          label={library ? s("body") : t("noteBody")}
-          onChange={(text) => {
-            current.current.body = text;
-            setBody(text);
-          }}
-          onSave={() => void save(true)}
-          onComposition={compositionChanged}
-          editorRef={editor}
-          onImages={insertImages}
-        />
+        {htmlSource !== null ? (
+          <label className="field html-note-editor">
+            {zh ? "HTML 源码" : "HTML source"}
+            <textarea
+              spellCheck={false}
+              value={htmlSource}
+              onCompositionStart={() => compositionChanged(true)}
+              onCompositionEnd={() => compositionChanged(false)}
+              onChange={(event) => {
+                const value = htmlNoteBody(event.currentTarget.value);
+                current.current.body = value;
+                setBody(value);
+              }}
+            />
+          </label>
+        ) : (
+          <LiveMarkdown
+            onAttachFile={() => attachmentInput.current?.click()}
+            onAtlas={() => setEditorAtlasOpen(true)}
+            onPendingChange={(pending) => {
+              editorPendingRef.current = pending;
+              setEditorPending(pending);
+            }}
+            wikiPages={wikiPages}
+            value={body}
+            source={mode === "source"}
+            label={library ? s("body") : t("noteBody")}
+            onChange={(text) => {
+              if (htmlNoteSource(current.current.body) !== null) return;
+              current.current.body = text;
+              setBody(text);
+            }}
+            onSave={() => void save(true)}
+            onComposition={compositionChanged}
+            editorRef={editor}
+            onImages={insertImages}
+          />
+        )}
       </div>
       <input
         ref={attachmentInput}

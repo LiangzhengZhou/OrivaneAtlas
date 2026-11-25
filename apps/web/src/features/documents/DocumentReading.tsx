@@ -1,6 +1,8 @@
 import { memo, type RefObject, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { Markdown } from "../../Markdown";
+import { HtmlNotePreview } from "./HtmlNotePreview";
+import { htmlNoteSource } from "./htmlNote";
 
 function readingScroller(element: HTMLElement) {
   for (
@@ -32,6 +34,7 @@ export const DocumentReading = memo(function DocumentReading({
   position: RefObject<number | null>;
   zh: boolean;
 }) {
+  const html = htmlNoteSource(text);
   const root = useRef<HTMLDivElement>(null);
   const [headings, setHeadings] = useState<
     { element: HTMLElement; path: string }[]
@@ -117,7 +120,14 @@ export const DocumentReading = memo(function DocumentReading({
           </Button>
         </nav>
       )}
-      <Markdown text={text} />
+      {html === null ? (
+        <Markdown text={text} />
+      ) : (
+        <HtmlNotePreview
+          source={html}
+          title={title || (zh ? "HTML 阅读预览" : "HTML reading preview")}
+        />
+      )}
     </div>
   );
 });
