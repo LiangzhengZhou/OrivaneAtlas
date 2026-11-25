@@ -2,6 +2,7 @@ import type { WorkspaceLibraryEntry as LibraryEntry } from "@arclattice/applicat
 import {
   BookOpen,
   File as FileIcon,
+  Image as ImageIcon,
   ImagePlus,
   Plus,
   Upload,
@@ -247,6 +248,13 @@ export function LibraryView({
   const spaces = entries.filter(
     (e) => e.kind === "SPACE" && !e.deletedAt && !projectSpaceIds.has(e.id),
   );
+  const compactFiles =
+    !spaceId &&
+    kind === "ALL" &&
+    !query.trim() &&
+    fileType === "ALL" &&
+    spaces.length > 0 &&
+    files.length > 5;
   const space = spaces.find((e) => e.id === spaceId);
   useEffect(() => {
     setCoverFocus(space?.coverFocus ?? 50);
@@ -435,42 +443,48 @@ export function LibraryView({
           {zh ? "导入文件" : "Import file"}
         </Button>
       </div>
-      <SegmentedControl
-        label={zh ? "内容类型" : "Content type"}
-        value={kind}
-        onChange={(kind) => onViewChange({ ...viewState, kind })}
-        options={[
-          { value: "ALL", label: zh ? "全部" : "All" },
-          { value: "DOCUMENT", label: zh ? "文档" : "Documents" },
-          { value: "FILE", label: zh ? "文件" : "Files" },
-        ]}
-      />
-      {kind !== "DOCUMENT" && (
+      <div className="library-browse-tools">
+        <SegmentedControl
+          label={zh ? "内容类型" : "Content type"}
+          value={kind}
+          onChange={(kind) => onViewChange({ ...viewState, kind })}
+          options={[
+            { value: "ALL", label: zh ? "全部" : "All" },
+            { value: "DOCUMENT", label: zh ? "文档" : "Documents" },
+            { value: "FILE", label: zh ? "文件" : "Files" },
+          ]}
+        />
+        {kind !== "DOCUMENT" && (
+          <label className="field">
+            {zh ? "文件类型" : "File type"}
+            <Select
+              label={zh ? "文件类型" : "File type"}
+              value={fileType}
+              onChange={(event) => {
+                const selected = fileTypes.find(
+                  (option) => option.value === event.target.value,
+                );
+                if (selected)
+                  onViewChange({ ...viewState, fileType: selected.value });
+              }}
+            >
+              {fileTypes.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </label>
+        )}
         <label className="field">
-          {zh ? "文件类型" : "File type"}
-          <Select
-            label={zh ? "文件类型" : "File type"}
-            value={fileType}
-            onChange={(event) => {
-              const selected = fileTypes.find(
-                (option) => option.value === event.target.value,
-              );
-              if (selected)
-                onViewChange({ ...viewState, fileType: selected.value });
-            }}
-          >
-            {fileTypes.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
+          {zh ? "搜索" : "Search"}
+          <input
+            name="knowledge-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </label>
-      )}
-      <label className="field">
-        {zh ? "搜索" : "Search"}
-        <input value={query} onChange={(e) => setQuery(e.target.value)} />
-      </label>
+      </div>
       {space ? (
         <>
           <div className="space-cover library-space-cover">
@@ -770,28 +784,55 @@ export function LibraryView({
         </>
       ) : (
         <>
-          <p className="subtitle">{t("spaceHint")}</p>
+          {kind !== "FILE" && (
+            <h2 className="library-section-heading">
+              {zh ? "我的空间" : "My spaces"} <small>{spaces.length}</small>
+            </h2>
+          )}
           <ListSurface className="library-list">
-            {spaces.map((item) => (
-              <ListRow
-                className="space-card"
-                key={item.id}
-                selected={selection?.selected?.id === item.id}
-                intent="NAVIGATE"
-                onOpen={() => setSpaceId(item.id)}
-              >
-                <BookOpen size={20} />
-                <h2>{item.title}</h2>
-                <footer>
-                  {documentCountBySpaceId.get(item.id) ?? 0}{" "}
-                  {t("documentCount")}
-                </footer>
-              </ListRow>
-            ))}
+            {kind !== "FILE" &&
+              spaces.map((item) => (
+                <ListRow
+                  className="space-card"
+                  key={item.id}
+                  selected={selection?.selected?.id === item.id}
+                  intent="NAVIGATE"
+                  onOpen={() => setSpaceId(item.id)}
+                >
+                  <BookOpen size={20} />
+                  <h2>{item.title}</h2>
+                  <footer>
+                    {documentCountBySpaceId.get(item.id) ?? 0}{" "}
+                    {t("documentCount")}
+                  </footer>
+                </ListRow>
+              ))}
           </ListSurface>
         </>
       )}
       {kind !== "DOCUMENT" && files.length > 0 && (
+        <div className="library-attachments-heading">
+          <h2 className="library-section-heading">
+            {space
+              ? zh
+                ? "空间文件"
+                : "Space files"
+              : zh
+                ? "工作区文件"
+                : "Workspace files"}{" "}
+            <small>{files.length}</small>
+          </h2>
+          {compactFiles && (
+            <Button
+              variant="secondary"
+              onClick={() => onViewChange({ ...viewState, kind: "FILE" })}
+            >
+              {zh ? "查看全部文件" : "View all files"}
+            </Button>
+          )}
+        </div>
+      )}
+      {kind !== "DOCUMENT" && files.length > 0 && !compactFiles && (
         <ListSurface className="library-list library-files">
           <VirtualTaskCollection
             items={files}
@@ -810,10 +851,29 @@ export function LibraryView({
                   })
                 }
               >
-                <FileIcon size={20} />
+                {file.mime.startsWith("image/") ? (
+                  <ImageIcon size={20} />
+                ) : (
+                  <FileIcon size={20} />
+                )}
                 <h3>{file.name}</h3>
                 <small>
-                  {new Intl.NumberFormat(i18n.language).format(file.size)} B
+                  {new Intl.NumberFormat(i18n.language, {
+                    style: "unit",
+                    unit:
+                      file.size < 1024
+                        ? "byte"
+                        : file.size < 1048576
+                          ? "kilobyte"
+                          : "megabyte",
+                    maximumFractionDigits: 1,
+                  }).format(
+                    file.size < 1024
+                      ? file.size
+                      : file.size < 1048576
+                        ? file.size / 1024
+                        : file.size / 1048576,
+                  )}
                 </small>
                 <EntityMenu
                   title={file.name}

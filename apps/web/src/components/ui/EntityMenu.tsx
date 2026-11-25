@@ -10,6 +10,7 @@ export function EntityMenu({
   pending = false,
   onOpen,
   onInspect,
+  onMove,
   onDelete,
   onDownload,
 }: {
@@ -17,6 +18,7 @@ export function EntityMenu({
   pending?: boolean;
   onOpen?(): void;
   onInspect?(): void;
+  onMove?(): void;
   onDelete?(): void;
   onDownload?(): void;
 }) {
@@ -47,6 +49,17 @@ export function EntityMenu({
               }}
             >
               {zh ? "打开" : "Open"}
+            </MenuItem>
+          )}
+          {onMove && (
+            <MenuItem
+              onClick={() => {
+                setOpen(false);
+                anchor.current?.focus();
+                onMove();
+              }}
+            >
+              {zh ? "移动到文件夹…" : "Move to folder…"}
             </MenuItem>
           )}
           {onInspect && (

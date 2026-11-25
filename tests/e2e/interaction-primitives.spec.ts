@@ -121,7 +121,7 @@ test("arming never commits and escape/outside/expiry cancel; second click commit
   page,
 }) => {
   const instant = new Date("2026-10-11T00:00:00Z");
-  await page.clock.install({ time: instant });
+  await page.clock.install({ time: new Date(instant.getTime() - 60000) });
   await page.clock.pauseAt(instant);
   const events = page.getByLabel("Events");
   await page.getByRole("button", { name: "Complete", exact: true }).click();
@@ -150,7 +150,7 @@ test("touch long press arms after 400ms and scrolling cancels it", async ({
   page,
 }) => {
   const instant = new Date("2026-10-11T00:00:00Z");
-  await page.clock.install({ time: instant });
+  await page.clock.install({ time: new Date(instant.getTime() - 60000) });
   await page.clock.pauseAt(instant);
   const row = page.getByTestId("touch-row");
   const events = page.getByLabel("Events");
@@ -345,7 +345,7 @@ test("touch gesture survives a virtual source row unmount until the valid drop",
   page,
 }) => {
   const instant = new Date("2026-10-11T00:00:00Z");
-  await page.clock.install({ time: instant });
+  await page.clock.install({ time: new Date(instant.getTime() - 60000) });
   await page.clock.pauseAt(instant);
   const row = page.locator('[data-order-entity="A"]');
   const point = await row.evaluate((element) => {
@@ -402,7 +402,7 @@ test("touch edge scrolling keeps 1500 virtual rows bounded and cancels its anima
   const scroller = page.locator(".touch-virtual-fixture .virtual-task-scroll");
   await scroller.scrollIntoViewIfNeeded();
   const instant = new Date("2026-10-11T00:00:00Z");
-  await page.clock.install({ time: instant });
+  await page.clock.install({ time: new Date(instant.getTime() - 60000) });
   await page.clock.pauseAt(instant);
   const row = scroller.locator('[data-order-entity="virtual-0"]');
   const point = await row.evaluate((element) => {

@@ -5604,10 +5604,11 @@ test("organization selection archive delete scannable rows and readable typograp
     .click();
   await page.getByLabel(w.desk.selectVisible).check();
   await page
-    .getByLabel(w.desk.destinationFolder)
-    .selectOption({ label: "量子场论" });
-  await page
     .getByRole("button", { name: w.desk.moveSelected, exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: w.desk.moveToFolder })
+    .getByRole("button", { name: "量子场论", exact: true })
     .click();
   await expect(page.locator(".note-card .note-folder").first()).toHaveText(
     "量子场论",
@@ -6173,7 +6174,7 @@ test("files page opens real documents and uploads original files", async ({
   await expect(page.locator(".files-folder-panel")).toHaveCount(0);
   await expect(resources.getByText(/Field notes — 量子场论/)).toHaveCount(0);
   await expect(
-    resources.getByRole("button", { name: /Resource document/ }),
+    resources.getByRole("button", { name: /^Resource document ·/ }),
   ).toBeVisible();
   await page
     .getByRole("button", {
@@ -6181,7 +6182,7 @@ test("files page opens real documents and uploads original files", async ({
       exact: true,
     })
     .click();
-  await resources.getByRole("button", { name: /Resource document/ }).click();
+  await resources.getByRole("button", { name: /^Resource document ·/ }).click();
   await expect(page.locator(".files-detail-panel")).toContainText(
     "Resource document",
   );
@@ -6213,7 +6214,7 @@ test("files page opens real documents and uploads original files", async ({
   await page.reload();
   await nav(page, w.desk.files);
   await expect(
-    resources.getByRole("button", { name: /resource-proof.txt/ }),
+    resources.getByRole("button", { name: /^resource-proof\.txt ·/ }),
   ).toBeVisible();
   const folderDrawer = resources.getByRole("button", {
     name: info.project.name.includes("zh") ? "笔记文件夹" : "Note folders",
@@ -20365,18 +20366,16 @@ test("moves a mixed collection selection with keyboard or drag while preserving 
   await browser
     .getByRole("checkbox", { name: zh ? "选择本页" : "Select this page" })
     .check();
-  await browser
-    .getByRole("combobox", {
-      name: zh ? "目标集合" : "Destination collection",
-      exact: true,
-    })
-    .selectOption(destination);
   const move = browser.getByRole("button", {
-    name: zh ? "移动到所选集合" : "Move to selected collection",
+    name: zh ? "移动到…" : "Move to…",
+    exact: true,
   });
-  await move.focus();
+  const picker = page.getByRole("dialog", {
+    name: zh ? "移动到集合文件夹" : "Move to collection folder",
+  });
   await move.press("Enter");
-  await answerConfirmation(page, false, "Publication");
+  await expect(picker).toBeVisible();
+  await picker.press("Escape");
   await expect(browser.locator(".files-select-row")).toHaveCount(3);
   await page.screenshot({ path: info.outputPath("collection-selection.png") });
   if (info.project.name === "desktop-en") {
@@ -20385,7 +20384,10 @@ test("moves a mixed collection selection with keyboard or drag while preserving 
     await move.focus();
     await move.press("Enter");
   }
-  await answerConfirmation(page, true, "Publication");
+  await picker.getByRole("textbox").fill("publ");
+  await picker
+    .getByRole("button", { name: "Publication", exact: true })
+    .press("Enter");
   await expect(browser.locator(".files-resource-row")).toHaveCount(0);
   await expect(toggle).toBeFocused();
   await folder.selectOption(destination);
@@ -21551,4 +21553,139 @@ test("HTML authoring starts from a blank note and rejects invalid imports", asyn
   await expect(
     pane(page).getByLabel(w.desk.noteTitle, { exact: true }),
   ).toHaveValue("Seed page");
+});
+
+test("large project and attachment libraries keep resources visible and file directly into a new folder", async ({
+  page,
+  workbench,
+}, info) => {
+  test.setTimeout(90000);
+  const w = words(info.project.name),
+    zh = info.project.name.endsWith("zh");
+  await unlock(page, workbench.url, workbench.secret, w);
+  for (let i = 1; i <= 44; i++)
+    await mutation(page, "/api/work/create", {
+      type: "PROJECT",
+      title: "Studio " + String(i).padStart(2, "0"),
+    });
+  for (const title of ["Field research", "Reading room"])
+    await mutation(page, "/api/library/save", {
+      id: null,
+      version: 0,
+      input: { kind: "SPACE", spaceId: null, title, bodyMd: "" },
+    });
+  await page.goto(workbench.url + "/#files");
+  await page.reload();
+  const browser = page.locator(".files-resource-browser");
+  await browser
+    .getByRole("group", { name: zh ? "浏览模式" : "Browse mode" })
+    .getByRole("button", { name: zh ? "文件库" : "File library", exact: true })
+    .click();
+  const img = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ZL8AAAAASUVORK5CYII=",
+    "base64",
+  );
+  const names = Array.from(
+    { length: 12 },
+    (_, index) => "Sketch-" + String(index + 1).padStart(2, "0") + ".png",
+  );
+  await browser
+    .locator("input[type=file]")
+    .setInputFiles(
+      names.map((name) => ({ name, mimeType: "image/png", buffer: img })),
+    );
+  await expect(
+    browser.locator(".files-resource-row").filter({ hasText: "Sketch-12.png" }),
+  ).toBeVisible({ timeout: 30000 });
+  await expect(browser.locator(".files-project-folders button")).toHaveCount(1);
+  const project = browser.getByRole("button", {
+    name: /浏览项目文件夹|Browse project folders/,
+  });
+  await project.click();
+  const picker = page.getByRole("dialog", {
+    name: zh ? "项目文件夹" : "Project folders",
+  });
+  await picker.getByRole("textbox").fill("44");
+  await expect(picker.getByRole("button", { name: /Studio 44/ })).toBeVisible();
+  await picker.press("Escape");
+  const firstResource = browser.locator(".files-resource-row").first();
+  await expect(firstResource).toBeInViewport();
+  await page.screenshot({ path: info.outputPath("resource-library.png") });
+  await browser
+    .getByRole("button", {
+      name: (zh ? "添加到文件夹" : "Add to folder") + " · Sketch-01.png",
+      exact: true,
+    })
+    .click();
+  const choose = page.getByRole("dialog", {
+    name: zh ? "添加到集合文件夹" : "Add to collection folder",
+  });
+  await choose.getByRole("textbox").fill("Research assets");
+  await choose
+    .getByRole("button", { name: /新建文件夹|Create folder/ })
+    .click();
+  await expect(
+    choose.getByRole("button", { name: "Research assets", exact: true }),
+  ).toBeEnabled();
+  await page.screenshot({ path: info.outputPath("file-destination.png") });
+  await setTheme(page, "dark");
+  await page.screenshot({
+    path: info.outputPath("folder-destination-dark.png"),
+  });
+  await setTheme(page, "light");
+  await choose
+    .getByRole("button", { name: "Research assets", exact: true })
+    .click();
+  const folder = browser.getByRole("combobox", {
+    name: zh ? "集合文件夹" : "Collection folder",
+    exact: true,
+  });
+  await folder.selectOption({ label: "Research assets" });
+  await expect(browser.locator(".files-resource-row")).toHaveCount(1);
+  await expect(browser.locator(".files-resource-row")).toContainText(
+    "Sketch-01.png",
+  );
+  await nav(page, w.spaces.library);
+  await expect(page.locator(".space-card")).toHaveCount(2);
+  await expect(page.locator(".library-file-row")).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath("knowledge-home.png") });
+  await page
+    .getByRole("button", { name: zh ? "查看全部文件" : "View all files" })
+    .click();
+  await expect(page.locator(".library-file-row").first()).toBeVisible();
+  await expect(page.locator(".space-card")).toHaveCount(0);
+  await mutation(page, "/api/note/save", {
+    id: null,
+    version: 0,
+    input: {
+      kind: "NOTE",
+      day: null,
+      title: "Sketchbook",
+      bodyMd: "Personal draft",
+    },
+  });
+  await page.goto(workbench.url + "/#notes");
+  await page.reload();
+  await page
+    .locator(".selectable-note")
+    .filter({ hasText: "Sketchbook" })
+    .getByRole("button", { name: /更多操作|More actions/ })
+    .click();
+  await page
+    .getByRole("menuitem", { name: zh ? "移动到文件夹…" : "Move to folder…" })
+    .click();
+  const noteMove = page.getByRole("dialog", { name: w.desk.moveToFolder });
+  await noteMove.getByRole("textbox").fill("Field journal");
+  await noteMove
+    .getByRole("button", { name: /新建文件夹|Create folder/ })
+    .click();
+  await noteMove
+    .getByRole("button", { name: "Field journal", exact: true })
+    .click();
+  await expect(
+    page
+      .locator(".note-card")
+      .filter({ hasText: "Sketchbook" })
+      .locator(".note-folder"),
+  ).toHaveText("Field journal");
 });

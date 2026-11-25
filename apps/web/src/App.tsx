@@ -85,6 +85,7 @@ import { WorkspaceRouter } from "./app/WorkspaceRouter";
 import { type Runtime, readPreference, savePreference } from "./bootstrap";
 import { Button, Toolbar } from "./components/ui/Button";
 import { confirmAction } from "./components/ui/ConfirmationHost";
+import { FolderPicker } from "./components/ui/FolderPicker";
 import { Select } from "./components/ui/Surfaces";
 import { DocumentWorkspace, type WorkspaceRequest } from "./DocumentWorkspace";
 import { AssistantPane } from "./features/ai/AssistantPane";
@@ -436,7 +437,11 @@ function Workbench({
     view,
     null,
   );
-  const [moveTargetFolder, setMoveTargetFolder] = useState("");
+  const [noteMove, setNoteMove] = useState<{
+    entries: typeof notes;
+    scope: string;
+    view: View;
+  } | null>(null);
   const workIndex = useMemo(
     () => buildWorkspaceWorkIndex(snapshot.items, snapshot.organization ?? []),
     [snapshot.items, snapshot.organization],
@@ -451,34 +456,33 @@ function Workbench({
       projectBriefDirty.current
     ) {
       showToast(t("saveBeforeOrganize"));
-      return;
+      return false;
     }
-    if (
-      await run(async () => {
-        await runtime.organize(input);
-        if (input.action === "delete")
-          showToast(t("movedToTrash"), async () => {
-            const current = await runtime.loadWorkspace();
-            for (const entry of input.entries ?? []) {
-              const deleted =
-                input.kind === "WORK"
-                  ? current.items.find((item) => item.id === entry.id)
-                  : current.notes.find((item) => item.id === entry.id);
-              if (!deleted?.deletedAt) continue;
-              if (input.kind === "WORK")
-                await service.setDeleted(
-                  context,
-                  deleted.id,
-                  deleted.version,
-                  false,
-                );
-              else await runtime.deleteNote(deleted.id, deleted.version, false);
-            }
-            await refresh();
-          });
-      })
-    )
-      setSelectedNotes([]);
+    const ok = await run(async () => {
+      await runtime.organize(input);
+      if (input.action === "delete")
+        showToast(t("movedToTrash"), async () => {
+          const current = await runtime.loadWorkspace();
+          for (const entry of input.entries ?? []) {
+            const deleted =
+              input.kind === "WORK"
+                ? current.items.find((item) => item.id === entry.id)
+                : current.notes.find((item) => item.id === entry.id);
+            if (!deleted?.deletedAt) continue;
+            if (input.kind === "WORK")
+              await service.setDeleted(
+                context,
+                deleted.id,
+                deleted.version,
+                false,
+              );
+            else await runtime.deleteNote(deleted.id, deleted.version, false);
+          }
+          await refresh();
+        });
+    });
+    if (ok) setSelectedNotes([]);
+    return ok;
   }
   const folderEntry = (folder: Organization) => ({
     id: folder.id,
@@ -988,6 +992,13 @@ function Workbench({
     context.workspaceId,
     context.principalId,
   ]);
+  const movingNotes =
+    noteMove?.scope === resourceScopeKey && noteMove.view === view
+      ? noteMove.entries
+      : [];
+  function beginNoteMove(entries: typeof notes) {
+    setNoteMove({ entries, scope: resourceScopeKey, view });
+  }
   const recentProjects = useMemo(
     () =>
       projects
@@ -1509,7 +1520,10 @@ function Workbench({
     }
   }
   async function moveSelectedLinks(
-    items: readonly import("@arclattice/application").MoveFolderLinkInput[],
+    items: readonly (
+      | import("@arclattice/application").MoveFolderLinkInput
+      | import("@arclattice/application").FolderLinkInput
+    )[],
     destination: string,
   ) {
     if (!items.length || batchTrashLock.current) return false;
@@ -1537,29 +1551,27 @@ function Workbench({
     batchTrashLock.current = true;
     try {
       const count = items.length;
-      if (
-        !(await confirmAction(
-          zh
-            ? `将 ${count} 项从当前集合移动到“${destination}”？`
-            : `Move ${count} items from this collection to “${destination}”?`,
-        )) ||
-        !current()
-      )
-        return false;
+      if (!current()) return false;
       let done = 0;
       const ok = await run(async () => {
         for (const item of items) {
           if (!current()) break;
-          await runtime.moveFolderLink(item);
+          if ("targetKind" in item) await runtime.linkFolder(item);
+          else await runtime.moveFolderLink(item);
           done++;
         }
       }, "resource-collection-move");
       if (!current()) return false;
       if (!ok) void refresh().catch(() => undefined);
+      const adding = items.some((item) => "targetKind" in item);
       showToast(
-        zh
-          ? `已移动 ${done}/${count} 项至“${destination}”`
-          : `Moved ${done} of ${count} items to “${destination}”`,
+        adding
+          ? zh
+            ? `已添加 ${done}/${count} 项至“${destination}”`
+            : `Added ${done} of ${count} items to “${destination}”`
+          : zh
+            ? `已移动 ${done}/${count} 项至“${destination}”`
+            : `Moved ${done} of ${count} items to “${destination}”`,
       );
       return ok && done === count;
     } finally {
@@ -1759,6 +1771,7 @@ function Workbench({
         onOpenDay={openJournal}
         date={date}
         onOpen={openNote}
+        onMove={(note) => beginNoteMove([note])}
         onInspect={(note) => {
           setSelectedEntity({ kind: "NOTE", id: note.id });
           setAssistantOpen(false);
@@ -1780,44 +1793,13 @@ function Workbench({
           <>
             {selectedNotes.length > 0 && (
               <>
-                <Select
-                  aria-label={t("destinationFolder")}
-                  value={moveTargetFolder}
-                  onChange={(event) => setMoveTargetFolder(event.target.value)}
-                >
-                  <option value="">{t("unfiled")}</option>
-                  {activeFolders
-                    .map((folder) => ({
-                      value: folder.id,
-                      label: folderPath(folder.id, folderRows),
-                    }))
-                    .sort((left, right) =>
-                      left.label.localeCompare(right.label),
-                    )
-                    .map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                </Select>
                 <Button
-                  type="button"
                   variant="secondary"
                   disabled={busy}
                   onClick={() =>
-                    void organize({
-                      kind: "NOTE",
-                      action: "move",
-                      folderId: moveTargetFolder,
-                      entries: notes
-                        .filter((n) => selectedNotes.includes(n.id))
-                        .map((n) => ({
-                          id: n.id,
-                          version: n.version,
-                          organizationVersion:
-                            organization("NOTE", n.id)?.version ?? 0,
-                        })),
-                    })
+                    beginNoteMove(
+                      notes.filter((n) => selectedNotes.includes(n.id)),
+                    )
                   }
                 >
                   {t("moveSelected")}
@@ -2027,6 +2009,7 @@ function Workbench({
   const createAction = !(
     [
       "graph",
+      "files",
       "settings",
       "trash",
       "ai",
@@ -2326,6 +2309,64 @@ function Workbench({
                     id="workspace-main"
                     tabIndex={-1}
                   >
+                    {movingNotes.length > 0 && (
+                      <FolderPicker
+                        title={t("moveToFolder")}
+                        current={
+                          movingNotes.length === 1 &&
+                          noteFolderKeyOf(movingNotes[0]!).startsWith("folder:")
+                            ? noteFolderKeyOf(movingNotes[0]!).slice(7)
+                            : undefined
+                        }
+                        subject={
+                          movingNotes.length === 1
+                            ? (movingNotes[0]?.title ?? "")
+                            : t("selectionCount", { count: movingNotes.length })
+                        }
+                        options={[
+                          { value: "", label: t("unfiled") },
+                          ...folderOptions.map((f) => ({
+                            value: f.value.slice(7),
+                            label: f.label,
+                          })),
+                        ]}
+                        onCreate={(name) =>
+                          run(() =>
+                            runtime.organize({
+                              kind: "FOLDER",
+                              action: "create",
+                              id: crypto.randomUUID(),
+                              parentId: "",
+                              scope: "NOTE",
+                              name,
+                            }),
+                          )
+                        }
+                        onClose={() => setNoteMove(null)}
+                        onChoose={async (folderId) => {
+                          const ok = await organize({
+                            kind: "NOTE",
+                            action: "move",
+                            folderId,
+                            entries: movingNotes.map((n) => ({
+                              id: n.id,
+                              version: n.version,
+                              organizationVersion:
+                                organization("NOTE", n.id)?.version ?? 0,
+                            })),
+                          });
+                          if (ok)
+                            showToast(
+                              t("moveToFolder") +
+                                " · " +
+                                (folderOptions.find(
+                                  (f) => f.value === folderKey(folderId),
+                                )?.label ?? t("unfiled")),
+                            );
+                          return ok;
+                        }}
+                      />
+                    )}
                     <DocumentWorkspace
                       request={documentRequest}
                       visible={documentVisible}
@@ -3043,6 +3084,18 @@ function Workbench({
                                 changeSelectedResources(items, true)
                               }
                               onMoveLinks={moveSelectedLinks}
+                              onCreateCollection={(name) =>
+                                run(() =>
+                                  runtime.organize({
+                                    kind: "FOLDER",
+                                    action: "create",
+                                    id: crypto.randomUUID(),
+                                    name,
+                                    parentId: "",
+                                    scope: "GENERAL",
+                                  }),
+                                )
+                              }
                               batchPending={
                                 isPending("resource-trash-batch") ||
                                 isPending("resource-collection-move")

@@ -106,7 +106,7 @@
 .files-resource-row.ui-button,
 .files-resource-row.ui-list-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 74px minmax(80px, 22%) 92px;
+  grid-template-columns: 22px minmax(0, 1fr) 60px minmax(70px, 18%) 78px 68px;
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -267,7 +267,7 @@
   }
   .files-resource-row.ui-button,
   .files-resource-row.ui-list-row {
-    grid-template-columns: 22px minmax(0, 1fr) 84px;
+    grid-template-columns: 22px minmax(0, 1fr) 68px 36px;
     gap: 8px;
     padding: 8px 14px;
     min-height: 46px;
@@ -566,4 +566,78 @@
 }
 .files-folder-breadcrumb li > [aria-hidden] {
   color: var(--text-secondary);
+}
+
+.resource-file-action.ui-button {
+  min-width: 34px;
+  min-height: 34px;
+  padding-inline: 6px;
+  white-space: nowrap;
+  justify-self: end;
+  color: var(--text-secondary);
+}
+.files-resource-list[data-layout="grid"] .resource-file-action {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+.files-resource-list[data-layout="grid"] .files-resource-row {
+  position: relative;
+}
+
+.files-resource-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.files-resource-heading {
+  min-width: 0;
+}
+.files-resource-filters {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.files-resource-filters .files-kind-tabs {
+  margin-inline-end: auto;
+}
+.files-upload-status p {
+  margin: 0;
+}
+.files-upload-status {
+  max-width: 24rem;
+  padding: 4px 0;
+}
+.files-upload-status ul {
+  max-height: 8rem;
+}
+@media (max-width: 900px) {
+  .files-resource-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .files-resource-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 700px) {
+  .resource-file-action span {
+    display: none;
+  }
+  .files-resource-actions > .files-kind-tabs {
+    width: auto;
+    flex: 0 1 auto;
+  }
+}
+.files-resource-list[data-layout="grid"] .resource-file-action span {
+  display: none;
+}
+.files-upload-status:has(.ui-button):not(:has(ul)) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
 }

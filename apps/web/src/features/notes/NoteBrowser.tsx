@@ -49,6 +49,7 @@ export function NoteBrowser({
   date,
   onOpen,
   onInspect,
+  onMove,
   onDelete,
   searching,
   clearSearch,
@@ -74,6 +75,7 @@ export function NoteBrowser({
   date(instant: string): string;
   onOpen(note: WorkspaceNote): void;
   onInspect(note: WorkspaceNote): void;
+  onMove(note: WorkspaceNote): void;
   onDelete(note: WorkspaceNote): void;
   searching: boolean;
   clearSearch(): void;
@@ -229,6 +231,7 @@ export function NoteBrowser({
                 pending={pending}
                 onOpen={() => onOpen(note)}
                 onInspect={() => onInspect(note)}
+                onMove={() => onMove(note)}
                 onDelete={() => onDelete(note)}
               />
             </div>

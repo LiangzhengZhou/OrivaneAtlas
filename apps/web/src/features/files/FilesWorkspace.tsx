@@ -1,5 +1,6 @@
 import {
   type EntityRef,
+  type FolderLinkInput,
   type MoveFolderLinkInput,
   type ProjectMaterial,
   type ResourceFolderSource,
@@ -12,7 +13,10 @@ import {
   BookOpen,
   File,
   FileText,
+  FolderInput,
   FolderOpen,
+  FolderPlus,
+  Image as ImageIcon,
   LayoutGrid,
   NotebookPen,
 } from "lucide-react";
@@ -29,6 +33,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/Button";
 import { confirmAction } from "../../components/ui/ConfirmationHost";
 import { EntityRow } from "../../components/ui/Content";
+import { FolderPicker } from "../../components/ui/FolderPicker";
 import { Dialog, Select } from "../../components/ui/Surfaces";
 import { EntityIcon } from "../notes/EntityIcon";
 import { fileHash } from "./fileRoute";
@@ -89,6 +94,7 @@ export function FilesWorkspace({
   onDeleteResource,
   onTrashSelection,
   onMoveLinks,
+  onCreateCollection,
   batchPending,
   onUpload,
 }: {
@@ -120,9 +126,10 @@ export function FilesWorkspace({
   onDeleteResource(ref: EntityRef): Promise<void>;
   onTrashSelection(items: readonly VersionedResource[]): Promise<boolean>;
   onMoveLinks(
-    items: readonly MoveFolderLinkInput[],
+    items: readonly (MoveFolderLinkInput | FolderLinkInput)[],
     destination: string,
   ): Promise<boolean>;
+  onCreateCollection(name: string): Promise<boolean>;
   batchPending: boolean;
   onUpload(file: globalThis.File): Promise<string | null>;
 }) {
@@ -362,9 +369,9 @@ export function FilesWorkspace({
   const [pageIndex, setPageIndex] = useState(0);
   const [selection, setSelection] = useState<Set<string> | null>(null);
   const selectionButton = useRef<HTMLButtonElement>(null);
-  const [destinationId, setDestinationId] = useState("");
+  const [projectPicker, setProjectPicker] = useState(false);
+  const [filing, setFiling] = useState<ResourceRow[]>([]);
   const dragging = useRef(false);
-  const targetFolder = catalog.folderIndex.folders.get(destinationId);
   const pageSize = 60;
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
   const page = Math.min(pageIndex, pageCount - 1);
@@ -381,7 +388,8 @@ export function FilesWorkspace({
   const [previousFilter, setPreviousFilter] = useState(filterSignature);
   if (filterSignature !== previousFilter) {
     setPreviousFilter(filterSignature);
-    setDestinationId("");
+    setFiling([]);
+    setProjectPicker(false);
     dragging.current = false;
     setSelection(null);
     setPageIndex(0);
@@ -391,16 +399,18 @@ export function FilesWorkspace({
   const checked = pageRows
     .filter((row) => selection?.has(row.key))
     .map((row) => row.key);
-  async function moveSelection() {
+  async function moveSelection(
+    target: NonNullable<typeof activeFolder>,
+    keys: string[],
+  ) {
     if (
       !activeFolder ||
-      !targetFolder ||
-      activeFolder.id === targetFolder.id ||
-      !checked.length ||
+      activeFolder.id === target.id ||
+      !keys.length ||
       batchPending
     )
-      return;
-    const selected = new Set(checked);
+      return false;
+    const selected = new Set(keys);
     const sources = [];
     const destinations = new Map<string, string>();
     for (const link of relations.folderLinks ?? []) {
@@ -412,20 +422,22 @@ export function FilesWorkspace({
       )
         continue;
       if (link.folderId === activeFolder.id) sources.push(link);
-      if (link.folderId === targetFolder.id) destinations.set(key, link.id);
+      if (link.folderId === target.id) destinations.set(key, link.id);
     }
-    if (sources.length !== selected.size) return;
+    if (sources.length !== selected.size) return false;
     const items = sources.map((link) => ({
       id: link.id,
       version: link.version,
-      folderId: targetFolder.id,
+      folderId: target.id,
       destinationLinkId:
         destinations.get(link.targetKind + ":" + link.targetId) ?? null,
     }));
-    if (await onMoveLinks(items, targetFolder.path)) {
+    if (await onMoveLinks(items, target.path)) {
       setSelection(null);
-      selectionButton.current?.focus();
+      requestAnimationFrame(() => selectionButton.current?.focus());
+      return true;
     }
+    return false;
   }
   function saveSelection(favorite: boolean) {
     shortcuts.setFavorites(checked, favorite);
@@ -444,6 +456,8 @@ export function FilesWorkspace({
   useEffect(() => {
     if (!active) {
       setFoldersOpen(false);
+      setProjectPicker(false);
+      setFiling([]);
       setSelectedKey(null);
     }
   }, [active]);
@@ -663,6 +677,84 @@ export function FilesWorkspace({
         !narrow && !libraryOnly && folderPanel ? "true" : "false"
       }
     >
+      {active && projectPicker && (
+        <FolderPicker
+          title={zh ? "项目文件夹" : "Project folders"}
+          options={[...catalog.projects]
+            .sort(
+              (a, b) =>
+                (projectCounts.get(b.id) ?? 0) -
+                  (projectCounts.get(a.id) ?? 0) ||
+                a.title.localeCompare(b.title),
+            )
+            .map((p) => ({
+              value: p.id,
+              label: p.title,
+              detail: String(projectCounts.get(p.id) ?? 0),
+            }))}
+          onClose={() => setProjectPicker(false)}
+          onChoose={(id) => {
+            setProjectFilter(id);
+            return true;
+          }}
+        />
+      )}
+      {active && filing.length > 0 && (
+        <FolderPicker
+          title={
+            activeFolder
+              ? zh
+                ? "移动到集合文件夹"
+                : "Move to collection folder"
+              : zh
+                ? "添加到集合文件夹"
+                : "Add to collection folder"
+          }
+          subject={
+            filing.length === 1
+              ? filing[0]!.title
+              : zh
+                ? `已选 ${filing.length} 项`
+                : `${filing.length} selected`
+          }
+          options={Array.from(catalog.folderIndex.folders.values())
+            .filter((f) => f.id !== activeFolder?.id)
+            .map((f) => ({
+              value: f.id,
+              label: f.path,
+              disabled:
+                filing.every((row) =>
+                  catalog.folderIndex.memberships.get(row.key)?.has(f.id),
+                ) && !activeFolder,
+            }))}
+          onCreate={onCreateCollection}
+          onClose={() => setFiling([])}
+          onChoose={async (id) => {
+            const folder = catalog.folderIndex.folders.get(id);
+            if (!folder) return false;
+            if (activeFolder)
+              return moveSelection(
+                folder,
+                filing.map((row) => row.key),
+              );
+            const items = filing
+              .filter(
+                (row) => !catalog.folderIndex.memberships.get(row.key)?.has(id),
+              )
+              .map((row) => ({
+                folderId: id,
+                targetKind: row.kind,
+                targetId: row.note?.id ?? row.ref!.id,
+              }));
+            const ok = await onMoveLinks(items, folder.path);
+            if (ok) {
+              setSelection(null);
+              requestAnimationFrame(() => selectionButton.current?.focus());
+            }
+            return ok;
+          }}
+        />
+      )}
       {folderPanel && !libraryOnly && !narrow && (
         <aside className="note-folder-panel files-folder-panel">
           <p className="files-rail-label">
@@ -748,6 +840,19 @@ export function FilesWorkspace({
                 {zh ? "文件库" : "File library"}
               </Button>
             </div>
+            {active && (
+              <ResourceUploadQueue
+                zh={zh}
+                busy={busy}
+                onUpload={onUpload}
+                onOpenUploaded={(id) => {
+                  shortcuts.markOpened("FILE:" + id);
+                  location.hash = fileHash(id);
+                }}
+              />
+            )}
+          </div>
+          <div className="files-resource-filters">
             <div
               className="files-kind-tabs"
               role="group"
@@ -812,17 +917,6 @@ export function FilesWorkspace({
                 <option value="name">{zh ? "名称" : "Name"}</option>
               </Select>
             )}
-            {active && (
-              <ResourceUploadQueue
-                zh={zh}
-                busy={busy}
-                onUpload={onUpload}
-                onOpenUploaded={(id) => {
-                  shortcuts.markOpened("FILE:" + id);
-                  location.hash = fileHash(id);
-                }}
-              />
-            )}
           </div>
         </header>
         {catalog.folderIndex.folders.size > 0 && (
@@ -873,27 +967,45 @@ export function FilesWorkspace({
         )}
         {catalog.projects.length > 0 && (
           <div className="files-project-folders">
-            <span>{zh ? "项目文件夹" : "Project folders"}</span>
-            {catalog.projects.map((project) => {
-              const count = projectCounts.get(project.id) ?? 0;
-              return (
-                <Button
-                  key={project.id}
-                  type="button"
-                  variant="ghost"
-                  aria-pressed={projectFilter === project.id}
-                  onClick={() =>
-                    setProjectFilter((current) =>
-                      current === project.id ? null : project.id,
-                    )
-                  }
-                >
-                  <FolderOpen size={14} />
-                  {project.title}
-                  <small>{count}</small>
-                </Button>
-              );
-            })}
+            {catalog.projects.length <= 3 && (
+              <span>{zh ? "项目文件夹" : "Project folders"}</span>
+            )}
+            {catalog.projects.length > 3 && (
+              <Button
+                variant="secondary"
+                aria-haspopup="dialog"
+                onClick={() => setProjectPicker(true)}
+              >
+                <FolderOpen size={16} />
+                {projectFilter
+                  ? catalog.projects.find((p) => p.id === projectFilter)?.title
+                  : zh
+                    ? "浏览项目文件夹"
+                    : "Browse project folders"}{" "}
+                <small>{catalog.projects.length}</small>
+              </Button>
+            )}
+            {catalog.projects.length <= 3 &&
+              catalog.projects.map((project) => {
+                const count = projectCounts.get(project.id) ?? 0;
+                return (
+                  <Button
+                    key={project.id}
+                    type="button"
+                    variant="ghost"
+                    aria-pressed={projectFilter === project.id}
+                    onClick={() =>
+                      setProjectFilter((current) =>
+                        current === project.id ? null : project.id,
+                      )
+                    }
+                  >
+                    <FolderOpen size={14} />
+                    {project.title}
+                    <small>{count}</small>
+                  </Button>
+                );
+              })}
             {projectFilter && (
               <Button
                 type="button"
@@ -968,58 +1080,39 @@ export function FilesWorkspace({
                 >
                   {zh ? "移出收藏" : "Remove from favorites"}
                 </Button>
-                {activeFolder && catalog.folderIndex.folders.size > 1 && (
-                  <>
-                    <label className="collection-move-destination">
-                      {zh ? "目标集合" : "Destination collection"}
-                      <select
-                        value={targetFolder?.id ?? ""}
-                        onChange={(event) =>
-                          setDestinationId(event.currentTarget.value)
-                        }
-                        disabled={batchPending}
-                      >
-                        <option value="">
-                          {zh ? "选择集合" : "Choose a collection"}
-                        </option>
-                        {Array.from(catalog.folderIndex.folders.values())
-                          .filter((folder) => folder.id !== activeFolder.id)
-                          .map((folder) => (
-                            <option key={folder.id} value={folder.id}>
-                              {folder.path}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                    <Button
-                      variant="secondary"
-                      disabled={
-                        !targetFolder || !checked.length || batchPending
-                      }
-                      className="collection-move-target"
-                      onDragLeave={(event) => {
-                        delete event.currentTarget.dataset.dropReady;
-                      }}
-                      onClick={() => void moveSelection()}
-                      onDragOver={(event) => {
-                        if (dragging.current) {
-                          event.currentTarget.dataset.dropReady = "true";
-                          event.preventDefault();
-                          event.dataTransfer.dropEffect = "move";
-                        }
-                      }}
-                      onDrop={(event) => {
-                        if (!dragging.current) return;
-                        event.preventDefault();
-                        delete event.currentTarget.dataset.dropReady;
-                        dragging.current = false;
-                        void moveSelection();
-                      }}
-                    >
-                      {zh ? "移动到所选集合" : "Move to selected collection"}
-                    </Button>
-                  </>
-                )}
+                <Button
+                  variant="secondary"
+                  className="collection-move-target"
+                  disabled={!checked.length || batchPending}
+                  onClick={() =>
+                    setFiling(
+                      pageRows.filter((row) => checked.includes(row.key)),
+                    )
+                  }
+                  onDragOver={(event) => {
+                    if (dragging.current) {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                    }
+                  }}
+                  onDrop={(event) => {
+                    if (dragging.current) {
+                      event.preventDefault();
+                      dragging.current = false;
+                      setFiling(
+                        pageRows.filter((row) => checked.includes(row.key)),
+                      );
+                    }
+                  }}
+                >
+                  {activeFolder
+                    ? zh
+                      ? "移动到…"
+                      : "Move to…"
+                    : zh
+                      ? "添加到文件夹…"
+                      : "Add to folder…"}
+                </Button>
                 <Button
                   variant="danger"
                   pending={batchPending}
@@ -1053,6 +1146,19 @@ export function FilesWorkspace({
                 data-layout={grid ? "grid" : "list"}
               >
                 {pageRows.map((row) => {
+                  const memberships = catalog.folderIndex.memberships.get(
+                    row.key,
+                  );
+                  const collectionPaths =
+                    row.kind === "NOTE" || !memberships
+                      ? []
+                      : Array.from(
+                          memberships,
+                          (id) => catalog.folderIndex.folders.get(id)!.path,
+                        );
+                  const location = collectionPaths.length
+                    ? (activeFolder?.path ?? collectionPaths[0])
+                    : row.location;
                   const content = (
                     <>
                       {row.kind === "NOTE" && selection === null ? (
@@ -1077,6 +1183,8 @@ export function FilesWorkspace({
                             <BookOpen size={17} />
                           ) : row.kind === "DOCUMENT" ? (
                             <FileText size={17} />
+                          ) : row.mime?.startsWith("image/") ? (
+                            <ImageIcon size={17} />
                           ) : (
                             <File size={17} />
                           )}
@@ -1094,9 +1202,16 @@ export function FilesWorkspace({
                             ? "files-resource-location note-folder"
                             : "files-resource-location"
                         }
-                        title={row.location}
+                        title={
+                          collectionPaths.length
+                            ? collectionPaths.join(" · ")
+                            : row.location
+                        }
                       >
-                        {row.location || (zh ? "工作区" : "Workspace")}
+                        {location || (zh ? "工作区" : "Workspace")}
+                        {collectionPaths.length > 1 && (
+                          <small> +{collectionPaths.length - 1}</small>
+                        )}
                       </span>
                       <time dateTime={row.updatedAt}>
                         {new Date(row.updatedAt).toLocaleDateString(
@@ -1172,6 +1287,50 @@ export function FilesWorkspace({
                       onOpen={() => open(row)}
                     >
                       {content}
+                      <Button
+                        className="resource-file-action"
+                        variant="ghost"
+                        title={
+                          activeFolder
+                            ? zh
+                              ? "移动到文件夹"
+                              : "Move to folder"
+                            : zh
+                              ? "添加到文件夹"
+                              : "Add to folder"
+                        }
+                        aria-label={
+                          (activeFolder
+                            ? zh
+                              ? "移动到文件夹"
+                              : "Move to folder"
+                            : zh
+                              ? "添加到文件夹"
+                              : "Add to folder") +
+                          " · " +
+                          row.title
+                        }
+                        disabled={batchPending}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setFiling([row]);
+                        }}
+                      >
+                        {activeFolder ? (
+                          <FolderInput size={16} />
+                        ) : (
+                          <FolderPlus size={16} />
+                        )}
+                        <span>
+                          {activeFolder
+                            ? zh
+                              ? "移动"
+                              : "Move"
+                            : zh
+                              ? "归类"
+                              : "File"}
+                        </span>
+                      </Button>
                     </EntityRow>
                   );
                 })}

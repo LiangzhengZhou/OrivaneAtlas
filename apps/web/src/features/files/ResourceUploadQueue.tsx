@@ -26,6 +26,7 @@ export function ResourceUploadQueue({
   const running = useRef(false);
   const mounted = useRef(false);
   const [jobs, setJobs] = useState<Entry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [dragging, setDragging] = useState(false);
   useEffect(() => {
     mounted.current = true;
@@ -67,6 +68,7 @@ export function ResourceUploadQueue({
   }
   function enqueue(files: FileList | null) {
     if (!files?.length) return;
+    setShowHistory(false);
     entries.current = [
       ...entries.current.filter(
         (job) => job.state !== "done" && job.state !== "cancelled",
@@ -81,6 +83,9 @@ export function ResourceUploadQueue({
     publish();
     void process(files.length === 1);
   }
+  const settled = jobs.every(
+    (job) => job.state === "done" || job.state === "cancelled",
+  );
   const labels = zh
     ? {
         waiting: "等待上传",
@@ -150,38 +155,49 @@ export function ResourceUploadQueue({
                 : "Leaving Files cancels queued files."}
             </p>
           )}
-          <ul>
-            {jobs.map((job) => (
-              <li key={job.id}>
-                <span>{job.name}</span>
-                <small>{labels[job.state]}</small>
-                {job.state === "waiting" && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      job.state = "cancelled";
-                      delete job.file;
-                      publish();
-                    }}
-                  >
-                    {zh ? "取消" : "Cancel"}
-                  </Button>
-                )}
-                {job.state === "failed" && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      job.state = "waiting";
-                      publish();
-                      void process(false);
-                    }}
-                  >
-                    {zh ? "重试" : "Retry"}
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
+          {settled && (
+            <Button
+              variant="ghost"
+              aria-expanded={showHistory}
+              onClick={() => setShowHistory(!showHistory)}
+            >
+              {zh ? "上传记录" : "Upload history"}
+            </Button>
+          )}
+          {(!settled || showHistory) && (
+            <ul>
+              {jobs.map((job) => (
+                <li key={job.id}>
+                  <span>{job.name}</span>
+                  <small>{labels[job.state]}</small>
+                  {job.state === "waiting" && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        job.state = "cancelled";
+                        delete job.file;
+                        publish();
+                      }}
+                    >
+                      {zh ? "取消" : "Cancel"}
+                    </Button>
+                  )}
+                  {job.state === "failed" && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        job.state = "waiting";
+                        publish();
+                        void process(false);
+                      }}
+                    >
+                      {zh ? "重试" : "Retry"}
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
           {!jobs.some(
             (job) => job.state === "waiting" || job.state === "writing",
           ) && (

@@ -1131,7 +1131,7 @@ test("large local text extraction uses virtualized chunks and indexed body searc
         new Promise<number>((resolve, reject) => {
           const host = document.querySelector(".library-view"),
             input = document.querySelector<HTMLInputElement>(
-              ".library-view > label.field input",
+              ".library-view input[name=knowledge-search]",
             );
           if (!host || !input) {
             reject(new Error("MISSING_SEARCH_SURFACE"));

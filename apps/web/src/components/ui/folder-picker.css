@@ -1,0 +1,64 @@
+.folder-picker.ui-dialog {
+  width: min(29rem, calc(100vw - 2rem));
+  max-height: 80dvh;
+  padding: var(--space-4);
+  overflow: auto;
+}
+.folder-picker header,
+.folder-picker-search,
+.folder-picker-results .ui-button {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+}
+.folder-picker header {
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.folder-picker h2,
+.folder-picker header p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.folder-picker header p,
+.folder-picker small {
+  color: var(--text-secondary);
+}
+.folder-picker-search {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  padding-inline: 0.65rem;
+}
+.folder-picker-search:focus-within {
+  outline: 2px solid var(--focus-ring, var(--text-primary));
+}
+.folder-picker-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  min-height: 42px;
+}
+.folder-picker-results {
+  max-height: min(48dvh, 24rem);
+  overflow: auto;
+  margin-block: 0.5rem;
+}
+.folder-picker-results .ui-button {
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+  text-align: start;
+}
+.folder-picker-results svg {
+  flex: none;
+}
+.folder-picker-results span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.folder-picker footer {
+  border-top: 1px solid var(--border-default);
+  padding-top: 0.65rem;
+}
