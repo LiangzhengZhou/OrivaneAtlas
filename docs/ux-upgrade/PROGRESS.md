@@ -1,3 +1,7 @@
+## Session 409 · HTML 笔记与直接导入
+
+笔记列表现可直接导入 HTML/HTM。编辑器支持编写源码、阅读、保存和导出原始 HTML。当前工作在本地 codex/html-notes。 [检查点](CHECKPOINT-409.md)
+
 ## Session 408 · v3.2.0 已发布并部署
 
 2026-11-25 22:32 +08:00 切换项目 Host，22:33 发布 GitHub 正式版。main 与 v3.2.0 指向 f0a0e5b。六个公开附件、两个稳定更新清单和发布后的 GitHub 签名工作流均验证成功。公网健康与首页 200，HTML/JS 摘要与发布构建一致，浏览器页面错误 0。数据库 schema 52，完整性与外键检查通过，仅重启 arclattice-web。见 [正式版](https://github.com/LiangzhengZhou/OrivaneAtlas/releases/tag/v3.2.0) 与 docs/ux-upgrade/CHECKPOINT-408.md。

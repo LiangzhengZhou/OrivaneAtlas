@@ -1,0 +1,44 @@
+{
+  "implementation": "9df9061",
+  "replacementTest": "a29e5a3",
+  "restartSetup": "8d40d6d",
+  "productionDeployment": false,
+  "checked": {
+    "productionBuild": true,
+    "vitestPassed": 1595,
+    "typecheck": true,
+    "checkExit": 0,
+    "lint": true,
+    "vitestFiles": 309
+  },
+  "focused": {
+    "notesAndHtml": 9,
+    "restartAfterFixtureIngestion": 9,
+    "replacement": 3
+  },
+  "windows": {
+    "engine": "WebView2 158.0.4370.33",
+    "importEditSaveReopen": true,
+    "nativeFixture": true,
+    "dpr": 1,
+    "height": 840,
+    "width": 1280
+  },
+  "evidenceIndexSha256": "34155eb135b552fb5bcccdc590cacfb26c323dd1bb8f13e51ea0af149a50549a",
+  "browser": {
+    "desktopEn": {
+      "passed": 289,
+      "failed": 0
+    },
+    "desktopZhInitial": {
+      "passed": 288,
+      "failed": 1
+    },
+    "mobileZh": {
+      "passed": 289,
+      "failed": 0
+    },
+    "desktopZhFailedCaseAfterFix": "passed",
+    "distinctCasesWithPassingEvidence": 867
+  }
+}
