@@ -15710,6 +15710,8 @@ for (const latencyMs of [150, 200, 800]) {
       await page.request.get(workbench.url + "/api/session")
     ).json();
     await workbench.seedPerformance(identity.context);
+    // The fixture writes directly to the host. Start ingestion before timing the next restart.
+    await page.reload();
     await waitForFixtureReplica(page);
     const throttled = latencyMs === 150;
     const network = throttled ? await page.context().newCDPSession(page) : null;
