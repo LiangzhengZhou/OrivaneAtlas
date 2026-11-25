@@ -1,3 +1,9 @@
+## Session 408 · v3.2.0 已发布并部署
+
+2026-11-25 22:32 +08:00 切换项目 Host，22:33 发布 GitHub 正式版。main 与 v3.2.0 指向 f0a0e5b。六个公开附件、两个稳定更新清单和发布后的 GitHub 签名工作流均验证成功。公网健康与首页 200，HTML/JS 摘要与发布构建一致，浏览器页面错误 0。数据库 schema 52，完整性与外键检查通过，仅重启 arclattice-web。见 [正式版](https://github.com/LiangzhengZhou/OrivaneAtlas/releases/tag/v3.2.0) 与 docs/ux-upgrade/CHECKPOINT-408.md。
+
+本地 1595/1595、Playwright 861/861、原生 CI 通过。候选云端浏览器 855/861，用户明确接受这次例外，已在 Release 说明公开披露。不同步地恢复并立即打开文件的 404 已在隔离环境复现，独立本地分支 codex/3.2-file-restore-verification 提交 4e986ba 通过三配置回归，未纳入正式版。继续复核其他云端失败和设备手工验收。
+
 ## Session 407 · Windows 任务行与编辑
 
 2026-11-24，分支 `codex/ux-upgrade`，起点 89f51d0，任务交互 3396ef2，窄窗 564eb63，最终界面 8de2c4c。Windows 96 DPI 真实 WebView2 窗口完成鼠标计时、键盘编辑、勾选、修改截止日期、完成与撤销并刷新。674×985 内容上缘从 985 移至 51 CSS 像素；390×844 浏览器仍完整显示三项。产品改动限于 Shell、个人任务 UI 与通用编辑器的可选键盘焦点，数据契约沿用旧版。

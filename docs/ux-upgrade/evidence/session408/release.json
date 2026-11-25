@@ -1,0 +1,140 @@
+{
+  "version": "3.2.0",
+  "release": {
+    "url": "https://github.com/LiangzhengZhou/OrivaneAtlas/releases/tag/v3.2.0",
+    "id": 458077172,
+    "tag": "v3.2.0",
+    "sha": "f0a0e5b1b6c4da66880bd62851b7666a6c0e9c4c",
+    "publishedAt": "2026-11-25T14:33:44Z",
+    "assets": [
+      {
+        "name": "android.json",
+        "sha256": "0000bf18d88236db74252cf67597fbf948c295fb32bbe691d882b98c59c58f1e",
+        "size": 559
+      },
+      {
+        "name": "latest.json",
+        "sha256": "1d9fee5701a1066ffc999b0c0e3d7cec58ca387e4dc3e76dbc36285803c6aee0",
+        "size": 896
+      },
+      {
+        "name": "OrivaneAtlas-3.2.0-android-arm64.apk",
+        "sha256": "67e3061077c5b666a03e42600f82011f5099c4e1718187f53fc1e5cbc2ed1d40",
+        "size": 20416619
+      },
+      {
+        "name": "OrivaneAtlas-3.2.0-windows-x64-setup.exe",
+        "sha256": "2ac93c28df7f0d33b4069fc99c9c33e9a824cd95711e982fd2afae4e6c18e8b7",
+        "size": 8180112
+      },
+      {
+        "name": "OrivaneAtlas-3.2.0-windows-x64-setup.exe.sig",
+        "sha256": "5b2781cc3680a75c2ef4651f4dc727c094e101b2a4817b4a3a2f3dd28dcd15d4",
+        "size": 436
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "sha256": "56094c18b4db095bb8bfc6826c29622a140a3e3b730dcc15fdfd019828df7c5a",
+        "size": 478
+      }
+    ]
+  },
+  "preDeployment": {
+    "phase": "before",
+    "https": 200,
+    "health": 200,
+    "title": "Orivane Atlas",
+    "js": "/assets/index-KDtxiwiF.js",
+    "indexSha": "07a0e3e9a376b5b53874913c39c488280fe20a074afb9e7c7cbb65d7fb1d96d6",
+    "jsSha": "38baeddd63122f7e1f9390a850b85e649a28b23d91d6fd7cf4c094cfdb8b0376",
+    "pageErrors": 0
+  },
+  "production": {
+    "phase": "after",
+    "https": 200,
+    "health": 200,
+    "title": "Orivane Atlas",
+    "js": "/assets/index-DKd9upe9.js",
+    "indexSha": "bacb8fcf45c1fbf039af3e7853bf8be72793ba02aaeb421f67e9ef8721e77283",
+    "jsSha": "1c62eacdc01799e5ca49de9ccd42004fbe534edede7f772159858068cfbb10b7",
+    "pageErrors": 0
+  },
+  "cutoverUtc": "2026-11-25T14:32:07Z",
+  "liveDatabase": {
+    "schema": 52,
+    "migrationsApplied": 0,
+    "onlineSnapshot": true,
+    "independentRestore": true,
+    "integrityCheck": "ok",
+    "foreignKeyViolations": 0
+  },
+  "sourceAudit": {
+    "baseFiles": 1474,
+    "targetFiles": 1736,
+    "appliedDelta": 458,
+    "remainingDelta": 0,
+    "drift": 0,
+    "missing": 0
+  },
+  "services": {
+    "web": {
+      "before": 2347868,
+      "after": 2428348
+    },
+    "https": {
+      "before": 3851850,
+      "after": 3851850
+    }
+  },
+  "localValidation": {
+    "vitest": 1595,
+    "files": 309,
+    "e2e": [
+      {
+        "project": "desktop-zh",
+        "exitCode": 0,
+        "start": "2026-11-25T20:27:38.6601166+08:00",
+        "end": "2026-11-25T20:47:36.3794032+08:00",
+        "passed": 287
+      },
+      {
+        "project": "desktop-en",
+        "exitCode": 0,
+        "start": "2026-11-25T20:47:36.4694093+08:00",
+        "end": "2026-11-25T21:03:31.0442592+08:00",
+        "passed": 287
+      },
+      {
+        "project": "mobile-zh",
+        "exitCode": 0,
+        "start": "2026-11-25T21:03:31.0493016+08:00",
+        "end": "2026-11-25T21:20:50.9682667+08:00",
+        "passed": 287
+      }
+    ],
+    "androidJVM": 7,
+    "rustPassed": 34,
+    "rustIgnored": 5
+  },
+  "github": {
+    "candidateCI": {
+      "id": 45613007586,
+      "passed": 855,
+      "failed": 6
+    },
+    "candidateNative": {
+      "id": 45613007905,
+      "conclusion": "success"
+    },
+    "publicSignature": {
+      "id": 45635413144,
+      "conclusion": "success"
+    }
+  },
+  "releaseDecision": "User accepted the six disclosed cloud failures and requested immediate publication and deployment of this exact signed candidate.",
+  "followUp": {
+    "localOnlyCommit": "4e986ba",
+    "delayedRestoreReproduced": true,
+    "focusedRegressionPassed": 3
+  }
+}
