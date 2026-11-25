@@ -148,3 +148,102 @@ it("moving lazy Notes uses metadata, retains CAS, and never fabricates or hydrat
     store.close();
   }
 });
+
+it("restarts aborted filing writes during unrelated commits without duplicating commands", async () => {
+  const factory = new IDBFactory();
+  const store = await IndexedDbLocalStore.open("filing-contention", factory);
+  const peer = await IndexedDbLocalStore.open("filing-contention", factory);
+  const identity = {
+    schemaVersion: 1 as const,
+    workspaceId: crypto.randomUUID(),
+    principalId: crypto.randomUUID(),
+    deviceId: crypto.randomUUID(),
+  };
+  const blobs = { get: async () => null, put: async () => {} };
+  const wiki = { extract: () => [], resolve: () => [] };
+  const clock = { now: () => "2026-11-26T00:00:00Z" };
+  const ids = { next: () => crypto.randomUUID() };
+  const other = new LocalRuntime(
+    new LocalWorkspace(peer.metadata, blobs, identity, wiki, clock, ids),
+  );
+  let collisions = 0;
+  const runtime = new LocalRuntime(
+    new LocalWorkspace(
+      {
+        ...store.metadata,
+        commit: async (...args) => {
+          if (collisions > 0) {
+            collisions--;
+            await other.service.create(other.context, {
+              title: "Concurrent update",
+            });
+          }
+          return store.metadata.commit(...args);
+        },
+      },
+      blobs,
+      identity,
+      wiki,
+      clock,
+      ids,
+    ),
+  );
+  try {
+    const note = await runtime.saveNote(null, 0, {
+      kind: "NOTE",
+      day: null,
+      title: "Field note",
+      bodyMd: "Original",
+    });
+    const primary = crypto.randomUUID(),
+      collection = crypto.randomUUID();
+    for (const [id, scope] of [
+      [primary, "NOTE"],
+      [collection, "GENERAL"],
+    ] as const) {
+      collisions = 3;
+      await runtime.organize({
+        kind: "FOLDER",
+        action: "create",
+        id,
+        scope,
+        parentId: "",
+        name: scope,
+      });
+      expect(collisions).toBe(0);
+    }
+    collisions = 3;
+    await runtime.organize({
+      kind: "NOTE",
+      action: "move",
+      folderId: primary,
+      entries: [{ id: note.id, version: note.version, organizationVersion: 0 }],
+    });
+    expect(collisions).toBe(0);
+    collisions = 3;
+    const link = await runtime.linkFolder({
+      folderId: collection,
+      targetId: note.id,
+      targetKind: "NOTE",
+    });
+    expect(collisions).toBe(0);
+    expect(link.folderId).toBe(collection);
+    const pending = await store.outbox.list(identity.workspaceId);
+    // One note, twelve unrelated commits, two folders, one note move and one link.
+    expect(pending).toHaveLength(17);
+    await expect(
+      runtime.organize({
+        kind: "NOTE",
+        action: "move",
+        folderId: "",
+        entries: [
+          { id: note.id, version: note.version, organizationVersion: 0 },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    expect(await store.outbox.list(identity.workspaceId)).toHaveLength(17);
+  } finally {
+    store.close();
+    peer.close();
+  }
+});

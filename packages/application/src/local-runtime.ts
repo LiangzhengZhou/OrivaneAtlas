@@ -48,6 +48,10 @@ export type LocalWorkService = Pick<
   | "moveNavigationPreference"
 >;
 
+// File registrations and their sync acknowledgements can advance the
+// workspace revision in bursts while a person chooses a destination.
+const filingRetryDelaysMs = [0, 0, 25, 50, 100, 200, 400, 800] as const;
+
 /** Product-facing local contract. Every call enters the same durable Application boundary. */
 export class LocalRuntime {
   backup() {
@@ -178,17 +182,21 @@ export class LocalRuntime {
     targetId: string;
   }) {
     const captured = structuredClone(input);
-    return this.workspace.run(
-      (services) => services.folderLinks.create(this.context, captured),
-      (link) => ({
-        name: "folderLink.create",
-        input: localDto({
-          id: link.id,
-          folderId: captured.folderId,
-          targetKind: captured.targetKind,
-          targetId: captured.targetId,
-        }),
-      }),
+    return this.restartAbortedWorkspaceWrite(
+      () =>
+        this.workspace.run(
+          (services) => services.folderLinks.create(this.context, captured),
+          (link) => ({
+            name: "folderLink.create",
+            input: localDto({
+              id: link.id,
+              folderId: captured.folderId,
+              targetKind: captured.targetKind,
+              targetId: captured.targetId,
+            }),
+          }),
+        ),
+      filingRetryDelaysMs,
     );
   }
 
@@ -202,7 +210,7 @@ export class LocalRuntime {
           (services) => services.folderLinks.move(this.context, captured),
           () => ({ name: "folderLink.move", input: localDto(captured) }),
         ),
-      [0, 0, 25, 50, 100, 200, 400, 800],
+      filingRetryDelaysMs,
     );
   }
 
@@ -915,10 +923,17 @@ export class LocalRuntime {
   }
   organize(input: OrganizeInput) {
     const captured = structuredClone(input);
-    return this.workspace.run(
-      (s) => s.organization.apply(this.context, captured),
-      () => ({ name: "organization.apply", input: localDto(captured) }),
-    );
+    const apply = () =>
+      this.workspace.run(
+        (s) => s.organization.apply(this.context, captured),
+        () => ({ name: "organization.apply", input: localDto(captured) }),
+      );
+    if (
+      (captured.kind === "FOLDER" && captured.action === "create") ||
+      (captured.kind === "NOTE" && captured.action === "move")
+    )
+      return this.restartAbortedWorkspaceWrite(apply, filingRetryDelaysMs);
+    return apply();
   }
   saveTaskRecurrence(
     input: Parameters<WorkflowService["saveTaskRecurrence"]>[1],
