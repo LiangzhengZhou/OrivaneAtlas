@@ -1,0 +1,96 @@
+{
+  "release": {
+    "url": "https://github.com/LiangzhengZhou/OrivaneAtlas/releases/tag/v3.2.1",
+    "id": 458720453,
+    "tag": "v3.2.1",
+    "sha": "a9861d4422adc0523a21adbabd1e63a9dae54e0a",
+    "publishedAt": "2026-11-25T22:34:23Z",
+    "assets": [
+      {
+        "name": "android.json",
+        "sha256": "c376a3fadd204fb4cba531306beda993c3126178d83669c60738ec88d13dff05",
+        "size": 505
+      },
+      {
+        "name": "latest.json",
+        "sha256": "91973c29edcc4ba44e4ec8418057fcd13210635bda4b073a6a557b75b507e6c3",
+        "size": 830
+      },
+      {
+        "name": "OrivaneAtlas-3.2.1-android-arm64.apk",
+        "sha256": "ee5c98d5de812bc1591573fb663aa6cc9c37a7363ff137f8d6f766d80b26ca60",
+        "size": 20421499
+      },
+      {
+        "name": "OrivaneAtlas-3.2.1-windows-x64-setup.exe",
+        "sha256": "76ac76c8205c0c3d75af856c10fcb373c25618c363c3d12446390784e3e8faf1",
+        "size": 8186828
+      },
+      {
+        "name": "OrivaneAtlas-3.2.1-windows-x64-setup.exe.sig",
+        "sha256": "36e9bf9e4298b0314789b479c9a465435032a02e9e3f033478874543137a9467",
+        "size": 424
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "sha256": "3fa2362e569c77821091e6411eca4749d96abf38c27aa633dc10f85c71ef59df",
+        "size": 478
+      }
+    ]
+  },
+  "server": {
+    "cutoverUtc": "2026-11-25T22:33:47.452807Z",
+    "base": "f0a0e5b",
+    "source": {
+      "baseFiles": 1736,
+      "targetFiles": 1774,
+      "changed": 62,
+      "applied": 62,
+      "drift": 0,
+      "missing": 0
+    },
+    "schema": 52,
+    "integrity": "ok",
+    "foreignKeyViolations": 0,
+    "webPid": 2544202,
+    "gatewayPidBeforeAndAfter": 3851850,
+    "previousJavascriptReadable": true,
+    "preDeploy": {
+      "phase": "before",
+      "https": 200,
+      "health": 200,
+      "title": "Orivane Atlas",
+      "js": "/assets/index-DKd9upe9.js",
+      "indexSha": "bacb8fcf45c1fbf039af3e7853bf8be72793ba02aaeb421f67e9ef8721e77283",
+      "jsSha": "1c62eacdc01799e5ca49de9ccd42004fbe534edede7f772159858068cfbb10b7",
+      "pageErrors": 0
+    },
+    "postDeploy": {
+      "phase": "after",
+      "https": 200,
+      "health": 200,
+      "title": "Orivane Atlas",
+      "js": "/assets/index-BewpUdIO.js",
+      "indexSha": "80598742c4ef0098bb5bee618ad5b7abc94e17116850b910abcb293c9d1618de",
+      "jsSha": "7c8fdcabed2fc8b0c27d9fec0ed24bf93cf18fe1b33406a34f0fa6121829b04b",
+      "pageErrors": 0
+    }
+  },
+  "artifactChecks": {
+    "archiveFiles": 132,
+    "webParity": {
+      "tested": 77,
+      "release": 77,
+      "changes": ["openapi.json"]
+    },
+    "signedWindowsInstaller": true,
+    "apkVersionCode": 3002001,
+    "apkV2": true,
+    "apkV3": true,
+    "jvmPassed": 7,
+    "coreReleaseBrowserTests": 12,
+    "anonymousDownloadsVerified": 6,
+    "stableManifestsVerified": 2,
+    "publishedSignatureRun": 45714383555
+  }
+}
