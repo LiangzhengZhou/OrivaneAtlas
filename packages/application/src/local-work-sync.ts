@@ -66,7 +66,20 @@ export interface LocalWorkSyncTransport extends LocalReceiptTransport {
     request: LocalWorkReplayRequest,
   ): Promise<unknown>;
 }
+export type LocalWorkSyncStage =
+  | "binding"
+  | "bootstrap"
+  | "memoHistory"
+  | "pull"
+  | "apply"
+  | "receipt"
+  | "plan"
+  | "send"
+  | "file"
+  | "ack";
+
 export interface LocalWorkSyncPorts {
+  onFailure?(cause: unknown, stage: LocalWorkSyncStage): void;
   beforeBootstrap?(
     binding: LocalSyncState,
     expectedRevision: number | null,
@@ -98,6 +111,7 @@ export class LocalWorkSyncCoordinator {
   private readonly actor: ActorContext;
   private flight: Promise<LocalWorkSyncResult> | null = null;
   private requested = false;
+  private stage: LocalWorkSyncStage = "binding";
   constructor(
     actor: ActorContext,
     private readonly ports: LocalWorkSyncPorts,
@@ -117,12 +131,18 @@ export class LocalWorkSyncCoordinator {
       } while (this.requested);
       return { ...result, accepted: [...accepted] };
     };
-    this.flight = execute().finally(() => {
-      this.flight = null;
-    });
+    this.flight = execute()
+      .catch((cause: unknown) => {
+        this.ports.onFailure?.(cause, this.stage);
+        throw cause;
+      })
+      .finally(() => {
+        this.flight = null;
+      });
     return this.flight;
   }
   private async cycle(): Promise<LocalWorkSyncResult> {
+    this.stage = "binding";
     const { actor, ports } = this;
     const original = structuredClone(
       await ports.syncState.get(actor.workspaceId),
@@ -156,7 +176,9 @@ export class LocalWorkSyncCoordinator {
       let hasMore: boolean;
       do {
         const scope = await binding();
+        this.stage = "pull";
         const page = await ports.transport.pull(scope);
+        this.stage = "apply";
         const prepared = await prepareLocalWorkPull(
           actor,
           scope,
@@ -176,6 +198,7 @@ export class LocalWorkSyncCoordinator {
       } while (hasMore);
     };
     if (ports.transport.bootstrap) {
+      this.stage = "bootstrap";
       const marker = await ports.metadata.get(
         actor.workspaceId,
         "$local.workspaceBootstrap",
@@ -204,6 +227,7 @@ export class LocalWorkSyncCoordinator {
       if (!marker || localObject(marker.value).folderLinksIncluded !== true) {
         if (marker) await pull();
         const scope = await binding();
+        this.stage = "bootstrap";
         const manifest = await ports.transport.bootstrap(scope);
         // A relation-only repair must never advance past unrelated delta records.
         const ahead =
@@ -236,6 +260,7 @@ export class LocalWorkSyncCoordinator {
       }
     }
     if (ports.memoIdentity) {
+      this.stage = "memoHistory";
       if (!ports.transport.pullPrivateMemos)
         throw new Error("LOCAL_MEMO_BOOTSTRAP_PORT_INCOMPLETE");
       await initializeLocalEntityMemoHistory(actor, binding, {
@@ -247,8 +272,10 @@ export class LocalWorkSyncCoordinator {
       });
     }
     await pull();
+    this.stage = "receipt";
     const recovered = await recoverLocalWorkReceipts(actor, ports);
     const accepted = new Set(recovered.acknowledged);
+    this.stage = "plan";
     let plans = await planLocalCommands(
       actor,
       ports.metadata,
@@ -299,6 +326,7 @@ export class LocalWorkSyncCoordinator {
         );
     }
     const acknowledge = async (plan: LocalCommandPlan, receipt: unknown) => {
+      this.stage = "ack";
       const pending = await ports.outbox.list(actor.workspaceId);
       if (!pending.some((mutation) => plan.mutationIds.includes(mutation.id)))
         return;
@@ -366,6 +394,7 @@ export class LocalWorkSyncCoordinator {
       }
     };
     for (const plan of plans) {
+      this.stage = "plan";
       if (
         plan.mutations.some((mutation) =>
           blockedEntities.has(
@@ -434,6 +463,7 @@ export class LocalWorkSyncCoordinator {
         );
         sending = { ...plan, state: "RECEIPT_REQUIRED", mutations };
       } else {
+        this.stage = "receipt";
         const receipt = await ports.transport.lookup(
           await binding(),
           request.idempotencyKey,
@@ -446,7 +476,8 @@ export class LocalWorkSyncCoordinator {
         }
       }
       let receipt: unknown;
-      if (plan.command?.name === "file.upload" && ports.fileBinary)
+      if (plan.command?.name === "file.upload" && ports.fileBinary) {
+        this.stage = "file";
         await syncLocalFileBinary(
           actor,
           plan,
@@ -454,6 +485,8 @@ export class LocalWorkSyncCoordinator {
           ports.fileBinary.transport,
           binding,
         );
+      }
+      this.stage = "send";
       try {
         receipt = await ports.transport.send(await binding(), request);
       } catch (error) {
@@ -468,6 +501,7 @@ export class LocalWorkSyncCoordinator {
           )
         )
           throw error;
+        this.stage = "receipt";
         receipt = await ports.transport.lookup(
           await binding(),
           request.idempotencyKey,
@@ -495,6 +529,7 @@ export class LocalWorkSyncCoordinator {
       acceptedPlan(plan);
     }
     await pull();
+    this.stage = "plan";
     const remaining = await planLocalCommands(
       actor,
       ports.metadata,

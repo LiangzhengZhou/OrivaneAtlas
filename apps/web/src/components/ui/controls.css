@@ -637,6 +637,24 @@ textarea:hover {
 .ui-popover:has(.ui-menu-item) {
   padding: 6px;
 }
+.ui-popover.sync-details {
+  width: min(20rem, calc(100vw - 24px));
+  padding: var(--space-4);
+}
+.sync-details dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+  margin-block: var(--space-3);
+  font-size: var(--font-meta-size);
+}
+.sync-details dt {
+  color: var(--text-secondary);
+}
+.sync-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 .ui-menu-item {
   border-radius: calc(var(--radius-control) - 1px);
   min-height: 34px;

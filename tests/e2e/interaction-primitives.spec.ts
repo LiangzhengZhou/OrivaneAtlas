@@ -582,6 +582,23 @@ test(
           : "This account cannot sync this workspace",
       }),
     ).toBeVisible();
+    await page
+      .getByRole("button", { name: /查看同步详情|view sync details/ })
+      .press("Enter");
+    const details = page.getByRole("dialog", {
+      name: zh ? "同步详情" : "Sync details",
+    });
+    await expect(details).toContainText("SYNC_REQUEST");
+    await expect(details).toContainText(
+      zh ? "获取远端变更" : "Fetching remote changes",
+    );
+    await expect(details).toContainText("403");
+    await info.attach("workspace-sync-detail", {
+      body: await details.screenshot({ animations: "disabled" }),
+      contentType: "image/png",
+    });
+    await details.press("Escape");
+    await expect(details).toHaveCount(0);
     await info.attach("workspace-sync-status", {
       body: await page
         .locator(".sync-status")

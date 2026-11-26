@@ -366,6 +366,7 @@ function Workbench({
     setSnapshot,
     loading,
     syncIssue,
+    syncDiagnostic,
     retrySync,
     refresh,
     attentionTick,
@@ -2074,7 +2075,12 @@ function Workbench({
   ) : null;
   const shellActions = (
     <>
-      <SyncStatus loading={loading} issue={syncIssue} onRetry={retrySync} />
+      <SyncStatus
+        loading={loading}
+        issue={syncIssue}
+        diagnostic={syncDiagnostic}
+        onRetry={retrySync}
+      />
       <NotificationBell
         records={notificationCenter.records}
         unread={notificationCenter.unread}

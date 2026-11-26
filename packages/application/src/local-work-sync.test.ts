@@ -222,3 +222,21 @@ for (const earlierState of ["CONFLICT", "PENDING"] as const) {
     expect(pending[0]?.payload).toEqual(initial[0]?.payload);
   });
 }
+
+it("distinguishes a failed pull from a rejected local projection and retries without advancing the cursor", async () => {
+  const f = fixture();
+  const observed = vi.fn();
+  f.ports.onFailure = observed;
+  const failure = new Error("SYNC_REQUEST_503");
+  vi.mocked(f.ports.transport.pull)
+    .mockRejectedValueOnce(failure)
+    .mockResolvedValueOnce({ ...f.page, records: null });
+  await expect(f.coordinator.run()).rejects.toBe(failure);
+  expect(observed).toHaveBeenLastCalledWith(failure, "pull");
+  await expect(f.coordinator.run()).rejects.toThrow("VALIDATION_ERROR");
+  expect(observed).toHaveBeenLastCalledWith(expect.any(DomainError), "apply");
+  expect(f.ports.replica.commit).not.toHaveBeenCalled();
+  expect(f.ports.transport.send).not.toHaveBeenCalled();
+  await expect(f.coordinator.run()).resolves.toMatchObject({ cursor: 0 });
+  expect(observed).toHaveBeenCalledTimes(2);
+});

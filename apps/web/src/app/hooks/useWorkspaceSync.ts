@@ -14,7 +14,9 @@ import { connectedWorkspaceSync } from "../connected-workspace-sync";
 import { stableWorkspaceSnapshot } from "../stable-workspace-snapshot";
 import { workspaceSnapshotLoader } from "../workspace-snapshot-loader";
 import {
+  type WorkspaceSyncDiagnostic,
   type WorkspaceSyncIssue,
+  workspaceSyncDiagnostic,
   workspaceSyncIssue,
 } from "../workspace-sync-issue";
 
@@ -42,7 +44,10 @@ export function useWorkspaceSync(
     mounted = useRef(true);
   const [loading, setLoading] = useState(true),
     [snapshotFailed, setSnapshotFailed] = useState(false),
-    [networkIssue, setNetworkIssue] = useState<WorkspaceSyncIssue | null>(null);
+    [networkIssue, setNetworkIssue] = useState<{
+      issue: WorkspaceSyncIssue;
+      diagnostic: WorkspaceSyncDiagnostic;
+    } | null>(null);
   const wakeSync = useRef<(() => void) | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot>({
     projectMaterials: [],
@@ -213,7 +218,14 @@ export function useWorkspaceSync(
         },
         visible: () => !document.hidden && navigator.onLine,
         onOffline: (failed, cause) =>
-          setNetworkIssue(failed ? workspaceSyncIssue(cause) : null),
+          setNetworkIssue(
+            failed
+              ? {
+                  issue: workspaceSyncIssue(cause),
+                  diagnostic: workspaceSyncDiagnostic(cause),
+                }
+              : null,
+          ),
       });
       const unsubscribe = runtime.subscribeWorkspace(() => {
         void pull();
@@ -270,7 +282,8 @@ export function useWorkspaceSync(
       ? runtime.storageMode === "local"
         ? ("localReadFailed" as const)
         : ("syncFailed" as const)
-      : networkIssue,
+      : (networkIssue?.issue ?? null),
+    syncDiagnostic: snapshotFailed ? null : (networkIssue?.diagnostic ?? null),
     retrySync,
     refresh,
     attentionTick,

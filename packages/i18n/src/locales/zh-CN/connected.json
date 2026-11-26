@@ -57,5 +57,22 @@
   "syncForbidden": "当前账户无法同步此工作区",
   "syncConflict": "工作区版本已变化，请重试同步",
   "syncNetwork": "同步连接中断，请重试",
-  "syncHint": "前台工作区在服务器变更或重新连接后刷新，原生端使用定期刷新兜底。尚无离线写入队列。"
+  "syncHint": "前台工作区在服务器变更或重新连接后刷新，原生端使用定期刷新兜底。尚无离线写入队列。",
+  "syncShowDetails": "{{issue}}，查看同步详情",
+  "syncDetails": "同步详情",
+  "syncStage": "失败阶段",
+  "syncCode": "错误码",
+  "syncStages": {
+    "unknown": "未识别阶段",
+    "binding": "核对工作区绑定",
+    "bootstrap": "载入工作区清单",
+    "memoHistory": "同步私有备忘历史",
+    "pull": "获取远端变更",
+    "apply": "应用远端变更",
+    "receipt": "核对服务器回执",
+    "plan": "准备待同步修改",
+    "send": "提交本机修改",
+    "file": "同步文件内容",
+    "ack": "保存服务器回执"
+  }
 }

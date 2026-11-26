@@ -48,6 +48,9 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
         "/api/v1/work/create" => "/api/work/create",
         "/api/v1/work/update" => "/api/work/update",
         "/api/v1/work/delete" => "/api/work/delete",
+        "/api/v1/work/purge" => "/api/work/purge",
+        "/api/v1/note/purge" => "/api/note/purge",
+        "/api/v1/library/purge" => "/api/library/purge",
         "/api/v1/work/calendar-settings" => "/api/work/calendar-settings",
         "/api/v1/work/navigation-preference" => "/api/work/navigation-preference",
         "/api/v1/work/navigation-move" => "/api/work/navigation-move",
@@ -135,6 +138,8 @@ fn endpoint(origin: &str, path: &str, post: bool) -> Result<Url, String> {
             "/api/work/purge",
             "/api/edge/create",
             "/api/edge/delete",
+            "/api/v1/memo/save",
+            "/api/v1/library/move",
             "/api/library/save",
             "/api/library/rebuild-index",
             "/api/library/delete",
@@ -1407,6 +1412,31 @@ mod tests {
             let calendar = serde_json::json!({"version":initial["snapshot"]["calendarSettings"]["version"],"timezone":"Asia/Shanghai"}).to_string();
             let calendar = send(&state, origin.clone(), "/api/work/calendar-settings".into(), Some(calendar), csrf.into(), "e47db6fe-2b9d-48a5-aac3-1b5e7e6874d6".into()).await.unwrap();
             assert_eq!(calendar.status, 200);
+            let space_input = serde_json::json!({"id":null,"version":0,"input":{
+                "kind":"SPACE","spaceId":null,"title":"Move destination","bodyMd":""
+            }});
+            let space_reply = send(&state, origin.clone(), "/api/library/save".into(),
+                Some(space_input.to_string()), csrf.into(), "2754ebe6-6135-4fb9-a1ac-ca26f786151c".into()).await.unwrap();
+            assert_eq!(space_reply.status, 200);
+            let space: serde_json::Value = serde_json::from_str(&space_reply.body).unwrap();
+            let command = "378cc8b2-29c9-43ec-8bea-1d55cebc970a";
+            let move_body = serde_json::json!({"id":document["id"],"version":document["version"],"spaceId":space["id"],"syncCommand":{
+                "commandId":command,"deviceId":"836d3d8c-2640-4687-baf8-87bd7f8bac0e",
+                "effects":[{"collection":"library","id":document["id"],"op":"UPSERT","baseVersion":document["version"]}]
+            }}).to_string();
+            let mut receipts = Vec::new();
+            for _ in 0..2 {
+                let reply = send_scoped(&state, origin.clone(), "/api/v1/library/move".into(),
+                    Some(move_body.clone()), csrf.into(), command.into(), Some(data["context"]["workspaceId"].as_str().unwrap().to_string())).await.unwrap();
+                assert_eq!(reply.status, 200);
+                receipts.push(serde_json::from_str::<serde_json::Value>(&reply.body).unwrap());
+            }
+            assert_eq!(receipts[0]["commandId"], command);
+            assert_eq!(receipts[0], receipts[1]);
+            let moved = call(&format!("/api/document/body?kind=LIBRARY&id={}", document["id"].as_str().unwrap()), None, "").await.unwrap();
+            let moved: serde_json::Value = serde_json::from_str(&moved.body).unwrap();
+            assert_eq!(moved["spaceId"], space["id"]);
+            assert_eq!(moved["bodyMd"], hydrated["bodyMd"]);
             let mut preference = initial["snapshot"]["navigationPreference"].clone();
             preference["mobile"]["pinned"] = serde_json::json!(["tasks", "projects"]);
             let preference = serde_json::json!({"version":preference["version"],"desktop":preference["desktop"],"mobile":preference["mobile"]}).to_string();
@@ -1536,6 +1566,22 @@ mod tests {
         });
         thread.join().unwrap();
     }
+    #[test]
+    fn native_replay_routes_match_application_commands() {
+        let paths = [
+            "/api/v1/memo/save", "/api/v1/library/move", "/api/v1/work/purge",
+            "/api/v1/note/purge", "/api/v1/library/purge",
+        ];
+        let rejected: Vec<_> = paths.iter().filter(|path|
+            endpoint("https://example.com", path, true).is_err()
+        ).collect();
+        assert!(rejected.is_empty(), "Rejected replay commands: {rejected:?}");
+        for path in paths {
+            assert_eq!(endpoint("https://example.com", path, true).unwrap().path(), path);
+            assert!(endpoint("https://example.com", path, false).is_err());
+        }
+    }
+
     #[test]
     fn origin_and_path_policy() {
         assert_eq!(

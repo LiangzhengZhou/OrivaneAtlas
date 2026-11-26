@@ -118,6 +118,7 @@ import {
 } from "@arclattice/wiki-core";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { readFilePageResponse } from "./app/file-page-response";
+import { recordWorkspaceSyncStage } from "./app/workspace-sync-issue";
 import {
   ImageLoadError,
   imageLoadFailure,
@@ -597,8 +598,12 @@ export async function bootstrap() {
       );
       assertBinding(binding);
       if (missing && response.status === 404) return null;
-      if (response.status === 409) throw new DomainError("VERSION_CONFLICT");
-      if (response.status === 404) throw new DomainError("NOT_FOUND");
+      if (response.status === 409)
+        throw new DomainError("VERSION_CONFLICT", {
+          httpStatus: response.status,
+        });
+      if (response.status === 404)
+        throw new DomainError("NOT_FOUND", { httpStatus: response.status });
       if (!response.ok) throw new Error(`SYNC_REQUEST_${response.status}`);
       const value: unknown = await response.json();
       assertBinding(binding);
@@ -672,7 +677,10 @@ export async function bootstrap() {
         preparation?.remoteWorkspaceId,
       );
       assertBinding(binding);
-      if (response.status === 409) throw new DomainError("VERSION_CONFLICT");
+      if (response.status === 409)
+        throw new DomainError("VERSION_CONFLICT", {
+          httpStatus: response.status,
+        });
       if (!response.ok) throw new Error(`FILE_TRANSFER_${response.status}`);
       const result: unknown = await response.json();
       assertBinding(binding);
@@ -730,7 +738,10 @@ export async function bootstrap() {
           });
         }
         assertBinding(binding);
-        if (response.status === 409) throw new DomainError("VERSION_CONFLICT");
+        if (response.status === 409)
+          throw new DomainError("VERSION_CONFLICT", {
+            httpStatus: response.status,
+          });
         if (!response.ok) throw new Error(`FILE_CHUNK_${response.status}`);
         const result: unknown = await response.json();
         assertBinding(binding);
@@ -1394,6 +1405,7 @@ export async function bootstrap() {
       const generation = serverGeneration;
       localCoordinatorGeneration = serverGeneration;
       localCoordinator = new LocalWorkSyncCoordinator(local.context, {
+        onFailure: recordWorkspaceSyncStage,
         beforeBootstrap: async (scope, revision, cursor) => {
           const store = await IndexedDbWorkspaceMergeBackups.open();
           try {
@@ -3100,12 +3112,19 @@ export async function bootstrap() {
     },
     syncLocalWork,
     async synchronizeConnectedWorkspace() {
-      const binding = await localStore.syncState.get(local.context.workspaceId);
-      if (!binding?.remotePrincipalId || !binding.epoch) return null;
-      await initialize();
-      if (interruptedSession?.generation === serverGeneration)
-        throw interruptedSession.cause;
-      requireRemoteBindingScope(binding, serverGeneration);
+      try {
+        const binding = await localStore.syncState.get(
+          local.context.workspaceId,
+        );
+        if (!binding?.remotePrincipalId || !binding.epoch) return null;
+        await initialize();
+        if (interruptedSession?.generation === serverGeneration)
+          throw interruptedSession.cause;
+        requireRemoteBindingScope(binding, serverGeneration);
+      } catch (cause) {
+        recordWorkspaceSyncStage(cause, "binding");
+        throw cause;
+      }
       return syncLocalWork();
     },
     async pullLocalWorkChanges() {

@@ -57,5 +57,22 @@
   "syncForbidden": "This account cannot sync this workspace",
   "syncConflict": "Workspace version changed. Retry sync",
   "syncNetwork": "Sync connection interrupted. Try again",
-  "syncHint": "Visible workspaces refresh after server changes and on reconnect. Native clients use a periodic fallback. No offline write queue."
+  "syncHint": "Visible workspaces refresh after server changes and on reconnect. Native clients use a periodic fallback. No offline write queue.",
+  "syncShowDetails": "{{issue}}, view sync details",
+  "syncDetails": "Sync details",
+  "syncStage": "Failed stage",
+  "syncCode": "Error code",
+  "syncStages": {
+    "unknown": "Unknown stage",
+    "binding": "Checking workspace binding",
+    "bootstrap": "Loading workspace manifest",
+    "memoHistory": "Syncing private memo history",
+    "pull": "Fetching remote changes",
+    "apply": "Applying remote changes",
+    "receipt": "Checking server receipts",
+    "plan": "Preparing pending changes",
+    "send": "Sending local changes",
+    "file": "Syncing file content",
+    "ack": "Saving the server receipt"
+  }
 }

@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
 import { useWorkspaceSync } from "../src/app/hooks/useWorkspaceSync";
 import { SyncStatus } from "../src/app/SyncStatus";
+import { recordWorkspaceSyncStage } from "../src/app/workspace-sync-issue";
 import { Button } from "../src/components/ui/Button";
 import { ComboboxPicker } from "../src/components/ui/ComboboxPicker";
 import { NavigationRow, SelectableRow } from "../src/components/ui/Content";
@@ -51,16 +52,28 @@ function WorkspaceSyncFixture() {
       },
       synchronizeConnectedWorkspace: async () => {
         setCalls(++rounds);
-        if (rounds === 1) throw new Error("SYNC_REQUEST_403");
+        if (rounds === 1) {
+          const denied = new Error("SYNC_REQUEST_403");
+          recordWorkspaceSyncStage(denied, "pull");
+          throw denied;
+        }
         return { cursor: 1, accepted: [], conflicted: [], unresolved: [] };
       },
     };
   });
-  const { loading, syncIssue, retrySync } = useWorkspaceSync(runtime, () => {});
+  const { loading, syncIssue, syncDiagnostic, retrySync } = useWorkspaceSync(
+    runtime,
+    () => {},
+  );
   return (
     <main>
       <output aria-label="Sync calls">{calls}</output>
-      <SyncStatus loading={loading} issue={syncIssue} onRetry={retrySync} />
+      <SyncStatus
+        loading={loading}
+        issue={syncIssue}
+        diagnostic={syncDiagnostic}
+        onRetry={retrySync}
+      />
     </main>
   );
 }
