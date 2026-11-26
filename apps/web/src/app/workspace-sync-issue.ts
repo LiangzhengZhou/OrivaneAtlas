@@ -51,6 +51,8 @@ const safeCodes = new Set([
   "LOGIN_TIMEOUT",
   "SERVER_CHANGED",
   "LOCAL_FILE_BYTES_MISSING_OR_CORRUPT",
+  "INVALID_FILE_CHUNK",
+  "INVALID_FILE_TRANSFER_RESPONSE",
   "WIKI_BOOTSTRAP_UPGRADE_REQUIRED",
 ]);
 export function workspaceSyncDiagnostic(cause: unknown) {

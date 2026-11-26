@@ -240,3 +240,12 @@ it("distinguishes a failed pull from a rejected local projection and retries wit
   await expect(f.coordinator.run()).resolves.toMatchObject({ cursor: 0 });
   expect(observed).toHaveBeenCalledTimes(2);
 });
+
+it("retains the stage when a native transport rejects with a string code", async () => {
+  const f = fixture();
+  const observed = vi.fn();
+  f.ports.onFailure = observed;
+  vi.mocked(f.ports.transport.pull).mockRejectedValueOnce("NETWORK_ERROR");
+  await expect(f.coordinator.run()).rejects.toThrow("NETWORK_ERROR");
+  expect(observed).toHaveBeenCalledWith(new Error("NETWORK_ERROR"), "pull");
+});

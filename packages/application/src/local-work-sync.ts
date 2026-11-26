@@ -133,8 +133,10 @@ export class LocalWorkSyncCoordinator {
     };
     this.flight = execute()
       .catch((cause: unknown) => {
-        this.ports.onFailure?.(cause, this.stage);
-        throw cause;
+        // Some native transports reject with a string instead of an Error.
+        const error = typeof cause === "string" ? new Error(cause) : cause;
+        this.ports.onFailure?.(error, this.stage);
+        throw error;
       })
       .finally(() => {
         this.flight = null;
