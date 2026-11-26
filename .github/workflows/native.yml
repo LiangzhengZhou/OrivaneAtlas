@@ -53,6 +53,8 @@ jobs:
           $ErrorActionPreference='Stop'
           $dest=Join-Path $env:RUNNER_TEMP 'AtlasUpgrade'
           $profilePath=Join-Path $env:RUNNER_TEMP 'AtlasUpgradeProfile'
+          $appData=Join-Path $env:LOCALAPPDATA 'app.orivane.atlas'
+          $sentinel=Join-Path $appData 'upgrade-test-marker.txt'
           foreach ($v in '3.2.2','3.2.3') {
             $installer=(Resolve-Path "installers/OrivaneAtlas-$v-windows-x64-setup.exe").Path
             node scripts/verify-updater-signature.mjs $installer
@@ -63,6 +65,13 @@ jobs:
             if($p.ExitCode -ne 0){throw "Installer exit $($p.ExitCode)"}
             $app=(Get-Item -LiteralPath (Join-Path $dest 'arclattice.exe'))
             if ($app.VersionInfo.ProductVersion -ne $v) {throw "Installed version $($app.VersionInfo.ProductVersion), expected $v"}
+            if($phase -eq 'before'){
+              New-Item -ItemType Directory $appData -Force | Out-Null
+              Set-Content -LiteralPath $sentinel -Value 'synthetic-user-state'
+            } elseif((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne 'synthetic-user-state'){
+              throw 'In-place update lost the synthetic app-data marker'
+            }
+            Write-Host "Verified installed version $($app.VersionInfo.ProductVersion) at $($app.FullName)"
             node scripts/verify-323-installed.mjs $app.FullName $phase $profilePath
             if ($LASTEXITCODE) {throw 'Installed app verification failed'}
           }

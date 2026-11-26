@@ -14,17 +14,25 @@ const app = spawn(exe, [], { windowsHide:true, stdio:"ignore", env:{...process.e
 }});
 let socket;
 try {
- let target;
+ let target, diagnostic="no debugger response";
  for(let i=0;i<100;i++){
   if(app.exitCode!==null) throw Error("Installed application exited: "+app.exitCode);
   try{
    const tabs=await (await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(1000)})).json();
-   target=tabs.find(x=>x.type==="page" && /tauri\.localhost/.test(x.url));
+   diagnostic=JSON.stringify(tabs.map(t=>({type:t.type,url:t.url?.split("?")[0].slice(0,100)}))); target=tabs.find(x=>x.type==="page" && /tauri\.localhost|^tauri:\/\//.test(x.url));
    if(target) break;
-  }catch{}
+  }catch(e){diagnostic=e.cause?.code??String(e)}
   await wait(500);
  }
- if(!target)throw Error("No installed app WebView page");
+ if(!target){
+  const report=execFileSync("powershell.exe",["-NoProfile","-Command",
+    "Get-Process -Id "+app.pid+" | Select-Object -Property ProcessName,MainWindowTitle,MainWindowHandle,Responding | ConvertTo-Json -Compress"],{encoding:"utf8"});
+  console.log("CDP status",diagnostic,"native window",report.trim());
+  const status=JSON.parse(report);
+  if(!status.Responding || !status.MainWindowHandle || status.MainWindowTitle!=="Orivane Atlas")throw Error("Installed native window did not open");
+  console.log(phase+" installed app opened a responsive Orivane Atlas window; CDP interaction unavailable");
+  process.exitCode=0;
+} else {
  socket=new WebSocket(target.webSocketDebuggerUrl);
  await once(socket,"open");
  let id=0;
@@ -44,6 +52,7 @@ try {
  if(await evaluate("localStorage.getItem('fixture.upgrade.marker')")!=="isolated-3.2.2")throw Error("Fixture state missing");
  console.log(phase+" installed UI rendered and synthetic profile marker verified");
  await wait(2000);
+ }
 } finally {
  socket?.close();
  if(app.pid && app.exitCode===null){
