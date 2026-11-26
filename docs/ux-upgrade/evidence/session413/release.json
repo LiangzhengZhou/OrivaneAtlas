@@ -1,0 +1,82 @@
+{
+  "release": {
+    "url": "https://github.com/LiangzhengZhou/OrivaneAtlas/releases/tag/v3.2.2",
+    "id": 459308595,
+    "tag": "v3.2.2",
+    "sha": "66cbde8a76cf8a1931f6ae2edb380216fe851f0f",
+    "publishedAt": "2026-11-26T11:18:15Z",
+    "assets": [
+      {
+        "name": "android.json",
+        "sha256": "9090f1455130c8e46e14f518282a4a898403a5e3313b7a05044197ff818241ae",
+        "size": 479
+      },
+      {
+        "name": "latest.json",
+        "sha256": "62441ae10ec359856a8c356ac255807d05a47013cd5151b99afa0a8953ee2690",
+        "size": 804
+      },
+      {
+        "name": "OrivaneAtlas-3.2.2-android-arm64.apk",
+        "sha256": "f0b34c9d79bfb36597ba326b09dfb60fdc71ae5afe444b5a9defd2cdcc9f91e7",
+        "size": 20420523
+      },
+      {
+        "name": "OrivaneAtlas-3.2.2-windows-x64-setup.exe",
+        "sha256": "62500dedc2debde4338fffd6597b480a08638b1cc550137d9163f4dbd714c11d",
+        "size": 8184293
+      },
+      {
+        "name": "OrivaneAtlas-3.2.2-windows-x64-setup.exe.sig",
+        "sha256": "db5a20cc0bbcc1572c00f91b136adac9ec45448db4a9736e6b8f098d3512e0b1",
+        "size": 424
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "sha256": "60e322345c0e89a34246cd1e038d11bcf88806f471189df52fb551380e629d39",
+        "size": 478
+      }
+    ]
+  },
+  "publicSmoke": {
+    "phase": "after",
+    "https": 200,
+    "health": 200,
+    "title": "Orivane Atlas",
+    "js": "/assets/index-Dh3hKukq.js",
+    "indexSha": "d670837251741a34806a9c8833efb6c9aa65c173230c27a976cfe3530c79a5e3",
+    "jsSha": "1c72cd76ce7792e407c98b2db3faa806840b2b527b9a7ce94e0eb1d84b15d37b",
+    "pageErrors": 0
+  },
+  "native": {
+    "jvmPassed": 7,
+    "webAssets": [
+      "index-Dh3hKukq.js",
+      "src-DedoURdg.js",
+      "preload-helper-BZ1Pz5am.js",
+      "index-BVBX8R1O.css"
+    ],
+    "jniVerified": true
+  },
+  "publicAssetChecks": 6,
+  "stableManifestChecks": 2,
+  "previousJsVerified": true,
+  "browserRerunPassed": 9,
+  "sourcePaths": {
+    "base": 1774,
+    "target": 1784,
+    "updated": 24,
+    "missing": 0,
+    "drift": 0
+  },
+  "server": {
+    "cutoverUtc": "2026-11-26T11:17:37.960324Z",
+    "webPid": 2723014,
+    "gatewayPid": 3851850,
+    "schema": 52,
+    "integrity": "ok",
+    "foreignKeyViolations": 0
+  },
+  "signatureRun": 45809358996,
+  "nativeRun": 45808294679
+}
