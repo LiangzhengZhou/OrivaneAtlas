@@ -1,0 +1,157 @@
+{
+  "release": {
+    "url": "https://github.com/LiangzhengZhou/OrivaneAtlas/releases/tag/v3.2.3",
+    "id": 459462696,
+    "tag": "v3.2.3",
+    "sha": "3d7ed10005e1e8f3b62a0afb65ed95f720c7df5f",
+    "publishedAt": "2026-11-26T14:15:48Z",
+    "assets": [
+      {
+        "name": "android.json",
+        "sha256": "0d2e4d8d60b865cd6bc55ddab6651b595f3b2a85e86eeb418566d863f8144eb5",
+        "size": 485
+      },
+      {
+        "name": "latest.json",
+        "sha256": "e9ce8a47315416daf6d50bc403ad9f0a80648e32b1d8a5ab978e8203c36c962a",
+        "size": 822
+      },
+      {
+        "name": "OrivaneAtlas-3.2.3-android-arm64.apk",
+        "sha256": "2d6dcec989fdf21844d1539930e268bce83dcf9e6b67032a8265d43f8fa8b28f",
+        "size": 20421155
+      },
+      {
+        "name": "OrivaneAtlas-3.2.3-windows-x64-setup.exe",
+        "sha256": "e451e6e585a2ae2072c3fb50ec6a70d4f4d7cdc90fbda102421a45b77405b0b4",
+        "size": 8187213
+      },
+      {
+        "name": "OrivaneAtlas-3.2.3-windows-x64-setup.exe.sig",
+        "sha256": "0d7f5afbc723382edc6a2062e70b51332a3b851feebd26376c566be39bc3f11a",
+        "size": 436
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "sha256": "aa781fcb439f8a577a06ca672e0d23829b4819058d6acca215931ceaf3ae6cc4",
+        "size": 478
+      }
+    ]
+  },
+  "live": {
+    "index": "0395c6e94a0279611b4ec5360e55c82cfcbcf956b69ea3cf2d25033fd4241601",
+    "web": "2764664",
+    "gateway": "3851850",
+    "at": "2026-11-26T14:14:46.190361+00:00"
+  },
+  "source": {
+    "baseFiles": 1784,
+    "targetFiles": 1790,
+    "changedPaths": 27,
+    "toApply": 0,
+    "alreadyTarget": 27,
+    "drift": [],
+    "missing": []
+  },
+  "public": {
+    "phase": "after",
+    "https": 200,
+    "health": 200,
+    "title": "Orivane Atlas",
+    "js": "/assets/index-DojXQkaN.js",
+    "indexSha": "0395c6e94a0279611b4ec5360e55c82cfcbcf956b69ea3cf2d25033fd4241601",
+    "jsSha": "2f34a5f7fc5dd52ba816961d8049f8a1ddc8e371ddb6859cd2359f7d4014f531",
+    "pageErrors": 0
+  },
+  "previousBundleVerified": true,
+  "android": {
+    "jvmPassed": 7,
+    "webAssets": [
+      "index-DojXQkaN.js",
+      "src-DedoURdg.js",
+      "preload-helper-BZ1Pz5am.js",
+      "index-BVBX8R1O.css"
+    ],
+    "jniVerified": true
+  },
+  "nativeValidation": "https://github.com/LiangzhengZhou/OrivaneAtlas/actions/runs/45829387230",
+  "windowsUpgrade": "https://github.com/LiangzhengZhou/OrivaneAtlas/actions/runs/45831552308",
+  "cloud": [
+    {
+      "id": 45837228267,
+      "head_branch": "v3.2.3",
+      "status": "completed",
+      "conclusion": "success",
+      "name": "Published release signature"
+    },
+    {
+      "id": 45837020542,
+      "head_branch": "v3.2.3",
+      "status": "in_progress",
+      "conclusion": null,
+      "name": "Native validation"
+    },
+    {
+      "id": 45837020569,
+      "head_branch": "main",
+      "status": "in_progress",
+      "conclusion": null,
+      "name": "CI"
+    },
+    {
+      "id": 45837020759,
+      "head_branch": "v3.2.3",
+      "status": "in_progress",
+      "conclusion": null,
+      "name": "CI"
+    },
+    {
+      "id": 45837020348,
+      "head_branch": "main",
+      "status": "in_progress",
+      "conclusion": null,
+      "name": "Native validation"
+    },
+    {
+      "id": 45829387098,
+      "head_branch": "codex/release-3.2.3",
+      "status": "in_progress",
+      "conclusion": null,
+      "name": "CI"
+    },
+    {
+      "id": 45829387230,
+      "head_branch": "codex/release-3.2.3",
+      "status": "completed",
+      "conclusion": "success",
+      "name": "Native validation"
+    }
+  ],
+  "tests": {
+    "releaseCheck": {
+      "files": 310,
+      "passed": 1603,
+      "failed": 0,
+      "skipped": 0
+    },
+    "browserFull": {
+      "passed": 872,
+      "failed": 1
+    },
+    "correctedBrowserScenario": {
+      "configurations": 3,
+      "passed": 3
+    },
+    "windowsNative": {
+      "rustPassed": 34,
+      "ignored": 5,
+      "upgradeFrom": "3.2.2",
+      "upgradeTo": "3.2.3",
+      "installedVersionVerified": true,
+      "windowResponding": true,
+      "syntheticAppDataMarkerPreserved": true,
+      "webViewDebugPortAvailable": false
+    },
+    "androidPhysicalUpgrade": "unverified"
+  }
+}
