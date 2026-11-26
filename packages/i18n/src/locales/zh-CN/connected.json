@@ -51,5 +51,11 @@
   "runFailed": "请求未正常完成，不会自动重试；服务商仍可能已计费。",
   "synced": "在线同步",
   "offline": "同步不可用 · 草稿保留",
+  "localReadFailed": "暂时无法读取本机工作区",
+  "syncFailed": "工作区同步未完成",
+  "syncAuth": "同步需要重新登录",
+  "syncForbidden": "当前账户无法同步此工作区",
+  "syncConflict": "工作区版本已变化，请重试同步",
+  "syncNetwork": "同步连接中断，请重试",
   "syncHint": "前台工作区在服务器变更或重新连接后刷新，原生端使用定期刷新兜底。尚无离线写入队列。"
 }

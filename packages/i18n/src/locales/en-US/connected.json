@@ -51,5 +51,11 @@
   "runFailed": "The request did not finish normally. It will not be retried automatically; the provider may still have charged for it.",
   "synced": "Online sync",
   "offline": "Sync unavailable · draft kept",
+  "localReadFailed": "Could not read the local workspace",
+  "syncFailed": "Workspace sync did not finish",
+  "syncAuth": "Sign in again to sync",
+  "syncForbidden": "This account cannot sync this workspace",
+  "syncConflict": "Workspace version changed. Retry sync",
+  "syncNetwork": "Sync connection interrupted. Try again",
   "syncHint": "Visible workspaces refresh after server changes and on reconnect. Native clients use a periodic fallback. No offline write queue."
 }

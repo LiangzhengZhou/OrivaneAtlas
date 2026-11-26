@@ -13,9 +13,24 @@ import { coalescedRefresh } from "../coalesced-refresh";
 import { connectedWorkspaceSync } from "../connected-workspace-sync";
 import { stableWorkspaceSnapshot } from "../stable-workspace-snapshot";
 import { workspaceSnapshotLoader } from "../workspace-snapshot-loader";
+import {
+  type WorkspaceSyncIssue,
+  workspaceSyncIssue,
+} from "../workspace-sync-issue";
 
 export function useWorkspaceSync(
-  runtime: Runtime,
+  runtime: Pick<
+    Runtime,
+    | "context"
+    | "serverOrigin"
+    | "native"
+    | "storageMode"
+    | "workspaceRevision"
+    | "loadWorkspaceWithRevision"
+    | "synchronizeConnectedWorkspace"
+    | "subscribeWorkspace"
+    | "streamWorkspaceEvents"
+  >,
   onError: Dispatch<SetStateAction<string | null>>,
 ) {
   const error = useRef(onError);
@@ -26,7 +41,9 @@ export function useWorkspaceSync(
   const generation = useRef(0),
     mounted = useRef(true);
   const [loading, setLoading] = useState(true),
-    [syncOffline, setSyncOffline] = useState(false);
+    [snapshotFailed, setSnapshotFailed] = useState(false),
+    [networkIssue, setNetworkIssue] = useState<WorkspaceSyncIssue | null>(null);
+  const wakeSync = useRef<(() => void) | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot>({
     projectMaterials: [],
     items: [],
@@ -69,11 +86,11 @@ export function useWorkspaceSync(
         )
           return;
         setAttentionTick((tick) => tick + 1);
-        if (runtime.storageMode !== "local") setSyncOffline(false);
+        setSnapshotFailed(false);
         if (showError) error.current(null);
       } catch (cause) {
         if (!mounted.current || identityRef.current !== identity) return;
-        if (sequence === generation.current) setSyncOffline(true);
+        if (sequence === generation.current) setSnapshotFailed(true);
         if (showError)
           error.current(
             cause instanceof DomainError ? String(cause.code) : "UNAVAILABLE",
@@ -94,8 +111,14 @@ export function useWorkspaceSync(
     [readSnapshot],
   );
   const refresh = useCallback(() => fetchSnapshot(true), [fetchSnapshot]);
+  const retrySync = useCallback(() => {
+    wakeSync.current?.();
+    void refresh();
+  }, [refresh]);
   useEffect(() => {
     mounted.current = true;
+    setSnapshotFailed(false);
+    setNetworkIssue(null);
     let active = true,
       pulling = false,
       requested = false,
@@ -152,13 +175,11 @@ export function useWorkspaceSync(
             if (!active || controller.signal.aborted) return;
             connected = true;
             attempts = 0;
-            setSyncOffline(false);
           },
         )
         .catch(() => {
           if (!active || controller.signal.aborted) return;
           connected = false;
-          setSyncOffline(true);
           reconnect = window.setTimeout(
             () => {
               if (stream === controller) stream = null;
@@ -173,7 +194,7 @@ export function useWorkspaceSync(
       if (!visible()) {
         disconnect();
         if (runtime.storageMode !== "local" && !navigator.onLine)
-          setSyncOffline(true);
+          setSnapshotFailed(true);
         return;
       }
       void pull();
@@ -191,13 +212,15 @@ export function useWorkspaceSync(
           return () => window.clearTimeout(timer);
         },
         visible: () => !document.hidden && navigator.onLine,
-        onOffline: setSyncOffline,
+        onOffline: (failed, cause) =>
+          setNetworkIssue(failed ? workspaceSyncIssue(cause) : null),
       });
       const unsubscribe = runtime.subscribeWorkspace(() => {
         void pull();
         network.wake();
       });
-      const wakeNetwork = () => network.wake();
+      const wakeNetwork = network.wake;
+      wakeSync.current = wakeNetwork;
       void refresh();
       window.addEventListener("online", wakeNetwork);
       window.addEventListener("focus", foreground);
@@ -209,6 +232,7 @@ export function useWorkspaceSync(
         mounted.current = false;
         ++generation.current;
         unsubscribe();
+        wakeSync.current = null;
         network.stop();
         window.removeEventListener("online", wakeNetwork);
         window.removeEventListener("focus", foreground);
@@ -242,7 +266,12 @@ export function useWorkspaceSync(
     snapshot,
     setSnapshot,
     loading,
-    syncOffline,
+    syncIssue: snapshotFailed
+      ? runtime.storageMode === "local"
+        ? ("localReadFailed" as const)
+        : ("syncFailed" as const)
+      : networkIssue,
+    retrySync,
     refresh,
     attentionTick,
   };

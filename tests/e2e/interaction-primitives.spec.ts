@@ -67,7 +67,13 @@ test.beforeAll(async ({}, info) => {
 test.beforeEach(async ({ page }, info) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.setContent('<div id="root"></div>');
+  if (info.tags.includes("@workspace-sync")) {
+    await page.clock.install();
+    await page.clock.pauseAt(new Date(Date.now() + 5000));
+    await page.setContent('<div id="root" data-fixture="sync"></div>');
+  } else {
+    await page.setContent('<div id="root"></div>');
+  }
   await page.addStyleTag({
     content: await readFile(
       `.artifacts/interaction-fixture-${info.workerIndex}/interaction.css`,
@@ -562,3 +568,30 @@ test("editor keeps actions visible while body scrolls and restores focus on clos
   await expect(trigger).toBeFocused();
   await expect(page.getByLabel("Events")).toHaveText("save");
 });
+
+test(
+  "retry immediately runs workspace sync after an authenticated denial",
+  { tag: "@workspace-sync" },
+  async ({ page }, info) => {
+    const zh = info.project.name.endsWith("-zh");
+    await page.clock.runFor(10);
+    await expect(
+      page.getByRole("status").filter({
+        hasText: zh
+          ? "当前账户无法同步此工作区"
+          : "This account cannot sync this workspace",
+      }),
+    ).toBeVisible();
+    await info.attach("workspace-sync-status", {
+      body: await page
+        .locator(".sync-status")
+        .screenshot({ animations: "disabled" }),
+      contentType: "image/png",
+    });
+    const retry = page.getByRole("button", { name: zh ? "重试" : "Retry" });
+    await retry.focus();
+    await retry.press("Enter");
+    await expect(page.getByLabel("Sync calls")).toHaveText("2");
+    await expect(retry).toHaveCount(0);
+  },
+);

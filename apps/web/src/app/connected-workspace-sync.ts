@@ -10,7 +10,7 @@ export interface ConnectedWorkspaceSyncPorts {
     | undefined;
   schedule(callback: () => void, delay: number): () => void;
   visible(): boolean;
-  onOffline(value: boolean): void;
+  onOffline(value: boolean, cause?: unknown): void;
 }
 
 /** Only the runtime may authorize a durable binding. Stream events merely wake a pull. */
@@ -59,7 +59,7 @@ export function connectedWorkspaceSync(ports: ConnectedWorkspaceSyncPorts) {
               },
             )
             .catch(() => {
-              if (!stopped && !controller.signal.aborted) ports.onOffline(true);
+              // Reconnect optional event hints below. A finite pull determines sync health.
             })
             .finally(() => {
               if (stream === controller) stream = undefined;
@@ -71,9 +71,9 @@ export function connectedWorkspaceSync(ports: ConnectedWorkspaceSyncPorts) {
         }
       } while (requested && !stopped && ports.visible());
       schedule(30000);
-    } catch {
+    } catch (cause) {
       if (!stopped) {
-        ports.onOffline(true);
+        ports.onOffline(true, cause);
         schedule(Math.min(30000, 1000 * 2 ** Math.min(failures++, 5)));
       }
     } finally {

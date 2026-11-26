@@ -791,3 +791,84 @@ it("web ignores saved cross-origin server and rejects switching its cookie bound
   ).rejects.toThrow("INVALID_SERVER");
   expect(runtime.remoteContext?.principalId).toBe("a");
 });
+
+it.each(["a", "other"])(
+  "recovers a bound replica after offline startup with session %s and a successful probe",
+  async (principal) => {
+    const runtime = await bootstrap();
+    const store = await IndexedDbLocalStore.open(
+      "orivane-atlas.local-workspace",
+    );
+    try {
+      const binding = {
+        workspaceId: runtime.context.workspaceId,
+        remoteWorkspaceId: "a",
+        remotePrincipalId: "a",
+        serverOrigin: origin,
+        epoch: "epoch",
+        cursor: 0,
+        version: 1,
+      };
+      await store.syncState.save(binding, null);
+      fetcher.mockRejectedValueOnce(new TypeError("offline"));
+      await expect(runtime.synchronizeConnectedWorkspace()).rejects.toThrow();
+      let sessions = 0;
+      let deltaReads = 0;
+      fetcher.mockImplementation(async (url, init) => {
+        expect(init?.method ?? "GET").toBe("GET");
+        const path = new URL(String(url)).pathname;
+        if (path === "/api/health" || path === "/api/account/sessions")
+          return Response.json({});
+        if (path === "/api/session") {
+          sessions++;
+          return Response.json(identity(principal));
+        }
+        if (path === "/api/bootstrap")
+          return Response.json({
+            schemaVersion: 1,
+            epoch: "epoch",
+            cursor: 0,
+            notes: [],
+            library: [],
+            workspace: {
+              items: [],
+              edges: [],
+              projectMaterials: [],
+              organization: [],
+              links: [],
+            },
+          });
+        if (path !== "/api/v1/sync") throw new Error("Unexpected test request");
+        deltaReads++;
+        return Response.json({
+          epoch: "epoch",
+          cursor: 0,
+          recovery: false,
+          hasMore: false,
+          snapshot: null,
+          records: [],
+          changes: { collections: {}, values: {} },
+        });
+      });
+      expect(await runtime.probeServer()).toMatchObject({
+        kind: "OK",
+        status: 200,
+      });
+      if (principal === "a") {
+        expect(await runtime.synchronizeConnectedWorkspace()).toMatchObject({
+          cursor: 0,
+        });
+        expect(deltaReads).toBeGreaterThan(0);
+      } else {
+        await expect(runtime.synchronizeConnectedWorkspace()).rejects.toThrow(
+          "FORBIDDEN",
+        );
+        expect(deltaReads).toBe(0);
+        expect(await store.syncState.get(binding.workspaceId)).toEqual(binding);
+      }
+      expect(sessions).toBe(1);
+    } finally {
+      store.close();
+    }
+  },
+);

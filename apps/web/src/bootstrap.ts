@@ -887,17 +887,32 @@ export async function bootstrap() {
     await refreshSavedAccounts();
   }
   let initialization: Promise<void> | undefined;
+  let interruptedSession: { generation: number; cause: Error } | undefined;
   let remoteInitialized = false;
   function initialize(): Promise<void> {
+    if (interruptedSession?.generation === serverGeneration) {
+      interruptedSession = undefined;
+      initialization = undefined;
+    }
     initialization ??= initializeSession();
     return initialization;
   }
   async function initializeSession() {
+    const generation = serverGeneration;
+    let interrupted: Error | undefined;
     if (serverOrigin) {
       try {
         if (native) await invoke("configure_server", { origin: serverOrigin });
         context = await session();
+        unavailable = false;
       } catch (error) {
+        if (
+          error instanceof Error &&
+          ["NETWORK_ERROR", "LOGIN_TIMEOUT", "UNAVAILABLE"].includes(
+            error.message,
+          )
+        )
+          interrupted = error;
         unavailable = !(
           error instanceof DomainError && String(error.code) === "UNAUTHORIZED"
         );
@@ -910,6 +925,8 @@ export async function bootstrap() {
         unavailable = true;
       }
     }
+    if (interrupted && generation === serverGeneration)
+      interruptedSession = { generation, cause: interrupted };
     remoteInitialized = true;
   }
   const service: Pick<
@@ -3086,6 +3103,8 @@ export async function bootstrap() {
       const binding = await localStore.syncState.get(local.context.workspaceId);
       if (!binding?.remotePrincipalId || !binding.epoch) return null;
       await initialize();
+      if (interruptedSession?.generation === serverGeneration)
+        throw interruptedSession.cause;
       requireRemoteBindingScope(binding, serverGeneration);
       return syncLocalWork();
     },

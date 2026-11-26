@@ -365,7 +365,8 @@ function Workbench({
     snapshot,
     setSnapshot,
     loading,
-    syncOffline,
+    syncIssue,
+    retrySync,
     refresh,
     attentionTick,
   } = useWorkspaceSync(runtime, setError);
@@ -2073,11 +2074,7 @@ function Workbench({
   ) : null;
   const shellActions = (
     <>
-      <SyncStatus
-        loading={loading}
-        offline={syncOffline}
-        onRetry={() => void refresh()}
-      />
+      <SyncStatus loading={loading} issue={syncIssue} onRetry={retrySync} />
       <NotificationBell
         records={notificationCenter.records}
         unread={notificationCenter.unread}

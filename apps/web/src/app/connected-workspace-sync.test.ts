@@ -158,10 +158,11 @@ it("backs off an unavailable SSE endpoint even when finite canonical pulls succe
   const stream = vi.fn(async () => {
     throw new Error("STREAM_UNAVAILABLE");
   });
+  const onOffline = vi.fn();
   const loop = connectedWorkspaceSync({
     sync: async () => ({ cursor: 1 }),
     stream,
-    onOffline: vi.fn(),
+    onOffline,
     schedule,
     visible: () => true,
   });
@@ -175,5 +176,6 @@ it("backs off an unavailable SSE endpoint even when finite canonical pulls succe
   expect(stream).toHaveBeenCalledTimes(3);
   await vi.advanceTimersByTimeAsync(4000);
   expect(stream).toHaveBeenCalledTimes(4);
+  expect(onOffline.mock.calls).toEqual(Array(4).fill([false]));
   loop.stop();
 });

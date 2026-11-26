@@ -2,6 +2,8 @@ import { createI18n, resolveLocale } from "@arclattice/i18n";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nextProvider } from "react-i18next";
+import { useWorkspaceSync } from "../src/app/hooks/useWorkspaceSync";
+import { SyncStatus } from "../src/app/SyncStatus";
 import { Button } from "../src/components/ui/Button";
 import { ComboboxPicker } from "../src/components/ui/ComboboxPicker";
 import { NavigationRow, SelectableRow } from "../src/components/ui/Content";
@@ -20,6 +22,48 @@ import { VirtualTaskCollection } from "../src/features/tasks/VirtualTaskCollecti
 import "../src/styles/tokens.css";
 import "../src/styles/themes.css";
 import "../src/components/ui/controls.css";
+
+function WorkspaceSyncFixture() {
+  const [calls, setCalls] = useState(0);
+  const [runtime] = useState(() => {
+    let rounds = 0;
+    return {
+      context: { workspaceId: "workspace", principalId: "principal" },
+      serverOrigin: "https://example.invalid",
+      native: true,
+      storageMode: "local" as const,
+      workspaceRevision: async () => 1,
+      loadWorkspaceWithRevision: async () => ({
+        revision: 1,
+        snapshot: {
+          projectMaterials: [],
+          items: [],
+          edges: [],
+          notes: [],
+          links: [],
+          library: [],
+          organization: [],
+        },
+      }),
+      subscribeWorkspace: () => () => {},
+      streamWorkspaceEvents: async () => {
+        throw new Error("Unexpected native event stream");
+      },
+      synchronizeConnectedWorkspace: async () => {
+        setCalls(++rounds);
+        if (rounds === 1) throw new Error("SYNC_REQUEST_403");
+        return { cursor: 1, accepted: [], conflicted: [], unresolved: [] };
+      },
+    };
+  });
+  const { loading, syncIssue, retrySync } = useWorkspaceSync(runtime, () => {});
+  return (
+    <main>
+      <output aria-label="Sync calls">{calls}</output>
+      <SyncStatus loading={loading} issue={syncIssue} onRetry={retrySync} />
+    </main>
+  );
+}
 
 function Fixture() {
   const [events, setEvents] = useState<string[]>([]);
@@ -200,7 +244,11 @@ async function start() {
   const i18n = await createI18n(resolveLocale(null, navigator.language));
   createRoot(root!).render(
     <I18nextProvider i18n={i18n}>
-      <Fixture />
+      {root?.dataset.fixture === "sync" ? (
+        <WorkspaceSyncFixture />
+      ) : (
+        <Fixture />
+      )}
     </I18nextProvider>,
   );
 }
