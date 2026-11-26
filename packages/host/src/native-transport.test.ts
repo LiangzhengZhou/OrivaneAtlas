@@ -1,22 +1,19 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
-import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
 import { v22PerformanceFixture } from "../../../tests/performance/v2.2-fixture";
+import { loopbackHttpPort } from "../test-fixtures/loopback-http-port";
 import { passwordHash } from "./password";
 import { createHost } from "./server";
 
 test.skipIf(!process.env.ATLAS_NATIVE_TEST_EXE)(
   "native transport authenticates against strict host",
   async () => {
-    const reservation = createServer();
-    await new Promise<void>((done) => reservation.listen(0, "127.0.0.1", done));
-    const port = (reservation.address() as AddressInfo).port;
-    await new Promise<void>((done) => reservation.close(() => done()));
+    const port = await loopbackHttpPort();
     const origin = "http://127.0.0.1:" + port;
     const directory = mkdtempSync(join(tmpdir(), "atlas-native-transport-"));
     const password = randomBytes(32).toString("hex");

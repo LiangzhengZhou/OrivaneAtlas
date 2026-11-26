@@ -1,19 +1,16 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
-import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, test, vi } from "vitest";
+import { loopbackHttpPort } from "../test-fixtures/loopback-http-port";
 import { passwordHash } from "./password";
 import { createHost } from "./server";
 
 async function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "atlas-durable-session-"));
-  const reservation = createServer();
-  await new Promise<void>((done) => reservation.listen(0, "127.0.0.1", done));
-  const port = (reservation.address() as AddressInfo).port;
-  await new Promise<void>((done) => reservation.close(() => done()));
+  const port = await loopbackHttpPort();
   const origin = `http://127.0.0.1:${port}`;
   const database = join(directory, "test.sqlite");
   const options = {
