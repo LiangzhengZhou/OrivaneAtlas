@@ -23243,7 +23243,7 @@
         },
         "type": "object",
         "additionalProperties": false,
-        "description": "Cookie/CSRF original organization command. Archive/unarchive/move effects use organization kind:id composite identity and organizationVersion. Soft deletion effects use items or notes and entity version. Full input entries retain entity AND organization versions; membership and declared effects checked in the same business/receipt transaction."
+        "description": "Cookie/CSRF original organization command. Organization metadata effects use kind:id and organizationVersion. For a NOTE move with folderId, each entry declares exactly one original UPSERT: notes with the note id and entity version for a primary-folder write, or organization with NOTE:id and organizationVersion for a metadata-only write. Batches may contain both. Soft deletion effects use items or notes and entity version. Full input entries retain entity AND organization versions; membership and declared effects checked in the same business/receipt transaction."
       },
       "OrganizationReplayReceipt": {
         "properties": {

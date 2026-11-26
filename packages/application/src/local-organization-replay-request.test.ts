@@ -180,6 +180,37 @@ it("folder create and soft archive replay through the organization collection", 
     },
   });
 });
+
+it("replays moving a hydrated note using its original note version", () => {
+  const base = plan("delete", "NOTE");
+  const move = {
+    ...base,
+    command: {
+      name: "organization.apply",
+      input: {
+        kind: "NOTE",
+        action: "move",
+        folderId: "",
+        entries: [{ id: "entity", version: 3, organizationVersion: 1 }],
+      },
+    },
+  };
+  expect(buildLocalOrganizationReplayRequest(move)).toMatchObject({
+    body: {
+      syncCommand: {
+        effects: [
+          { collection: "notes", id: "entity", op: "UPSERT", baseVersion: 3 },
+        ],
+      },
+    },
+  });
+  expect(() =>
+    buildLocalOrganizationReplayRequest({
+      ...move,
+      mutations: [{ ...move.mutations[0]!, baseVersion: 1 }],
+    }),
+  ).toThrow("VALIDATION_ERROR");
+});
 it("note icon replay keeps the presentation glyph out of the content projection", () => {
   const noteId = "44444444-4444-4444-8444-444444444444";
   const plan: LocalCommandPlan = {

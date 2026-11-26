@@ -132,6 +132,7 @@ export function buildLocalOrganizationReplayRequest(
   )
     throw new DomainError("VALIDATION_ERROR", { field: "organizationCommand" });
   const versions = new Map<string, number>();
+  const movedNoteVersions = new Map<string, number>();
   if (createsFolder) versions.set(`FOLDER:${original.id}`, 0);
   for (const input of entries) {
     const entry = localObject(input);
@@ -157,6 +158,12 @@ export function buildLocalOrganizationReplayRequest(
       deleted ? entry.id : `${kind}:${entry.id}`,
       deleted ? entry.version : entry.organizationVersion,
     );
+    if (
+      kind === "NOTE" &&
+      action === "move" &&
+      typeof original.folderId === "string"
+    )
+      movedNoteVersions.set(entry.id, entry.version);
   }
   const first = plan.mutations[0];
   if (!first) return null;
@@ -164,28 +171,36 @@ export function buildLocalOrganizationReplayRequest(
     deviceId = requireStableUuid(first.deviceId, "deviceId"),
     seen = new Set<string>();
   const effects = plan.mutations.map((mutation) => {
+    const noteMove =
+      mutation.entityType === "notes" &&
+      movedNoteVersions.has(mutation.entityId);
+    const entryKey = noteMove ? `NOTE:${mutation.entityId}` : mutation.entityId;
+    const collection = noteMove
+      ? "notes"
+      : deleted
+        ? kind === "WORK"
+          ? "items"
+          : "notes"
+        : "organization";
     if (
       mutation.commandId !== commandId ||
       mutation.deviceId !== deviceId ||
       mutation.workspaceId !== first.workspaceId ||
       mutation.principalId !== first.principalId ||
-      mutation.entityType !==
-        (deleted ? (kind === "WORK" ? "items" : "notes") : "organization") ||
+      mutation.entityType !== collection ||
       !["PENDING", "SENDING"].includes(mutation.state) ||
       !["CREATE", "PATCH"].includes(mutation.operation) ||
-      versions.get(mutation.entityId) !== (mutation.baseVersion ?? 0) ||
-      seen.has(mutation.entityId)
+      (noteMove ? movedNoteVersions : versions).get(mutation.entityId) !==
+        (mutation.baseVersion ?? 0) ||
+      (noteMove && mutation.operation !== "PATCH") ||
+      seen.has(entryKey)
     )
       throw new DomainError("VALIDATION_ERROR", {
         field: "organizationEffects",
       });
-    seen.add(mutation.entityId);
+    seen.add(entryKey);
     return {
-      collection: deleted
-        ? kind === "WORK"
-          ? "items"
-          : "notes"
-        : "organization",
+      collection,
       id: mutation.entityId,
       op: "UPSERT",
       baseVersion: mutation.baseVersion ?? 0,

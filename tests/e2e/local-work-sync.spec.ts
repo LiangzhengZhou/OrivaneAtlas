@@ -1127,6 +1127,43 @@ test("real cookie/CSRF Work replay and atomic IndexedDB ACK preserve subsequent 
         `NOTE:${coordinatedNote.id}`,
       );
       const noteDeletePending = await db.outbox.list(own.workspaceId);
+      const filed = await runtime.saveNote(null, 0, {
+        kind: "NOTE",
+        day: null,
+        title: "Filed offline",
+        bodyMd: "Keep **this** body",
+      });
+      const folderId = crypto.randomUUID();
+      await runtime.organize({
+        kind: "FOLDER",
+        action: "create",
+        id: folderId,
+        name: "Destination",
+      });
+      await makeCoordinator().run();
+      await runtime.organize({
+        kind: "NOTE",
+        action: "move",
+        folderId,
+        entries: [{ id: filed.id, version: 1, organizationVersion: 0 }],
+      });
+      db.close();
+      db = await api.IndexedDbLocalStore.open("live-work-sync");
+      runtime = makeRuntime();
+      const filedResult = await makeCoordinator().run();
+      const filedBody = await (
+        await fetch("/api/document/body?kind=NOTE&id=" + filed.id)
+      ).json();
+      if (
+        filedResult.accepted.length !== 1 ||
+        (await db.outbox.list(own.workspaceId)).some(
+          (m) => m.entityId === filed.id,
+        ) ||
+        filedBody.primaryFolderId !== folderId ||
+        filedBody.version !== 2 ||
+        filedBody.bodyMd !== "Keep **this** body"
+      )
+        throw new Error("FOLDER_MOVE_REPLAY_NOT_ACKNOWLEDGED");
       const knowledgeProject = await runtime.service.create(runtime.context, {
         type: "PROJECT",
         title: "Offline bound project",

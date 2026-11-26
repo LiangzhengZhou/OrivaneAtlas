@@ -3114,6 +3114,112 @@ it("Project knowledge original replay preserves both IDs and rolls back incomple
   expect(snapshot.projectMaterials).toHaveLength(1);
   expect(snapshot.library).toHaveLength(1);
 });
+it("replays hydrated and metadata-only note folder moves together without changing Markdown", async () => {
+  await login();
+  const folderId = randomUUID();
+  expect(
+    (
+      await call("/api/organize", {
+        kind: "FOLDER",
+        action: "create",
+        id: folderId,
+        name: "Test folder",
+      })
+    ).status,
+  ).toBe(200);
+  const notes = [];
+  for (const title of ["Loaded", "Metadata only"]) {
+    const response = await call("/api/note/save", {
+      id: null,
+      version: 0,
+      input: {
+        kind: "NOTE",
+        day: null,
+        title,
+        bodyMd: "Original **Markdown**",
+      },
+    });
+    expect(response.status).toBe(200);
+    notes.push(await response.json());
+  }
+  const [loaded, unloaded] = notes;
+  const entries = notes.map((n) => ({
+    id: n.id,
+    version: n.version,
+    organizationVersion: 0,
+  }));
+  const commandId = randomUUID(),
+    deviceId = randomUUID();
+  const effects = [
+    { collection: "notes", id: loaded.id, op: "UPSERT", baseVersion: 1 },
+    {
+      collection: "organization",
+      id: `NOTE:${unloaded.id}`,
+      op: "UPSERT",
+      baseVersion: 0,
+    },
+  ];
+  const body = {
+    kind: "NOTE",
+    action: "move",
+    folderId,
+    entries,
+    syncCommand: { commandId, deviceId, effects },
+  };
+  const send = (value: typeof body) =>
+    call("/api/v1/organize", value, {
+      "Idempotency-Key": value.syncCommand.commandId,
+    });
+  const stale = {
+    ...body,
+    syncCommand: {
+      commandId: randomUUID(),
+      deviceId,
+      effects: [effects[0]!, { ...effects[1]!, baseVersion: 5 }],
+    },
+  };
+  expect((await send(stale)).status).toBe(409);
+  const partial = {
+    ...body,
+    syncCommand: {
+      commandId: randomUUID(),
+      deviceId,
+      effects: effects.slice(0, 1),
+    },
+  };
+  expect((await send(partial)).status).toBe(400);
+  const response = await send(body);
+  const receipt = await response.json();
+  expect(response.status, JSON.stringify(receipt)).toBe(200);
+  expect(receipt.effects).toHaveLength(2);
+  expect(receipt.effects).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        collection: "notes",
+        id: loaded.id,
+        version: 2,
+        value: expect.objectContaining({
+          primaryFolderId: folderId,
+          bodyMd: "Original **Markdown**",
+        }),
+      }),
+      expect.objectContaining({
+        collection: "organization",
+        id: `NOTE:${unloaded.id}`,
+        version: 1,
+        value: expect.objectContaining({ folderId }),
+      }),
+    ]),
+  );
+  expect(await (await send(body)).json()).toEqual(receipt);
+  const preserved = await (
+    await call("/api/document/body?kind=NOTE&id=" + unloaded.id)
+  ).json();
+  expect(preserved).toMatchObject({
+    version: 1,
+    bodyMd: "Original **Markdown**",
+  });
+});
 it("Organization original replay commits complete batches and rolls back partial declarations without receipts", async () => {
   await login();
   const a = await (

@@ -227,7 +227,11 @@ export class OrganizationService {
     private readonly authorization: AuthorizationService,
     private readonly clock: Clock,
   ) {}
-  async apply(contextInput: ActorContext, inputValue: OrganizeInput) {
+  async apply(
+    contextInput: ActorContext,
+    inputValue: OrganizeInput,
+    metadataFolderMoves?: ReadonlySet<string>,
+  ) {
     const context = structuredClone(contextInput);
     const input = structuredClone(inputValue);
     await this.authorization.require(
@@ -310,7 +314,8 @@ export class OrganizationService {
       if (
         input.action === "move" &&
         input.kind === "NOTE" &&
-        input.folderId !== undefined
+        input.folderId !== undefined &&
+        !metadataFolderMoves?.has(entry.id)
       ) {
         try {
           await this.notes.move(

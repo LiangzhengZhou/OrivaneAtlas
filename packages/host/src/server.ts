@@ -3195,6 +3195,12 @@ export async function createHost(options: HostOptions) {
         let manualOrderEffects: ManualOrderReplayEffect[] | undefined;
         let categoryEffects: CategoryReplayEffect[] | undefined;
         let organizationEffects: OrganizationReplayEffect[] | undefined;
+        let metadataFolderMoves: Set<string> | undefined;
+        const isNoteFolderMove =
+          path === "/api/organize" &&
+          value.kind === "NOTE" &&
+          value.action === "move" &&
+          typeof value.folderId === "string";
         let organizationWorkEffects: WorkReplayEffect[] | undefined;
         let projectKnowledgeEffects: ProjectKnowledgeReplayEffect[] | undefined;
         let recurrenceEffects: RecurrenceReplayEffect[] | undefined;
@@ -3324,41 +3330,44 @@ export async function createHost(options: HostOptions) {
                                 ? ["workflows", "items"]
                                 : path.startsWith("/api/projects/")
                                   ? ["projectMaterials", "library"]
-                                  : path === "/api/organize"
-                                    ? value.action === "delete"
-                                      ? value.kind === "WORK"
-                                        ? ["items"]
-                                        : value.kind === "NOTE"
-                                          ? ["notes"]
-                                          : ["organization"]
-                                      : ["organization"]
-                                    : categoryReplay
-                                      ? ["categories"]
-                                      : path === "/api/manual-orders/move"
-                                        ? ["manualOrders"]
-                                        : navigationReplay
-                                          ? ["navigationPreference"]
-                                          : path ===
-                                              "/api/work/calendar-settings"
-                                            ? ["calendarSettings"]
-                                            : path === "/api/memo/save"
-                                              ? ["entityMemos"]
-                                              : path === "/api/reminders/save"
-                                                ? ["reminders"]
-                                                : knowledgeReplay
-                                                  ? ["notes", "library"]
-                                                  : path ===
-                                                        "/api/work/update" &&
-                                                      typeof object(value.input)
-                                                        .archived === "boolean"
-                                                    ? [
-                                                        "items",
-                                                        "edges",
-                                                        "library",
-                                                        "files",
-                                                        "projectMaterials",
-                                                      ]
-                                                    : ["items", "edges"]
+                                  : isNoteFolderMove
+                                    ? ["notes", "organization"]
+                                    : path === "/api/organize"
+                                      ? value.action === "delete"
+                                        ? value.kind === "WORK"
+                                          ? ["items"]
+                                          : value.kind === "NOTE"
+                                            ? ["notes"]
+                                            : ["organization"]
+                                        : ["organization"]
+                                      : categoryReplay
+                                        ? ["categories"]
+                                        : path === "/api/manual-orders/move"
+                                          ? ["manualOrders"]
+                                          : navigationReplay
+                                            ? ["navigationPreference"]
+                                            : path ===
+                                                "/api/work/calendar-settings"
+                                              ? ["calendarSettings"]
+                                              : path === "/api/memo/save"
+                                                ? ["entityMemos"]
+                                                : path === "/api/reminders/save"
+                                                  ? ["reminders"]
+                                                  : knowledgeReplay
+                                                    ? ["notes", "library"]
+                                                    : path ===
+                                                          "/api/work/update" &&
+                                                        typeof object(
+                                                          value.input,
+                                                        ).archived === "boolean"
+                                                      ? [
+                                                          "items",
+                                                          "edges",
+                                                          "library",
+                                                          "files",
+                                                          "projectMaterials",
+                                                        ]
+                                                      : ["items", "edges"]
               ).some((candidate) => candidate === collection) ||
               !["UPSERT", "DELETE"].includes(op) ||
               ((path.startsWith("/api/plans/") ||
@@ -3428,7 +3437,35 @@ export async function createHost(options: HostOptions) {
             projectKnowledgeEffects =
               parsedEffects as ProjectKnowledgeReplayEffect[];
           else if (path === "/api/organize") {
-            if (value.action === "delete" && value.kind === "WORK")
+            if (isNoteFolderMove) {
+              // A metadata-only local note records folder membership in organization.
+              // Replay each entry against the store that actually staged its write.
+              const notes = parsedEffects.filter(
+                (e) => e.collection === "notes",
+              );
+              const metadata = parsedEffects.filter(
+                (e) => e.collection === "organization",
+              );
+              metadataFolderMoves = new Set(
+                metadata.map((e) => e.id.slice("NOTE:".length)),
+              );
+              const declared = new Set([
+                ...metadataFolderMoves,
+                ...notes.map((e) => e.id),
+              ]);
+              if (
+                metadata.some((e) => !e.id.startsWith("NOTE:")) ||
+                declared.size !== parsedEffects.length ||
+                !Array.isArray(value.entries) ||
+                declared.size !== value.entries.length ||
+                value.entries.some((e) => !e || !declared.has(e.id))
+              )
+                fail(400, "VALIDATION_ERROR");
+              if (notes.length)
+                knowledgeEffects = notes as KnowledgeReplayEffect[];
+              if (metadata.length)
+                organizationEffects = metadata as OrganizationReplayEffect[];
+            } else if (value.action === "delete" && value.kind === "WORK")
               organizationWorkEffects = parsedEffects as WorkReplayEffect[];
             else if (value.action === "delete" && value.kind === "NOTE")
               knowledgeEffects = parsedEffects as KnowledgeReplayEffect[];
@@ -4541,7 +4578,11 @@ export async function createHost(options: HostOptions) {
                     notes,
                     authorization,
                     clock,
-                  ).apply(context, value as unknown as OrganizeInput);
+                  ).apply(
+                    context,
+                    value as unknown as OrganizeInput,
+                    metadataFolderMoves,
+                  );
                 }
                 case "/api/library/move": {
                   if (credential) fail(403, "FORBIDDEN");
@@ -6611,6 +6652,14 @@ export async function createHost(options: HostOptions) {
               fail(409, "VERSION_CONFLICT");
             const acceptedReplay =
               purgeReplay ??
+              (metadataFolderMoves
+                ? {
+                    acceptedEffects: [
+                      ...(knowledgeReplay?.acceptedEffects ?? []),
+                      ...(organizationReplay?.acceptedEffects ?? []),
+                    ],
+                  }
+                : null) ??
               (planReplay
                 ? {
                     acceptedEffects: [
