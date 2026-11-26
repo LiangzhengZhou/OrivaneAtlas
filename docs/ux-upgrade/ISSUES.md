@@ -1,3 +1,7 @@
+## Session 412 · 设置页布局
+
+本地 codex/settings-layout，979b593、ddc57f3。设置导航、表单对齐与明暗配色预览已完成。专项 12/12，加测滚动定位 3/3。完整回归正在运行，结果文件和复验命令见[检查点](CHECKPOINT-412.md)。
+
 ## Session 411 · v3.2.1 正式发布
 
 云端 Android 验证首次下载 Maven 依赖遇到 HTTP 429，重跑通过。Windows 覆盖安装升级、Android 真机及讲述人仍待设备验收。 [发布检查点](CHECKPOINT-411.md)
