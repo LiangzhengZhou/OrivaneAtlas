@@ -17917,6 +17917,7 @@ for (const choice of ["LOCAL", "REMOTE"] as const) {
       });
     await expect(page.locator(".file-text-preview")).toHaveText(
       bytes.toString("utf8"),
+      { timeout: 15_000 }, // The first upload starts the background extraction worker.
     );
     const detail = page.getByRole("region", {
       name: "import-conflict-original.txt",

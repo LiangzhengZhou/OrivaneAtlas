@@ -38,11 +38,32 @@ jobs:
           "ATLAS_NATIVE_TEST_EXE=$($fixtures[0].executable)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           'NO_PROXY=127.0.0.1,localhost,::1' | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - run: pnpm check
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e
-      - uses: actions/upload-artifact@v4
-        if: failure()
+  browser:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [desktop-en, desktop-zh, mobile-zh]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
-          name: playwright-results
-          path: test-results/
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e --project ${{ matrix.project }} --retries=1 --reporter=list,json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: qa-results.json
+          NO_PROXY: 127.0.0.1,localhost,::1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-${{ matrix.project }}
+          path: |
+            qa-results.json
+            test-results/**/trace.zip
+            test-results/**/error-context.md
           retention-days: 7
