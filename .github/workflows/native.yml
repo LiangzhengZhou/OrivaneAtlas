@@ -1,86 +1,77 @@
-name: Native validation
+name: Installed Windows upgrade verification
 on:
-  push:
-  pull_request:
   workflow_dispatch:
+    inputs:
+      draft:
+        description: Candidate release ID
+        required: true
 permissions:
   contents: read
-concurrency:
-  group: native-${{ github.ref }}
-  cancel-in-progress: true
 jobs:
-  windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
-      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
-      - run: pnpm exec tauri build --no-sign --bundles nsis
-      - run: pwsh scripts/check-android-icon.ps1
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-validation-installer
-          path: src-tauri/target/release/bundle/nsis/*.exe
-          retention-days: 7
-  android:
+  packages:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
-      - run: echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec tauri android build --debug --target aarch64
-      - run: bash gradlew :app:testArm64DebugUnitTest --no-daemon
-        working-directory: src-tauri/gen/android
-      - uses: actions/upload-artifact@v4
-        with:
-          name: android-validation-apk
-          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
-          retention-days: 7
-  published-signature:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        release: ["1.0.0", "3.0.0"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Verify published installer against embedded trust anchor
+      - name: Obtain installers from the official releases
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ matrix.release }}
+          CANDIDATE: ${{ inputs.draft }}
+        shell: bash
         run: |
-          mkdir -p release-verification
-          gh release download "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --pattern '*.exe' --pattern '*.exe.sig' --dir release-verification
-          node scripts/verify-updater-signature.mjs "release-verification/OrivaneAtlas-$RELEASE_VERSION-windows-x64-setup.exe"
+          set -euo pipefail
+          [[ "$CANDIDATE" =~ ^[0-9]+$ ]]
+          mkdir installers
+          gh release download v3.2.3 --repo "$GITHUB_REPOSITORY" -p '*windows-x64-setup.exe*' -D installers
+          gh api "repos/$GITHUB_REPOSITORY/releases/$CANDIDATE" > "$RUNNER_TEMP/draft.json"
+          jq -e '.tag_name=="v3.2.4" and .draft==true' "$RUNNER_TEMP/draft.json"
+          for suffix in "" ".sig"; do
+            name="OrivaneAtlas-3.2.4-windows-x64-setup.exe$suffix"
+            id=$(jq -er --arg name "$name" '.assets[] | select(.name==$name) | .id' "$RUNNER_TEMP/draft.json")
+            gh api -H 'Accept: application/octet-stream' "repos/$GITHUB_REPOSITORY/releases/assets/$id" > "installers/$name"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-windows-packages
+          path: installers
+          retention-days: 1
+  upgrade:
+    needs: packages
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed-windows-packages
+          path: installers
+      - name: Install 3.2.3 then upgrade the same installation and open its profile
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $dest=Join-Path $env:RUNNER_TEMP 'AtlasUpgrade'
+          $profilePath=Join-Path $env:RUNNER_TEMP 'AtlasUpgradeProfile'
+          $appData=Join-Path $env:LOCALAPPDATA 'app.orivane.atlas'
+          $sentinel=Join-Path $appData 'upgrade-test-marker.txt'
+          foreach ($v in '3.2.3','3.2.4') {
+            $installer=(Resolve-Path "installers/OrivaneAtlas-$v-windows-x64-setup.exe").Path
+            node scripts/verify-updater-signature.mjs $installer
+            if ($LASTEXITCODE) {throw 'Invalid updater signature'}
+            $phase=if($v -eq '3.2.3'){'before'}else{'after'}
+            $opts=if($phase -eq 'before'){@('/S',"/D=$dest")}else{@('/S','/UPDATE',"/D=$dest")}
+            $p=Start-Process -FilePath $installer -ArgumentList $opts -WindowStyle Hidden -PassThru -Wait
+            if($p.ExitCode -ne 0){throw "Installer exit $($p.ExitCode)"}
+            $app=(Get-Item -LiteralPath (Join-Path $dest 'arclattice.exe'))
+            if ($app.VersionInfo.ProductVersion -ne $v) {throw "Installed version $($app.VersionInfo.ProductVersion), expected $v"}
+            if($phase -eq 'before'){
+              New-Item -ItemType Directory $appData -Force | Out-Null
+              Set-Content -LiteralPath $sentinel -Value 'synthetic-user-state'
+            } elseif((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne 'synthetic-user-state'){
+              throw 'In-place update lost the synthetic app-data marker'
+            }
+            Write-Host "Verified installed version $($app.VersionInfo.ProductVersion) at $($app.FullName)"
+            node scripts/verify-324-installed.mjs $app.FullName $phase $profilePath
+            if ($LASTEXITCODE) {throw 'Installed app verification failed'}
+          }
