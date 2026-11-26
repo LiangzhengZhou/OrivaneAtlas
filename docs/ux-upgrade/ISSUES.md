@@ -1,3 +1,7 @@
+## Session 420 · v3.2.5 笔记文件夹同步修复
+
+Windows 3.2.4 原工作区准备同步时的 VALIDATION_ERROR 已在 3.2.5 实机复验中消失，服务器确认收到笔记整理命令。Android 真机升级仍未验证。[发布与实机证据](CHECKPOINT-420.md)
+
 ## Session 418 · v3.2.4 原生同步修复已上线
 
 GitHub 正式版与服务器已更新至 f4e5c4d。Windows 原位升级、公开验签、六附件、更新通道、服务器备份与 32 项源码差异已核验。Android 真机与原用户设备恢复情况仍待验。[发布记录与回滚依据](CHECKPOINT-418.md)

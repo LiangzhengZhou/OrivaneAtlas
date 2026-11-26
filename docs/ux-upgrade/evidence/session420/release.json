@@ -1,0 +1,189 @@
+{
+  "release": {
+    "url": "https://github.com/LiangzhengZhou/OrivaneAtlas/releases/tag/v3.2.5",
+    "id": 459822621,
+    "tag": "v3.2.5",
+    "sha": "b199ebbf4c8fa24d1a33f5fa67f0dd989e4b7b03",
+    "publishedAt": "2026-11-26T21:19:57Z",
+    "assets": [
+      {
+        "name": "android.json",
+        "sha256": "bc060b617101aca0723ffc60c5665d3bc14782b4f23d4188d43e29285ae4d55e",
+        "size": 504
+      },
+      {
+        "name": "latest.json",
+        "sha256": "7ae9ee30c2f088e047acc3b97491108fa369d5ed27d16c883719ffa0a5bc34ee",
+        "size": 841
+      },
+      {
+        "name": "OrivaneAtlas-3.2.5-android-arm64.apk",
+        "sha256": "bd6fd4e604d832e9a6ce2addb813f323f6398698129e6129441ac70d1343aee0",
+        "size": 20424363
+      },
+      {
+        "name": "OrivaneAtlas-3.2.5-windows-x64-setup.exe",
+        "sha256": "fb38156ac9cde8c5edf29a2534f5cc121a5b3bb5b9cc9fb12831f3135f657658",
+        "size": 8189764
+      },
+      {
+        "name": "OrivaneAtlas-3.2.5-windows-x64-setup.exe.sig",
+        "sha256": "82c7288a5de8d7ce2f7a337e5aef8e4e281a85715dba85ee0ea5744500a6dfe8",
+        "size": 436
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "sha256": "fbccf755bfcefc362c3fde7dfd0b6f36af4460006fbdc829ce4a48541c15a790",
+        "size": 478
+      }
+    ]
+  },
+  "live": {
+    "index": "af95feed0e0cf8e2bb09359567e9305c97031bd36fb012d312f1c4a0228d227d",
+    "web": "2866662",
+    "gateway": "3851850",
+    "at": "2026-11-26T21:19:18.493893+00:00"
+  },
+  "source": {
+    "baseFiles": 1797,
+    "targetFiles": 1801,
+    "changedPaths": 19,
+    "toApply": 0,
+    "alreadyTarget": 19,
+    "drift": [],
+    "missing": []
+  },
+  "public": {
+    "phase": "after",
+    "https": 200,
+    "health": 200,
+    "title": "Orivane Atlas",
+    "js": "/assets/index-ipb3KuhL.js",
+    "indexSha": "af95feed0e0cf8e2bb09359567e9305c97031bd36fb012d312f1c4a0228d227d",
+    "jsSha": "ca78f213a7591ad54ccf00e9fed55170d2cbd8e46446f5a59f85e5a75f147658",
+    "pageErrors": 0
+  },
+  "previousBundleVerified": true,
+  "android": {
+    "jvmPassed": 7,
+    "webAssets": [
+      "index-ipb3KuhL.js",
+      "src-B8ZkEnoE.js",
+      "preload-helper-BZ1Pz5am.js",
+      "index-CF-RtJ4I.css"
+    ],
+    "jniVerified": true
+  },
+  "nativeValidation": "https://github.com/LiangzhengZhou/OrivaneAtlas/actions/runs/45882481471",
+  "windowsUpgrade": "https://github.com/LiangzhengZhou/OrivaneAtlas/actions/runs/45883643430",
+  "cloud": [
+    {
+      "id": 45897387367,
+      "head_branch": "v3.2.5",
+      "status": "completed",
+      "conclusion": "success",
+      "name": "Published release signature"
+    },
+    {
+      "id": 45897288322,
+      "head_branch": "v3.2.5",
+      "status": "in_progress",
+      "conclusion": null,
+      "name": "CI"
+    },
+    {
+      "id": 45897288318,
+      "head_branch": "main",
+      "status": "in_progress",
+      "conclusion": null,
+      "name": "CI"
+    },
+    {
+      "id": 45897288358,
+      "head_branch": "main",
+      "status": "in_progress",
+      "conclusion": null,
+      "name": "Native validation"
+    },
+    {
+      "id": 45897288421,
+      "head_branch": "v3.2.5",
+      "status": "in_progress",
+      "conclusion": null,
+      "name": "Native validation"
+    },
+    {
+      "id": 45882481471,
+      "head_branch": "codex/release-3.2.5",
+      "status": "completed",
+      "conclusion": "success",
+      "name": "Native validation"
+    },
+    {
+      "id": 45882481368,
+      "head_branch": "codex/release-3.2.5",
+      "status": "completed",
+      "conclusion": "failure",
+      "name": "CI"
+    }
+  ],
+  "finalQuality": {
+    "id": 45893101485,
+    "url": "https://github.com/LiangzhengZhou/OrivaneAtlas/actions/runs/45893101485",
+    "sha": "c47dfd71635705f2c571cf62ec5a1816f24622e4",
+    "signedCandidate": "b199ebbf4c8fa24d1a33f5fa67f0dd989e4b7b03",
+    "changed": [".github/workflows/ci.yml", "tests/e2e/work.spec.ts"],
+    "conclusion": "success",
+    "projects": {
+      "desktop-en": {
+        "total": 291,
+        "passedFirstAttempt": 291,
+        "passedAfterRetry": []
+      },
+      "desktop-zh": {
+        "total": 291,
+        "passedFirstAttempt": 291,
+        "passedAfterRetry": []
+      },
+      "mobile-zh": {
+        "total": 291,
+        "passedFirstAttempt": 291,
+        "passedAfterRetry": []
+      }
+    },
+    "total": 873
+  },
+  "localFullCheckPassed": 1608,
+  "earlierChecks": {
+    "localBrowserRuns": [
+      {
+        "passed": 871,
+        "failed": 2
+      },
+      {
+        "passed": 870,
+        "failed": 3
+      }
+    ],
+    "candidateCloudRun": {
+      "url": "https://github.com/LiangzhengZhou/OrivaneAtlas/actions/runs/45882481368",
+      "passed": 872,
+      "failed": 1
+    },
+    "finalLocalTargeted": {
+      "passed": 18,
+      "failed": 0
+    }
+  },
+  "windowsFieldCheck": {
+    "previous": "3.2.4",
+    "installed": "3.2.5",
+    "installerExitCode": 0,
+    "sameWorkspaceVerified": true,
+    "syncErrorBefore": true,
+    "observationsWithoutSyncError": 3,
+    "serverNoteOrganizationReceiptConfirmed": true,
+    "visibleConflict": false
+  },
+  "androidPhysicalUpgradeVerified": false
+}
