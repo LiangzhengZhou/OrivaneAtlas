@@ -1,7 +1,7 @@
 .settings-layout {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
-  gap: 28px;
+  grid-template-columns: clamp(145px, 15vw, 196px) minmax(0, 1fr);
+  gap: clamp(16px, 2vw, 28px);
   align-items: start;
   max-width: 1120px;
   margin-inline: auto;
@@ -21,7 +21,7 @@
   justify-content: flex-start;
   text-align: start;
   gap: 9px;
-  min-height: 34px;
+  min-height: 39px;
   padding: 7px 10px;
   border: 0;
   background: transparent;
@@ -40,7 +40,17 @@
 .settings-layout .settings-panel {
   width: 100%;
   min-width: 0;
-  padding: 2px 26px 10px;
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.settings-layout .settings-panel > [data-settings-section],
+.settings-layout .settings-panel > .settings-advanced {
+  min-width: 0;
+  padding: clamp(16px, 2vw, 26px);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   background: var(--surface);
@@ -49,21 +59,14 @@
 .settings-layout [data-settings-section] {
   scroll-margin-top: 20px;
 }
-.settings-layout .settings-panel > section,
-.settings-layout .settings-panel > div[data-settings-section],
-.settings-layout .settings-panel > .panel,
 .settings-layout .settings-panel [data-settings-section] > .panel {
-  padding-block: 22px;
+  padding: 0;
   border: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 0;
   background: transparent;
   box-shadow: none;
 }
-.settings-layout .settings-panel > section:last-of-type,
-.settings-layout .settings-panel > div[data-settings-section]:last-of-type,
-.settings-layout .settings-panel [data-settings-section]:last-of-type > .panel {
-  border-bottom: 0;
+.settings-panel > [hidden] {
+  display: none;
 }
 .settings-layout .settings-panel h2 {
   margin: 0 0 8px;
@@ -163,35 +166,31 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
   }
-  .settings-navigation {
+  .settings-layout .settings-navigation {
     position: static;
     flex-direction: row;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    row-gap: 4px;
-    overflow: visible;
-    padding-block: 4px 8px;
+    overflow-x: auto;
+    min-width: 0;
+    gap: 8px;
+    padding: 4px;
+    border-block: 1px solid var(--border-subtle);
+    scrollbar-width: thin;
   }
   .settings-nav-group {
+    flex: none;
     flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    flex: 0 1 auto;
-    min-width: 0;
   }
   .settings-nav-group + .settings-nav-group {
-    margin-top: 0;
-    margin-left: 8px;
+    margin: 0;
+    border-inline-start: 1px solid var(--border-subtle);
+    padding-inline-start: 8px;
   }
   .settings-nav-group-label {
     display: none;
   }
   .settings-navigation .ui-button {
-    flex: 0 0 auto;
-    min-height: 40px;
-  }
-  .settings-layout .settings-panel {
-    padding-inline: 18px;
+    min-height: 42px;
+    white-space: nowrap;
   }
   .settings-advanced > summary {
     padding: 14px 0 10px;
@@ -252,4 +251,36 @@
 .server-probe-result time {
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+.settings-navigation .ui-button[aria-current] {
+  color: var(--accent);
+  background: var(--accent-subtle);
+  font-weight: var(--font-weight-semibold);
+}
+.settings-navigation .ui-button[aria-current] svg {
+  color: currentColor;
+}
+.settings-panel [data-settings-section="appearance"] > h2 {
+  margin-block-end: 20px;
+}
+.settings-panel [data-settings-section="appearance"] .density-settings,
+.settings-panel .settings-language .field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 38%);
+  align-items: center;
+  gap: 12px;
+  padding-block: 12px;
+  margin: 0;
+  border-top: 1px solid var(--border-subtle);
+  max-width: none;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.settings-panel .settings-language .field {
+  padding-bottom: 0;
+}
+.settings-panel .density-settings select,
+.settings-panel .settings-language select {
+  width: 100%;
 }

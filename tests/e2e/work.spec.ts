@@ -5852,11 +5852,15 @@ test("settings preferences are separated from account, API and model hierarchy",
   await expect(
     page.locator(".settings-navigation .settings-nav-group-label"),
   ).toHaveCount(3);
+  await expect(page.locator('[data-settings-section="account"]')).toBeHidden();
+  await expect(page.locator('[data-settings-section="api"]')).toBeHidden();
+  await expect(page.locator(".settings-navigation [aria-current]")).toHaveText(
+    zh ? "外观与语言" : "Appearance & language",
+  );
   // API/model configuration is loaded lazily when the settings section opens.
   await expect(page.locator(".settings-page .model-settings")).toHaveCount(0);
   await page.screenshot({
     path: info.outputPath("settings-grouped.png"),
-    fullPage: true,
   });
   await page
     .getByRole("button", {
@@ -5915,9 +5919,12 @@ test("settings preferences are separated from account, API and model hierarchy",
   await page.goto(workbench.url + "/#settings");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.locator(".settings-page")).toBeVisible();
+  await page
+    .getByRole("heading", { name: zh ? "设置" : "Settings", exact: true })
+    .first()
+    .evaluate((node) => node.scrollIntoView({ block: "start" }));
   await page.screenshot({
     path: info.outputPath("settings-dark.png"),
-    fullPage: true,
   });
   await page.goto(workbench.url + "/#account");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -12719,8 +12726,7 @@ test("hardening editors outside click retain dirty drafts settings borders and e
   await openAdvancedSettings(page);
   expect(
     await page
-      .locator(".settings-panel:visible")
-      .last()
+      .locator('.settings-panel:visible > [data-settings-section="appearance"]')
       .evaluate((node) => getComputedStyle(node).borderLeftWidth),
   ).toBe("1px");
   for (const fieldset of await page.locator(".settings-panel fieldset").all())

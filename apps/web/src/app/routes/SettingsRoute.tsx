@@ -6,13 +6,14 @@ import {
   CalendarDays,
   Download,
   KeyRound,
-  LogOut,
   Palette,
   PanelsTopLeft,
   Server,
   Settings2,
+  ShieldCheck,
 } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { AccountView } from "../../AccountViews";
 import { AppUpdater } from "../../AppUpdater";
@@ -76,6 +77,7 @@ export function SettingsRoute({
   const [advancedOpen, setAdvancedOpen] = useState(
     () => typeof window === "undefined" || window.innerWidth > 760,
   );
+  const [selected, setSelected] = useState("appearance");
   const [accountSection, setAccountSection] = useState<
     "account" | "api" | null
   >(null);
@@ -138,7 +140,7 @@ export function SettingsRoute({
         {
           id: "account",
           label: zh ? "账户与安全" : "Account & security",
-          icon: LogOut,
+          icon: ShieldCheck,
         },
         {
           id: "api",
@@ -157,42 +159,54 @@ export function SettingsRoute({
         {groups.map((group) => (
           <div className="settings-nav-group" key={group.label}>
             <p className="settings-nav-group-label">{group.label}</p>
-            {group.items.map(({ id, label, icon: Icon }) => (
-              <Button
-                key={id}
-                variant="ghost"
-                type="button"
-                onClick={() => {
-                  if (id === "account" || id === "api") setAccountSection(id);
-                  const target = content.current?.querySelector<HTMLElement>(
-                    `[data-settings-section="${id}"]`,
-                  );
-                  const advanced = target?.closest<HTMLDetailsElement>(
-                    "details.settings-advanced",
-                  );
-                  if (advanced && !advanced.open) {
-                    advanced.open = true;
-                    setAdvancedOpen(true);
-                  }
-                  target?.scrollIntoView({ block: "start" });
-                  target?.focus({ preventScroll: true });
-                }}
-              >
-                <Icon size={17} />
-                <span>{label}</span>
-              </Button>
-            ))}
+            {group.items
+              .filter(({ id }) => id !== "updates" || runtime.updates.available)
+              .map(({ id, label, icon: Icon }) => (
+                <Button
+                  key={id}
+                  variant="ghost"
+                  type="button"
+                  aria-current={selected === id ? "location" : undefined}
+                  onClick={() => {
+                    setSelected(id);
+                    if (id === "account" || id === "api")
+                      flushSync(() => setAccountSection(id));
+                    const target = content.current?.querySelector<HTMLElement>(
+                      `[data-settings-section="${id}"]`,
+                    );
+                    const advanced = target?.closest<HTMLDetailsElement>(
+                      "details.settings-advanced",
+                    );
+                    if (advanced && !advanced.open) {
+                      advanced.open = true;
+                      setAdvancedOpen(true);
+                    }
+                    target?.scrollIntoView({ block: "start" });
+                    target?.focus({ preventScroll: true });
+                  }}
+                >
+                  <Icon size={17} />
+                  <span>{label}</span>
+                </Button>
+              ))}
           </div>
         ))}
       </nav>
-      <div className="settings-page settings-panel" ref={content}>
+      <div
+        className="settings-page settings-panel"
+        ref={content}
+        onFocusCapture={(event) => {
+          const section = event.target.closest<HTMLElement>(
+            "[data-settings-section]",
+          )?.dataset.settingsSection;
+          if (section) setSelected(section);
+        }}
+      >
         <section data-settings-section="appearance" tabIndex={-1}>
-          <h2>{zh ? "外观" : "Appearance"}</h2>
+          <h2>{zh ? "外观与语言" : "Appearance & language"}</h2>
+          <ThemeSettings controls={active} />
           <DensitySettings actor={context} controls={active} />
-          <ThemeSettings controls={active} />{" "}
-          <section>
-            <h2>{t("settings:language")}</h2>
-            <p>{t("settings:languageHint")}</p>
+          <div className="settings-language">
             <label className="field">
               <span>{zh ? "界面语言" : "Interface language"}</span>
               <Select
@@ -207,11 +221,24 @@ export function SettingsRoute({
                 <option value="zh-CN">简体中文</option>
               </Select>
             </label>
-          </section>
+          </div>
         </section>
         {active && (
           <>
-            <section data-settings-section="account" tabIndex={-1}>
+            <div data-settings-section="calendar" tabIndex={-1}>
+              <CalendarSettings {...calendar} />
+            </div>
+            <div data-settings-section="notifications" tabIndex={-1}>
+              <NotificationSettings
+                notifications={notifications}
+                center={notificationCenter}
+              />
+            </div>
+            <section
+              hidden={accountSection !== "account"}
+              data-settings-section="account"
+              tabIndex={-1}
+            >
               <h2>{zh ? "账户与安全" : "Account & security"}</h2>
               {accountSection === "account" && (
                 <AccountView
@@ -225,7 +252,11 @@ export function SettingsRoute({
                 />
               )}
             </section>
-            <section data-settings-section="api" tabIndex={-1}>
+            <section
+              hidden={accountSection !== "api"}
+              data-settings-section="api"
+              tabIndex={-1}
+            >
               <h2>{zh ? "API 与模型" : "API & models"}</h2>
               {accountSection === "api" && (
                 <AccountView
@@ -242,16 +273,12 @@ export function SettingsRoute({
             <section data-settings-section="server" tabIndex={-1}>
               <ServerConnectionTest runtime={runtime} />
             </section>
-            <div data-settings-section="calendar" tabIndex={-1}>
-              <CalendarSettings {...calendar} />
-            </div>
-            <div data-settings-section="notifications" tabIndex={-1}>
-              <NotificationSettings
-                notifications={notifications}
-                center={notificationCenter}
-              />
-            </div>
-            <div data-settings-section="updates" tabIndex={-1}>
+
+            <div
+              hidden={!runtime.updates.available}
+              data-settings-section="updates"
+              tabIndex={-1}
+            >
               <AppUpdater updates={runtime.updates} />
             </div>
 

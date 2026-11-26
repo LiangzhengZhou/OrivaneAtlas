@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Select } from "./components/ui/Surfaces";
@@ -39,6 +40,7 @@ export function ThemeSettings({ controls }: { controls: boolean }) {
               type="button"
               className="appearance-palette-option"
               data-palette={option.id}
+              title={zh ? option.descriptionZh : option.descriptionEn}
               aria-pressed={palette === option.id}
               onClick={() => {
                 setPalette(option.id);
@@ -51,9 +53,9 @@ export function ThemeSettings({ controls }: { controls: boolean }) {
               </span>
               <span className="appearance-palette-copy">
                 <strong>{zh ? option.labelZh : option.labelEn}</strong>
-                <small>
-                  {zh ? option.descriptionZh : option.descriptionEn}
-                </small>
+                {palette === option.id && (
+                  <Check size={14} aria-hidden="true" />
+                )}
               </span>
             </button>
           ))}
