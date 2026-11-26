@@ -17954,8 +17954,10 @@ for (const choice of ["LOCAL", "REMOTE"] as const) {
         exact: true,
       })
       .click();
+    let rejectRename = true;
     let renameAttempts = 0;
     await page.route("**/api/files/rename", (route) => {
+      if (!rejectRename) return route.continue();
       renameAttempts++;
       return route.abort("connectionreset");
     });
@@ -18030,7 +18032,8 @@ for (const choice of ["LOCAL", "REMOTE"] as const) {
       (await (await page.request.get(workbench.url + "/api/snapshot")).json())
         .files[0].version,
     ).toBe(2);
-    await page.unroute("**/api/files/rename");
+    // Keep Chromium request interception stable while the reloaded app authenticates.
+    rejectRename = false;
     await recovery
       .getByRole("button", {
         name: zh ? "继续此导入" : "Resume this import",
@@ -20133,7 +20136,11 @@ test("resource batch trash and filtered restore keep other originals and honor c
   const row = library.getByRole("button", { name: /Batch A\.txt ·/ });
   await row.focus();
   await row.press("Enter");
-  await expect(page.locator(".file-text-preview")).toHaveText("original A");
+  // A local restore can precede its server receipt. The open preview checks
+  // remote access again every 15 seconds before showing the original bytes.
+  await expect(page.locator(".file-text-preview")).toHaveText("original A", {
+    timeout: 20_000,
+  });
 });
 
 test("mixed resource selection reports partial trash and recovers a nested document with its original owner", async ({
