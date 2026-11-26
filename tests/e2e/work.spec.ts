@@ -18700,7 +18700,8 @@ test("Markdown reconnect automatically merges disjoint lines without discarding 
       bodyMd: expected,
     });
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
-  await nav(page, w.desk.notes);
+  // Reload preserved the Notes route. Read the merged local copy while offline.
+  await expect(page).toHaveURL(/#notes(?:[?].*)?$/);
   await page
     .locator(".note-card")
     .filter({ hasText: "Remote disjoint title" })
