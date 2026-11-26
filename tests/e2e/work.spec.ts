@@ -5923,6 +5923,9 @@ test("settings preferences are separated from account, API and model hierarchy",
     .getByRole("heading", { name: zh ? "设置" : "Settings", exact: true })
     .first()
     .evaluate((node) => node.scrollIntoView({ block: "start" }));
+  await expect(page.locator(".settings-navigation [aria-current]")).toHaveText(
+    zh ? "外观与语言" : "Appearance & language",
+  );
   await page.screenshot({
     path: info.outputPath("settings-dark.png"),
   });

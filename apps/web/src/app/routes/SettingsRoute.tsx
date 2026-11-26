@@ -12,7 +12,7 @@ import {
   Settings2,
   ShieldCheck,
 } from "lucide-react";
-import { type ComponentProps, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { AccountView } from "../../AccountViews";
@@ -81,6 +81,35 @@ export function SettingsRoute({
   const [accountSection, setAccountSection] = useState<
     "account" | "api" | null
   >(null);
+  useEffect(() => {
+    if (!active || !content.current) return;
+    const panel = content.current;
+    let frame = 0;
+    function updateLocation() {
+      frame = 0;
+      let current = "appearance";
+      for (const section of panel.querySelectorAll<HTMLElement>(
+        "[data-settings-section]",
+      )) {
+        const bounds = section.getBoundingClientRect();
+        if (!bounds.height) continue;
+        if (bounds.top > 80) break;
+        current = section.dataset.settingsSection ?? current;
+      }
+      setSelected(current);
+    }
+    function schedule() {
+      if (!frame) frame = requestAnimationFrame(updateLocation);
+    }
+    schedule();
+    document.addEventListener("scroll", schedule, true);
+    window.addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("scroll", schedule, true);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [active]);
   const groups: {
     label: string;
     items: {
