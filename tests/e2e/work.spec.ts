@@ -8055,7 +8055,7 @@ test("two independent sessions sync updates without replacing an open draft", as
       title: "Trigger offline snapshot pull",
     });
     await expect(page.locator(".page-header")).toContainText(
-      w.connected.offline,
+      w.connected.syncNetwork,
       {
         timeout: 10000,
       },
