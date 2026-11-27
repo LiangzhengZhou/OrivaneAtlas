@@ -1,99 +1,10 @@
+import { zipSync } from "fflate";
+
 function safeName(value: string) {
   return (value.trim().replace(/[^\p{L}\p{N}._-]+/gu, "-") || "document").slice(
     0,
     80,
   );
-}
-function crc32(bytes: Uint8Array) {
-  let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit++)
-      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-function word(value: number) {
-  return new Uint8Array([value & 255, (value >>> 8) & 255]);
-}
-function dword(value: number) {
-  return new Uint8Array([
-    value & 255,
-    (value >>> 8) & 255,
-    (value >>> 16) & 255,
-    (value >>> 24) & 255,
-  ]);
-}
-function join(parts: Uint8Array[]) {
-  const result = new Uint8Array(
-    parts.reduce((sum, part) => sum + part.length, 0),
-  );
-  let offset = 0;
-  for (const part of parts) {
-    result.set(part, offset);
-    offset += part.length;
-  }
-  return result;
-}
-function zip(files: { name: string; data: Uint8Array }[]) {
-  const locals: Uint8Array[] = [],
-    central: Uint8Array[] = [];
-  let offset = 0;
-  for (const file of files) {
-    const name = new TextEncoder().encode(file.name),
-      crc = crc32(file.data);
-    const local = join([
-      new Uint8Array([80, 75, 3, 4]),
-      word(20),
-      word(0),
-      word(0),
-      word(0),
-      word(0),
-      dword(crc),
-      dword(file.data.length),
-      dword(file.data.length),
-      word(name.length),
-      word(0),
-      name,
-      file.data,
-    ]);
-    locals.push(local);
-    central.push(
-      join([
-        new Uint8Array([80, 75, 1, 2]),
-        word(20),
-        word(20),
-        word(0),
-        word(0),
-        word(0),
-        word(0),
-        dword(crc),
-        dword(file.data.length),
-        dword(file.data.length),
-        word(name.length),
-        word(0),
-        word(0),
-        word(0),
-        word(0),
-        dword(offset),
-        name,
-      ]),
-    );
-    offset += local.length;
-  }
-  const body = join([...locals, ...central]),
-    centralSize = central.reduce((sum, part) => sum + part.length, 0);
-  return join([
-    body,
-    new Uint8Array([80, 75, 5, 6]),
-    word(0),
-    word(0),
-    word(files.length),
-    word(files.length),
-    dword(centralSize),
-    dword(body.length - centralSize),
-    word(0),
-  ]);
 }
 function downloadBlob(name: string, data: BlobPart, type: string) {
   const url = URL.createObjectURL(new Blob([data], { type })),
@@ -166,9 +77,7 @@ export async function exportMarkdownZip(
         .filter((path): path is string => !!path),
     ),
   ];
-  const files: { name: string; data: Uint8Array }[] = [
-    { name: `${safeName(title)}.md`, data: new TextEncoder().encode(body) },
-  ];
+  const files: Record<string, Uint8Array> = {};
   let markdown = body;
   for (let index = 0; index < imagePaths.length; index++) {
     const path = imagePaths[index];
@@ -179,9 +88,13 @@ export async function exportMarkdownZip(
         ? "jpg"
         : (blob.type.split("/")[1] ?? "bin");
     const name = `assets/image-${String(index + 1).padStart(3, "0")}.${extension}`;
-    files.push({ name, data: new Uint8Array(await blob.arrayBuffer()) });
+    files[name] = new Uint8Array(await blob.arrayBuffer());
     markdown = markdown.split(path).join(name);
   }
-  files[0]!.data = new TextEncoder().encode(markdown);
-  downloadBlob(`${safeName(title)}.zip`, zip(files), "application/zip");
+  files[`${safeName(title)}.md`] = new TextEncoder().encode(markdown);
+  downloadBlob(
+    `${safeName(title)}.zip`,
+    zipSync(files, { level: 0 }),
+    "application/zip",
+  );
 }

@@ -9,6 +9,102 @@ import type { LocalWrite } from "../../packages/application/src/local-persistenc
 import type { LibraryFile } from "../../packages/domain/src/library-file";
 import type { IndexedDbLocalStore } from "../../packages/storage-local/src/indexed-db";
 
+test("note ZIP extracts with a Unicode title, static image and animation", async ({
+  page,
+}, info) => {
+  await productionAssets(page, []);
+  await page.goto(productionOrigin + "/#notes");
+  await page.locator(".page-header .compact-create").click();
+  const note = page
+    .getByRole("tabpanel")
+    .filter({ has: page.locator(".document-title") });
+  const title = "图文笔记";
+  await note.locator(".document-title").fill(title);
+  await note
+    .getByRole("textbox", { name: /^(Markdown content|Markdown 正文)$/i })
+    .fill("图文导出");
+  await note.locator(".document-mode-menu > button").click();
+  await note.getByRole("button", { name: /^(Source|源码)$/ }).click();
+  const actions = note.locator(".document-actions-menu");
+  await actions.locator(":scope > button").click();
+  await actions.locator(".document-tools > button").click();
+  const upload = actions.locator(
+    'input[accept="image/png,image/jpeg,image/webp"]',
+  );
+  // Original 6×4 PNG and a two-frame animated WebP (teal, then orange).
+  const media = [
+    {
+      ext: "png",
+      bytes:
+        "iVBORw0KGgoAAAANSUhEUgAAAAYAAAAECAIAAAAiZtkUAAAAE0lEQVR4nGNkaGhgQAVMaHyihQBK/AEIjj7thgAAAABJRU5ErkJggg==",
+    },
+    {
+      ext: "webp",
+      bytes:
+        "UklGRoQAAABXRUJQVlA4WAoAAAACAAAABQAAAwAAQU5JTQYAAAAAAAAAAABBTk1GKAAAAAAAAAAAAAUAAAMAAMgAAAJWUDhMEAAAAC8FwAAAB1DAKGD/AxHR/wBBTk1GKAAAAAAAAAAAAAUAAAMAAMgAAABWUDhMEAAAAC8FwAAAB9DS/kf/AxHR/wA=",
+    },
+  ];
+  for (const [i, file] of media.entries()) {
+    await upload.setInputFiles({
+      name: "fixture." + file.ext,
+      mimeType: "image/" + file.ext,
+      buffer: Buffer.from(file.bytes, "base64"),
+    });
+    await expect
+      .poll(
+        async () =>
+          (
+            (await note.locator(".cm-content").innerText()).match(
+              /\/api\/v1\/files\/bytes\?id=/g,
+            ) ?? []
+          ).length,
+      )
+      .toBe(i + 1);
+  }
+  await page.keyboard.press("Escape");
+  const save = note.getByRole("button", { name: /^(Save|保存)$/ });
+  await save.click();
+  await actions.locator(":scope > button").click();
+  await actions.locator(".document-export > button").click();
+  const waiting = page.waitForEvent("download");
+  await actions
+    .getByRole("button", {
+      name: /^(Export ZIP with images|导出 ZIP（含图片）)$/,
+    })
+    .click();
+  const download = await waiting;
+  expect(download.suggestedFilename()).toBe(title + ".zip");
+  const archive = info.outputPath("export.zip");
+  const dest = info.outputPath("extracted");
+  await download.saveAs(archive);
+  await mkdir(dest);
+  if (process.platform === "win32")
+    await promisify(execFile)("tar.exe", ["-xf", archive, "-C", dest]);
+  else await promisify(execFile)("unzip", ["-q", archive, "-d", dest]);
+  const body = await readFile(resolve(dest, title + ".md"), "utf8");
+  expect(body).toContain("图文导出");
+  const references = [...body.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map(
+    (m) => m[1],
+  );
+  expect(references).toHaveLength(media.length);
+  for (const file of media) {
+    const ref = references.find((value) => value?.endsWith("." + file.ext));
+    expect(ref).toMatch(/^assets\/image-\d+\.(png|webp)$/);
+    const bytes = await readFile(resolve(dest, ref!));
+    expect(bytes.toString("base64")).toBe(file.bytes);
+    const dimensions = await page.evaluate(
+      async ({ mime, base64 }) => {
+        const image = new Image();
+        image.src = "data:" + mime + ";base64," + base64;
+        await image.decode();
+        return [image.naturalWidth, image.naturalHeight];
+      },
+      { mime: "image/" + file.ext, base64: bytes.toString("base64") },
+    );
+    expect(dimensions).toEqual([6, 4]);
+  }
+});
+
 test("Markdown File references open the original File tab and restore their route offline", async ({
   page,
   context,
