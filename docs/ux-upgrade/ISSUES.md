@@ -1,3 +1,7 @@
+## Session 428 · 笔记 ZIP 导出
+
+已修复含图片 ZIP 的格式错误。升级后重新导出即可得到正确归档。Android 真机导出仍未验证。[发布检查点](CHECKPOINT-428.md)
+
 ## Session 420 · v3.2.5 笔记文件夹同步修复
 
 Windows 3.2.4 原工作区准备同步时的 VALIDATION_ERROR 已在 3.2.5 实机复验中消失，服务器确认收到笔记整理命令。Android 真机升级仍未验证。[发布与实机证据](CHECKPOINT-420.md)
